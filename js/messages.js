@@ -26,8 +26,10 @@
       'aucun compte ne correspond à cette adresse e-mail.'],
     [/rate limit|too many requests|\b429\b/i,
       'trop de tentatives : patientez une minute avant de réessayer.'],
+    /* Vocabulaire à l'écran (§2.4 des specs) : le mot est TOUJOURS « clôturé ».
+       « figé » est le terme de la base, il ne sort jamais du code. */
     [/immuab|est figé|recap_mensuel .* fig/i,
-      'ce récapitulatif est figé : il ne peut plus être modifié.'],
+      'ce mois est clôturé : il ne peut plus être modifié.'],
     [/duplicate key|23505|unique constraint|unique violation/i,
       'cette valeur existe déjà.'],
     [/violates check constraint|23514/i,

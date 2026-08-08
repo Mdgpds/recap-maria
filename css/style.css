@@ -1,244 +1,425 @@
 /* ============================================================================
-   style.css — Récap Maria, écran de saisie (lot 3).
-   Mobile-first : Maria saisit depuis son téléphone, vite. Cibles tactiles
-   larges, contrastes nets, aucune dépendance (pas de framework).
+   style.css — Récap (lot 6, refonte de l'interface).
+
+   Cette feuille reprend TELLE QUELLE l'apparence de la maquette de référence
+   `prototype-v4-recap-maria.html` : couleurs, typographies, espacements, rayons
+   et noms de classes courts (.bar, .bd, .pane, .lines, .cptr, .doc…). Garder
+   les noms de la maquette n'est pas de la paresse : c'est ce qui rend la
+   comparaison écran par écran vérifiable d'un coup d'œil au moment de la
+   relecture.
+
+   Deux écarts assumés avec la maquette, et seulement deux :
+   - la maquette dessine un téléphone (.device, 390 × 820) au milieu d'une page
+     grise ; ici l'application OCCUPE l'écran (100dvh) — c'est le même écran,
+     sans le cadre ;
+   - la maquette n'a pas d'écran de connexion : il est ajouté ici dans le même
+     langage visuel (carte blanche, bouton vert, rayons identiques).
+
+   Mobile d'abord. Aucune dépendance, aucune police chargée, aucun framework.
    ========================================================================= */
 
 :root {
-  --fond: #f6f7f9;
-  --carte: #ffffff;
-  --texte: #1c2430;
-  --texte-doux: #5b6675;
-  --bord: #dfe4ea;
-  --primaire: #2f6f4f;
-  --primaire-fonce: #245c40;
-  --danger: #b4451f;
+  /* Palette de la maquette, à l'identique. */
+  --ac: #0d5c46;   /* vert d'accent (couleur de thème de l'app installable) */
+  --acs: #dcefe8;  /* vert clair (fonds) */
+  --acl: #7bb9a4;  /* vert moyen (bordures) */
+  --acd: #0b4635;  /* vert foncé (texte sur fond clair) */
 
-  --presence: #e3f4ea;  --presence-b: #3f9b6b;
-  --absence:  #fdeede;  --absence-b:  #d98324;
-  --conge:    #e6eefc;  --conge-b:    #3b6fd0;
-  --sanssolde:#fbe4e4;  --sanssolde-b:#c0392b;
-  --familia:  #efe7fb;  --familia-b:  #7a4fc0;
-  --ferie:    #eceff2;  --ferie-b:    #9aa4b0;
+  --ink: #0f1419;
+  --ink2: #3d4852;
+  --ink3: #5a6672;
 
-  --rayon: 12px;
+  --ln: #cfd6dd;
+  --ln2: #e6eaee;
+
+  --wa: #a34e00;   /* orange (alerte, absence) */
+  --was: #fde9cf;
+  --wal: #dda44f;
+
+  --bl: #39428a;   /* bleu (congé de Maria) */
+  --bls: #e6e9f5;
+  --bll: #b9c3e8;
+
+  --danger: #8f2d2d;
+  --danger-l: #e0a0a0;
 }
 
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
   margin: 0;
-  background: var(--fond);
-  color: var(--texte);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 1.4;
+  height: 100%;
+  /* §3 des specs : pas de rafraîchissement par glissement vers le bas. */
+  overscroll-behavior: none;
 }
 
-h1, h2, h3, h4 { margin: 0 0 .4rem; }
-.aide { color: var(--texte-doux); font-size: .9rem; margin: .2rem 0 .8rem; }
+body {
+  background: #f4f6f8;
+  color: var(--ink);
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
 
-/* --- Boutons -------------------------------------------------------- */
+/* ------------------------------------------------------------------------ */
+/* Ossature : un écran, une barre haute, un corps qui défile, une barre       */
+/* d'onglets qui n'apparaît que sur les trois écrans racine (§1 des specs).   */
+/* ------------------------------------------------------------------------ */
+
+.appli {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f4f6f8;
+}
+
+.bd {
+  padding: 15px 14px 26px;
+  padding-bottom: calc(26px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Barre haute des écrans en navigation par bouton retour. */
+.bar {
+  background: var(--ac);
+  color: #fff;
+  padding: 15px 14px;
+  padding-top: calc(15px + env(safe-area-inset-top));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 17px;
+  flex: 0 0 auto;
+}
+.bar .bk {
+  width: 32px; height: 32px;
+  border: none; background: rgba(255, 255, 255, .16); color: #fff;
+  border-radius: 9px; font-size: 17px; line-height: 1; cursor: pointer; flex: 0 0 auto;
+}
+.bar .ti { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar .r { margin-left: auto; font-weight: 400; font-size: 13px; opacity: .88; }
+.bar .nav { margin-left: auto; display: flex; gap: 6px; }
+.bar .nav button {
+  width: 32px; height: 32px; border: none;
+  background: rgba(255, 255, 255, .16); color: #fff;
+  border-radius: 9px; font-size: 15px; cursor: pointer;
+}
+.bar .nav button[disabled] { opacity: .35; cursor: default; }
+
+/* En-tête de l'accueil (dégradé), à la place de la barre. */
+.hero {
+  background: linear-gradient(160deg, #0d5c46, #0a4a38);
+  color: #fff;
+  padding: 20px 16px 18px;
+  padding-top: calc(20px + env(safe-area-inset-top));
+  flex: 0 0 auto;
+}
+.hero .hi { font-size: 14px; opacity: .85; }
+.hero .mo { font-size: 25px; font-weight: 700; letter-spacing: -.015em; margin-top: 2px; }
+.hero .pwrap { margin-top: 13px; }
+.hero .plab { display: flex; font-size: 12.5px; opacity: .92; margin-bottom: 5px; gap: 10px; }
+.hero .plab span:last-child { margin-left: auto; text-align: right; }
+.hero .pbar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .22); overflow: hidden; }
+.hero .pbar i { display: block; height: 100%; background: #fff; border-radius: 4px; }
+
+/* Barre d'onglets — UNIQUEMENT sur Accueil, Mes congés et Menu. */
+.tabbar {
+  display: flex;
+  border-top: 1.5px solid var(--ln);
+  background: #fff;
+  flex: 0 0 auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tabbar button {
+  flex: 1; text-align: center; padding: 11px 4px 13px;
+  font: inherit; font-size: 12px; color: var(--ink3); font-weight: 600;
+  background: none; border: none; cursor: pointer;
+}
+.tabbar button .i { display: block; font-size: 20px; margin-bottom: 1px; opacity: .55; }
+.tabbar button.on { color: var(--ac); }
+.tabbar button.on .i { opacity: 1; }
+
+/* ------------------------------------------------------------------------ */
+/* Titres de section, boutons                                                */
+/* ------------------------------------------------------------------------ */
+
+.sec {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700;
+  color: var(--ink3); margin: 19px 0 9px; display: flex; align-items: baseline;
+}
+.sec:first-child { margin-top: 0; }
+
 .btn {
-  font: inherit;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  padding: .7rem 1rem;
-  cursor: pointer;
-  min-height: 44px;
+  display: block; width: 100%; text-align: center;
+  background: var(--ac); color: #fff; border: none; border-radius: 12px;
+  padding: 16px; font: inherit; font-weight: 600; font-size: 17px;
+  margin-top: 11px; cursor: pointer; transition: transform .08s;
 }
-.btn:disabled { opacity: .55; cursor: default; }
-.btn-primary { background: var(--primaire); color: #fff; }
-.btn-primary:active { background: var(--primaire-fonce); }
-.btn-secondaire { background: #fff; color: var(--texte); border-color: var(--bord); }
-.btn-lien { background: none; border: none; color: var(--primaire); padding: .4rem; min-height: auto; }
-.btn-bloc { display: block; width: 100%; margin-top: .6rem; }
+.btn:active { transform: scale(.985); }
+.btn[disabled] { opacity: .55; cursor: default; }
+.btn.gh { background: #fff; color: var(--ac); border: 2px solid var(--ac); }
+.btn.nt { background: #fff; color: var(--ink2); border: 1.5px solid var(--ln); font-weight: 500; font-size: 16px; }
+.btn.dg { background: #fff; color: var(--danger); border: 1.5px solid var(--danger-l); font-weight: 500; font-size: 16px; }
 
-/* --- Connexion ----------------------------------------------------- */
-.vue-login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
-.carte-login {
-  background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon);
-  padding: 1.5rem; width: 100%; max-width: 380px;
-}
-.carte-login label { display: block; margin: .6rem 0; font-size: .9rem; color: var(--texte-doux); }
-.carte-login input {
-  display: block; width: 100%; margin-top: .25rem; padding: .7rem;
-  border: 1px solid var(--bord); border-radius: 10px; font: inherit; color: var(--texte);
-}
-.msg-login { margin-top: .7rem; color: var(--danger); font-size: .9rem; min-height: 1.2em; }
+/* ------------------------------------------------------------------------ */
+/* Accueil : tuiles « À faire » et cartes contrat                            */
+/* ------------------------------------------------------------------------ */
 
-/* --- En-tête app --------------------------------------------------- */
-.entete {
-  position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; justify-content: space-between;
-  background: var(--carte); border-bottom: 1px solid var(--bord);
-  padding: .6rem 1rem;
+.todo {
+  display: flex; align-items: center; gap: 12px; background: #fff;
+  border: 1.5px solid var(--wal); border-radius: 13px; padding: 13px;
+  margin-bottom: 8px; cursor: pointer; transition: transform .08s;
+  width: 100%; text-align: left; font: inherit; color: inherit;
 }
-.marque { font-weight: 700; }
-.saisie { padding: 1rem; max-width: 720px; margin: 0 auto; }
-.pied { text-align: center; color: var(--texte-doux); padding: 1rem; }
+.todo:active { transform: scale(.985); }
+.todo .ic {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--was); color: var(--wa);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; flex: 0 0 auto;
+}
+.todo.act { border-color: var(--acl); cursor: default; }
+.todo.act .ic { background: var(--acs); color: var(--acd); }
+.todo .tx { flex: 1; font-size: 14.5px; font-weight: 600; }
+.todo .tx small { display: block; font-size: 12.5px; color: var(--ink3); font-weight: 400; margin-top: 1px; }
+.todo .ar { color: var(--ink3); font-size: 18px; }
 
-/* --- Barre mois ---------------------------------------------------- */
-.barre-mois { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-.titre-mois { text-transform: capitalize; font-size: 1.25rem; }
-.nav-mois {
-  font: inherit; font-size: 1.2rem; background: var(--carte);
-  border: 1px solid var(--bord); border-radius: 10px;
-  width: 48px; height: 44px; cursor: pointer;
+.big {
+  border: 1.5px solid var(--ln); border-radius: 16px; padding: 14px; margin-bottom: 10px;
+  background: #fff; cursor: pointer; transition: transform .08s;
+  width: 100%; text-align: left; font: inherit; color: inherit; display: block;
+}
+.big:active { transform: scale(.985); }
+.big .top { display: flex; align-items: center; gap: 13px; }
+.big .av {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--acs); color: var(--acd);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 18px; flex: 0 0 auto; border: 2px solid var(--acl);
+}
+.big.warn .av { background: var(--was); color: var(--wa); border-color: var(--wal); }
+.big .nm { font-weight: 700; font-size: 17px; }
+.big .fm { font-size: 12.5px; color: var(--ink3); }
+.big .ar { margin-left: auto; color: var(--ink3); font-size: 19px; }
+.big .stats { display: flex; gap: 8px; margin-top: 11px; }
+.big .st { flex: 1; background: #f6f8f9; border-radius: 9px; padding: 7px 9px; text-align: center; }
+.big .st .v { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.big .st .k { font-size: 10.5px; color: var(--ink3); font-weight: 600; }
+.big .etat { margin-top: 10px; font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.big .etat.ok { color: var(--acd); }
+.big .etat.wa { color: var(--wa); }
+.big.off { opacity: .72; background: #fbfcfd; }
+.big.off .av { background: #eef1f4; color: var(--ink3); border-color: var(--ln); }
+
+/* ------------------------------------------------------------------------ */
+/* Calendrier                                                                */
+/* ------------------------------------------------------------------------ */
+
+table.cal { width: 100%; border-collapse: separate; border-spacing: 4px; table-layout: fixed; }
+table.cal th { font-size: 10.5px; font-weight: 700; color: var(--ink3); padding-bottom: 3px; }
+table.cal td {
+  height: 46px; vertical-align: middle; text-align: center; border-radius: 10px;
+  border: 1.5px solid var(--ln); background: #fff; cursor: pointer; transition: transform .08s;
+  padding: 0;
+}
+table.cal td:active { transform: scale(.94); }
+table.cal td.no { cursor: default; }
+table.cal td.no:active { transform: none; }
+.num { font-size: 14px; font-weight: 600; color: var(--ink2); line-height: 1.1; }
+td.ok { background: var(--acs); border-color: var(--acl); }
+td.ok .num { color: var(--acd); font-weight: 800; }
+td.ab { background: var(--was); border-color: var(--wal); }
+td.ab .num { color: var(--wa); font-weight: 800; }
+td.fe { background: #eef1f4; }
+td.fe .num { color: var(--ink3); font-weight: 500; }
+td.cg { background: var(--bls); border-color: var(--bll); }
+td.cg .num { color: var(--bl); font-weight: 800; }
+td.we { background: #fafbfc; border-color: var(--ln2); }
+td.we .num { color: #b6bec7; font-weight: 500; }
+.mini { font-size: 8.5px; font-weight: 700; margin-top: 1px; }
+td.fe .mini { color: var(--ink3); }
+td.cg .mini { color: var(--bl); }
+td.ab .mini { color: var(--wa); }
+
+.lg { display: flex; flex-wrap: wrap; gap: 5px 13px; margin-top: 12px; font-size: 11.5px; color: var(--ink2); font-weight: 600; }
+.lg i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; border: 1px solid; }
+.g1 { background: var(--acs); border-color: var(--acl); }
+.g2 { background: var(--was); border-color: var(--wal); }
+.g3 { background: #eef1f4; border-color: var(--ln); }
+.g5 { background: var(--bls); border-color: var(--bll); }
+
+/* ------------------------------------------------------------------------ */
+/* Panneaux, lignes de chiffres, compteurs                                   */
+/* ------------------------------------------------------------------------ */
+
+.pane { background: #fff; border: 1.5px solid var(--ln); border-radius: 14px; padding: 14px; margin-bottom: 11px; }
+.pane .pt { font-weight: 700; font-size: 15px; margin-bottom: 9px; display: flex; align-items: baseline; }
+.pane .pt .more { margin-left: auto; font-size: 12.5px; color: var(--ac); font-weight: 600; cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; }
+
+.lines { font-size: 14.5px; }
+.lines .l { display: flex; padding: 8px 0; border-bottom: 1px solid var(--ln2); gap: 12px; align-items: baseline; }
+.lines .l:last-child { border-bottom: none; }
+.lines .l span:last-child { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lines .l.tot { border-top: 2px solid var(--ink); border-bottom: none; margin-top: 4px; padding-top: 10px; font-size: 16px; }
+.lines .l.q span { color: var(--ink3); font-weight: 500; }
+.lines .l .wa { color: var(--wa); }
+
+.cptr { margin-bottom: 12px; }
+.cptr:last-child { margin-bottom: 0; }
+.cptr .cl { display: flex; font-size: 13.5px; margin-bottom: 5px; align-items: baseline; }
+.cptr .cl b { font-size: 14.5px; }
+.cptr .cl span:last-child { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cptr .cb { height: 9px; border-radius: 5px; background: #eef1f4; overflow: hidden; }
+.cptr .cb i { display: block; height: 100%; border-radius: 5px; background: var(--ac); }
+.cptr.low .cb i { background: var(--wa); }
+.cptr .cn { font-size: 12px; color: var(--ink3); margin-top: 4px; }
+.cptr.low .cn { color: var(--wa); font-weight: 600; }
+
+.badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+.badge.ok { background: var(--acs); color: var(--acd); }
+.badge.wa { background: var(--was); color: var(--wa); }
+.badge.ar { background: #e8ecef; color: var(--ink3); }
+
+.note { background: var(--acs); border: 1.5px solid var(--acl); border-radius: 11px; padding: 12px 13px; font-size: 13px; color: var(--acd); margin-top: 12px; }
+.note b { display: block; margin-bottom: 3px; }
+.warnbox { background: var(--was); border: 1.5px solid var(--wal); border-radius: 11px; padding: 12px 13px; font-size: 13px; color: var(--wa); margin-top: 12px; }
+.warnbox b { display: block; margin-bottom: 3px; }
+
+/* ------------------------------------------------------------------------ */
+/* Champs, lignes de menu, cartes d'historique                               */
+/* ------------------------------------------------------------------------ */
+
+.fld {
+  border: 1.5px solid var(--ln); border-radius: 11px; padding: 12px 13px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 12px; font-size: 15px; background: #fff;
+  overflow: hidden;
+}
+.fld .lb { color: var(--ink3); flex: 0 0 46%; }
+.fld .vl { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.fld input[type=text], .fld input[type=email], .fld input[type=password], .fld select {
+  margin-left: auto; font: inherit; font-weight: 600; text-align: right;
+  border: none; background: none; color: var(--ink); min-width: 0; flex: 1;
+  padding: 0; -webkit-appearance: none; appearance: none;
+}
+.fld select { text-align: left; text-align-last: right; }
+.fld input:focus, .fld select:focus { outline: 2px solid var(--acl); outline-offset: 4px; border-radius: 4px; }
+.fld.col { display: block; }
+.fld.col .lb { display: block; margin-bottom: 6px; }
+.fld .dates { margin-left: auto; display: flex; gap: 6px; }
+.fld .dates select { flex: 0 0 auto; text-align-last: center; font-weight: 600; }
+
+.menu {
+  display: flex; align-items: center; gap: 12px; padding: 15px 14px;
+  border: 1.5px solid var(--ln); border-radius: 12px; margin-bottom: 8px;
+  font-size: 16px; background: #fff; cursor: pointer; transition: transform .08s;
+  width: 100%; text-align: left; font-family: inherit; color: inherit;
+}
+.menu:active { transform: scale(.99); }
+.menu .ar { margin-left: auto; color: var(--ink3); font-size: 18px; }
+.menu .d { font-size: 12.5px; color: var(--ink3); display: block; margin-top: 2px; font-weight: 400; }
+
+.card { border: 1.5px solid var(--ln); border-radius: 12px; padding: 13px 14px; margin-bottom: 9px; background: #fff; }
+.card.click { cursor: pointer; transition: transform .08s; width: 100%; text-align: left; font: inherit; color: inherit; display: block; }
+.card.click:active { transform: scale(.99); }
+.row { display: flex; align-items: baseline; gap: 9px; }
+.row .nm { font-weight: 600; font-size: 16px; }
+.row .mt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; }
+.sb { font-size: 13px; color: var(--ink2); margin-top: 3px; }
+.sb.q { color: var(--ink3); }
+
+.an { font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--ink3); margin: 16px 0 8px; display: flex; align-items: center; gap: 10px; }
+.an .t { color: var(--ac); }
+.an .tr { flex: 1; height: 1px; background: var(--ln); }
+.an .more { font-size: 12px; color: var(--ac); font-weight: 600; cursor: pointer; letter-spacing: 0; background: none; border: none; font-family: inherit; padding: 0; }
+
+/* ------------------------------------------------------------------------ */
+/* Feuille en bas d'écran, choix, toast                                      */
+/* ------------------------------------------------------------------------ */
+
+.sheetwrap { position: fixed; inset: 0; background: rgba(15, 20, 25, .42); display: flex; z-index: 30; align-items: flex-end; }
+.sheetwrap[hidden] { display: none; }
+.sheet {
+  background: #fff; border-radius: 20px 20px 0 0; padding: 18px 16px 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  width: 100%; max-height: 88%; overflow-y: auto;
+}
+.sheet .h { font-weight: 700; font-size: 17px; margin-bottom: 3px; }
+.sheet .s { font-size: 13px; color: var(--ink3); margin-bottom: 13px; }
+
+.choice {
+  display: flex; align-items: center; gap: 12px; border: 1.5px solid var(--ln);
+  border-radius: 12px; padding: 15px 14px; margin-bottom: 9px;
+  font-size: 16px; font-weight: 600; cursor: pointer; background: #fff;
+  transition: transform .08s; width: 100%; text-align: left; font-family: inherit; color: inherit;
+}
+.choice:active { transform: scale(.985); }
+.choice .ic { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex: 0 0 auto; }
+.choice.c1 .ic { background: var(--acs); color: var(--acd); }
+.choice.c2 .ic { background: var(--was); color: var(--wa); }
+.choice.c3 .ic { background: var(--bls); color: var(--bl); }
+.choice .tx { flex: 1; }
+.choice .why { display: block; font-size: 12px; color: var(--ink3); font-weight: 400; margin-top: 1px; }
+
+.toast {
+  position: fixed; left: 14px; right: 14px; bottom: calc(84px + env(safe-area-inset-bottom));
+  background: var(--ink); color: #fff; padding: 13px 15px; border-radius: 12px; font-size: 14px;
+  opacity: 0; transform: translateY(8px); transition: .22s; pointer-events: none; z-index: 40;
+}
+.toast.on { opacity: 1; transform: translateY(0); }
+.toast.ko { background: var(--danger); }
+
+/* ------------------------------------------------------------------------ */
+/* Document (identité papier : fond crème, Georgia, filet bleu)              */
+/* ------------------------------------------------------------------------ */
+
+.doc {
+  background: #fffdf8; padding: 18px 16px;
+  font-family: Georgia, 'Times New Roman', serif;
+  border: 1.5px solid #e3dcca; border-radius: 12px;
+}
+.doc .dh { border-bottom: 2px solid #1f4f7a; padding-bottom: 9px; margin-bottom: 12px; }
+.doc .dh .t1 { font-size: 18px; font-weight: 700; color: #2b2a26; }
+.doc .dh .t2 { font-size: 12.5px; color: #6b6659; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+.doc .dl { display: flex; padding: 8px 0; border-bottom: 1px solid #e3dcca; font-size: 14.5px; color: #2b2a26; gap: 12px; }
+.doc .dl span:last-child { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.doc .dl.tt { border-top: 2px solid #2b2a26; border-bottom: none; margin-top: 6px; padding-top: 10px; font-size: 16px; }
+.doc .ds {
+  font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: #8a8371;
+  margin: 15px 0 6px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.doc .dn {
+  background: #f4f1e6; border: 1px solid #e3dcca; border-radius: 8px; padding: 11px 12px;
+  font-size: 12px; color: #5d5747; margin-top: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.5;
 }
 
-/* --- Bloc absence Maria -------------------------------------------- */
-.bloc-absence-maria, .carte-contrat {
-  background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon);
-  padding: 1rem; margin-bottom: 1rem;
-}
-.form-ligne { display: flex; flex-wrap: wrap; gap: .6rem; }
-.form-ligne label { display: flex; flex-direction: column; font-size: .8rem; color: var(--texte-doux); flex: 1 1 30%; }
-.in-date, .in-type, .in-texte {
-  margin-top: .2rem; padding: .6rem; border: 1px solid var(--bord); border-radius: 8px;
-  font: inherit; color: var(--texte); background: #fff;
-}
-.form-actions { display: flex; gap: .6rem; margin-top: .8rem; }
-.form-actions .btn { flex: 1; }
-.msg-absence { margin-top: .6rem; font-size: .9rem; color: var(--texte-doux); min-height: 1.2em; }
+/* ------------------------------------------------------------------------ */
+/* Écran de connexion et état d'attente                                      */
+/* ------------------------------------------------------------------------ */
 
-/* --- Résumé + grille des jours ------------------------------------- */
-.resume { color: var(--texte-doux); font-size: .85rem; margin: 0 0 .7rem; }
-.grille-jours { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: .5rem; }
-.chip {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  border: 1px solid var(--bord); border-radius: 10px; padding: .5rem .2rem;
-  font: inherit; cursor: pointer; min-height: 56px; background: #fff;
+.login {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 22px; background: linear-gradient(160deg, #0d5c46, #0a4a38);
 }
-.chip-jour { font-weight: 700; font-size: .95rem; }
-.chip-etat { font-size: .72rem; color: var(--texte-doux); margin-top: .15rem; }
-
-.j-presence  { background: var(--presence);  border-color: var(--presence-b); }
-.j-absence   { background: var(--absence);   border-color: var(--absence-b); }
-.j-conge     { background: var(--conge);     border-color: var(--conge-b); }
-.j-sanssolde { background: var(--sanssolde); border-color: var(--sanssolde-b); }
-.j-familia   { background: var(--familia);   border-color: var(--familia-b); }
-.j-ferie     { background: var(--ferie);     border-color: var(--ferie-b); color: var(--texte-doux); }
-.j-hors      { background: #fff; border-style: dashed; color: var(--texte-doux); }
-
-.vide { color: var(--texte-doux); }
-
-/* --- Feuille d'action (bottom sheet) ------------------------------- */
-.overlay {
-  position: fixed; inset: 0; background: rgba(20,28,38,.45);
-  display: flex; align-items: flex-end; justify-content: center; z-index: 20;
+.login .carte { background: #fff; border-radius: 18px; padding: 22px 18px; width: 100%; max-width: 360px; }
+.login h1 { font-size: 21px; margin: 0 0 4px; }
+.login p { font-size: 13.5px; color: var(--ink3); margin: 0 0 16px; }
+.login label { display: block; font-size: 12.5px; color: var(--ink3); font-weight: 600; margin-bottom: 10px; }
+.login input {
+  display: block; width: 100%; margin-top: 5px; font: inherit; font-size: 16px;
+  padding: 13px 12px; border: 1.5px solid var(--ln); border-radius: 11px; background: #fff; color: var(--ink);
 }
-.feuille {
-  background: var(--carte); width: 100%; max-width: 480px;
-  border-top-left-radius: 16px; border-top-right-radius: 16px;
-  padding: 1rem 1rem 1.4rem; max-height: 85vh; overflow-y: auto;
-}
-.feuille label { display: block; margin: .6rem 0; font-size: .85rem; color: var(--texte-doux); }
-.feuille .in-texte { display: block; width: 100%; margin-top: .25rem; }
-.opt {
-  display: block; width: 100%; text-align: left; font: inherit;
-  background: #fff; border: 1px solid var(--bord); border-radius: 10px;
-  padding: .8rem 1rem; margin-top: .5rem; cursor: pointer; min-height: 48px;
-}
-.opt-actif { border-color: var(--primaire); box-shadow: inset 0 0 0 1px var(--primaire); font-weight: 600; }
+.login input:focus { outline: none; border-color: var(--acl); }
 
-/* --- Onglets Saisie / Récap ---------------------------------------- */
-.onglets {
-  display: flex; gap: .5rem; max-width: 720px; margin: 0 auto;
-  padding: .6rem 1rem 0; background: var(--carte);
-  border-bottom: 1px solid var(--bord);
-}
-.onglet {
-  font: inherit; background: none; border: none; border-bottom: 3px solid transparent;
-  padding: .6rem .9rem; cursor: pointer; color: var(--texte-doux); min-height: 44px;
-}
-.onglet-actif { color: var(--primaire); border-bottom-color: var(--primaire); font-weight: 600; }
+.attente { padding: 40px 20px; text-align: center; color: var(--ink3); font-size: 14.5px; white-space: pre-line; }
+.vide { color: var(--ink3); font-size: 14px; padding: 6px 0; }
 
-/* --- Récap --------------------------------------------------------- */
-.recap-entete { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-.badge-fige {
-  background: var(--conge); color: var(--conge-b); border: 1px solid var(--conge-b);
-  border-radius: 999px; padding: .1rem .6rem; font-size: .75rem; font-weight: 600;
-}
-.recap-ligne {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: .5rem; padding: .3rem 0; border-bottom: 1px dashed var(--bord);
-}
-.recap-lib { color: var(--texte-doux); font-size: .9rem; }
-.recap-val { font-variant-numeric: tabular-nums; }
-.recap-fort { font-weight: 700; border-bottom: none; margin-top: .2rem; }
-.recap-fort .recap-lib { color: var(--texte); }
-.recap-wa { margin-top: .8rem; }
-.wa-texte {
-  width: 100%; box-sizing: border-box; font: inherit; font-size: .85rem;
-  border: 1px solid var(--bord); border-radius: 8px; padding: .6rem;
-  background: #fbfcfd; color: var(--texte); resize: vertical;
-}
+/* Bloc d'erreur d'écriture : un échec doit se voir (§3 des specs). */
+.msg { font-size: 13px; margin-top: 8px; color: var(--ink3); }
+.msg.ko { color: var(--danger); font-weight: 600; }
 
-/* --- Lot 5 --------------------------------------------------------- */
-
-/* État d'attente (C1) : occupe l'écran pendant le chargement. */
-.chargement {
-  max-width: 720px; margin: 2rem auto; padding: 1.2rem;
-  background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon);
-  color: var(--texte-doux); text-align: center; white-space: pre-line;
-}
-
-/* Onglets : quatre onglets tiennent sur un écran de téléphone. */
-.onglets { overflow-x: auto; }
-.onglet { white-space: nowrap; padding: .6rem .7rem; }
-
-/* Sélection directe du mois (C4). */
-.choix-mois { display: flex; gap: .4rem; flex: 1; justify-content: center; }
-.choix-mois select { min-height: 44px; }
-
-.badge-archive {
-  background: var(--ferie); color: var(--texte-doux); border: 1px solid var(--ferie-b);
-  border-radius: 999px; padding: .1rem .6rem; font-size: .75rem; font-weight: 600;
-}
-
-/* Message d'application (échecs hors écran : déconnexion, session). */
-.msg-app {
-  max-width: 720px; margin: .6rem auto 0; padding: .6rem 1rem;
-  background: var(--carte); border: 1px solid var(--bord); border-radius: 10px;
-  font-size: .9rem; color: var(--texte-doux);
-}
-.msg-app.msg-erreur { border-color: var(--danger); color: var(--danger); }
-
-.alerte {
-  background: var(--absence); border: 1px solid var(--absence-b); border-radius: 8px;
-  padding: .5rem .7rem; margin: .5rem 0; font-size: .88rem;
-}
-.msg-erreur { color: var(--danger); }
-
-/* Blocs dépliants de l'onglet Familles (C2). */
-.bloc-pliant {
-  border: 1px solid var(--bord); border-radius: 10px;
-  padding: .5rem .7rem; margin-top: .6rem; background: #fff;
-}
-.bloc-pliant > summary { cursor: pointer; min-height: 40px; padding: .4rem 0; font-weight: 600; }
-.bloc-contrat > summary { color: var(--primaire); }
-
-.form-colonne { display: flex; flex-direction: column; gap: .1rem; }
-.form-colonne > label { display: flex; flex-direction: column; font-size: .82rem; color: var(--texte-doux); margin: .5rem 0 0; }
-.form-colonne .in-texte, .form-colonne .in-type { width: 100%; }
-.aide-champ { display: block; color: var(--texte-doux); font-size: .75rem; margin-top: .2rem; }
-
-.planning { border: 1px solid var(--bord); border-radius: 10px; margin: .7rem 0 .2rem; padding: .5rem .7rem; }
-.planning legend { font-size: .82rem; color: var(--texte-doux); }
-.case { display: flex; align-items: center; gap: .4rem; min-height: 36px; font-size: .9rem; }
-.case input { width: 20px; height: 20px; }
-
-/* Barèmes (C5) et soldes de fin de contrat (C3). */
-.bareme {
-  border: 1px solid var(--bord); border-radius: 10px;
-  padding: .6rem .7rem; margin-top: .6rem; background: #fbfcfd;
-}
-.bareme-t { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-.bareme-m { font-variant-numeric: tabular-nums; margin-top: .2rem; }
-.soldes { margin-top: .6rem; }
-
-@media (min-width: 520px) {
-  .feuille { align-self: center; border-radius: 16px; margin-bottom: 5vh; }
-  .overlay { align-items: center; }
-}
+[hidden] { display: none !important; }
