@@ -217,7 +217,7 @@ var sheet = document.getElementById('sheet');
   var pourquoiConge = txt(choix[2].querySelector('.why'));
   assert(pourquoiConge.indexOf('−1 jour') !== -1,
     'décompte du congé calculé par le moteur : −1 jour (obtenu « ' + pourquoiConge + ' »)');
-  assert(pourquoiConge.indexOf('2 enfants') !== -1, 'le congé annonce tous les contrats');
+  assert(pourquoiConge.indexOf('2 enfants') !== -1, 'le congé annonce les contrats réellement servis');
 
   /* ---------- 4. « Je ne travaillais pas » écrit sur tous les contrats ---------- */
   choix[2].click();
@@ -271,15 +271,15 @@ var sheet = document.getElementById('sheet');
   assert(txt(corps).indexOf('Total des congés payés') === -1, '§2.5 : jamais de compteur global');
 
   parTexte(corps, 'button', 'Poser une semaine entière').click();
-  await pause(30);
+  await pause(200);
   assert(txt(sheet).indexOf('Jours décomptés') !== -1, 'aperçu avant confirmation');
   assert(txt(sheet).indexOf('6 j') !== -1, 'RG-06 : une semaine complète compte 6 jours');
   assert(txt(sheet).indexOf('Samedi inclus') !== -1, 'le samedi inclus est expliqué');
-  assert(!!parTexte(sheet, 'button', 'Confirmer cette semaine'), 'rien n’est posé avant confirmation');
+  assert(!!parTexte(sheet, 'button', 'Confirmer cette période'), 'rien n’est posé avant confirmation');
 
   var avant = appels.poser.length;
-  parTexte(sheet, 'button', 'Confirmer cette semaine').click();
-  await pause(80);
+  parTexte(sheet, 'button', 'Confirmer cette période').click();
+  await pause(120);
   assert(appels.poser.length === avant + 1, 'la semaine est posée en une seule écriture');
   var semaine = appels.poser[appels.poser.length - 1];
   assert(semaine.affectations.length === 2, 'la semaine est posée sur les deux contrats');

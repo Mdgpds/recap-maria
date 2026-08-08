@@ -83,7 +83,7 @@ cas.push({
     var m = silence(function () {
       return Messages.lisible({ message: 'recap_mensuel abc (contrat def, 3/2026) est figé : seul le champ d\'audit est modifiable (immuabilité)' });
     });
-    egal(m, 'ce récapitulatif est figé : il ne peut plus être modifié.', 'immuabilité');
+    egal(m, 'ce mois est clôturé : il ne peut plus être modifié.', 'immuabilité');
   }
 });
 
