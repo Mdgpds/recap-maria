@@ -1,265 +1,425 @@
 /* ============================================================================
-   app.js — Orchestration de l'application.
+   app.js — Orchestration de l'application (lot 6, refonte de l'interface).
 
-   Enchaîne : porte d'authentification (Supabase Auth) → chargement des
-   contrats → quatre onglets : Récap, Saisie, Période, Familles.
-   Ne parle pas au réseau directement (tout via DB) et ne calcule rien
-   lui-même (le moteur du lot 1 est branché dans les écrans).
+   Trois responsabilités, et rien d'autre :
 
-   Correctif C1 du lot 5 — atterrissage sur le récapitulatif.
-   Le correctif « évident » (remplacer 'saisie' par 'recap' dans l'appel à
-   montrerOnglet au début de entrerDansApp) ne marche PAS : à cet instant
-   `pret` vaut encore false, et montrerOnglet ne déclenche le rendu du récap
-   que sous la condition (estRecap && !recapCharge && pret). On afficherait un
-   onglet Récap vide, qui ne se remplirait qu'au second clic.
-   Le basculement a donc lieu APRÈS `pret = true`, une fois la saisie
-   initialisée. Pendant tout le chargement, l'écran reste sur un état
-   d'attente lisible — pas sur un onglet vide.
+   1. LA PORTE. Session Supabase persistante : connectée un jour, connectée
+      toujours, jusqu'à déconnexion volontaire (§3 des specs). Après
+      reconnexion automatique, l'atterrissage se fait DIRECTEMENT sur l'Accueil,
+      jamais sur l'écran de connexion.
+
+   2. LA NAVIGATION. Deux logiques qui ne se mélangent jamais (§1 des specs) :
+      - trois écrans racine (Accueil, Mes congés, Menu) portés par la barre
+        d'onglets du bas ;
+      - tout le reste (espace enfant, document, historique, bilan, fiche
+        contrat, période) en navigation par bouton retour, sur une pile.
+      La barre d'onglets n'apparaît QUE sur les trois écrans racine.
+
+   3. LES SERVICES PARTAGÉS. Liste des contrats, mois courant, et surtout le
+      CACHE des chaînes de mois : chaque écran a besoin de la même chaîne
+      (accueil, espace enfant, document, historique, congés). La rejouer une
+      fois par écran ferait quatre relectures complètes de l'historique à
+      chaque touche. Le cache est vidé à la moindre écriture.
+
+   Aucun calcul métier ici. Aucun accès réseau direct : tout passe par DB.
    ========================================================================= */
 (function (global) {
   'use strict';
 
-  var vues = {};
-  var contrats = [];
-  var ongletCourant = null;
-  var charge = { recap: false, periode: false, familles: false };
-  var pret = false;                 // vrai une fois les contrats chargés et les écrans initialisés
-  var chargementEnCours = false;
-  var utilisateurCourant = null;    // pour ignorer les simples rafraîchissements de jeton
+  var Kit = global.Kit;
+  var Chaine = global.ChaineMois;
 
-  var ONGLETS = ['recap', 'saisie', 'periode', 'familles'];
+  /* Écrans -> module global. Les trois premiers portent la barre d'onglets. */
+  var ONGLETS = ['accueil', 'conges', 'menu'];
+  var ECRANS = {
+    accueil: 'UiAccueil',
+    conges: 'UiConges',
+    menu: 'UiMenu',
+    enfant: 'UiEnfant',
+    document: 'UiDocument',
+    historique: 'UiHistorique',
+    bilan: 'UiHistorique',       // le bilan annuel est rendu par le même module
+    fiche: 'UiContrat',
+    periode: 'UiPeriode'
+  };
+
+  var el = {};
+  var etat = {
+    session: null,
+    email: null,
+    contrats: [],        // contrats NON archivés, triés par prénom
+    contratsTous: null,  // chargés à la demande (Menu : anciens contrats)
+    pile: [],            // [{ ecran, params }] — le dernier est affiché
+    series: {},          // cache : contratId|YYYY-MM -> Promise(chaîne)
+    journees: {},        // cache : contratId|YYYY-MM -> Promise({ jour: ligne })
+    pret: false,
+    chargement: false,
+    utilisateur: null
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* Démarrage                                                           */
+  /* ------------------------------------------------------------------ */
 
   document.addEventListener('DOMContentLoaded', function () {
-    vues.login = document.getElementById('vue-login');
-    vues.app = document.getElementById('vue-app');
-    vues.chargement = document.getElementById('chargement');
-    vues.onglets = document.getElementById('onglets');
-    vues.saisie = document.getElementById('saisie');
-    vues.recap = document.getElementById('recap');
-    vues.periode = document.getElementById('periode');
-    vues.familles = document.getElementById('familles');
+    el.login = document.getElementById('vue-login');
+    el.app = document.getElementById('vue-app');
+    el.barre = document.getElementById('barre');
+    el.corps = document.getElementById('corps');
+    el.tabbar = document.getElementById('tabbar');
 
-    câblerLogin();
-    câblerLogout();
-    câblerOnglets();
+    /* Sans le client Supabase (premier lancement hors ligne, CDN injoignable),
+       db.js n'a pas pu se construire. On le dit en français plutôt que de
+       laisser une page blanche. */
+    if (!global.DB) {
+      el.login.hidden = true;
+      el.app.hidden = false;
+      el.barre.hidden = true;
+      el.corps.appendChild(Kit.ce('div', 'attente',
+        'Application indisponible pour l’instant : la connexion à internet est nécessaire ' +
+        'au premier lancement.\nRéessayez une fois le réseau revenu.'));
+      return;
+    }
 
-    // Réagit aux changements de session (login / logout / refresh de jeton).
+    cablerLogin();
+    cablerOnglets();
+    cablerRetourSysteme();
+    enregistrerServiceWorker();
+
     global.DB.onAuthChange(function (session) {
-      if (session) entrerDansApp(session);
-      else { utilisateurCourant = null; pret = false; montrerLogin(); }
+      if (session) entrer(session);
+      else { etat.utilisateur = null; etat.pret = false; montrerLogin(); }
     });
 
-    // État initial.
     global.DB.getSession()
-      .then(function (session) { if (session) entrerDansApp(session); else montrerLogin(); })
-      .catch(function (e) { messageLogin('Connexion impossible : ' + lisible(e)); montrerLogin(); });
+      .then(function (session) { if (session) entrer(session); else montrerLogin(); })
+      .catch(function (e) { messageLogin('Connexion impossible : ' + Kit.messageErreur(e)); montrerLogin(); });
   });
 
-  /* ---------------------------------------------------------------- */
-  /* Authentification                                                 */
-  /* ---------------------------------------------------------------- */
-
-  function câblerLogin() {
+  function cablerLogin() {
     var form = document.getElementById('form-login');
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var email = document.getElementById('login-email').value.trim();
       var mdp = document.getElementById('login-mdp').value;
       var btn = document.getElementById('btn-login');
-      if (!email || !mdp) { messageLogin('Renseigner l’e-mail et le mot de passe.'); return; }
-      btn.disabled = true; messageLogin('Connexion…');
-      global.DB.signIn(email, mdp)
-        .then(function () { messageLogin(''); /* onAuthChange déclenche l'entrée */ })
-        .catch(function (err) {
-          // Jamais le message brut : « Invalid login credentials » n'a rien à
-          // faire sous les yeux de Maria.
-          messageLogin('Connexion refusée : ' + lisible(err));
-          btn.disabled = false;
-        });
-    });
-  }
-
-  function câblerLogout() {
-    var btn = document.getElementById('btn-logout');
-    btn.addEventListener('click', function () {
-      messageApp('Déconnexion…');
+      if (!email || !mdp) { messageLogin('Renseignez votre e-mail et votre mot de passe.'); return; }
       btn.disabled = true;
-      global.DB.signOut()
-        .then(function () { messageApp(''); })
-        .catch(function (e) {
-          /* Un échec silencieux ferait croire la session fermée alors qu'elle
-             reste ouverte : Maria repose son téléphone rassurée à tort. */
-          messageApp('Déconnexion impossible : ' + lisible(e) +
-            ' Votre session est TOUJOURS ouverte.', true);
+      messageLogin('Connexion…');
+      global.DB.signIn(email, mdp)
+        .then(function () { messageLogin(''); })
+        .catch(function (err) {
+          messageLogin('Connexion refusée : ' + Kit.messageErreur(err));
           btn.disabled = false;
         });
     });
-  }
-
-  /* Message d'application, visible sous les onglets. Sert aux échecs qui ne
-     se rattachent à aucun écran en particulier. */
-  function messageApp(txt, estErreur) {
-    var m = document.getElementById('msg-app');
-    if (!m) return;
-    m.textContent = txt || '';
-    m.className = 'msg-app' + (estErreur ? ' msg-erreur' : '');
-    m.hidden = !txt;
-  }
-
-  function lisible(e) {
-    return global.Messages ? global.Messages.lisible(e) : 'une erreur est survenue.';
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* Onglets                                                          */
-  /* ---------------------------------------------------------------- */
-
-  function câblerOnglets() {
-    ONGLETS.forEach(function (nom) {
-      var b = document.getElementById('onglet-' + nom);
-      if (b) b.addEventListener('click', function () { montrerOnglet(nom); });
-    });
-  }
-
-  function montrerOnglet(nom) {
-    if (!pret) return;              // pendant le chargement, on reste sur l'état d'attente
-    ongletCourant = nom;
-    ONGLETS.forEach(function (n) {
-      if (vues[n]) vues[n].hidden = (n !== nom);
-      var b = document.getElementById('onglet-' + n);
-      if (b) b.classList.toggle('onglet-actif', n === nom);
-    });
-
-    // Chaque écran n'est calculé qu'à son premier affichage.
-    if (nom === 'recap' && !charge.recap) {
-      charge.recap = true;
-      var m = moisCourant();
-      global.UiRecap.afficherRecapMois(m.annee, m.mois);
-    } else if (nom === 'periode' && !charge.periode && global.UiPeriode) {
-      charge.periode = true;
-      global.UiPeriode.afficher();
-    } else if (nom === 'familles' && !charge.familles && global.UiFamilles) {
-      charge.familles = true;
-      global.UiFamilles.afficher();
-    }
   }
 
   function messageLogin(txt) {
     var m = document.getElementById('msg-login');
-    if (m) m.textContent = txt || '';
+    if (m) { m.textContent = txt || ''; m.className = 'msg' + (txt && txt !== 'Connexion…' ? ' ko' : ''); }
   }
 
   function montrerLogin() {
-    vues.app.hidden = true;
-    vues.login.hidden = false;
+    el.app.hidden = true;
+    el.login.hidden = false;
     var btn = document.getElementById('btn-login');
     if (btn) btn.disabled = false;
+    Kit.fermerFeuille();
   }
 
-  /* État d'attente : les onglets et les écrans sont masqués, un message
-     lisible occupe l'espace. On n'affiche jamais un onglet vide. */
-  function montrerAttente(texte) {
-    vues.login.hidden = true;
-    vues.app.hidden = false;
-    if (vues.onglets) vues.onglets.hidden = true;
-    ONGLETS.forEach(function (n) { if (vues[n]) vues[n].hidden = true; });
-    if (vues.chargement) {
-      vues.chargement.hidden = false;
-      vues.chargement.textContent = texte;
-    }
+  function attente(texte) {
+    el.login.hidden = true;
+    el.app.hidden = false;
+    el.tabbar.hidden = true;
+    Kit.vider(el.barre);
+    el.barre.className = 'bar';
+    el.barre.appendChild(Kit.ce('span', 'ti', 'Récap'));
+    Kit.vider(el.corps);
+    el.corps.appendChild(Kit.ce('div', 'attente', texte));
   }
 
-  function masquerAttente() {
-    if (vues.chargement) vues.chargement.hidden = true;
-    if (vues.onglets) vues.onglets.hidden = false;
-  }
-
-  /* ---------------------------------------------------------------- */
-  /* Entrée dans l'application                                         */
-  /* ---------------------------------------------------------------- */
-
-  function entrerDansApp(session) {
+  /* Entrée dans l'application. Un simple rafraîchissement de jeton ne doit ni
+     relancer le chargement, ni ramener Maria de force sur l'Accueil en pleine
+     saisie : on compare l'utilisateur. */
+  function entrer(session) {
     var uid = (session && session.user) ? session.user.id : null;
-    // Un rafraîchissement de jeton ne doit pas relancer le chargement ni
-    // ramener Maria de force sur l'onglet Récap en pleine saisie.
-    if (pret && uid && uid === utilisateurCourant) return;
-    if (chargementEnCours) return;
+    if (etat.pret && uid && uid === etat.utilisateur) return;
+    if (etat.chargement) return;
 
-    chargementEnCours = true;
-    utilisateurCourant = uid;
-    pret = false;
-    charge = { recap: false, periode: false, familles: false };
-    montrerAttente('Chargement de vos contrats…');
+    etat.chargement = true;
+    etat.utilisateur = uid;
+    etat.session = session;
+    etat.email = (session && session.user) ? session.user.email : null;
+    etat.pret = false;
+    viderCaches();
+    attente('Chargement de vos contrats…');
 
     global.DB.listContratsActifs()
       .then(function (liste) {
-        contrats = liste || [];
-        global.UiSaisie.init({ conteneur: vues.saisie, contrats: contrats });
-        global.UiRecap.init({ conteneur: vues.recap });
-        if (global.UiPeriode) global.UiPeriode.init({ conteneur: vues.periode });
-        if (global.UiFamilles) global.UiFamilles.init({ conteneur: vues.familles });
-
-        pret = true;
-        var maintenant = moisCourant();
-        return global.UiSaisie.afficherMois(maintenant.annee, maintenant.mois);
-      })
-      .then(function () {
-        masquerAttente();
-        montrerOnglet('recap');            // C1 : après pret = true, jamais avant
+        etat.contrats = liste || [];
+        etat.pret = true;
+        etat.pile = [];
+        return aller('accueil', {}, true);
       })
       .catch(function (e) {
-        // On redevient « non prêt » : une nouvelle session ou un nouvel
-        // événement d'authentification pourra relancer le chargement au lieu
-        // de laisser l'écran bloqué sur l'erreur.
-        pret = false;
-        utilisateurCourant = null;
-        montrerAttente('Chargement impossible : ' + lisible(e) +
-          '\nRechargez la page pour réessayer.');
+        etat.pret = false;
+        etat.utilisateur = null;
+        attente('Chargement impossible : ' + Kit.messageErreur(e) + '\nRéessayez dans un instant.');
       })
-      .then(function () { chargementEnCours = false; });
+      .then(function () { etat.chargement = false; });
   }
 
-  /* ---------------------------------------------------------------- */
-  /* Services offerts aux écrans (onglet Familles surtout)             */
-  /* ---------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ */
+  /* Navigation                                                          */
+  /* ------------------------------------------------------------------ */
 
-  /* Recharge la liste des contrats ACTIFS après une création, un renommage
-     ou un archivage, et rafraîchit les écrans qui en dépendent.
-     L'onglet Période est simplement invalidé : il sera recalculé à sa
-     prochaine ouverture, sans faire travailler l'application pour un écran
-     que Maria ne regarde pas. */
-  function rechargerContrats() {
-    return global.DB.listContratsActifs().then(function (liste) {
-      contrats = liste || [];
-      global.UiSaisie.init({ conteneur: vues.saisie, contrats: contrats });
-      global.UiRecap.oublierBornes();
-      charge.periode = false;
-      var m = moisCourant();
-      var maj = [global.UiSaisie.afficherMois(m.annee, m.mois)];
-      if (charge.recap) maj.push(global.UiRecap.rafraichir());
-      return Promise.all(maj);
+  function cablerOnglets() {
+    Array.prototype.forEach.call(el.tabbar.querySelectorAll('button'), function (b) {
+      b.addEventListener('click', function () { aller(b.getAttribute('data-onglet'), {}, true); });
     });
   }
 
-  /* Ouvre le récapitulatif d'un mois précis (historique par famille, C4). */
-  function ouvrirRecapMois(annee, mois) {
-    charge.recap = true;
-    montrerOnglet('recap');
-    return global.UiRecap.afficherRecapMois(annee, mois);
+  /* Bouton « retour » du téléphone : il doit remonter la pile de l'application
+     avant de quitter. Sans cela, un retour depuis l'espace enfant ferme l'app. */
+  function cablerRetourSysteme() {
+    if (!global.history || !global.history.pushState) return;
+    global.history.replaceState({ recap: 0 }, '');
+    global.addEventListener('popstate', function () {
+      if (Kit.feuilleEstOuverte()) {
+        Kit.fermerFeuille();
+        global.history.pushState({ recap: etat.pile.length }, '');
+        return;
+      }
+      if (etat.pile.length > 1) {
+        etat.pile.pop();
+        var cible = etat.pile[etat.pile.length - 1];
+        global.history.pushState({ recap: etat.pile.length }, '');
+        rendre(cible.ecran, cible.params);
+      }
+    });
   }
 
-  /* Mois courant (Europe/Paris implicite via l'horloge locale du téléphone).
-     C'est de l'UI (choix du mois par défaut), pas du calcul métier : le moteur
-     pur du lot 1 est le seul à ne jamais lire l'horloge. */
+  /* Va sur un écran. `racine` vrai = on repart d'une pile neuve (onglets). */
+  function aller(ecran, params, racine) {
+    if (!etat.pret) return Promise.resolve();
+    Kit.fermerFeuille();
+    if (racine || ONGLETS.indexOf(ecran) !== -1) etat.pile = [{ ecran: ecran, params: params || {} }];
+    else etat.pile.push({ ecran: ecran, params: params || {} });
+    if (global.history && global.history.pushState) {
+      global.history.pushState({ recap: etat.pile.length }, '');
+    }
+    return rendre(ecran, params || {});
+  }
+
+  /* Remplace l'écran courant sans empiler (rafraîchissement après écriture). */
+  function remplacer(ecran, params) {
+    if (!etat.pret) return Promise.resolve();
+    if (!etat.pile.length) etat.pile.push({ ecran: ecran, params: params || {} });
+    else etat.pile[etat.pile.length - 1] = { ecran: ecran, params: params || {} };
+    return rendre(ecran, params || {});
+  }
+
+  function retour() {
+    Kit.fermerFeuille();
+    if (etat.pile.length > 1) {
+      etat.pile.pop();
+      var cible = etat.pile[etat.pile.length - 1];
+      return rendre(cible.ecran, cible.params);
+    }
+    return aller('accueil', {}, true);
+  }
+
+  /* Rafraîchit l'écran affiché — après une écriture, jamais en aveugle. */
+  function rafraichir() {
+    if (!etat.pile.length) return Promise.resolve();
+    var cible = etat.pile[etat.pile.length - 1];
+    return rendre(cible.ecran, cible.params);
+  }
+
+  function ecranCourant() {
+    return etat.pile.length ? etat.pile[etat.pile.length - 1] : null;
+  }
+
+  function rendre(ecran, params) {
+    var nomModule = ECRANS[ecran];
+    var mod = nomModule ? global[nomModule] : null;
+    if (!mod) {
+      Kit.toast('Écran indisponible.', true);
+      return Promise.resolve();
+    }
+    Kit.vider(el.barre);
+    Kit.vider(el.corps);
+    el.barre.className = 'bar';
+    el.barre.hidden = false;
+    el.corps.scrollTop = 0;
+    el.tabbar.hidden = ONGLETS.indexOf(ecran) === -1;
+    Array.prototype.forEach.call(el.tabbar.querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-onglet') === ecran);
+    });
+
+    el.corps.appendChild(Kit.ce('div', 'attente', 'Un instant…'));
+    return Promise.resolve()
+      .then(function () {
+        Kit.vider(el.corps);
+        return mod.afficher({ barre: el.barre, corps: el.corps, params: params, vue: ecran });
+      })
+      .catch(function (e) {
+        Kit.vider(el.corps);
+        el.corps.appendChild(Kit.ce('div', 'attente', 'Écran indisponible : ' + Kit.messageErreur(e)));
+      });
+  }
+
+  /* Barre haute standard : bouton retour, titre, et zone de droite libre. */
+  function barreRetour(barre, titre, opts) {
+    opts = opts || {};
+    barre.className = 'bar';
+    var bk = Kit.bouton('bk', function () { retour(); });
+    bk.textContent = opts.fermer ? '✕' : '‹';
+    bk.setAttribute('aria-label', opts.fermer ? 'Fermer' : 'Retour');
+    barre.appendChild(bk);
+    barre.appendChild(Kit.ce('span', 'ti', titre));
+    if (opts.droite) barre.appendChild(Kit.ce('span', 'r', opts.droite));
+    return barre;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Services partagés                                                   */
+  /* ------------------------------------------------------------------ */
+
+  /* Mois courant — horloge du téléphone (Europe/Paris implicite). C'est de
+     l'interface (quel mois proposer par défaut), pas du calcul : le moteur pur
+     du lot 1 reste le seul à ne jamais lire l'horloge. */
   function moisCourant() {
     var d = new Date();
     return { annee: d.getFullYear(), mois: d.getMonth() + 1 };
   }
+  function aujourdhui() {
+    var d = new Date();
+    return Kit.iso(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+
+  function contrats() { return etat.contrats; }
+  function contratParId(id) {
+    var trouve = etat.contrats.filter(function (c) { return c.id === id; })[0];
+    if (trouve) return trouve;
+    return (etat.contratsTous || []).filter(function (c) { return c.id === id; })[0] || null;
+  }
+  function email() { return etat.email; }
+
+  function tousLesContrats() {
+    if (etat.contratsTous) return Promise.resolve(etat.contratsTous);
+    return global.DB.listContratsTous().then(function (liste) {
+      etat.contratsTous = liste || [];
+      return etat.contratsTous;
+    });
+  }
+
+  /* Chaîne des mois d'un contrat jusqu'au mois cible, mise en cache.
+
+     La chaîne remonte toujours au DÉBUT DU CONTRAT, pas au mois où les
+     compteurs ont été repris à la main. Sans cela, « depuis le début du
+     contrat » et l'historique s'arrêteraient à la date de reprise et
+     annonceraient trois mois de garde à un contrat qui en compte neuf.
+     Les mois antérieurs à la reprise sont calculés avec des compteurs à zéro
+     et MARQUÉS (`avantInitialisation`) : les écrans le disent, ils n'affichent
+     pas des soldes qui n'ont pas de sens.
+
+     Un échec n'est pas mémorisé : on doit pouvoir réessayer. */
+  function serie(contrat, cible) {
+    var cle = contrat.id + '|' + Chaine.cleMois(cible.annee, cible.mois);
+    if (!etat.series[cle]) {
+      var depuis = Chaine.moisDeDate(contrat.date_debut);
+      etat.series[cle] = Chaine.serie(contrat, cible, { depuis: depuis }).catch(function (e) {
+        delete etat.series[cle];
+        throw e;
+      });
+    }
+    return etat.series[cle];
+  }
+
+  /* Le maillon d'un mois précis dans la chaîne (null si hors chaîne). */
+  function moisDe(chaine, annee, mois) {
+    var cle = Chaine.cleMois(annee, mois);
+    return (chaine.mois || []).filter(function (e) { return e.cle === cle; })[0] || null;
+  }
+
+  /* Journées saisies d'un contrat pour un mois, mises en cache. */
+  function journees(contratId, annee, mois) {
+    var cle = contratId + '|' + Chaine.cleMois(annee, mois);
+    if (!etat.journees[cle]) {
+      etat.journees[cle] = global.DB.getJourneesMois(contratId, annee, mois).catch(function (e) {
+        delete etat.journees[cle];
+        throw e;
+      });
+    }
+    return etat.journees[cle];
+  }
+
+  function viderCaches() {
+    etat.series = {};
+    etat.journees = {};
+  }
+
+  /* Après toute écriture : les chaînes et les journées en cache sont périmées.
+     On vide TOUT plutôt que d'essayer d'invalider finement — une invalidation
+     partielle qui se trompe laisse un chiffre faux à l'écran, et un chiffre
+     faux crédible est le pire résultat possible pour cette application. */
+  function invalider() { viderCaches(); }
+
+  /* Recharge la liste des contrats (création, archivage, renommage). */
+  function rechargerContrats() {
+    etat.contratsTous = null;
+    viderCaches();
+    return global.DB.listContratsActifs().then(function (liste) {
+      etat.contrats = liste || [];
+      return etat.contrats;
+    });
+  }
+
+  function deconnecter() {
+    return global.DB.signOut().catch(function (e) {
+      /* Un échec silencieux ferait croire la session fermée alors qu'elle reste
+         ouverte : Maria repose son téléphone rassurée à tort. */
+      Kit.toast('Déconnexion impossible : ' + Kit.messageErreur(e) + ' Votre session est TOUJOURS ouverte.', true);
+      throw e;
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Application installable                                             */
+  /* ------------------------------------------------------------------ */
+
+  function enregistrerServiceWorker() {
+    if (!global.navigator || !global.navigator.serviceWorker) return;
+    if (global.location && global.location.protocol === 'file:') return;
+    global.navigator.serviceWorker.register('sw.js').catch(function (e) {
+      /* L'application marche très bien sans : ce n'est pas une panne à
+         montrer à Maria, seulement une trace pour le diagnostic. */
+      if (global.console) global.console.warn('[Récap] service worker non enregistré :', e);
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
 
   global.App = {
-    montrerOnglet: montrerOnglet,
+    aller: aller,
+    remplacer: remplacer,
+    retour: retour,
+    rafraichir: rafraichir,
+    ecranCourant: ecranCourant,
+    barreRetour: barreRetour,
+    moisCourant: moisCourant,
+    aujourdhui: aujourdhui,
+    contrats: contrats,
+    contratParId: contratParId,
+    tousLesContrats: tousLesContrats,
+    email: email,
+    serie: serie,
+    moisDe: moisDe,
+    journees: journees,
+    invalider: invalider,
     rechargerContrats: rechargerContrats,
-    ouvrirRecapMois: ouvrirRecapMois,
-    moisCourant: moisCourant
+    deconnecter: deconnecter
   };
 })(window);
