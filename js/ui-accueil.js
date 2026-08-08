@@ -20,11 +20,11 @@
 
   var Kit = global.Kit;
 
-  /* Seuil d'alerte de l'accueil (§2.1) : 6 jours ouvrables de congés payés ou
-     moins, soit 60 dixièmes. Une semaine complète en coûte 6 (RG-06) : à ce
-     niveau, le prochain congé d'été bascule en partie sur la récupération puis
-     en sans solde. */
-  var SEUIL_ALERTE_CP_DIXIEMES = 60;
+  /* Correction A3 (relecture lot 6) : le seuil de « compteur bas » vit
+     désormais à un seul endroit, dans Kit. Trois écrans en portaient trois
+     valeurs différentes — à 7 jours restants, l'espace enfant affichait
+     « compteur bas » en orange pendant que l'accueil annonçait « tout est à
+     jour » et que « Mes congés » affichait le même chiffre en noir. */
 
   function afficher(ctx) {
     var m = global.App.moisCourant();
@@ -136,6 +136,16 @@
           function () { ouvrirFiche(f.contrat); });
         return;
       }
+      /* Correction B2 : un barème sans net n'est pas un barème manquant, et
+         personne ne le signalait — le mois se clôturait avec un total amputé
+         du salaire entier, définitivement. */
+      if (!f.entree.resultat.salaireNetCentimes) {
+        nb++;
+        tuile(corps, '!', 'Le net de ' + f.contrat.prenom_enfant + ' n’est pas renseigné',
+          'Son récapitulatif est incomplet et ne peut pas être clôturé tant qu’il manque.',
+          function () { ouvrirFiche(f.contrat); });
+        return;
+      }
       if (!f.entree.fige) {
         nb++;
         tuile(corps, '!', 'Clôturer le mois de ' + f.contrat.prenom_enfant,
@@ -147,7 +157,7 @@
     fiches.forEach(function (f) {
       if (f.erreur || !f.entree) return;
       var cp = cpDisponible(f.entree);
-      if (cp > SEUIL_ALERTE_CP_DIXIEMES) return;
+      if (cp >= Kit.SEUIL_CP_BAS_DIXIEMES) return;
       nb++;
       tuile(corps, '⚠',
         f.contrat.prenom_enfant + ' n’a plus que ' + Kit.joursCp(cp) + ' de congés payés',
@@ -235,8 +245,7 @@
   }
 
   function cpDisponible(entree) {
-    var cs = (entree && entree.resultat && entree.resultat.compteurSortie) || {};
-    return (cs.dixiemesCpAcquis || 0) - (cs.dixiemesCpPris || 0);
+    return Kit.cpDisponible(entree && entree.resultat && entree.resultat.compteurSortie);
   }
 
   function ouvrirEnfant(contrat, m) {
@@ -246,5 +255,5 @@
     global.App.aller('fiche', { contratId: contrat.id });
   }
 
-  global.UiAccueil = { afficher: afficher, SEUIL_ALERTE_CP_DIXIEMES: SEUIL_ALERTE_CP_DIXIEMES };
+  global.UiAccueil = { afficher: afficher };
 })(window);

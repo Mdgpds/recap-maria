@@ -415,9 +415,22 @@
 
   /* Fige un mois : enregistre d'abord l'instantané en brouillon, puis passe
      brouillon -> figé (SEUL chemin autorisé par le trigger). `figeLeIso` est
-     posé ici (horloge de persistance, pas de calcul métier). Sur un mois déjà
-     figé, l'UPDATE ne matche rien (filtre statut='brouillon') et renvoie null. */
+     posé ici (horloge de persistance, pas de calcul métier).
+
+     Correction A7 (relecture lot 6) : sur un mois DÉJÀ figé, c'est l'upsert du
+     brouillon qui partait en premier, et le trigger d'immuabilité le rejetait.
+     L'appelant recevait donc une erreur — « ce mois est clôturé, rien n'a été
+     verrouillé » — alors que le mois était bel et bien clôturé, depuis un autre
+     appareil. On lit d'abord l'état : déjà figé, on ne touche à rien et on
+     renvoie null, ce que l'appelant sait dire correctement. */
   function figerRecap(contratId, annee, mois, donnees, figeLeIso) {
+    return getRecap(contratId, annee, mois).then(function (existant) {
+      if (existant && existant.statut === 'fige') return null;
+      return figerVraiment(contratId, annee, mois, donnees, figeLeIso);
+    });
+  }
+
+  function figerVraiment(contratId, annee, mois, donnees, figeLeIso) {
     return enregistrerRecapBrouillon(contratId, annee, mois, donnees)
       .then(function () {
         return client.from('recap_mensuel')

@@ -107,7 +107,7 @@
     });
 
     corps.appendChild(Kit.note('Tout est conservé',
-      'Chaque mois clôturé est figé tel quel. Rien ne s’efface, même après la fin du contrat.'));
+      'Chaque mois clôturé est conservé tel quel. Rien ne s’efface, même après la fin du contrat.'));
   }
 
   function enteteAnnee(contrat, a) {
@@ -182,9 +182,8 @@
       Kit.heures(ce0.minutesSup || 0), { discret: true });
     Kit.ligne(l2, 'Récupération à la fin de la période', Kit.heures(cs.minutesSup || 0));
     Kit.ligne(l2, 'Congés payés au 1er ' + Kit.libelleMois(premier.mois),
-      Kit.joursCp((ce0.dixiemesCpAcquis || 0) - (ce0.dixiemesCpPris || 0)), { discret: true });
-    Kit.ligne(l2, 'Congés payés à la fin de la période',
-      Kit.joursCp((cs.dixiemesCpAcquis || 0) - (cs.dixiemesCpPris || 0)));
+      Kit.joursCp(Kit.cpDisponible(ce0)), { discret: true });
+    Kit.ligne(l2, 'Congés payés à la fin de la période', Kit.joursCp(Kit.cpDisponible(cs)));
     corps.appendChild(p2);
 
     if (agr.moisProvisoires.length) {

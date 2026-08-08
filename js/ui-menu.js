@@ -105,17 +105,6 @@
   /* Ajouter un enfant                                                   */
   /* ------------------------------------------------------------------ */
 
-  function parseEuros(txt) {
-    if (txt == null) return null;
-    var norm = String(txt).replace(/[\s €]/g, '');
-    if (norm === '') return null;
-    if (norm.indexOf(',') !== -1) norm = norm.replace(/\./g, '').replace(',', '.');
-    if (!/^\d+(\.\d+)?$/.test(norm)) return null;
-    var v = parseFloat(norm);
-    if (isNaN(v) || v < 0) return null;
-    return Math.round(v * 100);
-  }
-
   function feuilleNouvelEnfant() {
     var maintenant = global.App.moisCourant();
 
@@ -175,8 +164,8 @@
             var idFamille = selFamille.select.value;
             var nouveauNom = nomFamille.input.value.trim();
             if (!idFamille && !nouveauNom) { erreur('Donnez un nom à la nouvelle famille.'); return; }
-            var brutC = parseEuros(brut.input.value);
-            var netC = parseEuros(net.input.value);
+            var brutC = Kit.parseEuros(brut.input.value);
+            var netC = Kit.parseEuros(net.input.value);
             if (brut.input.value.trim() && brutC == null) {
               erreur('Le salaire brut est illisible (exemple : 1 401,20).'); return;
             }
@@ -208,14 +197,32 @@
                   net_mensuel_centimes: netC == null ? 0 : netC
                 }).then(function () { return contrat; });
               })
+              /* Correction A10 (relecture lot 6) : la feuille était fermée AVANT
+                 le rechargement. Si celui-ci échouait, le message d'erreur
+                 partait dans un nœud détaché : Maria lisait « contrat créé »,
+                 ne voyait pas l'enfant sur l'accueil, recommençait — et créait
+                 un SECOND contrat. On ne ferme qu'une fois tout abouti, et un
+                 échec de rechargement dit exactement ce qui s'est passé. */
+              .then(function () {
+                return global.App.rechargerContrats().catch(function (e) {
+                  var err = new Error('rechargement');
+                  err.recharge = e;
+                  throw err;
+                });
+              })
               .then(function () {
                 Kit.fermerFeuille();
                 Kit.toast('Contrat de ' + p + ' créé');
-                return global.App.rechargerContrats();
+                return global.App.aller('accueil', {}, true);
               })
-              .then(function () { return global.App.aller('accueil', {}, true); })
               .catch(function (e) {
                 b.disabled = false;
+                if (e && e.recharge) {
+                  erreur('Le contrat de ' + p + ' A BIEN ÉTÉ CRÉÉ, mais l’écran n’a pas pu se ' +
+                    'rafraîchir (' + Kit.messageErreur(e.recharge) + '). Ne le recréez pas : ' +
+                    'fermez et rouvrez l’application.');
+                  return;
+                }
                 erreur('Création impossible : ' + Kit.messageErreur(e) +
                   ' Vérifiez et réessayez — votre saisie est conservée.');
               });
