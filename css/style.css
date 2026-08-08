@@ -1,0 +1,148 @@
+/* ============================================================================
+   style.css — Récap Maria, écran de saisie (lot 3).
+   Mobile-first : Maria saisit depuis son téléphone, vite. Cibles tactiles
+   larges, contrastes nets, aucune dépendance (pas de framework).
+   ========================================================================= */
+
+:root {
+  --fond: #f6f7f9;
+  --carte: #ffffff;
+  --texte: #1c2430;
+  --texte-doux: #5b6675;
+  --bord: #dfe4ea;
+  --primaire: #2f6f4f;
+  --primaire-fonce: #245c40;
+  --danger: #b4451f;
+
+  --presence: #e3f4ea;  --presence-b: #3f9b6b;
+  --absence:  #fdeede;  --absence-b:  #d98324;
+  --conge:    #e6eefc;  --conge-b:    #3b6fd0;
+  --sanssolde:#fbe4e4;  --sanssolde-b:#c0392b;
+  --familia:  #efe7fb;  --familia-b:  #7a4fc0;
+  --ferie:    #eceff2;  --ferie-b:    #9aa4b0;
+
+  --rayon: 12px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--fond);
+  color: var(--texte);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+h1, h2, h3, h4 { margin: 0 0 .4rem; }
+.aide { color: var(--texte-doux); font-size: .9rem; margin: .2rem 0 .8rem; }
+
+/* --- Boutons -------------------------------------------------------- */
+.btn {
+  font: inherit;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: .7rem 1rem;
+  cursor: pointer;
+  min-height: 44px;
+}
+.btn:disabled { opacity: .55; cursor: default; }
+.btn-primary { background: var(--primaire); color: #fff; }
+.btn-primary:active { background: var(--primaire-fonce); }
+.btn-secondaire { background: #fff; color: var(--texte); border-color: var(--bord); }
+.btn-lien { background: none; border: none; color: var(--primaire); padding: .4rem; min-height: auto; }
+.btn-bloc { display: block; width: 100%; margin-top: .6rem; }
+
+/* --- Connexion ----------------------------------------------------- */
+.vue-login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.carte-login {
+  background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon);
+  padding: 1.5rem; width: 100%; max-width: 380px;
+}
+.carte-login label { display: block; margin: .6rem 0; font-size: .9rem; color: var(--texte-doux); }
+.carte-login input {
+  display: block; width: 100%; margin-top: .25rem; padding: .7rem;
+  border: 1px solid var(--bord); border-radius: 10px; font: inherit; color: var(--texte);
+}
+.msg-login { margin-top: .7rem; color: var(--danger); font-size: .9rem; min-height: 1.2em; }
+
+/* --- En-tête app --------------------------------------------------- */
+.entete {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--carte); border-bottom: 1px solid var(--bord);
+  padding: .6rem 1rem;
+}
+.marque { font-weight: 700; }
+.saisie { padding: 1rem; max-width: 720px; margin: 0 auto; }
+.pied { text-align: center; color: var(--texte-doux); padding: 1rem; }
+
+/* --- Barre mois ---------------------------------------------------- */
+.barre-mois { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.titre-mois { text-transform: capitalize; font-size: 1.25rem; }
+.nav-mois {
+  font: inherit; font-size: 1.2rem; background: var(--carte);
+  border: 1px solid var(--bord); border-radius: 10px;
+  width: 48px; height: 44px; cursor: pointer;
+}
+
+/* --- Bloc absence Maria -------------------------------------------- */
+.bloc-absence-maria, .carte-contrat {
+  background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon);
+  padding: 1rem; margin-bottom: 1rem;
+}
+.form-ligne { display: flex; flex-wrap: wrap; gap: .6rem; }
+.form-ligne label { display: flex; flex-direction: column; font-size: .8rem; color: var(--texte-doux); flex: 1 1 30%; }
+.in-date, .in-type, .in-texte {
+  margin-top: .2rem; padding: .6rem; border: 1px solid var(--bord); border-radius: 8px;
+  font: inherit; color: var(--texte); background: #fff;
+}
+.form-actions { display: flex; gap: .6rem; margin-top: .8rem; }
+.form-actions .btn { flex: 1; }
+.msg-absence { margin-top: .6rem; font-size: .9rem; color: var(--texte-doux); min-height: 1.2em; }
+
+/* --- Résumé + grille des jours ------------------------------------- */
+.resume { color: var(--texte-doux); font-size: .85rem; margin: 0 0 .7rem; }
+.grille-jours { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: .5rem; }
+.chip {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border: 1px solid var(--bord); border-radius: 10px; padding: .5rem .2rem;
+  font: inherit; cursor: pointer; min-height: 56px; background: #fff;
+}
+.chip-jour { font-weight: 700; font-size: .95rem; }
+.chip-etat { font-size: .72rem; color: var(--texte-doux); margin-top: .15rem; }
+
+.j-presence  { background: var(--presence);  border-color: var(--presence-b); }
+.j-absence   { background: var(--absence);   border-color: var(--absence-b); }
+.j-conge     { background: var(--conge);     border-color: var(--conge-b); }
+.j-sanssolde { background: var(--sanssolde); border-color: var(--sanssolde-b); }
+.j-familia   { background: var(--familia);   border-color: var(--familia-b); }
+.j-ferie     { background: var(--ferie);     border-color: var(--ferie-b); color: var(--texte-doux); }
+.j-hors      { background: #fff; border-style: dashed; color: var(--texte-doux); }
+
+.vide { color: var(--texte-doux); }
+
+/* --- Feuille d'action (bottom sheet) ------------------------------- */
+.overlay {
+  position: fixed; inset: 0; background: rgba(20,28,38,.45);
+  display: flex; align-items: flex-end; justify-content: center; z-index: 20;
+}
+.feuille {
+  background: var(--carte); width: 100%; max-width: 480px;
+  border-top-left-radius: 16px; border-top-right-radius: 16px;
+  padding: 1rem 1rem 1.4rem; max-height: 85vh; overflow-y: auto;
+}
+.feuille label { display: block; margin: .6rem 0; font-size: .85rem; color: var(--texte-doux); }
+.feuille .in-texte { display: block; width: 100%; margin-top: .25rem; }
+.opt {
+  display: block; width: 100%; text-align: left; font: inherit;
+  background: #fff; border: 1px solid var(--bord); border-radius: 10px;
+  padding: .8rem 1rem; margin-top: .5rem; cursor: pointer; min-height: 48px;
+}
+.opt-actif { border-color: var(--primaire); box-shadow: inset 0 0 0 1px var(--primaire); font-weight: 600; }
+
+@media (min-width: 520px) {
+  .feuille { align-self: center; border-radius: 16px; margin-bottom: 5vh; }
+  .overlay { align-items: center; }
+}
