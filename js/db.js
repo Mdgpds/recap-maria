@@ -148,17 +148,22 @@
   }
 
   /* Action groupée (§5 specs) : pose une absence de Maria (congé, jour non
-     travaillé) sur PLUSIEURS contrats à la fois, pour une liste de jours.
+     travaillé) sur PLUSIEURS contrats à la fois.
      C'est l'asymétrie qui fait gagner du temps : une absence de Maria vaut
      pour tous ses contrats, contrairement à une absence d'enfant.
      `type` ∈ { 'conge_maria', 'sans_solde', 'hors_planning' }.
-     Un seul appel réseau (upsert en lot). */
-  function poserAbsenceMaria(contratIds, jours, type, commentaire) {
+
+     `affectations` = [{ contratId, jours: ['YYYY-MM-DD', ...] }] : chaque
+     contrat porte SES propres jours (déjà filtrés sur ses bornes et son
+     planning côté UI). On n'applique jamais le jour d'un contrat à un autre
+     (sinon on écrirait des lignes hors des bornes d'un contrat terminé).
+     Un seul appel réseau (upsert en lot, toutes lignes confondues). */
+  function poserAbsenceMaria(affectations, type, commentaire) {
     var payload = [];
-    contratIds.forEach(function (cid) {
-      jours.forEach(function (j) {
+    (affectations || []).forEach(function (a) {
+      (a.jours || []).forEach(function (j) {
         payload.push({
-          contrat_id: cid,
+          contrat_id: a.contratId,
           jour: j,
           type: type,
           minutes_reelles: null,
@@ -174,13 +179,20 @@
       .then(deballer);
   }
 
-  /* Supprime une absence de Maria sur plusieurs contrats pour une liste de
-     jours (annulation d'une action groupée). */
-  function retirerAbsenceMaria(contratIds, jours) {
+  /* Supprime une absence de Maria (annulation d'une action groupée), sur
+     plusieurs contrats pour une liste de jours. Ne supprime QUE les lignes
+     dont le type appartient à une absence de Maria (`types`) : une absence
+     d'enfant ou une familiarisation saisies à la main sur les mêmes jours
+     sont préservées. Symétrique du « Poser ». */
+  function retirerAbsenceMaria(contratIds, jours, types) {
+    if (!contratIds || !contratIds.length || !jours || !jours.length) {
+      return Promise.resolve(true);
+    }
     return client.from('journee')
       .delete()
       .in('contrat_id', contratIds)
       .in('jour', jours)
+      .in('type', types)
       .then(function (r) { if (r.error) throw r.error; return true; });
   }
 

@@ -33,6 +33,10 @@
 
   var JOURS_LETTRE = ['', 'L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
+  /* Types posés par l'action groupée « Absence de Maria ». Le « Retirer » ne
+     supprime que ces types-là (jamais une absence enfant ou une familia.). */
+  var TYPES_ABSENCE_MARIA = ['conge_maria', 'sans_solde', 'hors_planning'];
+
   var etat = {
     conteneur: null,
     contrats: [],
@@ -182,18 +186,30 @@
     return Object.keys(set).sort();
   }
 
+  /* Affectations par contrat : chaque contrat ne reçoit QUE ses propres jours
+     de planning dans [du, au] (fériés exclus), bornés à son contrat. On ne
+     mélange jamais les jours d'un contrat avec ceux d'un autre. */
+  function affectationsAbsenceMaria(du, au) {
+    return etat.contrats.map(function (contrat) {
+      var jours = joursPlanningEntre(contrat, du, au).filter(function (j) {
+        return !Feries.estJourFerie(j);
+      });
+      return { contratId: contrat.id, jours: jours };
+    }).filter(function (a) { return a.jours.length > 0; });
+  }
+
   function poserAbsenceMaria(du, au, type, bouton) {
     var msg = document.getElementById('msg-absence-maria');
     if (!du || !au || au < du) { msg.textContent = 'Dates invalides.'; return; }
-    var contratIds = etat.contrats.map(function (c) { return c.id; });
-    var jours = joursAbsenceMaria(du, au);
-    if (jours.length === 0) { msg.textContent = 'Aucun jour de planning dans cette période.'; return; }
+    var affectations = affectationsAbsenceMaria(du, au);
+    var total = affectations.reduce(function (n, a) { return n + a.jours.length; }, 0);
+    if (total === 0) { msg.textContent = 'Aucun jour de planning dans cette période.'; return; }
     bouton.disabled = true; msg.textContent = 'Enregistrement…';
-    global.DB.poserAbsenceMaria(contratIds, jours, type, null)
+    global.DB.poserAbsenceMaria(affectations, type, null)
       .then(function () { return afficherMois(etat.annee, etat.mois); })
       .then(function () {
         var m = document.getElementById('msg-absence-maria');
-        if (m) m.textContent = jours.length + ' jour(s) posé(s) sur ' + contratIds.length + ' contrat(s).';
+        if (m) m.textContent = total + ' jour(s) posé(s) sur ' + affectations.length + ' contrat(s).';
       })
       .catch(function (e) { msg.textContent = 'Erreur : ' + (e.message || e); bouton.disabled = false; });
   }
@@ -204,8 +220,11 @@
     var contratIds = etat.contrats.map(function (c) { return c.id; });
     var jours = joursAbsenceMaria(du, au);
     if (jours.length === 0) { msg.textContent = 'Aucun jour concerné.'; return; }
+    if (!global.confirm('Retirer l’absence de Maria (congé / sans solde / jour non travaillé) sur ' +
+        jours.length + ' jour(s) et ' + contratIds.length + ' contrat(s) ? ' +
+        'Les absences d’enfant et les familiarisations sont conservées.')) { return; }
     bouton.disabled = true; msg.textContent = 'Suppression…';
-    global.DB.retirerAbsenceMaria(contratIds, jours)
+    global.DB.retirerAbsenceMaria(contratIds, jours, TYPES_ABSENCE_MARIA)
       .then(function () { return afficherMois(etat.annee, etat.mois); })
       .then(function () {
         var m = document.getElementById('msg-absence-maria');
@@ -316,10 +335,16 @@
 
     feuille.appendChild(lblH); feuille.appendChild(lblE);
 
+    var msgFam = ce('div', 'msg-absence'); msgFam.setAttribute('role', 'status');
+    feuille.appendChild(msgFam);
+
     var valider = ce('button', 'btn btn-primary btn-bloc', 'Enregistrer');
     valider.onclick = function () {
       var minutes = parseHeures(inH.value);
       var centimes = parseEuros(inE.value);
+      if (minutes == null || minutes <= 0) {
+        msgFam.textContent = 'Saisir les heures réelles (ex. « 3h30 »).'; return;
+      }
       appliquerType(contrat, jStr, 'familiarisation', { minutes_reelles: minutes, entretien_centimes: centimes });
     };
     feuille.appendChild(valider);
@@ -328,13 +353,18 @@
     feuille.appendChild(annuler);
   }
 
+  /* Convertit une durée saisie en minutes entières. Formats acceptés :
+     « 3h30 », « 3h » (heures + minutes) ; « 3 », « 3,5 », « 3.5 » (heures
+     décimales). Un nombre nu est interprété en HEURES (« 3 » = 3 h = 180 min),
+     conformément au libellé du champ (« ex. 3h30 »). Renvoie null si illisible. */
   function parseHeures(txt) {
     if (!txt) return null;
-    txt = txt.trim().toLowerCase();
+    txt = txt.trim().toLowerCase().replace(',', '.');
     var m = txt.match(/^(\d+)\s*h\s*(\d{0,2})$/);
     if (m) return parseInt(m[1], 10) * 60 + (m[2] ? parseInt(m[2], 10) : 0);
-    var n = parseInt(txt, 10);
-    return isNaN(n) ? null : n; // interprété comme minutes si pas de "h"
+    var d = txt.match(/^(\d+)(?:\.(\d+))?$/);
+    if (d) return Math.round(parseFloat(txt) * 60);
+    return null;
   }
   function parseEuros(txt) {
     if (!txt) return null;
