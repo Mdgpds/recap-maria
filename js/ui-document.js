@@ -132,7 +132,7 @@
       lignes: [
         ['Heures supplémentaires acquises dans le mois', Kit.heures(r.minutesSupAcquises)],
         ['Récupération restante', Kit.heures(cs.minutesSup || 0)],
-        ['Congés payés restants', Kit.joursCp((cs.dixiemesCpAcquis || 0) - (cs.dixiemesCpPris || 0))]
+        ['Congés payés restants', Kit.joursCp(Kit.cpDisponible(cs))]
       ]
     });
     return out;
@@ -153,11 +153,23 @@
   function rendre(corps) {
     var e = vue.entree;
     var id = identite();
+    /* Correction B2 (relecture lot 6). Un barème dont le net vaut 0 est un
+       barème PRÉSENT : le moteur ne signale rien, `salaireManquant` est faux,
+       et le document part avec un total amputé du salaire entier — 85,00 € au
+       lieu de 1 157,50 €. Comme le document est immuable, le mois serait faux
+       pour toujours sur la pièce remise aux parents. L'alerte du lot 5 est
+       rétablie, et la clôture refusée tant que le net est inconnu. */
+    var netManquant = !e.salaireManquant && !e.resultat.salaireNetCentimes;
 
     if (e.salaireManquant) {
       corps.appendChild(Kit.warnbox('Aucune rémunération connue pour ce mois',
         'Le document est incomplet : les montants resteront à zéro tant qu’aucun barème ' +
         'n’est enregistré dans la fiche contrat. Ce mois ne peut pas être clôturé.'));
+    } else if (netManquant) {
+      corps.appendChild(Kit.warnbox('Ce récapitulatif est incomplet : le net n’est pas renseigné',
+        'Le total à verser ci-dessous ne contient que l’indemnité d’entretien, sans le salaire. ' +
+        'Le net figure sur la fiche de paie du mois : renseignez-le dans la fiche contrat. ' +
+        'Ce mois ne peut pas être clôturé tant qu’il manque.'));
     }
 
     corps.appendChild(documentHtml(id));
@@ -184,15 +196,32 @@
       return;
     }
 
-    if (!e.salaireManquant) {
+    /* Un mois à venir n'a pas été travaillé : il n'y a rien à verrouiller. */
+    var maintenant = global.App.moisCourant();
+    var aVenir = Chaine.cmpMois(vue.annee, vue.mois, maintenant.annee, maintenant.mois) > 0;
+
+    if (aVenir) {
+      corps.appendChild(Kit.warnbox('Mois à venir',
+        'Il ne se clôture qu’une fois passé. Les chiffres ci-dessus sont une projection.'));
+      corps.appendChild(sectionPartage());
+      return;
+    }
+
+    if (!e.salaireManquant && !netManquant) {
       var b = Kit.bouton('btn', demanderCloture);
       b.textContent = 'Clôturer le mois';
       corps.appendChild(b);
+      corps.appendChild(Kit.warnbox('La clôture verrouille le mois',
+        'Après clôture, plus aucune modification n’est possible sur ' +
+        Kit.libelleMoisAnnee(vue.annee, vue.mois) + '. C’est ce qui protège vos comptes ' +
+        'en cas de désaccord.'));
+    } else {
+      var bFiche = Kit.bouton('btn', function () {
+        global.App.aller('fiche', { contratId: vue.contrat.id });
+      });
+      bFiche.textContent = 'Compléter la rémunération';
+      corps.appendChild(bFiche);
     }
-    corps.appendChild(Kit.warnbox('La clôture verrouille le mois',
-      'Après clôture, plus aucune modification n’est possible sur ' +
-      Kit.libelleMoisAnnee(vue.annee, vue.mois) + '. C’est ce qui protège vos comptes ' +
-      'en cas de désaccord.'));
     corps.appendChild(sectionPartage());
   }
 
@@ -278,7 +307,7 @@
       if (b.titre) hauteur += titreH;
       hauteur += b.lignes.length * ligneH + 10;
     });
-    hauteur += 180;                                 // encart RG-06 + marge basse
+    hauteur += 180 + 30;                            // encart RG-06, mention provisoire, marge
 
     var canvas = document.createElement('canvas');
     canvas.width = L;
@@ -343,6 +372,16 @@
     g.fillText('Décompte des congés', marge + 18, y + 26);
     g.font = '19px -apple-system, Helvetica, Arial, sans-serif';
     habiller(g, ENCART_RG06, marge + 18, y + 54, L - 2 * marge - 36, 26);
+
+    /* Correction A11 : le texte copié porte la mention « provisoire » sur un
+       mois non clôturé, l'image ne la portait pas — un PNG envoyé aux parents
+       avant clôture était indiscernable du définitif. */
+    if (!vue.entree.fige) {
+      g.fillStyle = '#a34e00';
+      g.font = 'bold 20px -apple-system, Helvetica, Arial, sans-serif';
+      g.fillText('Mois non encore clôturé — ces chiffres peuvent encore changer.',
+        marge, y + 168);
+    }
 
     return canvas;
   }
@@ -465,9 +504,12 @@
         global.App.invalider();
         Kit.fermerFeuille();
         if (!ligne) {
-          /* L'UPDATE n'a rien touché : le mois était déjà clôturé ailleurs
-             (deuxième téléphone, second onglet). On ne fait pas semblant. */
-          Kit.toast('Ce mois était déjà clôturé.');
+          /* Le mois était déjà clôturé ailleurs (deuxième téléphone, second
+             onglet). Cette branche était INATTEIGNABLE avant la correction A7
+             de db.js : l'upsert du brouillon partait en premier et le trigger
+             d'immuabilité le rejetait, si bien que Maria lisait « rien n'a été
+             verrouillé » sur un mois pourtant bel et bien clôturé. */
+          Kit.toast('Ce mois était déjà clôturé — depuis un autre appareil, sans doute.');
         } else {
           Kit.toast('Mois de ' + vue.contrat.prenom_enfant + ' clôturé');
         }

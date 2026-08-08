@@ -196,6 +196,11 @@
     });
   }
 
+  function nbMoisEntre(p) {
+    var d = Chaine.moisDeDate(p.debut), f = Chaine.moisDeDate(p.fin);
+    return Chaine.nbMoisEntre(d.annee, d.mois, f.annee, f.mois);
+  }
+
   /* Le calcul d'un contrat sur la période. Deux agrégats, une seule chaîne. */
   function calculerContrat(contrat, p) {
     var debut = contrat.date_debut > p.debut ? contrat.date_debut : p.debut;
@@ -238,6 +243,17 @@
       });
       var agrEntiers = Chaine.agregerPeriode(entiers);
 
+      /* Correction A1 (relecture lot 6). La copie du contrat bornée à la
+         période ne s'applique qu'aux mois REJOUÉS : un mois CLÔTURÉ reprend son
+         instantané tel quel, mois entier compris, et le bloc « compté au jour
+         près » comptait donc 22 jours de mars là où la période n'en demandait
+         que 14. Proratiser un mois clôturé serait pire : ce serait recalculer
+         un document immuable et faire diverger cet écran de la pièce remise
+         aux parents. On compte donc le mois entier — c'est ce que dit le
+         document — et on NOMME les mois concernés au lieu de laisser passer un
+         chiffre faux sous une étiquette qui promet le jour près. */
+      var partielsClos = partiels.filter(function (e) { return e.fige; });
+
       var soldes = null;
       if (r[1]) {
         var dernier = global.App.moisDe(r[1], mFin.annee, mFin.mois);
@@ -254,7 +270,8 @@
         contrat: contrat, vide: false,
         debut: debut, fin: fin,
         agr: agr, agrEntiers: agrEntiers,
-        partiels: partiels,
+        partiels: partiels, partielsClos: partielsClos,
+        moisDemandes: nbMoisEntre(p),
         tronquee: r[0].tronquee,
         soldes: soldes
       };
@@ -284,6 +301,13 @@
       return;
     }
 
+    /* Restauration R7 : la vue d'ensemble tous contrats confondus. Sans elle,
+       Maria devait additionner quatre blocs à la main pour connaître son année.
+       Seuls les FLUX sont totalisés — jamais un compteur : un solde d'heures
+       supplémentaires global n'a aucun sens. La règle vit dans
+       ChaineMois.totaliserAgregats, testée sous Node, et n'est pas réécrite. */
+    if (utiles.length > 1) cible.appendChild(vueEnsemble(utiles));
+
     utiles.forEach(function (r) { cible.appendChild(blocContrat(p, r)); });
 
     cible.appendChild(Kit.warnbox('Pourquoi cette séparation',
@@ -292,6 +316,29 @@
     cible.appendChild(Kit.ce('p', 'sb q',
       'Consultation personnelle. Ce récapitulatif ne se clôture pas et ne se transmet pas : ' +
       'seuls les documents mensuels font foi.'));
+  }
+
+  function vueEnsemble(utiles) {
+    var t = Chaine.totaliserAgregats(utiles.map(function (r) { return r.agr; }));
+    var pane = Kit.pane('Vue d’ensemble — ' + t.nbContrats + ' contrats');
+    var l = Kit.lines(pane);
+    Kit.ligne(l, 'Jours de présence', Kit.jours(t.joursPresence));
+    Kit.ligne(l, 'Indemnités d’entretien', Kit.eur(t.entretienCentimes));
+    Kit.ligne(l, 'Heures sup acquises', Kit.heures(t.minutesSupAcquises));
+    Kit.ligne(l, 'Congés décomptés', Kit.jours(t.joursCongesDecomptes));
+    if (t.retenueSansSoldeCentimes > 0) {
+      Kit.ligne(l, 'Retenues sans solde', '−' + Kit.eur(t.retenueSansSoldeCentimes), { alerte: true });
+    }
+    Kit.ligne(l, 'Salaires nets', Kit.eur(t.salaireNetCentimes));
+    Kit.ligne(l, 'Total versé', Kit.eur(t.totalAVerserCentimes), { total: true });
+    pane.appendChild(Kit.ce('div', 'sb q',
+      'Les soldes d’heures et de congés payés ne figurent pas ici : ils ne s’additionnent ' +
+      'jamais entre contrats. Ils sont contrat par contrat, ci-dessous.'));
+    if (t.nbMoisProvisoires > 0) {
+      pane.appendChild(Kit.ce('div', 'sb q',
+        t.nbMoisProvisoires + ' mois encore provisoires dans ce total.'));
+    }
+    return pane;
   }
 
   function blocContrat(p, r) {
@@ -306,6 +353,24 @@
     if (r.tronquee) {
       bloc.appendChild(Kit.warnbox('Historique trop long',
         'Chaîne tronquée à ' + Chaine.MAX_MOIS + ' mois : vérifiez la date de début du contrat.'));
+    }
+
+    /* Restauration R2 : l'avertissement « ce contrat ne couvre qu'une partie de
+       la période » — correction A1 du lot 5 — avait disparu de la refonte. */
+    if (r.moisDemandes && a.nbMois < r.moisDemandes) {
+      bloc.appendChild(Kit.warnbox('Ce contrat ne couvre pas toute la période demandée',
+        r.contrat.prenom_enfant + ' n’est présent que sur ' + a.nbMois + ' des ' +
+        r.moisDemandes + ' mois demandés (contrat du ' + Kit.dateLongue(r.contrat.date_debut) +
+        (r.contrat.date_fin ? ' au ' + Kit.dateLongue(r.contrat.date_fin) : ', toujours en cours') +
+        ') : les totaux ci-dessous ne portent que sur ces mois.'));
+    }
+
+    if (r.partielsClos && r.partielsClos.length) {
+      bloc.appendChild(Kit.warnbox('Mois clôturé compté en entier',
+        r.partielsClos.map(function (e) { return Kit.libelleMoisAnnee(e.annee, e.mois); }).join(', ') +
+        ' n’est couvert qu’en partie par la période, mais son récapitulatif est déjà clôturé : ' +
+        'il est repris tel quel, mois complet, et non recalculé au jour près. C’est le document ' +
+        'remis aux parents qui fait foi.'));
     }
 
     var p1 = Kit.pane('Compté au jour près');
@@ -343,10 +408,8 @@
       var s = r.soldes.sortie;
       Kit.ligne(l3, 'Récupération au début', Kit.heures(e0.minutesSup || 0), { discret: true });
       Kit.ligne(l3, 'Récupération à la fin', Kit.heures(s.minutesSup || 0));
-      Kit.ligne(l3, 'Congés payés au début',
-        Kit.joursCp((e0.dixiemesCpAcquis || 0) - (e0.dixiemesCpPris || 0)), { discret: true });
-      Kit.ligne(l3, 'Congés payés à la fin',
-        Kit.joursCp((s.dixiemesCpAcquis || 0) - (s.dixiemesCpPris || 0)));
+      Kit.ligne(l3, 'Congés payés au début', Kit.joursCp(Kit.cpDisponible(e0)), { discret: true });
+      Kit.ligne(l3, 'Congés payés à la fin', Kit.joursCp(Kit.cpDisponible(s)));
       bloc.appendChild(p3);
     } else if (!p.entier) {
       bloc.appendChild(Kit.ce('p', 'sb q',

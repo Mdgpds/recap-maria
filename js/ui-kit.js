@@ -76,10 +76,62 @@
      colonnes de chiffres, elles, gardent le format de format.js. */
   function duree(minutes) {
     var m = minutes || 0;
-    if (m < 0) return heures(m);
+    /* Une durée NÉGATIVE n'a pas de sens dans une phrase (« vos -0h30 ne sont
+       pas dues ») : on rend toujours une valeur absolue, à l'appelant de porter
+       le sens (gagné / perdu) dans sa formulation. */
+    if (m < 0) m = -m;
     if (m < 60) return m + NBSP + 'min';
     if (m % 60 === 0) return (m / 60) + NBSP + 'h';
     return heures(m);
+  }
+
+  /* CONGÉS PAYÉS DISPONIBLES = acquis − pris.
+     Cette soustraction est une DÉFINITION MÉTIER, pas une mise en forme : elle
+     vivait en neuf exemplaires dans les écrans (relecture lot 6, remarque 1).
+     Elle vit désormais ici, à un seul endroit. Elle ne calcule rien de neuf :
+     elle lit le compteur de sortie produit par le moteur, et borne à zéro
+     comme le fait imputerConges — un compteur incohérent (reprise manuelle
+     erronée) ne doit pas afficher un solde négatif à Maria. */
+  function cpDisponible(compteurSortie) {
+    var cs = compteurSortie || {};
+    return Math.max(0, (cs.dixiemesCpAcquis || 0) - (cs.dixiemesCpPris || 0));
+  }
+
+  /* Solde de récupération, même principe. */
+  function supDisponible(compteurSortie) {
+    return Math.max(0, (compteurSortie || {}).minutesSup || 0);
+  }
+
+  /* SEUIL UNIQUE de « compteur bas » (relecture lot 6, A3). Trois écrans en
+     portaient trois valeurs différentes : à 7 jours restants, l'un affichait
+     « compteur bas » en orange pendant qu'un autre annonçait « tout est à
+     jour ». 80 dixièmes = 8 jours ouvrables : au-dessous, une semaine complète
+     de congé (6 jours, RG-06) ne laisse plus de quoi en poser une seconde. */
+  var SEUIL_CP_BAS_DIXIEMES = 80;
+
+  /* Saisie française d'un montant -> centimes entiers. Mise en forme d'entrée,
+     pas un calcul : le point n'est un séparateur décimal que sans virgule.
+     Était dupliquée mot pour mot dans deux écrans (relecture lot 6, remarque 2).
+     Renvoie null si la saisie est illisible ou vide — jamais 0 par défaut. */
+  function parseEuros(txt) {
+    if (txt == null) return null;
+    var norm = String(txt).replace(/[\s €]/g, '');
+    if (norm === '') return null;
+    if (norm.indexOf(',') !== -1) norm = norm.replace(/\./g, '').replace(',', '.');
+    if (!/^\d+(\.\d+)?$/.test(norm)) return null;
+    var v = parseFloat(norm);
+    if (isNaN(v) || v < 0) return null;
+    return Math.round(v * 100);
+  }
+
+  /* Entier positif saisi dans un champ nombre. Un champ vidé ne doit pas
+     passer silencieusement pour zéro. */
+  function parseEntier(txt, min) {
+    var t = String(txt == null ? '' : txt).trim();
+    if (t === '' || !/^\d+$/.test(t)) return null;
+    var v = parseInt(t, 10);
+    if (min != null && v < min) return null;
+    return v;
   }
 
   var MOIS = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
@@ -436,6 +488,9 @@
   global.Kit = {
     ce: ce, vider: vider, bouton: bouton, ajouter: ajouter,
     eur: eur, eurCourt: eurCourt, heures: heures, joursCp: joursCp, jours: jours, duree: duree,
+    cpDisponible: cpDisponible, supDisponible: supDisponible,
+    SEUIL_CP_BAS_DIXIEMES: SEUIL_CP_BAS_DIXIEMES,
+    parseEuros: parseEuros, parseEntier: parseEntier,
     libelleMois: libelleMois, libelleMoisAnnee: libelleMoisAnnee, moisCapitale: moisCapitale,
     jourLong: jourLong, dateLongue: dateLongue,
     MOIS: MOIS, MOIS_COURT: MOIS_COURT, JOURS_SEMAINE: JOURS_SEMAINE, NBSP: NBSP,

@@ -52,6 +52,7 @@
     pile: [],            // [{ ecran, params }] — le dernier est affiché
     series: {},          // cache : contratId|YYYY-MM -> Promise(chaîne)
     journees: {},        // cache : contratId|YYYY-MM -> Promise({ jour: ligne })
+    recaps: {},          // cache : YYYY-MM -> Promise({ contratId: recap|null })
     pret: false,
     chargement: false,
     utilisateur: null
@@ -67,6 +68,12 @@
     el.barre = document.getElementById('barre');
     el.corps = document.getElementById('corps');
     el.tabbar = document.getElementById('tabbar');
+
+    /* Correction A12 (relecture lot 6) : le service worker s'enregistre AVANT
+       le garde-fou ci-dessous. C'est précisément quand le client Supabase du
+       CDN n'a PAS pu être chargé que poser le cache a le plus de valeur — sans
+       cela, le lancement suivant hors ligne échouerait de la même façon. */
+    enregistrerServiceWorker();
 
     /* Sans le client Supabase (premier lancement hors ligne, CDN injoignable),
        db.js n'a pas pu se construire. On le dit en français plutôt que de
@@ -84,7 +91,6 @@
     cablerLogin();
     cablerOnglets();
     cablerRetourSysteme();
-    enregistrerServiceWorker();
 
     global.DB.onAuthChange(function (session) {
       if (session) entrer(session);
@@ -128,7 +134,10 @@
     Kit.fermerFeuille();
   }
 
-  function attente(texte) {
+  /* `reessayer` : sans lui, un échec de chargement au démarrage laisse un écran
+     SANS AUCUN élément cliquable — barre d'onglets masquée, pile vide, et rien
+     ne repart quand le réseau revient (relecture lot 6, A9). */
+  function attente(texte, reessayer) {
     el.login.hidden = true;
     el.app.hidden = false;
     el.tabbar.hidden = true;
@@ -137,6 +146,14 @@
     el.barre.appendChild(Kit.ce('span', 'ti', 'Récap'));
     Kit.vider(el.corps);
     el.corps.appendChild(Kit.ce('div', 'attente', texte));
+    if (reessayer) {
+      var b = Kit.bouton('btn', reessayer);
+      b.textContent = 'Réessayer';
+      el.corps.appendChild(b);
+      var d = Kit.bouton('btn nt', function () { deconnecter().catch(function () { return null; }); });
+      d.textContent = 'Se déconnecter';
+      el.corps.appendChild(d);
+    }
   }
 
   /* Entrée dans l'application. Un simple rafraîchissement de jeton ne doit ni
@@ -165,7 +182,10 @@
       .catch(function (e) {
         etat.pret = false;
         etat.utilisateur = null;
-        attente('Chargement impossible : ' + Kit.messageErreur(e) + '\nRéessayez dans un instant.');
+        attente('Chargement impossible : ' + Kit.messageErreur(e), function () {
+          etat.chargement = false;
+          entrer(etat.session);
+        });
       })
       .then(function () { etat.chargement = false; });
   }
@@ -258,6 +278,12 @@
       b.classList.toggle('on', b.getAttribute('data-onglet') === ecran);
     });
 
+    /* Barre de retour posée AVANT de déléguer : un écran qui échoue à charger
+       (contrat introuvable, réseau coupé) laissait sinon une barre vide et
+       aucune sortie — et sur iPhone en mode installé, il n'y a pas de bouton
+       retour système (relecture lot 6, A9). L'écran la remplace ensuite. */
+    if (ONGLETS.indexOf(ecran) === -1) barreRetour(el.barre, 'Récap');
+
     el.corps.appendChild(Kit.ce('div', 'attente', 'Un instant…'));
     return Promise.resolve()
       .then(function () {
@@ -266,13 +292,20 @@
       })
       .catch(function (e) {
         Kit.vider(el.corps);
+        if (ONGLETS.indexOf(ecran) === -1 && !el.barre.querySelector('.bk')) {
+          barreRetour(el.barre, 'Récap');
+        }
         el.corps.appendChild(Kit.ce('div', 'attente', 'Écran indisponible : ' + Kit.messageErreur(e)));
+        var b = Kit.bouton('btn nt', function () { rendre(ecran, params); });
+        b.textContent = 'Réessayer';
+        el.corps.appendChild(b);
       });
   }
 
   /* Barre haute standard : bouton retour, titre, et zone de droite libre. */
   function barreRetour(barre, titre, opts) {
     opts = opts || {};
+    Kit.vider(barre);
     barre.className = 'bar';
     var bk = Kit.bouton('bk', function () { retour(); });
     bk.textContent = opts.fermer ? '✕' : '‹';
@@ -344,6 +377,39 @@
     return (chaine.mois || []).filter(function (e) { return e.cle === cle; })[0] || null;
   }
 
+  /* Récapitulatifs d'un mois pour TOUS les contrats actifs, mis en cache.
+
+     Correction B1 (relecture lot 6). Un geste posé sur un jour — congé, retrait
+     de congé — s'écrit sur plusieurs contrats à la fois. Il faut donc savoir,
+     AVANT d'écrire, lesquels ont déjà clôturé ce mois-là : écrire sur un mois
+     clôturé, c'est faire diverger le calendrier du document déjà remis aux
+     parents. Un seul aller-retour par contrat et par mois, mis en cache et
+     purgé comme le reste à la moindre écriture. */
+  function recapsDuMois(annee, mois) {
+    var cle = 'r|' + Chaine.cleMois(annee, mois);
+    if (!etat.recaps[cle]) {
+      etat.recaps[cle] = Promise.all(etat.contrats.map(function (c) {
+        return global.DB.getRecap(c.id, annee, mois).then(function (r) {
+          return { id: c.id, recap: r };
+        });
+      })).then(function (liste) {
+        var parId = {};
+        liste.forEach(function (x) { parId[x.id] = x.recap; });
+        return parId;
+      }).catch(function (e) {
+        delete etat.recaps[cle];
+        throw e;
+      });
+    }
+    return etat.recaps[cle];
+  }
+
+  /* Vrai si ce contrat a clôturé ce mois-là. */
+  function estClos(parId, contratId) {
+    var r = parId && parId[contratId];
+    return !!(r && r.statut === 'fige');
+  }
+
   /* Journées saisies d'un contrat pour un mois, mises en cache. */
   function journees(contratId, annee, mois) {
     var cle = contratId + '|' + Chaine.cleMois(annee, mois);
@@ -359,6 +425,7 @@
   function viderCaches() {
     etat.series = {};
     etat.journees = {};
+    etat.recaps = {};
   }
 
   /* Après toute écriture : les chaînes et les journées en cache sont périmées.
@@ -418,6 +485,8 @@
     serie: serie,
     moisDe: moisDe,
     journees: journees,
+    recapsDuMois: recapsDuMois,
+    estClos: estClos,
     invalider: invalider,
     rechargerContrats: rechargerContrats,
     deconnecter: deconnecter
