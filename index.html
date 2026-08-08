@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Récap Maria — saisie</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Vue connexion ---------------------------------------------------- -->
+  <section id="vue-login" class="vue-login" hidden>
+    <div class="carte-login">
+      <h1>Récap Maria</h1>
+      <p class="aide">Connexion requise pour accéder à vos contrats.</p>
+      <form id="form-login">
+        <label>E-mail
+          <input id="login-email" type="email" autocomplete="username" required>
+        </label>
+        <label>Mot de passe
+          <input id="login-mdp" type="password" autocomplete="current-password" required>
+        </label>
+        <button id="btn-login" class="btn btn-primary btn-bloc" type="submit">Se connecter</button>
+        <div id="msg-login" class="msg-login" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- Vue application -------------------------------------------------- -->
+  <section id="vue-app" class="vue-app" hidden>
+    <header class="entete">
+      <span class="marque">Récap Maria</span>
+      <button id="btn-logout" class="btn btn-lien" type="button">Se déconnecter</button>
+    </header>
+    <main id="saisie" class="saisie"></main>
+    <footer class="pied">
+      <small>Saisie par exception — les jours non modifiés sont présumés « présence ». Fériés pré-remplis.</small>
+    </footer>
+  </section>
+
+  <!-- Dépendance externe autorisée : client Supabase depuis un CDN ----- -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Configuration (URL + clé publique) ------------------------------- -->
+  <script src="config.js"></script>
+
+  <!-- Modules purs du lot 1 utilisés par la saisie --------------------- -->
+  <script src="js/feries.js"></script>
+  <script src="js/format.js"></script>
+
+  <!-- Lot 3 ------------------------------------------------------------ -->
+  <script src="js/db.js"></script>
+  <script src="js/ui-saisie.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
