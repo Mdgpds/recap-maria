@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Récap Maria — saisie</title>
+  <title>Récap Maria</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -32,12 +32,19 @@
       <span class="marque">Récap Maria</span>
       <button id="btn-logout" class="btn btn-lien" type="button">Se déconnecter</button>
     </header>
-    <nav class="onglets" role="tablist">
-      <button id="onglet-saisie" class="onglet onglet-actif" type="button" role="tab">Saisie</button>
-      <button id="onglet-recap" class="onglet" type="button" role="tab">Récap</button>
+    <!-- État d'attente : occupe l'écran pendant le chargement, pour ne jamais
+         afficher un onglet vide (correctif C1 du lot 5). -->
+    <div id="chargement" class="chargement" role="status" aria-live="polite">Chargement…</div>
+    <nav id="onglets" class="onglets" role="tablist" hidden>
+      <button id="onglet-recap" class="onglet onglet-actif" type="button" role="tab">Récap</button>
+      <button id="onglet-saisie" class="onglet" type="button" role="tab">Saisie</button>
+      <button id="onglet-periode" class="onglet" type="button" role="tab">Période</button>
+      <button id="onglet-familles" class="onglet" type="button" role="tab">Familles</button>
     </nav>
-    <main id="saisie" class="saisie"></main>
     <main id="recap" class="saisie" hidden></main>
+    <main id="saisie" class="saisie" hidden></main>
+    <main id="periode" class="saisie" hidden></main>
+    <main id="familles" class="saisie" hidden></main>
     <footer class="pied">
       <small>Saisie par exception — les jours non modifiés sont présumés « présence ». Fériés pré-remplis.</small>
     </footer>
@@ -54,10 +61,15 @@
   <script src="js/format.js"></script>
   <script src="js/engine.js"></script>
 
-  <!-- Lot 3 (saisie) et lot 4 (récap) ---------------------------------- -->
+  <!-- Accès aux données, puis chaîne des mois (orchestration partagée) -- -->
   <script src="js/db.js"></script>
+  <script src="js/chaine-mois.js"></script>
+
+  <!-- Écrans : saisie (lot 3), récap (lot 4), période et familles (lot 5) -->
   <script src="js/ui-saisie.js"></script>
   <script src="js/ui-recap.js"></script>
+  <script src="js/ui-periode.js"></script>
+  <script src="js/ui-familles.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
