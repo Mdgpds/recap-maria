@@ -16,6 +16,14 @@ jobs:
       - name: Verification de syntaxe
         run: |
           node --check config.js
+          node --check sw.js
           for f in js/*.js; do node --check "$f"; done
-      - name: Tests du moteur (lot 1)
+      - name: Tests du moteur et de la chaine (lots 1 et 5)
         run: node test/run.js
+      # Les tests de fumee d'interface montent le vrai index.html dans jsdom.
+      # Ils ne tournaient pas en CI au lot 6 : la suppression de sept tests du
+      # lot 5 n'avait donc declenche aucun signal (relecture lot 6, R8).
+      - name: Installation de jsdom
+        run: npm install --no-audit --no-fund
+      - name: Tests de fumee de l'interface (lot 6)
+        run: npm run test:ui
