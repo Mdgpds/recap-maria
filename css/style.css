@@ -142,6 +142,39 @@ h1, h2, h3, h4 { margin: 0 0 .4rem; }
 }
 .opt-actif { border-color: var(--primaire); box-shadow: inset 0 0 0 1px var(--primaire); font-weight: 600; }
 
+/* --- Onglets Saisie / Récap ---------------------------------------- */
+.onglets {
+  display: flex; gap: .5rem; max-width: 720px; margin: 0 auto;
+  padding: .6rem 1rem 0; background: var(--carte);
+  border-bottom: 1px solid var(--bord);
+}
+.onglet {
+  font: inherit; background: none; border: none; border-bottom: 3px solid transparent;
+  padding: .6rem .9rem; cursor: pointer; color: var(--texte-doux); min-height: 44px;
+}
+.onglet-actif { color: var(--primaire); border-bottom-color: var(--primaire); font-weight: 600; }
+
+/* --- Récap --------------------------------------------------------- */
+.recap-entete { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.badge-fige {
+  background: var(--conge); color: var(--conge-b); border: 1px solid var(--conge-b);
+  border-radius: 999px; padding: .1rem .6rem; font-size: .75rem; font-weight: 600;
+}
+.recap-ligne {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: .5rem; padding: .3rem 0; border-bottom: 1px dashed var(--bord);
+}
+.recap-lib { color: var(--texte-doux); font-size: .9rem; }
+.recap-val { font-variant-numeric: tabular-nums; }
+.recap-fort { font-weight: 700; border-bottom: none; margin-top: .2rem; }
+.recap-fort .recap-lib { color: var(--texte); }
+.recap-wa { margin-top: .8rem; }
+.wa-texte {
+  width: 100%; box-sizing: border-box; font: inherit; font-size: .85rem;
+  border: 1px solid var(--bord); border-radius: 8px; padding: .6rem;
+  background: #fbfcfd; color: var(--texte); resize: vertical;
+}
+
 @media (min-width: 520px) {
   .feuille { align-self: center; border-radius: 16px; margin-bottom: 5vh; }
   .overlay { align-items: center; }

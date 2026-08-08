@@ -197,6 +197,53 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Récap mensuel (lot 4)                                               */
+  /* ------------------------------------------------------------------ */
+
+  /* Lit le récap d'un mois (brouillon ou figé), ou null s'il n'existe pas. */
+  function getRecap(contratId, annee, mois) {
+    return client.from('recap_mensuel')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .eq('contrat_id', contratId)
+      .eq('annee', annee)
+      .eq('mois', mois)
+      .maybeSingle()
+      .then(function (r) { if (r.error) throw r.error; return r.data; });
+  }
+
+  /* Enregistre (ou met à jour) le brouillon de récap d'un mois — instantané
+     complet du calcul (ResultatMois) dans `donnees`. Ne doit PAS être appelé
+     sur un mois déjà figé : le trigger d'immuabilité (lot 2) rejette tout
+     passage figé -> brouillon (l'appelant vérifie l'état avant). */
+  function enregistrerRecapBrouillon(contratId, annee, mois, donnees) {
+    return client.from('recap_mensuel')
+      .upsert({ contrat_id: contratId, annee: annee, mois: mois, statut: 'brouillon', donnees: donnees },
+              { onConflict: 'contrat_id,annee,mois' })
+      .select()
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* Fige un mois : enregistre d'abord l'instantané en brouillon, puis passe
+     brouillon -> figé (SEUL chemin autorisé par le trigger). `figeLeIso` est
+     posé ici (horloge de persistance, pas de calcul métier). Sur un mois déjà
+     figé, l'UPDATE ne matche rien (filtre statut='brouillon') et renvoie null. */
+  function figerRecap(contratId, annee, mois, donnees, figeLeIso) {
+    return enregistrerRecapBrouillon(contratId, annee, mois, donnees)
+      .then(function () {
+        return client.from('recap_mensuel')
+          .update({ statut: 'fige', fige_le: figeLeIso })
+          .eq('contrat_id', contratId)
+          .eq('annee', annee)
+          .eq('mois', mois)
+          .eq('statut', 'brouillon')
+          .select()
+          .then(deballer)
+          .then(function (r) { return r[0] || null; });
+      });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Utilitaires internes                                                */
   /* ------------------------------------------------------------------ */
 
@@ -230,6 +277,9 @@
     enregistrerJournee: enregistrerJournee,
     supprimerJournee: supprimerJournee,
     poserAbsenceMaria: poserAbsenceMaria,
-    retirerAbsenceMaria: retirerAbsenceMaria
+    retirerAbsenceMaria: retirerAbsenceMaria,
+    getRecap: getRecap,
+    enregistrerRecapBrouillon: enregistrerRecapBrouillon,
+    figerRecap: figerRecap
   };
 })(window);
