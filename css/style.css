@@ -175,6 +175,69 @@ h1, h2, h3, h4 { margin: 0 0 .4rem; }
   background: #fbfcfd; color: var(--texte); resize: vertical;
 }
 
+/* --- Lot 5 --------------------------------------------------------- */
+
+/* État d'attente (C1) : occupe l'écran pendant le chargement. */
+.chargement {
+  max-width: 720px; margin: 2rem auto; padding: 1.2rem;
+  background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon);
+  color: var(--texte-doux); text-align: center; white-space: pre-line;
+}
+
+/* Onglets : quatre onglets tiennent sur un écran de téléphone. */
+.onglets { overflow-x: auto; }
+.onglet { white-space: nowrap; padding: .6rem .7rem; }
+
+/* Sélection directe du mois (C4). */
+.choix-mois { display: flex; gap: .4rem; flex: 1; justify-content: center; }
+.choix-mois select { min-height: 44px; }
+
+.badge-archive {
+  background: var(--ferie); color: var(--texte-doux); border: 1px solid var(--ferie-b);
+  border-radius: 999px; padding: .1rem .6rem; font-size: .75rem; font-weight: 600;
+}
+
+/* Message d'application (échecs hors écran : déconnexion, session). */
+.msg-app {
+  max-width: 720px; margin: .6rem auto 0; padding: .6rem 1rem;
+  background: var(--carte); border: 1px solid var(--bord); border-radius: 10px;
+  font-size: .9rem; color: var(--texte-doux);
+}
+.msg-app.msg-erreur { border-color: var(--danger); color: var(--danger); }
+
+.alerte {
+  background: var(--absence); border: 1px solid var(--absence-b); border-radius: 8px;
+  padding: .5rem .7rem; margin: .5rem 0; font-size: .88rem;
+}
+.msg-erreur { color: var(--danger); }
+
+/* Blocs dépliants de l'onglet Familles (C2). */
+.bloc-pliant {
+  border: 1px solid var(--bord); border-radius: 10px;
+  padding: .5rem .7rem; margin-top: .6rem; background: #fff;
+}
+.bloc-pliant > summary { cursor: pointer; min-height: 40px; padding: .4rem 0; font-weight: 600; }
+.bloc-contrat > summary { color: var(--primaire); }
+
+.form-colonne { display: flex; flex-direction: column; gap: .1rem; }
+.form-colonne > label { display: flex; flex-direction: column; font-size: .82rem; color: var(--texte-doux); margin: .5rem 0 0; }
+.form-colonne .in-texte, .form-colonne .in-type { width: 100%; }
+.aide-champ { display: block; color: var(--texte-doux); font-size: .75rem; margin-top: .2rem; }
+
+.planning { border: 1px solid var(--bord); border-radius: 10px; margin: .7rem 0 .2rem; padding: .5rem .7rem; }
+.planning legend { font-size: .82rem; color: var(--texte-doux); }
+.case { display: flex; align-items: center; gap: .4rem; min-height: 36px; font-size: .9rem; }
+.case input { width: 20px; height: 20px; }
+
+/* Barèmes (C5) et soldes de fin de contrat (C3). */
+.bareme {
+  border: 1px solid var(--bord); border-radius: 10px;
+  padding: .6rem .7rem; margin-top: .6rem; background: #fbfcfd;
+}
+.bareme-t { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.bareme-m { font-variant-numeric: tabular-nums; margin-top: .2rem; }
+.soldes { margin-top: .6rem; }
+
 @media (min-width: 520px) {
   .feuille { align-self: center; border-radius: 16px; margin-bottom: 5vh; }
   .overlay { align-items: center; }

@@ -61,22 +61,78 @@
   /* Lecture des données de référence                                    */
   /* ------------------------------------------------------------------ */
 
+  /* Colonnes lues pour un contrat — une seule définition, pour que tous les
+     écrans (saisie, récap, période, familles) voient exactement les mêmes
+     champs, y compris les paramètres de règles rendus modifiables au lot 5. */
+  var CHAMPS_CONTRAT =
+    'id, prenom_enfant, famille_id, date_debut, date_fin, jours_planning, ' +
+    'heure_arrivee, heure_depart, minutes_contractuelles, minutes_sup_jour, ' +
+    'minutes_par_jour_conge, entretien_centimes_jour, statut, ' +
+    'sup_dues_si_enfant_absent, ordre_imputation, archive, ' +
+    'famille:famille_id ( id, nom, canal, archive )';
+
+  /* Familles non archivées. */
   function listFamilles() {
+    return client.from('famille')
+      .select('id, nom, canal, archive')
+      .eq('archive', false)
+      .order('nom', { ascending: true })
+      .then(deballer);
+  }
+
+  /* Toutes les familles, archivées comprises (onglet Familles, lot 5 C2). */
+  function listFamillesToutes() {
     return client.from('famille')
       .select('id, nom, canal, archive')
       .order('nom', { ascending: true })
       .then(deballer);
   }
 
-  /* Contrats non archivés, avec leur famille. Triés par prénom d'enfant. */
+  /* Contrats non archivés, avec leur famille. Triés par prénom d'enfant.
+     Alimente l'écran de SAISIE : on ne saisit pas de journées sur un contrat
+     terminé. Le récap, lui, passe par listContratsPourMois (lot 5 C4). */
   function listContratsActifs() {
     return client.from('contrat')
-      .select('id, prenom_enfant, famille_id, date_debut, date_fin, jours_planning, ' +
-              'heure_arrivee, heure_depart, minutes_contractuelles, minutes_sup_jour, ' +
-              'minutes_par_jour_conge, entretien_centimes_jour, statut, ' +
-              'sup_dues_si_enfant_absent, ordre_imputation, archive, ' +
-              'famille:famille_id ( id, nom, canal )')
+      .select(CHAMPS_CONTRAT)
       .eq('archive', false)
+      .order('prenom_enfant', { ascending: true })
+      .then(deballer);
+  }
+
+  /* Tous les contrats, archivés compris (onglet Familles, lot 5 C2). */
+  function listContratsTous() {
+    return client.from('contrat')
+      .select(CHAMPS_CONTRAT)
+      .order('prenom_enfant', { ascending: true })
+      .then(deballer);
+  }
+
+  /* Lot 5 C4 — contrats dont la période d'activité RECOUVRE le mois demandé,
+     ARCHIVÉS COMPRIS. C'est la période affichée qui décide de ce qui est
+     visible, jamais le rangement visuel : un contrat archivé le 15 du mois
+     doit rester dans le récap de ce mois-là.
+     Recouvrement : date_debut <= dernier jour du mois
+                    ET (date_fin nulle OU date_fin >= premier jour du mois).
+     Comparaisons sur des chaînes 'YYYY-MM-DD' (dates pures, jamais d'objet
+     Date avec heure). */
+  function listContratsPourMois(annee, mois) {
+    var b = bornesMois(annee, mois);
+    return client.from('contrat')
+      .select(CHAMPS_CONTRAT)
+      .lte('date_debut', b.fin)
+      .or('date_fin.is.null,date_fin.gte.' + b.debut)
+      .order('prenom_enfant', { ascending: true })
+      .then(deballer);
+  }
+
+  /* Lot 5 C6 — même règle que listContratsPourMois, sur une PLAGE de dates :
+     ce sont les contrats actifs PENDANT la période qui doivent apparaître,
+     archivés compris. */
+  function listContratsPourPeriode(dateDebut, dateFin) {
+    return client.from('contrat')
+      .select(CHAMPS_CONTRAT)
+      .lte('date_debut', dateFin)
+      .or('date_fin.is.null,date_fin.gte.' + dateDebut)
       .order('prenom_enfant', { ascending: true })
       .then(deballer);
   }
@@ -98,6 +154,116 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Écritures familles / contrats (lot 5 C2 et C3)                      */
+  /*                                                                     */
+  /* Aucune migration : les colonnes et les policies RLS famille_insert / */
+  /* famille_update / contrat_insert / contrat_update existent depuis le  */
+  /* lot 2. `owner` n'est JAMAIS transmis : il est posé par défaut en     */
+  /* base (auth.uid()) et filtré par RLS.                                */
+  /*                                                                     */
+  /* Aucune suppression n'est exposée ici, volontairement (lot 5 C3) :    */
+  /* les policies `delete` existent en base mais l'application ne doit    */
+  /* jamais détruire une famille ou un contrat — on archive.             */
+  /* ------------------------------------------------------------------ */
+
+  function creerFamille(champs) {
+    return client.from('famille')
+      .insert({ nom: champs.nom, canal: (champs.canal == null ? null : champs.canal) })
+      .select('id, nom, canal, archive')
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  function majFamille(id, champs) {
+    return client.from('famille')
+      .update(nettoyer(champs, ['nom', 'canal', 'archive']))
+      .eq('id', id)
+      .select('id, nom, canal, archive')
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  var CHAMPS_CONTRAT_MODIFIABLES = [
+    'famille_id', 'prenom_enfant', 'date_debut', 'date_fin', 'jours_planning',
+    'heure_arrivee', 'heure_depart', 'minutes_contractuelles', 'minutes_sup_jour',
+    'minutes_par_jour_conge', 'entretien_centimes_jour', 'statut',
+    'sup_dues_si_enfant_absent', 'ordre_imputation', 'archive'
+  ];
+
+  function creerContrat(champs) {
+    return client.from('contrat')
+      .insert(nettoyer(champs, CHAMPS_CONTRAT_MODIFIABLES))
+      .select(CHAMPS_CONTRAT)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  function majContrat(id, champs) {
+    return client.from('contrat')
+      .update(nettoyer(champs, CHAMPS_CONTRAT_MODIFIABLES))
+      .eq('id', id)
+      .select(CHAMPS_CONTRAT)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* Lot 5 C3 — le geste d'archivage, en une seule écriture : il porte les
+     TROIS notions distinctes du contrat, sans jamais les confondre.
+       statut   = cycle de vie métier      -> 'termine'
+       date_fin = date effective de fin    -> conditionne les calculs
+       archive  = rangement visuel         -> sort des écrans courants
+     Réversible : voir desarchiverContrat. Jamais automatique. */
+  function archiverContrat(id, dateFin) {
+    return majContrat(id, { statut: 'termine', date_fin: dateFin, archive: true });
+  }
+
+  /* Désarchivage : on ne touche QU'AU rangement visuel. La date de fin et le
+     statut restent tels quels — les effacer réécrirait l'histoire du contrat
+     et modifierait des calculs déjà produits. */
+  function desarchiverContrat(id) {
+    return majContrat(id, { archive: false });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Barèmes de rémunération (lot 5 C5)                                  */
+  /*                                                                     */
+  /* La mécanique RG-15 (salaireApplicable) est déjà en place et validée  */
+  /* dans le moteur : il ne manquait que la saisie. Aucun calcul ici.    */
+  /* ------------------------------------------------------------------ */
+
+  function ajouterSalaire(contratId, champs) {
+    return client.from('salaire_contrat')
+      .insert({
+        contrat_id: contratId,
+        date_effet: champs.date_effet,
+        brut_mensuel_centimes: champs.brut_mensuel_centimes,
+        net_mensuel_centimes: champs.net_mensuel_centimes
+      })
+      .select('id, contrat_id, date_effet, brut_mensuel_centimes, net_mensuel_centimes')
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  function majSalaire(id, champs) {
+    return client.from('salaire_contrat')
+      .update(nettoyer(champs, ['date_effet', 'brut_mensuel_centimes', 'net_mensuel_centimes']))
+      .eq('id', id)
+      .select('id, contrat_id, date_effet, brut_mensuel_centimes, net_mensuel_centimes')
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* Suppression d'un barème. L'appelant DOIT avoir vérifié qu'aucun récap
+     figé ne s'appuie dessus (garde-fou C5, porté par l'écran : la base ne
+     connaît pas le lien entre un barème et un récap figé). */
+  function supprimerSalaire(id) {
+    return client.from('salaire_contrat')
+      .delete()
+      .eq('id', id)
+      .then(function (r) { if (r.error) throw r.error; return true; });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Journées (saisie par exception)                                     */
   /* ------------------------------------------------------------------ */
 
@@ -115,6 +281,29 @@
         var parJour = {};
         lignes.forEach(function (l) { parJour[l.jour] = l; });
         return parJour;
+      });
+  }
+
+  /* Lot 5 C6 (performance) — toutes les journées d'un contrat sur une PLAGE
+     de dates, en UN seul aller-retour. Le récap de période enchaîne des
+     dizaines de mois : un appel par mois et par contrat écroulerait l'écran.
+     Renvoie un objet indexé par mois : { 'YYYY-MM' : { 'YYYY-MM-DD': ligne } },
+     directement consommable par le calcul mois par mois. */
+  function getJourneesPeriode(contratId, dateDebut, dateFin) {
+    return client.from('journee')
+      .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire')
+      .eq('contrat_id', contratId)
+      .gte('jour', dateDebut)
+      .lte('jour', dateFin)
+      .then(deballer)
+      .then(function (lignes) {
+        var parMois = {};
+        lignes.forEach(function (l) {
+          var cle = l.jour.slice(0, 7);
+          if (!parMois[cle]) parMois[cle] = {};
+          parMois[cle][l.jour] = l;
+        });
+        return parMois;
       });
   }
 
@@ -243,6 +432,30 @@
       });
   }
 
+  /* Lot 5 C4/C6 — tous les récaps d'un contrat, du plus récent au plus
+     ancien. Sert à l'historique par famille et au chargement mutualisé de la
+     chaîne des mois (un appel au lieu d'un par mois). */
+  function listRecapsContrat(contratId) {
+    return client.from('recap_mensuel')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .eq('contrat_id', contratId)
+      .order('annee', { ascending: false })
+      .order('mois', { ascending: false })
+      .then(deballer);
+  }
+
+  /* Récaps d'un contrat entre deux années incluses (bornage grossier, le
+     filtrage au mois près se fait côté appelant : la borne annuelle suffit à
+     ne pas tout ramener). */
+  function listRecapsPeriode(contratId, anneeMin, anneeMax) {
+    return client.from('recap_mensuel')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .eq('contrat_id', contratId)
+      .gte('annee', anneeMin)
+      .lte('annee', anneeMax)
+      .then(deballer);
+  }
+
   /* ------------------------------------------------------------------ */
   /* Utilitaires internes                                                */
   /* ------------------------------------------------------------------ */
@@ -252,12 +465,29 @@
     return r.data || [];
   }
 
+  /* Ne transmet que les champs autorisés et effectivement fournis : évite
+     d'écraser une colonne par `undefined` et interdit qu'un écran pousse un
+     champ qu'il n'a pas le droit d'écrire (owner, created_at…). */
+  function nettoyer(champs, autorises) {
+    var out = {};
+    (autorises || []).forEach(function (k) {
+      if (champs && Object.prototype.hasOwnProperty.call(champs, k) && champs[k] !== undefined) {
+        out[k] = champs[k];
+      }
+    });
+    return out;
+  }
+
+  /* Bornes d'un mois, en arithmétique pure : plus aucun objet Date dans la
+     couche données. Les dates de la base sont des dates pures 'YYYY-MM-DD' ;
+     les construire via Date, même en UTC, ne servait à rien et détonnait. */
   function bornesMois(annee, mois) {
     var mm = String(mois).padStart(2, '0');
-    var dernier = new Date(Date.UTC(annee, mois, 0)).getUTCDate(); // 0 = dernier jour du mois précédent+1
+    var bissextile = (annee % 4 === 0 && annee % 100 !== 0) || annee % 400 === 0;
+    var longueurs = [31, bissextile ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     return {
       debut: annee + '-' + mm + '-01',
-      fin: annee + '-' + mm + '-' + String(dernier).padStart(2, '0')
+      fin: annee + '-' + mm + '-' + String(longueurs[mois - 1]).padStart(2, '0')
     };
   }
 
@@ -270,15 +500,31 @@
     signIn: signIn,
     signOut: signOut,
     listFamilles: listFamilles,
+    listFamillesToutes: listFamillesToutes,
     listContratsActifs: listContratsActifs,
+    listContratsTous: listContratsTous,
+    listContratsPourMois: listContratsPourMois,
+    listContratsPourPeriode: listContratsPourPeriode,
+    creerFamille: creerFamille,
+    majFamille: majFamille,
+    creerContrat: creerContrat,
+    majContrat: majContrat,
+    archiverContrat: archiverContrat,
+    desarchiverContrat: desarchiverContrat,
     getSalaires: getSalaires,
+    ajouterSalaire: ajouterSalaire,
+    majSalaire: majSalaire,
+    supprimerSalaire: supprimerSalaire,
     getCompteurInitial: getCompteurInitial,
     getJourneesMois: getJourneesMois,
+    getJourneesPeriode: getJourneesPeriode,
     enregistrerJournee: enregistrerJournee,
     supprimerJournee: supprimerJournee,
     poserAbsenceMaria: poserAbsenceMaria,
     retirerAbsenceMaria: retirerAbsenceMaria,
     getRecap: getRecap,
+    listRecapsContrat: listRecapsContrat,
+    listRecapsPeriode: listRecapsPeriode,
     enregistrerRecapBrouillon: enregistrerRecapBrouillon,
     figerRecap: figerRecap
   };

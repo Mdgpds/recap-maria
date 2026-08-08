@@ -111,7 +111,7 @@
     });
 
     if (etat.contrats.length === 0) {
-      c.appendChild(ce('p', 'vide', 'Aucun contrat actif. (Les contrats se créent en base ; l’édition de contrat arrivera dans un lot ultérieur.)'));
+      c.appendChild(ce('p', 'vide', 'Aucun contrat actif. Créez ou désarchivez un contrat dans l’onglet Familles.'));
     }
   }
 
