@@ -115,16 +115,16 @@
     return s;
   }
 
-  /* Message d'erreur en français, sans vocabulaire technique. */
+  /* Message d'erreur en français, sans vocabulaire technique ni anglais.
+     La traduction est mutualisée dans js/messages.js ; le détail technique
+     part en console, jamais à l'écran. */
   function messageLisible(e) {
+    if (!global.Messages) return 'une erreur est survenue.';
     var brut = (e && (e.message || e.details)) || String(e);
     if (/duplicate key|23505|unique/i.test(brut)) {
       return 'il existe déjà un barème à cette date d’effet pour ce contrat.';
     }
-    if (/row-level security|permission|42501/i.test(brut)) return 'accès refusé (reconnectez-vous).';
-    if (/violates check constraint/i.test(brut)) return 'une valeur saisie est hors des limites autorisées.';
-    if (/Failed to fetch|NetworkError/i.test(brut)) return 'connexion indisponible, réessayez.';
-    return brut;
+    return global.Messages.lisible(e);
   }
 
   function poserMessage(el, texte, estErreur) {
@@ -352,6 +352,36 @@
     };
   }
 
+  /* Champs dont la modification CHANGE des chiffres déjà calculés. Les mois
+     figés sont protégés en base, mais tous les mois non figés depuis le
+     dernier figement seront recalculés — y compris des récapitulatifs déjà
+     montrés à des parents sous forme de brouillon. On demande confirmation,
+     en nommant ce qui change, au même titre que pour un archivage ou un
+     barème rétroactif. */
+  var CHAMPS_SENSIBLES = [
+    ['date_debut', 'la date de début'],
+    ['date_fin', 'la date de fin'],
+    ['jours_planning', 'les jours de planning'],
+    ['minutes_sup_jour', 'les minutes supplémentaires par jour (RG-03)'],
+    ['minutes_par_jour_conge', 'les minutes d’un jour de congé (RG-05)'],
+    ['entretien_centimes_jour', 'l’indemnité d’entretien (RG-02)'],
+    ['ordre_imputation', 'l’ordre d’imputation des congés (RG-07)'],
+    ['sup_dues_si_enfant_absent', 'les heures sup dues en cas d’absence de l’enfant (RG-09)']
+  ];
+
+  function changementsSensibles(contrat, champsSaisis) {
+    var changes = [];
+    CHAMPS_SENSIBLES.forEach(function (c) {
+      var avant = contrat[c[0]];
+      var apres = champsSaisis[c[0]];
+      var egal = Array.isArray(avant) || Array.isArray(apres)
+        ? String(avant) === String(apres)
+        : String(avant == null ? '' : avant).slice(0, 10) === String(apres == null ? '' : apres).slice(0, 10);
+      if (!egal) changes.push(c[1]);
+    });
+    return changes;
+  }
+
   function formulaireContrat(contrat) {
     var det = ce('details', 'bloc-pliant');
     det.appendChild(ce('summary', null, 'Modifier le contrat'));
@@ -360,8 +390,17 @@
     var msg = ce('div', 'msg-absence');
     var b = ce('button', 'btn btn-primary btn-bloc', 'Enregistrer');
     b.onclick = function () {
+      poserMessage(msg, '');
       var champsSaisis = lireChampsContrat(f, msg);
       if (!champsSaisis) return;
+      var sensibles = changementsSensibles(contrat, champsSaisis);
+      if (sensibles.length && !global.confirm(
+          'Vous modifiez ' + sensibles.join(', ') + ' de ' + contrat.prenom_enfant + '.\n\n' +
+          'Tous les récapitulatifs NON FIGÉS seront recalculés avec ces nouvelles valeurs, ' +
+          'y compris ceux des mois passés. Les récapitulatifs déjà figés, eux, ne bougeront pas.\n\n' +
+          'Continuer ?')) {
+        return;
+      }
       b.disabled = true; poserMessage(msg, 'Enregistrement…');
       global.DB.majContrat(contrat.id, champsSaisis)
         .then(rafraichirTout)
@@ -513,14 +552,18 @@
      le futur. Une date rétroactive changerait les mois non encore figés.
        - un mois FIGÉ serait touché  -> refus, avec explication ;
        - un mois en BROUILLON serait touché -> avertissement + confirmation. */
-  /* Premier mois RÉELLEMENT touché par une date d'effet, au sens de RG-15 :
-     un barème s'applique aux mois dont le 1er jour est postérieur ou égal à
-     la date d'effet. Une date au 15 septembre ne touche donc pas septembre,
-     mais octobre — refuser à cause d'un septembre figé serait un faux refus. */
+  /* Premier mois RÉELLEMENT touché par une date d'effet.
+
+     On n'invente aucune règle : RG-15, tel qu'implémenté par
+     Engine.salaireApplicable, retient un barème pour un mois dès lors que
+     `date_effet <= premier jour du mois`. C'est exactement ce test qui est
+     appliqué ici, en partant du mois de la date d'effet. Conséquence : une
+     date au 15 septembre ne touche pas septembre mais octobre — refuser à
+     cause d'un septembre figé serait un faux refus. */
   function premierMoisImpacte(dateEffet) {
     var m = Chaine.moisDeDate(dateEffet);
-    var jour = Number(String(dateEffet).slice(8, 10));
-    return jour === 1 ? m : Chaine.moisSuivant(m.annee, m.mois);
+    if (dateEffet <= Chaine.premierJour(m.annee, m.mois)) return m;
+    return Chaine.moisSuivant(m.annee, m.mois);
   }
 
   function analyserDateEffet(dateEffet, recaps) {
@@ -858,6 +901,23 @@
     var inFin = champ(corps, 'Date de fin du contrat',
       inputTexte(contrat.date_fin || aujourdhui(), 'date'),
       'C’est elle qui borne les calculs. L’archivage la renseigne et passe le statut à « terminé ».');
+
+    /* Les mois déjà figés du contrat : sert à prévenir Maria si la date de fin
+       tombe dans l'un d'eux (le document figé ne sera pas recalculé). */
+    var moisFigeDeLaDateFin = null;
+    var moisFiges = {};
+    global.DB.listRecapsContrat(contrat.id).then(function (recaps) {
+      (recaps || []).forEach(function (r) {
+        if (r.statut === 'fige') moisFiges[Chaine.cleMois(r.annee, r.mois)] = true;
+      });
+      majAvertissementFin();
+    }).catch(function () { /* l'avertissement est un confort, pas un garde-fou */ });
+
+    function majAvertissementFin() {
+      var cle = (inFin.value || '').slice(0, 7);
+      moisFigeDeLaDateFin = moisFiges[cle] ? cle : null;
+    }
+    inFin.onchange = majAvertissementFin;
     var soldes = ce('div', 'soldes');
     var msg = ce('div', 'msg-absence');
 
@@ -875,6 +935,12 @@
       if (inFin.value < contrat.date_debut) {
         poserMessage(msg, 'La date de fin ne peut pas précéder la date de début.', true); return;
       }
+      if (moisFigeDeLaDateFin && inFin.value.slice(0, 7) === moisFigeDeLaDateFin &&
+          !global.confirm('Le récapitulatif de ' +
+            Chaine.libelleMoisAnnee(Number(moisFigeDeLaDateFin.slice(0, 4)), Number(moisFigeDeLaDateFin.slice(5, 7))) +
+            ' est déjà figé.\n\nIl a été calculé sans cette date de fin et ne sera PAS recalculé : ' +
+            'le document parti chez les parents fait foi. Seuls les récapitulatifs de période ' +
+            'tiendront compte de la date de fin.\n\nContinuer ?')) { return; }
       if (!global.confirm('Archiver ' + contrat.prenom_enfant + ' au ' + dateFr(inFin.value) + ' ?\n\n' +
           'Le contrat passe au statut « terminé », sort des écrans courants et de la saisie. ' +
           'Rien n’est supprimé : il restera visible dans les récapitulatifs des mois qu’il couvrait, ' +

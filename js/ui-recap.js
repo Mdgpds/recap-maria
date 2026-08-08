@@ -343,18 +343,32 @@
     return carte;
   }
 
+  /* Copie dans le presse-papiers. Un échec de copie doit se VOIR : sinon
+     Maria colle dans WhatsApp le contenu précédent du presse-papiers, ou
+     rien, en croyant avoir copié son récapitulatif. */
   function copierTexte(txt, bouton) {
-    var ok = function () { var t = bouton.textContent; bouton.textContent = 'Copié ✓'; setTimeout(function () { bouton.textContent = t; }, 1500); };
+    var libelle = bouton.textContent;
+    var ok = function () {
+      bouton.textContent = 'Copié ✓';
+      setTimeout(function () { bouton.textContent = libelle; }, 1500);
+    };
+    var echec = function (e) {
+      if (global.console) global.console.error('[Récap Maria] copie impossible :', e);
+      bouton.textContent = 'Copie impossible — sélectionnez le texte ci-dessus';
+      setTimeout(function () { bouton.textContent = libelle; }, 4000);
+    };
     if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
-      global.navigator.clipboard.writeText(txt).then(ok, function () { fallbackCopie(txt, ok); });
-    } else { fallbackCopie(txt, ok); }
+      global.navigator.clipboard.writeText(txt).then(ok, function () { fallbackCopie(txt, ok, echec); });
+    } else { fallbackCopie(txt, ok, echec); }
   }
-  function fallbackCopie(txt, ok) {
+  function fallbackCopie(txt, ok, echec) {
     try {
       var ta = document.createElement('textarea');
       ta.value = txt; document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta); ok();
-    } catch (e) { /* silencieux */ }
+      var reussi = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (reussi) ok(); else echec(new Error('execCommand a renvoyé false'));
+    } catch (e) { echec(e); }
   }
 
   function messageRecap(contratId, txt) {
@@ -399,15 +413,11 @@
       .catch(function (e) { messageRecap(contrat.id, 'Figement impossible : ' + messageLisible(e)); bouton.disabled = false; });
   }
 
-  /* Message d'erreur en français, sans vocabulaire technique (points
-     transverses du lot 5 : « échecs visibles »). */
+  /* Message d'erreur en français, sans vocabulaire technique ni anglais
+     (points transverses du lot 5 : « échecs visibles »). La traduction est
+     mutualisée dans js/messages.js ; le détail technique part en console. */
   function messageLisible(e) {
-    var brut = (e && (e.message || e.details)) || String(e);
-    if (/duplicate key|23505/i.test(brut)) return 'cette valeur existe déjà.';
-    if (/row-level security|permission|42501/i.test(brut)) return 'accès refusé (reconnectez-vous).';
-    if (/immuab|fig/i.test(brut)) return 'ce récapitulatif est figé, il ne peut plus être modifié.';
-    if (/Failed to fetch|NetworkError/i.test(brut)) return 'connexion indisponible, réessayez.';
-    return brut;
+    return global.Messages ? global.Messages.lisible(e) : 'une erreur est survenue.';
   }
 
   /* ------------------------------------------------------------------ */

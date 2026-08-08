@@ -478,12 +478,16 @@
     return out;
   }
 
+  /* Bornes d'un mois, en arithmétique pure : plus aucun objet Date dans la
+     couche données. Les dates de la base sont des dates pures 'YYYY-MM-DD' ;
+     les construire via Date, même en UTC, ne servait à rien et détonnait. */
   function bornesMois(annee, mois) {
     var mm = String(mois).padStart(2, '0');
-    var dernier = new Date(Date.UTC(annee, mois, 0)).getUTCDate(); // 0 = dernier jour du mois précédent+1
+    var bissextile = (annee % 4 === 0 && annee % 100 !== 0) || annee % 400 === 0;
+    var longueurs = [31, bissextile ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     return {
       debut: annee + '-' + mm + '-01',
-      fin: annee + '-' + mm + '-' + String(dernier).padStart(2, '0')
+      fin: annee + '-' + mm + '-' + String(longueurs[mois - 1]).padStart(2, '0')
     };
   }
 

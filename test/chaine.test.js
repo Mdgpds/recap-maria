@@ -29,6 +29,7 @@ function mois(annee, m, opts) {
   return {
     annee: annee, mois: m, cle: annee + '-' + String(m).padStart(2, '0'),
     fige: !!opts.fige,
+    horsContrat: !!opts.horsContrat,
     salaire: opts.salaire || { date_effet: '2026-01-01' },
     salaireManquant: false,
     compteurEntree: entree,
@@ -122,6 +123,83 @@ cas.push({
     egal(a.baremes[0].mois.length, 2, 'mois du premier barème');
     egal(a.baremes[1].dateEffet, '2026-09-01', 'second barème');
     egal(a.baremes[1].mois.length, 1, 'mois du second barème');
+  }
+});
+
+cas.push({
+  nom: 'B1 — les mois hors de la période du contrat n’entrent JAMAIS dans les totaux',
+  fn: function () {
+    /* Contrat terminé fin mars : les mois d'avril à août sont rejoués pour la
+       continuité des compteurs, mais ils ne sont pas des résultats mensuels —
+       aucun récapitulatif n'existe pour eux. Sans ce filtre, le moteur y
+       renvoie quand même le net du barème et le total gonfle d'autant. */
+    var a = Chaine.agregerPeriode([
+      mois(2026, 2, { presence: 20, net: 107200, total: 118200 }),
+      mois(2026, 3, { presence: 22, net: 107200, total: 118200 }),
+      mois(2026, 4, { presence: 0, net: 107200, total: 107200, horsContrat: true }),
+      mois(2026, 5, { presence: 0, net: 107200, total: 107200, horsContrat: true })
+    ]);
+    egal(a.nbMois, 2, 'seuls les mois couverts par le contrat sont comptés');
+    egal(a.joursPresence, 42, 'joursPresence');
+    egal(a.salaireNetCentimes, 214400, 'deux mois de net, pas quatre');
+    egal(a.totalAVerserCentimes, 236400, 'total versé sans les mois hors contrat');
+    egal(a.moisHorsContrat.length, 2, 'les mois hors contrat sont recensés, pas comptés');
+  }
+});
+
+cas.push({
+  nom: 'B1 — fenetreContrat : intersection de la période demandée et du contrat',
+  fn: function () {
+    var contrat = { date_debut: '2025-09-01', date_fin: '2026-03-31' };
+    var f = Chaine.fenetreContrat(contrat, { annee: 2025, mois: 9 }, { annee: 2026, mois: 8 });
+    egal(f.debut.mois, 9, 'début : septembre 2025');
+    egal(f.debut.annee, 2025, 'début : année');
+    egal(f.fin.mois, 3, 'fin ramenée à mars 2026');
+    egal(f.fin.annee, 2026, 'fin : année');
+
+    var enCours = Chaine.fenetreContrat({ date_debut: '2026-01-01', date_fin: null },
+      { annee: 2025, mois: 9 }, { annee: 2026, mois: 8 });
+    egal(enCours.debut.mois, 1, 'contrat en cours : début ramené à janvier 2026');
+    egal(enCours.fin.mois, 8, 'contrat en cours : fin inchangée');
+
+    egal(Chaine.fenetreContrat({ date_debut: '2027-01-01', date_fin: null },
+      { annee: 2025, mois: 9 }, { annee: 2026, mois: 8 }), null,
+      'contrat entièrement hors période : aucune fenêtre');
+    egal(Chaine.fenetreContrat({ date_debut: '2020-01-01', date_fin: '2021-06-30' },
+      { annee: 2025, mois: 9 }, { annee: 2026, mois: 8 }), null,
+      'contrat terminé avant la période : aucune fenêtre');
+  }
+});
+
+cas.push({
+  nom: 'B1 — contratCouvreLeMois : mêmes bornes que listContratsPourMois',
+  fn: function () {
+    var c = { date_debut: '2026-03-16', date_fin: '2026-03-15' };
+    egal(Chaine.contratCouvreLeMois({ date_debut: '2025-09-01', date_fin: '2026-03-15' }, 2026, 3), true,
+      'archivé le 15 du mois : le mois est couvert');
+    egal(Chaine.contratCouvreLeMois({ date_debut: '2025-09-01', date_fin: '2026-03-15' }, 2026, 4), false,
+      'mois suivant la fin : non couvert');
+    egal(Chaine.contratCouvreLeMois({ date_debut: '2026-03-31', date_fin: null }, 2026, 3), true,
+      'commencé le dernier jour du mois : couvert');
+    egal(Chaine.contratCouvreLeMois({ date_debut: '2026-04-01', date_fin: null }, 2026, 3), false,
+      'commencé le mois suivant : non couvert');
+    egal(typeof c, 'object', 'garde-fou de lecture');
+  }
+});
+
+cas.push({
+  nom: 'C6 — totaliserAgregats : les flux se somment entre contrats, aucun compteur',
+  fn: function () {
+    var a1 = Chaine.agregerPeriode([mois(2026, 1, { presence: 20, entretien: 10000, net: 150000, total: 160000,
+      compteurSortie: { minutesSup: 600, dixiemesCpAcquis: 25, dixiemesCpPris: 0 } })]);
+    var a2 = Chaine.agregerPeriode([mois(2026, 1, { presence: 18, entretien: 9000, net: 140000, total: 149000,
+      compteurSortie: { minutesSup: 540, dixiemesCpAcquis: 25, dixiemesCpPris: 0 } })]);
+    var t = Chaine.totaliserAgregats([a1, a2]);
+    egal(t.nbContrats, 2, 'nbContrats');
+    egal(t.joursPresence, 38, 'joursPresence');
+    egal(t.entretienCentimes, 19000, 'entretienCentimes');
+    egal(t.totalAVerserCentimes, 309000, 'totalAVerserCentimes');
+    egal(t.minutesSup, undefined, 'aucun solde d’heures sup global n’est produit');
   }
 });
 

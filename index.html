@@ -41,6 +41,8 @@
       <button id="onglet-periode" class="onglet" type="button" role="tab">Période</button>
       <button id="onglet-familles" class="onglet" type="button" role="tab">Familles</button>
     </nav>
+    <!-- Échecs qui ne se rattachent à aucun écran (déconnexion, session). -->
+    <div id="msg-app" class="msg-app" role="status" aria-live="polite" hidden></div>
     <main id="recap" class="saisie" hidden></main>
     <main id="saisie" class="saisie" hidden></main>
     <main id="periode" class="saisie" hidden></main>
@@ -55,6 +57,9 @@
 
   <!-- Configuration (URL + clé publique) ------------------------------- -->
   <script src="config.js"></script>
+
+  <!-- Traduction des échecs en français (aucun texte technique à l'écran) -->
+  <script src="js/messages.js"></script>
 
   <!-- Modules purs du lot 1 utilisés par la saisie et le récap --------- -->
   <script src="js/feries.js"></script>

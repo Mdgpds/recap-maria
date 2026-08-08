@@ -27,6 +27,7 @@ function assert(cond, msg) { if (!cond) { echecs++; console.error('FAIL ' + msg)
 window.Feries = require('../js/feries.js');
 window.Format = require('../js/format.js');
 window.Engine = require('../js/engine.js');
+window.Messages = require('../js/messages.js');
 
 var famille = { id: 'f1', nom: 'Papillon', canal: 'Groupe Papillon', archive: false };
 var contrat = {
@@ -193,6 +194,34 @@ UiFamilles.afficher()
         'C5 : suppression refusée — ce barème sert un récapitulatif figé');
       var msg = document.getElementById('msg-familles');
       assert(msg.textContent.indexOf('figés') !== -1, 'C5 : le refus est expliqué en français');
+      return sections;
+    });
+  })
+  .then(function (sections) {
+    /* --- A4 : modifier un paramètre de calcul demande confirmation --- */
+    var formulaire = sections[0];
+    var champsForm = formulaire.querySelectorAll('input');
+    var minutesSup = Array.prototype.filter.call(champsForm, function (i) {
+      return i.type === 'number' && i.value === '30';
+    })[0];
+    assert(!!minutesSup, 'A4 : le champ « minutes supplémentaires par jour » est trouvé');
+    minutesSup.value = '0';                 // le cas du rapport : 30 -> 0 « pour tester »
+    reponsesConfirm = [false];              // Maria annule devant l'avertissement
+    parTexte(formulaire, 'button', 'Enregistrer').click();
+    return attendre(30).then(function () {
+      assert(ecrits.contrats.length === 0,
+        'A4 : annuler la confirmation n’écrit rien — RG-03 n’est pas changée en silence');
+      /* Cette fois elle confirme. */
+      reponsesConfirm = [true];
+      parTexte(formulaire, 'button', 'Enregistrer').click();
+      return attendre(40);
+    }).then(function () {
+      assert(ecrits.contrats.length === 1, 'A4 : après confirmation, la modification est enregistrée');
+      if (ecrits.contrats.length) {
+        assert(ecrits.contrats[0].champs.minutes_sup_jour === 0,
+          'A4 : la valeur confirmée est bien écrite');
+      }
+      ecrits.contrats.length = 0;           // on repart propre pour le test d'archivage
       return sections;
     });
   })

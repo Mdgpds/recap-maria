@@ -7,7 +7,8 @@
 
 var suites = [
   { titre: 'Moteur de calcul (lot 1)', suite: require('./engine.test.js') },
-  { titre: 'Chaîne des mois et agrégation de période (lot 5)', suite: require('./chaine.test.js') }
+  { titre: 'Chaîne des mois et agrégation de période (lot 5)', suite: require('./chaine.test.js') },
+  { titre: 'Messages d’échec en français (lot 5)', suite: require('./messages.test.js') }
 ];
 
 var reussis = 0;

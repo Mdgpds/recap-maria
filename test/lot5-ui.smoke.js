@@ -22,6 +22,7 @@ var HTML = '<!DOCTYPE html><body>' +
   '<section id="vue-app" hidden>' +
   '<button id="btn-logout"></button>' +
   '<div id="chargement">Chargement…</div>' +
+  '<div id="msg-app" hidden></div>' +
   '<nav id="onglets" hidden>' +
   '<button id="onglet-recap" class="onglet onglet-actif"></button>' +
   '<button id="onglet-saisie" class="onglet"></button>' +
@@ -42,6 +43,7 @@ function assert(cond, msg) { if (!cond) { echecs++; console.error('FAIL ' + msg)
 window.Feries = require('../js/feries.js');
 window.Format = require('../js/format.js');
 window.Engine = require('../js/engine.js');
+window.Messages = require('../js/messages.js');
 
 /* Deux contrats sur mars 2026 : un actif, un archivé le 15 mars.
    Le contrat archivé DOIT rester visible sur ce mois (C4) : l'enfant a bien
@@ -82,7 +84,7 @@ var appelsAfficherSaisie = 0;
 var DB = {
   getSession: function () { return Promise.resolve({ user: { id: 'u1' } }); },
   onAuthChange: function () { /* aucun événement simulé */ },
-  signOut: function () { return Promise.resolve(true); },
+  signOut: function () { return Promise.reject(new Error('Failed to fetch')); },
   listContratsActifs: function () { return Promise.resolve([contratActif]); },
   listContratsTous: function () { return Promise.resolve([contratActif, contratArchive]); },
   listContratsPourMois: function () { return Promise.resolve([contratActif, contratArchive]); },
@@ -154,6 +156,20 @@ setTimeout(function () {
     var wa = recap.querySelector('.wa-texte');
     assert(!!wa && wa.value.indexOf('en vigueur depuis le —') === -1,
       'C5 : le document parents n’affiche jamais « en vigueur depuis le — »');
+
+    /* A3 — une déconnexion qui échoue (zone sans réseau) doit se VOIR : sinon
+       Maria repose son téléphone en croyant sa session fermée. */
+    document.getElementById('btn-logout').click();
+    return new Promise(function (r) { setTimeout(r, 40); });
+  }).then(function () {
+    var msgApp = document.getElementById('msg-app');
+    assert(msgApp.hidden === false, 'A3 : l’échec de déconnexion est affiché, pas avalé');
+    assert(msgApp.textContent.indexOf('TOUJOURS ouverte') !== -1,
+      'A3 : le message dit que la session reste ouverte');
+    assert(msgApp.textContent.indexOf('Failed to fetch') === -1,
+      'A2 : aucun message technique anglais à l’écran');
+    assert(msgApp.textContent.indexOf('connexion indisponible') !== -1,
+      'A2 : l’échec réseau est dit en français');
 
     console.log('\n' + (echecs === 0 ? 'Tout est conforme.' : echecs + ' échec(s).'));
     process.exit(echecs === 0 ? 0 : 1);

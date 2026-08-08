@@ -106,6 +106,47 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Période d'activité d'un contrat                                     */
+  /* ------------------------------------------------------------------ */
+
+  /* Le mois demandé est-il RECOUVERT par la période d'activité du contrat ?
+     Exactement la règle de DB.listContratsPourMois, appliquée mois par mois :
+       date_debut <= dernier jour du mois
+       ET (date_fin nulle OU date_fin >= premier jour du mois)
+     Comparaisons sur des chaînes 'YYYY-MM-DD' (dates pures). */
+  function contratCouvreLeMois(contrat, annee, mois) {
+    var premier = premierJour(annee, mois);
+    var dernier = dernierJour(annee, mois);
+    if (contrat.date_debut && contrat.date_debut > dernier) return false;
+    if (contrat.date_fin && contrat.date_fin < premier) return false;
+    return true;
+  }
+
+  /* Intersection de la fenêtre demandée [debut, fin] et de la période
+     d'activité du contrat. Retourne null si elles ne se recouvrent pas.
+
+     C'est ce qui empêche un récapitulatif de période de compter un mois de
+     salaire pour un mois où le contrat n'existait plus : le moteur, lui, ne
+     compte aucune journée hors bornes, mais il renvoie quand même le net du
+     barème applicable — et un net additionné douze fois au lieu de sept fait
+     un total faux et parfaitement crédible, sur le document même qui sert de
+     pièce justificative après le départ d'une famille. */
+  function fenetreContrat(contrat, debut, fin) {
+    var d = { annee: debut.annee, mois: debut.mois };
+    var f = { annee: fin.annee, mois: fin.mois };
+    if (contrat.date_debut) {
+      var cd = moisDeDate(contrat.date_debut);
+      if (cmpMois(cd.annee, cd.mois, d.annee, d.mois) > 0) d = cd;
+    }
+    if (contrat.date_fin) {
+      var cf = moisDeDate(contrat.date_fin);
+      if (cmpMois(cf.annee, cf.mois, f.annee, f.mois) < 0) f = cf;
+    }
+    if (cmpMois(d.annee, d.mois, f.annee, f.mois) > 0) return null;
+    return { debut: { annee: d.annee, mois: d.mois }, fin: { annee: f.annee, mois: f.mois } };
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Chaîne des mois                                                     */
   /* ------------------------------------------------------------------ */
 
@@ -230,6 +271,11 @@
                   compteur = compteurInitial;
                 }
                 var avant = cmpMois(mm.annee, mm.mois, depart.annee, depart.mois) < 0;
+                /* Mois hors de la période d'activité du contrat : il est
+                   rejoué pour ne pas rompre la continuité des compteurs, mais
+                   il est MARQUÉ — aucun récapitulatif mensuel n'existe ni ne
+                   peut exister pour lui, et agregerPeriode l'écarte. */
+                var hors = !contratCouvreLeMois(contrat, mm.annee, mm.mois);
                 var compteurEntree = compteur;
                 var salaire = Engine.salaireApplicable(salaires, mm.annee, mm.mois);
                 var entree;
@@ -244,6 +290,7 @@
                     resultat: d, fige: true, recap: recap,
                     salaire: salaire, salaireManquant: false,
                     avantInitialisation: avant,
+                    horsContrat: hors,
                     compteurEntree: compteurEntreeDe(d, compteurEntree),
                     compteurSortie: compteur
                   };
@@ -266,6 +313,7 @@
                     resultat: r, fige: false, recap: recap || null,
                     salaire: salaire, salaireManquant: !salaire,
                     avantInitialisation: avant,
+                    horsContrat: hors,
                     compteurEntree: compteurEntree, compteurSortie: compteur
                   };
                 }
@@ -327,7 +375,12 @@
 
      Fonction pure : aucun accès réseau, aucun DOM. Testable sous Node. */
   function agregerPeriode(entrees) {
-    var liste = (entrees || []).filter(function (e) { return e && e.resultat; });
+    /* Un mois hors de la période d'activité du contrat n'est PAS un résultat
+       mensuel : aucun récapitulatif n'existe pour lui. On l'écarte ici, à la
+       source, pour qu'aucun écran ne puisse le faire entrer dans un total en
+       oubliant de borner sa fenêtre. */
+    var toutes = (entrees || []).filter(function (e) { return e && e.resultat; });
+    var liste = toutes.filter(function (e) { return !e.horsContrat; });
     var somme = {
       nbMois: liste.length,
       joursPresence: 0,
@@ -348,6 +401,19 @@
       moisProvisoires: [],
       moisFiges: [],
       moisAvantInitialisation: [],
+      moisHorsContrat: toutes.filter(function (e) { return e.horsContrat; })
+        .map(function (e) { return { annee: e.annee, mois: e.mois }; }),
+      /* Cas rare mais lourd de conséquence : un mois FIGÉ — donc déjà envoyé
+         aux parents — qui tombe hors des bornes du contrat parce que la date
+         de fin a été saisie après coup. Il est écarté des totaux (le contrat
+         n'existait plus), mais le taire ferait disparaître du document de
+         période un mois que les parents ont bel et bien reçu. */
+      moisHorsContratFiges: toutes.filter(function (e) { return e.horsContrat && e.fige; })
+        .map(function (e) { return { annee: e.annee, mois: e.mois }; }),
+      /* Noms tels qu'ils étaient au figement, dans l'ordre des mois. Le
+         document de période peut ainsi porter le nom des récapitulatifs
+         qu'il agrège, et non un renommage postérieur. */
+      nomsFiges: [],
       baremes: []
     };
     if (!liste.length) return somme;
@@ -372,6 +438,12 @@
       somme.salaireNetCentimes += r.salaireNetCentimes || 0;
       somme.totalAVerserCentimes += r.totalAVerserCentimes || 0;
 
+      if (e.fige && r.prenomEnfant) {
+        somme.nomsFiges.push({
+          annee: e.annee, mois: e.mois,
+          prenom: r.prenomEnfant, famille: r.nomFamille || null
+        });
+      }
       if (e.fige) somme.moisFiges.push({ annee: e.annee, mois: e.mois });
       else somme.moisProvisoires.push({ annee: e.annee, mois: e.mois });
       if (e.avantInitialisation) somme.moisAvantInitialisation.push({ annee: e.annee, mois: e.mois });
@@ -401,13 +473,46 @@
     return somme;
   }
 
+  /* Total de plusieurs agrégats (vue d'ensemble tous contrats confondus).
+     Mêmes grandeurs que agregerPeriode, même règle : seuls les FLUX
+     s'additionnent. Aucun compteur n'est totalisé entre contrats — un solde
+     d'heures supplémentaires global n'a aucun sens. La règle vit ici, à un
+     seul endroit, et elle est testée. */
+  function totaliserAgregats(agregats) {
+    var t = {
+      nbContrats: 0, nbMois: 0,
+      joursPresence: 0, entretienCentimes: 0, minutesSupAcquises: 0,
+      joursCongesDecomptes: 0, retenueSansSoldeCentimes: 0,
+      salaireBrutCentimes: 0, salaireNetCentimes: 0, totalAVerserCentimes: 0,
+      nbMoisProvisoires: 0
+    };
+    (agregats || []).forEach(function (a) {
+      if (!a) return;
+      t.nbContrats++;
+      t.nbMois += a.nbMois;
+      t.joursPresence += a.joursPresence;
+      t.entretienCentimes += a.entretienCentimes;
+      t.minutesSupAcquises += a.minutesSupAcquises;
+      t.joursCongesDecomptes += a.joursCongesDecomptes;
+      t.retenueSansSoldeCentimes += a.retenueSansSoldeCentimes;
+      t.salaireBrutCentimes += a.salaireBrutCentimes;
+      t.salaireNetCentimes += a.salaireNetCentimes;
+      t.totalAVerserCentimes += a.totalAVerserCentimes;
+      t.nbMoisProvisoires += a.moisProvisoires.length;
+    });
+    return t;
+  }
+
   /* ------------------------------------------------------------------ */
 
   var api = {
     serie: serie,
     mois1: mois1,
     fenetre: fenetre,
+    fenetreContrat: fenetreContrat,
+    contratCouvreLeMois: contratCouvreLeMois,
     agregerPeriode: agregerPeriode,
+    totaliserAgregats: totaliserAgregats,
     /* calendrier, partagé par les écrans */
     nbJoursDansMois: nbJoursDansMois,
     premierJour: premierJour,

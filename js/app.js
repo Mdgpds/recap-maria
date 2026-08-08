@@ -52,7 +52,7 @@
     // État initial.
     global.DB.getSession()
       .then(function (session) { if (session) entrerDansApp(session); else montrerLogin(); })
-      .catch(function (e) { messageLogin('Connexion impossible : ' + (e.message || e)); montrerLogin(); });
+      .catch(function (e) { messageLogin('Connexion impossible : ' + lisible(e)); montrerLogin(); });
   });
 
   /* ---------------------------------------------------------------- */
@@ -71,16 +71,43 @@
       global.DB.signIn(email, mdp)
         .then(function () { messageLogin(''); /* onAuthChange déclenche l'entrée */ })
         .catch(function (err) {
-          messageLogin('Connexion refusée : ' + (err.message || err));
+          // Jamais le message brut : « Invalid login credentials » n'a rien à
+          // faire sous les yeux de Maria.
+          messageLogin('Connexion refusée : ' + lisible(err));
           btn.disabled = false;
         });
     });
   }
 
   function câblerLogout() {
-    document.getElementById('btn-logout').addEventListener('click', function () {
-      global.DB.signOut().catch(function () {});
+    var btn = document.getElementById('btn-logout');
+    btn.addEventListener('click', function () {
+      messageApp('Déconnexion…');
+      btn.disabled = true;
+      global.DB.signOut()
+        .then(function () { messageApp(''); })
+        .catch(function (e) {
+          /* Un échec silencieux ferait croire la session fermée alors qu'elle
+             reste ouverte : Maria repose son téléphone rassurée à tort. */
+          messageApp('Déconnexion impossible : ' + lisible(e) +
+            ' Votre session est TOUJOURS ouverte.', true);
+          btn.disabled = false;
+        });
     });
+  }
+
+  /* Message d'application, visible sous les onglets. Sert aux échecs qui ne
+     se rattachent à aucun écran en particulier. */
+  function messageApp(txt, estErreur) {
+    var m = document.getElementById('msg-app');
+    if (!m) return;
+    m.textContent = txt || '';
+    m.className = 'msg-app' + (estErreur ? ' msg-erreur' : '');
+    m.hidden = !txt;
+  }
+
+  function lisible(e) {
+    return global.Messages ? global.Messages.lisible(e) : 'une erreur est survenue.';
   }
 
   /* ---------------------------------------------------------------- */
@@ -186,8 +213,8 @@
         // de laisser l'écran bloqué sur l'erreur.
         pret = false;
         utilisateurCourant = null;
-        montrerAttente('Chargement impossible : ' + (e.message || e) +
-          '\nVérifiez votre connexion, puis rechargez la page.');
+        montrerAttente('Chargement impossible : ' + lisible(e) +
+          '\nRechargez la page pour réessayer.');
       })
       .then(function () { chargementEnCours = false; });
   }

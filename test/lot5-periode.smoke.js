@@ -25,6 +25,7 @@ function assert(cond, msg) { if (!cond) { echecs++; console.error('FAIL ' + msg)
 window.Feries = require('../js/feries.js');
 window.Format = require('../js/format.js');
 window.Engine = require('../js/engine.js');
+window.Messages = require('../js/messages.js');
 
 function contrat(id, prenom) {
   return {
@@ -44,7 +45,8 @@ var recapJanvier = {
     imputation: { joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0, minutesSupConsommees: 0, dixiemesCpConsommes: 0 },
     retenueSansSoldeCentimes: 0, dixiemesCpAcquis: 25,
     salaireBrutCentimes: 195000, salaireNetCentimes: 150000, salaireDateEffet: '2026-01-01',
-    prenomEnfant: 'Alpha', nomFamille: 'Papillon', totalAVerserCentimes: 161000,
+    /* Figé sous l'ANCIEN prénom : Maria a corrigé l'orthographe depuis (A6). */
+    prenomEnfant: 'Alfa', nomFamille: 'Papillon', totalAVerserCentimes: 161000,
     compteurSortie: { minutesSup: 660, dixiemesCpAcquis: 25, dixiemesCpPris: 0 }
   }
 };
@@ -113,6 +115,18 @@ UiPeriode.afficher().then(function () {
   assert(wa.value.indexOf('les soldes ne s’additionnent pas') !== -1,
     'C6 : le document rappelle que les soldes ne s’additionnent pas');
   assert(wa.value.indexOf('Total versé sur la période') !== -1, 'C6 : les flux sont bien totalisés');
+
+  /* A6 — le document agrège des mois figés sous l'ancien prénom : il porte ce
+     nom-là, et signale l'écart, pour ne pas remettre aux parents deux
+     documents de noms différents couvrant les mêmes mois. */
+  var docAlpha = Array.prototype.filter.call(cible.querySelectorAll('.carte-contrat'), function (c) {
+    return !!c.querySelector('.wa-texte') && c.textContent.indexOf('Alfa') !== -1;
+  })[0];
+  assert(!!docAlpha, 'A6 : le document porte le nom inscrit dans l’instantané figé');
+  assert(docAlpha.textContent.indexOf('s’appelle aujourd’hui') !== -1,
+    'A6 : l’écart avec le nom courant est signalé, pas tu');
+  assert(docAlpha.querySelector('.wa-texte').value.indexOf('Alfa') !== -1,
+    'A6 : le document remis aux parents porte lui aussi le nom figé');
 
   console.log('\n' + (echecs === 0 ? 'Tout est conforme.' : echecs + ' échec(s).'));
   process.exit(echecs === 0 ? 0 : 1);

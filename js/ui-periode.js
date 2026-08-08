@@ -61,10 +61,7 @@
     return { annee: d.getFullYear(), mois: d.getMonth() + 1 };
   }
   function messageLisible(e) {
-    var brut = (e && (e.message || e.details)) || String(e);
-    if (/row-level security|permission|42501/i.test(brut)) return 'accès refusé (reconnectez-vous).';
-    if (/Failed to fetch|NetworkError/i.test(brut)) return 'connexion indisponible, réessayez.';
-    return brut;
+    return global.Messages ? global.Messages.lisible(e) : 'une erreur est survenue.';
   }
   function ligne(parent, libelle, valeur, fort) {
     var l = ce('div', 'recap-ligne' + (fort ? ' recap-fort' : ''));
@@ -259,6 +256,22 @@
     var p = periodeDemandee();
     if (p.erreur) { msg.textContent = p.erreur; return; }
 
+    /* Un mois à venir n'a pas de récapitulatif : il n'a pas encore été
+       travaillé. Compter son salaire gonflerait le total d'un montant
+       parfaitement crédible. On ramène la fin de période au mois courant et
+       on le dit — jamais de troncature silencieuse. */
+    var maintenant = moisCourant();
+    var finDemandee = p.fin;
+    var ramenee = false;
+    if (Chaine.cmpMois(p.fin.annee, p.fin.mois, maintenant.annee, maintenant.mois) > 0) {
+      p = { debut: p.debut, fin: { annee: maintenant.annee, mois: maintenant.mois }, titre: p.titre };
+      ramenee = true;
+    }
+    if (Chaine.cmpMois(p.debut.annee, p.debut.mois, p.fin.annee, p.fin.mois) > 0) {
+      msg.textContent = 'Cette période est entièrement à venir : aucun mois n’a encore été travaillé.';
+      return;
+    }
+
     var nbMois = Chaine.nbMoisEntre(p.debut.annee, p.debut.mois, p.fin.annee, p.fin.mois);
     if (nbMois > MAX_MOIS_PERIODE) {
       msg.textContent = 'Période limitée à ' + MAX_MOIS_PERIODE + ' mois (' + nbMois +
@@ -302,31 +315,41 @@
         return null;
       }
       return Promise.all(contrats.map(function (ct) {
-        return Chaine.serie(ct, p.fin, {
-          depuis: p.debut,     // la chaîne doit couvrir toute la fenêtre demandée
+        /* Fenêtre RÉELLEMENT couverte par ce contrat : intersection de la
+           période demandée et de sa période d'activité. Un contrat terminé en
+           mars ne doit pas apporter cinq mois de salaire à un bilan qui court
+           jusqu'en août. */
+        var couv = Chaine.fenetreContrat(ct, p.debut, p.fin);
+        if (!couv) {
+          return Promise.resolve({
+            contrat: ct, mois: [], agregat: Chaine.agregerPeriode([]),
+            couverture: null, moisDemandes: nbMois, tronquee: false
+          });
+        }
+        return Chaine.serie(ct, couv.fin, {
+          depuis: couv.debut,
           onProgress: function (fait, tot) {
             faits++;
             if (fait === 1) { total += tot; }
             majProgression();
           }
         }).then(function (s) {
-          var fenetre = Chaine.fenetre(s, p.debut, p.fin);
+          var fenetre = Chaine.fenetre(s, couv.debut, couv.fin);
           return {
             contrat: ct,
             mois: fenetre,
             agregat: Chaine.agregerPeriode(fenetre),
+            couverture: couv,
             tronquee: s.tronquee,
-            /* Nombre de mois de la période que ce contrat ne couvre pas
-               (contrat commencé après le début de la période, ou terminé
-               avant sa fin). Sert à ne jamais laisser croire qu'un document
-               couvre toute la période affichée alors qu'il n'en couvre
-               qu'une partie. */
             moisDemandes: nbMois
           };
         });
       })).then(function (resultats) {
         clearTimeout(minuteur);
-        msg.textContent = '';
+        msg.textContent = ramenee
+          ? 'Période ramenée à ' + libellePeriode(p.debut, p.fin) + ' : les mois à venir (jusqu’à ' +
+            Chaine.libelleMoisAnnee(finDemandee.annee, finDemandee.mois) + ') n’ont pas encore de récapitulatif.'
+          : '';
         etat.resultats = { periode: p, contrats: resultats };
         rendreResultats(cible, p, resultats);
         bouton.disabled = false;
@@ -348,6 +371,24 @@
     cible.appendChild(ce('h3', null, p.titre));
 
     var utiles = resultats.filter(function (r) { return r.agregat.nbMois > 0; });
+    var vides = resultats.filter(function (r) { return r.agregat.nbMois === 0; });
+
+    vides.forEach(function (r) {
+      if (r.tronquee) {
+        /* Distinct du cas « hors contrat » : ici la chaîne est trop longue
+           pour être rejouée, ce n'est pas le contrat qui est en cause. */
+        cible.appendChild(ce('p', 'alerte',
+          'Historique de ' + r.contrat.prenom_enfant + ' trop long pour être rejoué (limite de ' +
+          Chaine.MAX_MOIS + ' mois) : vérifiez sa date de début (' + dateFr(r.contrat.date_debut) +
+          ') dans l’onglet Familles.'));
+        return;
+      }
+      cible.appendChild(ce('p', 'alerte',
+        r.contrat.prenom_enfant + ' n’était pas sous contrat sur cette période : ' +
+        'aucun récapitulatif ne peut être produit (contrat du ' + dateFr(r.contrat.date_debut) +
+        (r.contrat.date_fin ? ' au ' + dateFr(r.contrat.date_fin) : ', toujours en cours') + ').'));
+    });
+
     if (!utiles.length) {
       cible.appendChild(ce('p', 'vide', 'Aucun mois calculable sur cette période.'));
       return;
@@ -365,31 +406,23 @@
     carte.appendChild(ce('h3', null, 'Vue d’ensemble — ' + resultats.length + ' contrat(s)'));
     carte.appendChild(ce('p', 'aide', libellePeriode(p.debut, p.fin) + ' · usage interne, non transmissible.'));
 
-    var t = { presence: 0, entretien: 0, sup: 0, conges: 0, retenue: 0, net: 0, total: 0 };
-    var provisoires = 0;
-    resultats.forEach(function (r) {
-      var a = r.agregat;
-      t.presence += a.joursPresence;
-      t.entretien += a.entretienCentimes;
-      t.sup += a.minutesSupAcquises;
-      t.conges += a.joursCongesDecomptes;
-      t.retenue += a.retenueSansSoldeCentimes;
-      t.net += a.salaireNetCentimes;
-      t.total += a.totalAVerserCentimes;
-      provisoires += a.moisProvisoires.length;
-    });
+    /* La règle « ce qui s'additionne » n'est pas réécrite ici : elle vit dans
+       ChaineMois.totaliserAgregats, au même endroit que celle des mois, et
+       elle est testée sous Node. Aucun compteur n'est totalisé entre
+       contrats — un solde d'heures sup global n'aurait aucun sens. */
+    var t = Chaine.totaliserAgregats(resultats.map(function (r) { return r.agregat; }));
 
-    ligne(carte, 'Jours de présence', String(t.presence));
-    ligne(carte, 'Indemnités d’entretien', eur(t.entretien));
-    ligne(carte, 'Heures sup acquises', heures(t.sup));
-    ligne(carte, 'Jours de congés décomptés', String(t.conges));
-    if (t.retenue > 0) ligne(carte, 'Retenues sans solde', '-' + eur(t.retenue));
-    ligne(carte, 'Salaires nets', eur(t.net));
-    ligne(carte, 'Total versé', eur(t.total), true);
+    ligne(carte, 'Jours de présence', String(t.joursPresence));
+    ligne(carte, 'Indemnités d’entretien', eur(t.entretienCentimes));
+    ligne(carte, 'Heures sup acquises', heures(t.minutesSupAcquises));
+    ligne(carte, 'Jours de congés décomptés', String(t.joursCongesDecomptes));
+    if (t.retenueSansSoldeCentimes > 0) ligne(carte, 'Retenues sans solde', '-' + eur(t.retenueSansSoldeCentimes));
+    ligne(carte, 'Salaires nets', eur(t.salaireNetCentimes));
+    ligne(carte, 'Total versé', eur(t.totalAVerserCentimes), true);
 
-    if (provisoires > 0) {
+    if (t.nbMoisProvisoires > 0) {
       carte.appendChild(ce('p', 'alerte',
-        provisoires + ' mois encore provisoire(s) dans ce total (récapitulatif non figé) : ' +
+        t.nbMoisProvisoires + ' mois encore provisoire(s) dans ce total (récapitulatif non figé) : ' +
         'ces montants peuvent encore changer.'));
     }
 
@@ -398,6 +431,7 @@
       var a = r.agregat;
       liste.appendChild(ce('p', 'resume',
         r.contrat.prenom_enfant + (r.contrat.archive ? ' (archivé)' : '') + ' — ' +
+        libellePeriode(r.couverture.debut, r.couverture.fin) + ' · ' +
         a.nbMois + ' mois · ' + a.joursPresence + ' présences · ' + eur(a.totalAVerserCentimes) +
         ' · solde sup ' + heures(a.compteurSortie ? a.compteurSortie.minutesSup : 0)));
     });
@@ -412,23 +446,47 @@
     var ct = r.contrat;
     var carte = ce('section', 'carte-contrat');
 
+    var nom = nomContrat(r);
     var entete = ce('div', 'recap-entete');
-    entete.appendChild(ce('h3', null, nomContrat(r)));
+    entete.appendChild(ce('h3', null, nom.affiche));
     if (ct.archive) entete.appendChild(ce('span', 'badge-archive', 'Archivé'));
     carte.appendChild(entete);
-    carte.appendChild(ce('p', 'aide', libellePeriode(p.debut, p.fin) + ' · ' + a.nbMois + ' mois'));
+    /* La période affichée est celle RÉELLEMENT couverte par le contrat, pas
+       celle qui a été demandée. */
+    carte.appendChild(ce('p', 'aide',
+      libellePeriode(r.couverture.debut, r.couverture.fin) + ' · ' + a.nbMois + ' mois'));
+
+    if (nom.renomme) {
+      carte.appendChild(ce('p', 'alerte',
+        'Ce document reprend le nom inscrit sur les récapitulatifs figés de la période (« ' +
+        nom.affiche + ' »). Le contrat s’appelle aujourd’hui « ' + nom.courant +
+        ' » : les deux documents parlent bien du même enfant.'));
+    }
 
     if (r.tronquee) {
       carte.appendChild(ce('p', 'alerte',
         'Chaîne de mois tronquée à ' + Chaine.MAX_MOIS + ' mois : vérifiez la date de début du contrat.'));
     }
     /* Jamais de troncature silencieuse : si le contrat ne couvre qu'une partie
-       de la période demandée, le document doit le dire lui-même. */
+       de la période demandée, le document le dit lui-même. */
     if (r.moisDemandes && a.nbMois < r.moisDemandes) {
       carte.appendChild(ce('p', 'alerte',
         'Ce contrat ne couvre que ' + a.nbMois + ' des ' + r.moisDemandes +
-        ' mois de la période demandée : les totaux ci-dessous ne portent que sur ces mois.'));
+        ' mois de la période demandée (contrat du ' + dateFr(ct.date_debut) +
+        (ct.date_fin ? ' au ' + dateFr(ct.date_fin) : ', toujours en cours') +
+        ') : les totaux ci-dessous ne portent que sur ces mois.'));
     }
+    if (a.moisHorsContratFiges && a.moisHorsContratFiges.length) {
+      carte.appendChild(ce('p', 'alerte',
+        'Attention : ' +
+        a.moisHorsContratFiges.map(function (m) { return Chaine.libelleMoisAnnee(m.annee, m.mois); }).join(', ') +
+        ' porte un récapitulatif FIGÉ, déjà remis aux parents, alors que ce mois est hors des dates ' +
+        'du contrat (' + dateFr(ct.date_debut) +
+        (ct.date_fin ? ' → ' + dateFr(ct.date_fin) : '') + '). Il n’entre pas dans les totaux ci-dessous : ' +
+        'le document mensuel figé et ce récapitulatif de période ne diront donc pas la même chose. ' +
+        'Vérifiez la date de fin du contrat.'));
+    }
+
     if (a.moisAvantInitialisation.length) {
       carte.appendChild(ce('p', 'alerte',
         a.moisAvantInitialisation.length + ' mois antérieur(s) à la reprise des compteurs (' +
@@ -491,9 +549,22 @@
     return carte;
   }
 
+  /* Nom porté par le document de période.
+
+     Le document agrège des mois dont certains sont figés, et un instantané
+     figé porte le nom qu'avait l'enfant au moment du figement (C2). Si Maria
+     a renommé l'enfant depuis, afficher le nom courant ferait recevoir aux
+     parents deux documents de noms différents couvrant les mêmes mois. On
+     reprend donc le nom du DERNIER mois figé de la période, et on signale
+     l'écart plutôt que de le taire. Sans mois figé, le nom courant fait foi. */
   function nomContrat(r) {
     var ct = r.contrat;
-    return ct.prenom_enfant + (ct.famille && ct.famille.nom ? ' · ' + ct.famille.nom : '');
+    var courant = ct.prenom_enfant + (ct.famille && ct.famille.nom ? ' · ' + ct.famille.nom : '');
+    var noms = (r.agregat && r.agregat.nomsFiges) || [];
+    if (!noms.length) return { affiche: courant, courant: courant, renomme: false };
+    var dernier = noms[noms.length - 1];
+    var fige = dernier.prenom + (dernier.famille ? ' · ' + dernier.famille : '');
+    return { affiche: fige, courant: courant, renomme: fige !== courant };
   }
 
   function textePeriode(p, r) {
@@ -501,8 +572,8 @@
     var ce0 = a.compteurEntree || { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 };
     var cs = a.compteurSortie || ce0;
     var lignes = [
-      'Récap de période — ' + nomContrat(r),
-      libellePeriode(p.debut, p.fin) + ' (' + a.nbMois + ' mois)',
+      'Récap de période — ' + nomContrat(r).affiche,
+      libellePeriode(r.couverture.debut, r.couverture.fin) + ' (' + a.nbMois + ' mois)',
       '',
       'Présence : ' + a.joursPresence + ' jour(s)',
       'Entretien : ' + eur(a.entretienCentimes),
@@ -539,21 +610,32 @@
     return lignes.join('\n');
   }
 
+  /* Copie dans le presse-papiers. Un échec de copie doit se VOIR : sinon
+     Maria colle dans WhatsApp le contenu précédent du presse-papiers, ou
+     rien, en croyant avoir copié son récapitulatif. */
   function copierTexte(txt, bouton) {
+    var libelle = bouton.textContent;
     var ok = function () {
-      var t = bouton.textContent; bouton.textContent = 'Copié ✓';
-      setTimeout(function () { bouton.textContent = t; }, 1500);
+      bouton.textContent = 'Copié ✓';
+      setTimeout(function () { bouton.textContent = libelle; }, 1500);
+    };
+    var echec = function (e) {
+      if (global.console) global.console.error('[Récap Maria] copie impossible :', e);
+      bouton.textContent = 'Copie impossible — sélectionnez le texte ci-dessus';
+      setTimeout(function () { bouton.textContent = libelle; }, 4000);
     };
     if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
-      global.navigator.clipboard.writeText(txt).then(ok, function () { fallbackCopie(txt, ok); });
-    } else { fallbackCopie(txt, ok); }
+      global.navigator.clipboard.writeText(txt).then(ok, function () { fallbackCopie(txt, ok, echec); });
+    } else { fallbackCopie(txt, ok, echec); }
   }
-  function fallbackCopie(txt, ok) {
+  function fallbackCopie(txt, ok, echec) {
     try {
       var ta = document.createElement('textarea');
       ta.value = txt; document.body.appendChild(ta); ta.select();
-      document.execCommand('copy'); document.body.removeChild(ta); ok();
-    } catch (e) { /* silencieux */ }
+      var reussi = document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (reussi) ok(); else echec(new Error('execCommand a renvoyé false'));
+    } catch (e) { echec(e); }
   }
 
   /* ------------------------------------------------------------------ */
