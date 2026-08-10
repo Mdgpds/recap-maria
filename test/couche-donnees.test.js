@@ -122,6 +122,35 @@ Object.keys(COLONNES_ATTENDUES).forEach(function (table) {
 });
 
 cas.push({
+  nom: 'db.js — aucun chemin ne clôture un mois sans passer par la base (C4)',
+  fn: function () {
+    /* Relecture lot 13, anomalie C4. `figerRecap` clôturait par un UPDATE
+       direct, avec un `fige_le` fabriqué côté client et AUCUN événement. Elle
+       n'était plus appelée, mais restait exportée sous un nom plus court et
+       plus ancien que son remplaçant : « un lot suivant l'appellera par
+       habitude, le mois se clôturera, et le premier événement de l'historique
+       sera Rouvert ».
+
+       Le lot 13 ne tient que si la clôture a UN SEUL chemin. Ce contrôle le
+       verrouille : le jour où quelqu'un réécrit un raccourci, il échoue. */
+    egal(/figerRecap|figerVraiment\s*\(/.test(SOURCE.replace(/\/\*[\s\S]*?\*\//g, '')), false,
+      'db.js ne contient plus figerRecap ni figerVraiment (hors commentaire)');
+
+    /* Le fond, pas seulement le nom : aucun écriture directe de statut « fige »
+       depuis le navigateur. Le seul chemin est `recloturer_recap` en base, qui
+       écrit dans la même transaction que l'événement. */
+    var sansCommentaires = SOURCE.replace(/\/\*[\s\S]*?\*\//g, '');
+    egal(/statut\s*:\s*'fige'/.test(sansCommentaires), false,
+      'aucun update ne pose statut « fige » depuis le client');
+    egal(/fige_le\s*:/.test(sansCommentaires), false,
+      'aucun fige_le n’est fabriqué côté client : l’horodatage vient de la base');
+
+    egal(sansCommentaires.indexOf("rpc('recloturer_recap'") !== -1, true,
+      'la clôture passe bien par la fonction en base');
+  }
+});
+
+cas.push({
   nom: 'db.js — aucune colonne du lot 13 n’est lue sans être demandée',
   fn: function () {
     /* Contrôle croisé, dans l'autre sens : on part de ce que les écrans

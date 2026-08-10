@@ -165,7 +165,8 @@ var DB = {
   retirerAbsenceMaria: function () { return Promise.resolve(true); },
   /* Lot 13 : la clôture passe désormais par recloturerRecap, qui écrit
      l'événement « cloture » dans la même transaction que le figement.
-     figerRecap reste en place mais n'est plus appelée par l'interface. */
+     L'ancienne figerRecap a été SUPPRIMÉE de db.js (relecture lot 13, C4) :
+     elle clôturait sans écrire d'événement. Il n'existe plus qu'un chemin. */
   recloturerRecap: function (id, a, m, donnees) {
     appels.fige.push({ contratId: id, annee: a, mois: m, donnees: donnees });
     /* A7 : sur un mois déjà clôturé ailleurs, db.js renvoie null sans écrire. */

@@ -219,9 +219,14 @@
   /* 4. Reclôture : montrer les écarts avant d'écrire                   */
   /* ------------------------------------------------------------------ */
 
+  /* `cp` : les congés payés se comptent en DIXIÈMES de jour dans tout le
+     moteur. Sans ce cas, 25 dixièmes s'afficheraient « 25 j » au lieu de
+     « 2,5 j » — un écart de compteur lu dix fois trop grand, dans l'écran
+     dont le seul rôle est de dire la vérité sur ce qui change. */
   function valeurFormatee(valeur, format) {
     if (format === 'euros') return Kit.eur(valeur);
     if (format === 'minutes') return Kit.heures(valeur);
+    if (format === 'cp') return Kit.joursCp(valeur);
     return Kit.jours(valeur);
   }
 

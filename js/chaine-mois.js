@@ -516,7 +516,21 @@
     { cle: 'salaireNetCentimes',   libelle: 'Salaire net',                    format: 'euros' },
     { cle: 'totalAVerserCentimes', libelle: 'Total à verser',                 format: 'euros' },
     { cle: 'minutesSupAcquises',   libelle: 'Heures supplémentaires du mois', format: 'minutes' },
-    { cle: 'joursCongesDecomptes', libelle: 'Congés décomptés',               format: 'jours' }
+    { cle: 'joursCongesDecomptes', libelle: 'Congés décomptés',               format: 'jours' },
+
+    /* CORRECTION RELECTURE LOT 13 (C2). Les six postes ci-dessus sont ceux du
+       document : ils ne disent QUE des montants. Or une reclôture peut ne
+       changer aucun montant et déplacer durablement des compteurs — quatre
+       jours pris sur les congés payés au lieu de la récupération, par exemple.
+       Le mois se lit pareil, et deux compteurs qui ne se remettent jamais à
+       zéro (RG-12) ont changé de poche en silence. C'est exactement la matière
+       du litige que cette application existe pour éteindre.
+       Les quatre postes suivants sortent de la liste du §5.4 de la
+       spécification : ajout délibéré, signalé dans la restitution. */
+    { cle: 'imputation.dixiemesCpConsommes', libelle: 'Congés payés décomptés ce mois', format: 'cp' },
+    { cle: 'imputation.minutesSupConsommees', libelle: 'Récupération utilisée ce mois', format: 'minutes' },
+    { cle: 'compteurSortie.dixiemesCpPris',  libelle: 'Congés payés pris, en tout',     format: 'cp' },
+    { cle: 'compteurSortie.minutesSup',      libelle: 'Récupération restante',          format: 'minutes' }
   ];
 
   /* Compare l'instantané déjà établi et celui qu'on s'apprête à écrire.
@@ -536,8 +550,8 @@
     var ecarts = [];
     for (var i = 0; i < POSTES_COMPARES.length; i++) {
       var p = POSTES_COMPARES[i];
-      var a = valeurComparee(ancien[p.cle]);
-      var n = valeurComparee(nouveau[p.cle]);
+      var a = valeurComparee(lire(ancien, p.cle));
+      var n = valeurComparee(lire(nouveau, p.cle));
       if (a !== n) {
         ecarts.push({ cle: p.cle, libelle: p.libelle, format: p.format, ancien: a, nouveau: n });
       }
@@ -545,9 +559,26 @@
     return ecarts;
   }
 
-  /* Un poste absent d'un instantané ancien — produit par une version
-     antérieure de l'application — vaut 0 : on ne signale pas un écart qui
-     n'en est pas un, et on ne compare jamais un nombre à `undefined`. */
+  /* Lecture d'un poste, y compris imbriqué : 'compteurSortie.minutesSup'. */
+  function lire(instantane, chemin) {
+    var parties = chemin.split('.');
+    var v = instantane;
+    for (var i = 0; i < parties.length; i++) {
+      if (v == null) return undefined;
+      v = v[parties[i]];
+    }
+    return v;
+  }
+
+  /* Un poste absent d'un instantané — produit par une version antérieure de
+     l'application — est lu comme 0.
+
+     CORRECTION RELECTURE LOT 13 (remarque 1) : le commentaire d'origine
+     prétendait qu'on « ne signale pas un écart qui n'en est pas un ». C'était
+     faux, et dans le bon sens : un instantané ancien dépourvu de
+     `salaireNetCentimes` produira un écart « 0 € → 1 072 € » au premier écran
+     de comparaison. Montrer plutôt que taire est le bon arbitrage — mais il
+     faut le dire, pas prétendre l'inverse. */
   function valeurComparee(v) {
     return (typeof v === 'number' && isFinite(v)) ? v : 0;
   }

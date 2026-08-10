@@ -26,7 +26,7 @@
 
 /* À incrémenter à chaque livraison : c'est ce qui déclenche le remplacement
    des fichiers en cache sur le téléphone de Maria. */
-var CACHE = 'recap-lot13-v1';
+var CACHE = 'recap-lot13-v2';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

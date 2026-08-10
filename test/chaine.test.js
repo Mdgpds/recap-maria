@@ -238,7 +238,12 @@ cas.push({
 /* mains.                                                             */
 /* ================================================================== */
 
-/* Instantané minimal, valeurs FICTIVES (dépôt public). */
+/* Instantané minimal, valeurs FICTIVES (dépôt public).
+
+   Depuis la correction C2 (relecture lot 13), un instantané ne se compare plus
+   seulement sur ses montants : il porte aussi `imputation` et `compteurSortie`,
+   deux blocs IMBRIQUÉS. D'où les options `cpMois`, `supMois`, `cpPris`,
+   `supRestante` — les compteurs que RG-12 interdit de remettre à zéro. */
 function instantane(opts) {
   opts = opts || {};
   return {
@@ -247,7 +252,15 @@ function instantane(opts) {
     salaireNetCentimes:   opts.net       === undefined ? 107200 : opts.net,
     totalAVerserCentimes: opts.total     === undefined ? 117200 : opts.total,
     minutesSupAcquises:   opts.sup       === undefined ? 600    : opts.sup,
-    joursCongesDecomptes: opts.conges    === undefined ? 0      : opts.conges
+    joursCongesDecomptes: opts.conges    === undefined ? 0      : opts.conges,
+    imputation: {
+      dixiemesCpConsommes:  opts.cpMois === undefined ? 0 : opts.cpMois,
+      minutesSupConsommees: opts.supMois === undefined ? 0 : opts.supMois
+    },
+    compteurSortie: {
+      dixiemesCpPris: opts.cpPris     === undefined ? 50   : opts.cpPris,
+      minutesSup:     opts.supRestante === undefined ? 600 : opts.supRestante
+    }
   };
 }
 
@@ -300,18 +313,35 @@ cas.push({
 });
 
 cas.push({
-  nom: 'Lot 13 — les six postes du document sont comparés, et eux seuls',
+  nom: 'Lot 13 (C2) — les six postes du document PLUS les quatre compteurs, et eux seuls',
   fn: function () {
-    egal(Chaine.POSTES_COMPARES.length, 6, 'six postes');
+    /* Le §5.4 de la spécification énumérait six postes : ceux qui figurent sur
+       le document remis à la famille. La relecture (C2) a montré ce qu'ils
+       laissaient passer : une reclôture peut ne changer AUCUN montant et
+       déplacer durablement des compteurs — quatre jours pris sur les congés
+       payés au lieu de la récupération. Le mois se lit pareil, et deux
+       compteurs que RG-12 interdit de remettre à zéro ont changé de poche en
+       silence. Ajout délibéré, hors lettre de la spécification. */
+    egal(Chaine.POSTES_COMPARES.length, 10, 'dix postes');
     egal(Chaine.POSTES_COMPARES.map(function (p) { return p.cle; }).join(','),
       'joursPresence,entretienCentimes,salaireNetCentimes,totalAVerserCentimes,' +
-      'minutesSupAcquises,joursCongesDecomptes',
+      'minutesSupAcquises,joursCongesDecomptes,' +
+      'imputation.dixiemesCpConsommes,imputation.minutesSupConsommees,' +
+      'compteurSortie.dixiemesCpPris,compteurSortie.minutesSup',
       'ordre et contenu des postes');
 
+    /* Les six premiers restent en tête, et dans l'ordre du document : l'écran
+       des écarts se lit comme le document lui-même. */
+    egal(Chaine.POSTES_COMPARES.slice(0, 6).map(function (p) { return p.cle; }).join(','),
+      'joursPresence,entretienCentimes,salaireNetCentimes,totalAVerserCentimes,' +
+      'minutesSupAcquises,joursCongesDecomptes',
+      'les six postes du document restent en tête, dans l’ordre');
+
     /* Chaque poste sait comment il se présente : l'écran met en forme, il ne
-       décide pas de ce qui est comparé. */
+       décide pas de ce qui est comparé. `cp` = dixièmes de jour. */
     Chaine.POSTES_COMPARES.forEach(function (p) {
-      egal(['jours', 'euros', 'minutes'].indexOf(p.format) !== -1, true, 'format connu : ' + p.cle);
+      egal(['jours', 'euros', 'minutes', 'cp'].indexOf(p.format) !== -1, true,
+        'format connu : ' + p.cle);
       egal(typeof p.libelle === 'string' && p.libelle.length > 0, true, 'libellé : ' + p.cle);
     });
 
@@ -319,6 +349,81 @@ cas.push({
     var a = instantane(); a.dixiemesCpAcquis = 25;
     var b = instantane(); b.dixiemesCpAcquis = 0;
     egal(Chaine.ecartsInstantanes(a, b).length, 0, 'un poste hors liste est ignoré');
+  }
+});
+
+cas.push({
+  nom: 'Lot 13 (C2) — reclôture à montants identiques : le déplacement de compteurs est vu',
+  fn: function () {
+    /* LE cas que la correction C2 existe pour attraper. Maria rouvre un mois
+       et remplace une imputation « 4 jours sur la récupération » par « 4 jours
+       sur les congés payés ». Le salaire, l'entretien, le total, la présence :
+       rien ne bouge. Avant C2, l'écran annonçait « rien ne change » et la
+       reclôture se faisait sans écran intermédiaire. Quatre jours de congés
+       payés partaient définitivement, sur un compteur qui ne se remet jamais à
+       zéro (RG-12), et c'est exactement la matière du litige avec les
+       familles. */
+    var avant = instantane({ cpMois: 0,  supMois: 1680, cpPris: 50, supRestante: 600 });
+    var apres = instantane({ cpMois: 40, supMois: 0,    cpPris: 90, supRestante: 2280 });
+
+    var e = Chaine.ecartsInstantanes(avant, apres);
+    egal(e.length, 4, 'quatre compteurs touchés, aucun montant');
+
+    egal(e[0].cle, 'imputation.dixiemesCpConsommes', 'CP décomptés ce mois');
+    egal(e[0].ancien, 0, 'ancien : rien sur les CP');
+    egal(e[0].nouveau, 40, 'nouveau : 4 jours sur les CP');
+    egal(e[0].format, 'cp', 'format en dixièmes de jour');
+
+    egal(e[1].cle, 'imputation.minutesSupConsommees', 'récupération utilisée ce mois');
+    egal(e[1].ancien, 1680, 'ancien : 28 h de récupération');
+    egal(e[1].nouveau, 0, 'nouveau : plus rien');
+
+    egal(e[2].cle, 'compteurSortie.dixiemesCpPris', 'CP pris en tout');
+    egal(e[2].ancien, 50, 'ancien cumul');
+    egal(e[2].nouveau, 90, 'nouveau cumul');
+
+    egal(e[3].cle, 'compteurSortie.minutesSup', 'récupération restante');
+    egal(e[3].nouveau, 2280, 'la récupération revient au compteur');
+
+    /* Et aucun poste de montant n'est signalé à tort. */
+    egal(e.filter(function (x) { return x.cle.indexOf('.') === -1; }).length, 0,
+      'aucun poste du document ne figure dans ce tableau');
+  }
+});
+
+cas.push({
+  nom: 'Lot 13 (C2) — lecture imbriquée : jamais d’exception, jamais de faux écart',
+  fn: function () {
+    /* Un instantané écrit par une version antérieure de l'application n'a ni
+       `imputation` ni `compteurSortie`. La lecture d'un chemin pointé doit
+       alors rendre 0 — pas lever, pas inventer un écart. C'est le cas réel :
+       tous les mois déjà clôturés en production sont dans cet état. */
+    var ancien = {
+      joursPresence: 20, entretienCentimes: 10000, salaireNetCentimes: 107200,
+      totalAVerserCentimes: 117200, minutesSupAcquises: 600, joursCongesDecomptes: 0
+    };
+    var nouveau = JSON.parse(JSON.stringify(ancien));
+    nouveau.imputation = { dixiemesCpConsommes: 0, minutesSupConsommees: 0 };
+    nouveau.compteurSortie = { dixiemesCpPris: 0, minutesSup: 0 };
+
+    egal(Chaine.ecartsInstantanes(ancien, nouveau).length, 0,
+      'bloc absent d’un côté, valeurs nulles de l’autre : aucun écart');
+
+    /* Bloc présent mais vide, valeur non nulle en face : l'écart est réel et
+       doit être dit. */
+    var avecValeur = JSON.parse(JSON.stringify(nouveau));
+    avecValeur.compteurSortie.dixiemesCpPris = 30;
+    var e = Chaine.ecartsInstantanes(ancien, avecValeur);
+    egal(e.length, 1, 'un seul écart');
+    egal(e[0].cle, 'compteurSortie.dixiemesCpPris', 'le bon poste');
+    egal(e[0].ancien, 0, 'bloc absent lu comme 0');
+
+    /* Le bloc intermédiaire vaut explicitement null : ce cas existe, un
+       instantané sérialisé peut le porter. */
+    var avecNull = JSON.parse(JSON.stringify(nouveau));
+    avecNull.compteurSortie = null;
+    egal(Chaine.ecartsInstantanes(avecNull, nouveau).length, 0,
+      'bloc null : lu comme 0, pas d’exception');
   }
 });
 

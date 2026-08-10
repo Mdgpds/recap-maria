@@ -513,37 +513,23 @@
       .then(function (r) { return r[0]; });
   }
 
-  /* Fige un mois : enregistre d'abord l'instantané en brouillon, puis passe
-     brouillon -> figé (SEUL chemin autorisé par le trigger). `figeLeIso` est
-     posé ici (horloge de persistance, pas de calcul métier).
+  /* `figerRecap` / `figerVraiment` ONT ÉTÉ SUPPRIMÉES ICI (relecture lot 13,
+     anomalie C4). C'était l'ancien chemin de clôture : un UPDATE direct vers
+     `statut = 'fige'`, avec un `fige_le` fabriqué côté client et AUCUN
+     événement écrit. Plus aucun écran ne l'appelait depuis le lot 13, mais
+     elle restait exportée sur `DB`, sous un nom plus court et plus ancien que
+     son remplaçant — une invitation à la rappeler « par habitude ».
 
-     Correction A7 (relecture lot 6) : sur un mois DÉJÀ figé, c'est l'upsert du
-     brouillon qui partait en premier, et le trigger d'immuabilité le rejetait.
-     L'appelant recevait donc une erreur — « ce mois est clôturé, rien n'a été
-     verrouillé » — alors que le mois était bel et bien clôturé, depuis un autre
-     appareil. On lit d'abord l'état : déjà figé, on ne touche à rien et on
-     renvoie null, ce que l'appelant sait dire correctement. */
-  function figerRecap(contratId, annee, mois, donnees, figeLeIso) {
-    return getRecap(contratId, annee, mois).then(function (existant) {
-      if (existant && existant.statut === 'fige') return null;
-      return figerVraiment(contratId, annee, mois, donnees, figeLeIso);
-    });
-  }
+     Or depuis le lot 13, ce qui protège Maria n'est plus l'impossibilité de
+     modifier un mois clôturé, c'est la TRACE de chaque geste. Un mois clôturé
+     par cet ancien chemin serait un mois dont le premier événement de
+     l'historique serait « Rouvert », sans clôture avant. La fonction est donc
+     retirée, pas seulement dépréciée.
 
-  function figerVraiment(contratId, annee, mois, donnees, figeLeIso) {
-    return enregistrerRecapBrouillon(contratId, annee, mois, donnees)
-      .then(function () {
-        return client.from('recap_mensuel')
-          .update({ statut: 'fige', fige_le: figeLeIso })
-          .eq('contrat_id', contratId)
-          .eq('annee', annee)
-          .eq('mois', mois)
-          .eq('statut', 'brouillon')
-          .select()
-          .then(deballer)
-          .then(function (r) { return r[0] || null; });
-      });
-  }
+     Le seul chemin de clôture est désormais `recloturerRecap`, qui passe par
+     la fonction en base : l'horodatage vient de la base, et l'événement est
+     écrit par le trigger `recap_mensuel_tracer_statut` (migration 006), quel
+     que soit le chemin emprunté. */
 
   /* Lot 5 C4/C6 — tous les récaps d'un contrat, du plus récent au plus
      ancien. Sert à l'historique par famille et au chargement mutualisé de la
@@ -739,7 +725,6 @@
     listRecapsContrat: listRecapsContrat,
     listRecapsPeriode: listRecapsPeriode,
     enregistrerRecapBrouillon: enregistrerRecapBrouillon,
-    figerRecap: figerRecap,
     rouvrirRecap: rouvrirRecap,
     recloturerRecap: recloturerRecap,
     listEvenementsRecap: listEvenementsRecap,
