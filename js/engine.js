@@ -76,6 +76,29 @@
      Une semaine complète lundi -> vendredi, reprise le lundi = 6.
      Lundi -> mercredi, reprise le jeudi = 3. Un jour isolé = 1. */
   function decompterJoursOuvrables(debutStr, finStr, joursPlanning) {
+    var tranches = joursOuvrablesParMois(debutStr, finStr, joursPlanning);
+    var n = 0;
+    for (var i = 0; i < tranches.length; i++) n += tranches[i].jours;
+    return n;
+  }
+
+  /* Même décompte que ci-dessus, mais VENTILÉ par mois calendaire, dans
+     l'ordre chronologique : [{ cle: 'YYYY-MM', jours: n }, …].
+     La somme des tranches vaut exactement decompterJoursOuvrables — c'est la
+     même boucle. Sert au lot 9 pour répartir l'imputation d'une période à
+     cheval sur deux mois, sans jamais recalculer le décompte RG-06 mois par
+     mois (ce qui donnerait un résultat faux : une semaine coupée par un
+     changement de mois ne se redécompte pas).
+
+     Un jour compté APRÈS le dernier jour d'absence posé — l'extension RG-06
+     jusqu'à la veille de la reprise, typiquement le samedi — est rattaché au
+     mois du DERNIER JOUR POSÉ, et non à son propre mois. Sans cela, une
+     semaine de congé du lundi 27 au vendredi 31 juillet laisserait son
+     sixième jour (samedi 1er août) dans un mois d'août où aucune journée de
+     congé n'est posée : ce jour ne serait imputé nulle part, et la semaine
+     de Maria ne compterait plus que 5 jours au lieu de 6. C'est exactement
+     le litige historique avec les familles. */
+  function joursOuvrablesParMois(debutStr, finStr, joursPlanning) {
     var planning = joursPlanning || PLANNING_DEFAUT;
     if (finStr < debutStr) throw new Error('decompterJoursOuvrables : fin < debut');
 
@@ -83,14 +106,27 @@
     while (planning.indexOf(jourSemaine(reprise)) === -1 || Feries.estJourFerie(reprise)) {
       reprise = Feries.ajouterJours(reprise, 1);
     }
+    var moisDeFin = finStr.slice(0, 7);
 
-    var n = 0;
+    var tranches = [];
     for (var d = debutStr; d < reprise; d = Feries.ajouterJours(d, 1)) {
       if (jourSemaine(d) === 7) continue;      // dimanche exclu
       if (Feries.estJourFerie(d)) continue;    // férié exclu
-      n++;                                     // samedi inclus
+      var cle = (d <= finStr) ? d.slice(0, 7) : moisDeFin;   // samedi inclus
+      var derniere = tranches[tranches.length - 1];
+      if (derniere && derniere.cle === cle) derniere.jours++;
+      else tranches.push({ cle: cle, jours: 1 });
     }
-    return n;
+    return tranches;
+  }
+
+  /* Erreur porteuse d'un CODE, jamais d'une phrase : la traduction en
+     français appartient à js/messages.js. Le moteur ne produit jamais de
+     texte destiné à l'écran (§5.2 de la spec du lot 9). */
+  function erreurCode(code) {
+    var e = new Error(code);
+    e.code = code;
+    return e;
   }
 
   /* RG-05 / RG-07 — Impute `nbJours` de congé sur les compteurs.
@@ -100,10 +136,47 @@
      couvre jamais un jour partiel. Même principe pour les congés payés :
      un jour consomme 10 dixièmes, un reliquat < 10 dixièmes reste acquis.
      L'ordre suit contrat.ordre_imputation ('cp_puis_sup' par défaut, RG-07).
-     Le débordement final part en sans solde. */
-  function imputerConges(nbJours, compteur, contrat) {
+     Le débordement final part en sans solde.
+
+     LOT 9 — `imputationImposee` (4e paramètre, OPTIONNEL) :
+       - absent ou null : comportement ci-dessus, strictement inchangé. RG-07
+         reste la valeur par défaut PROPOSÉE.
+       - présent : { joursSurCp, joursSurSup, joursSansSolde }. Le moteur
+         APPLIQUE cette répartition sans la recalculer, après trois
+         vérifications qui lèvent un CODE d'erreur et n'écrivent rien. */
+  function imputerConges(nbJours, compteur, contrat, imputationImposee) {
     var minutesParJour = contrat.minutes_par_jour_conge;
     var restant = nbJours;
+
+    if (imputationImposee != null) {
+      var impCp = imputationImposee.joursSurCp || 0;
+      var impSup = imputationImposee.joursSurSup || 0;
+      var impSansSolde = imputationImposee.joursSansSolde || 0;
+
+      /* 1. La ventilation couvre exactement le décompte de la période. */
+      if (impCp + impSup + impSansSolde !== nbJours) {
+        throw erreurCode('IMPUTATION_INCOMPLETE');
+      }
+      /* 2. Aucune valeur négative. */
+      if (impCp < 0 || impSup < 0 || impSansSolde < 0) {
+        throw erreurCode('IMPUTATION_NEGATIVE');
+      }
+      /* 3. La répartition ne consomme pas plus que le disponible. Le
+         disponible peut être négatif (compteur incohérent, reprise manuelle
+         erronée) : dans ce cas toute consommation est refusée. */
+      var dispoCp = (compteur && compteur.dixiemesCp) || 0;
+      var dispoSup = (compteur && compteur.minutesSup) || 0;
+      if (impCp * 10 > dispoCp || impSup * minutesParJour > dispoSup) {
+        throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
+      }
+
+      return {
+        joursSurSup: impSup, minutesSupConsommees: impSup * minutesParJour,
+        joursSurCp: impCp, dixiemesCpConsommes: impCp * 10,
+        joursSansSolde: impSansSolde
+      };
+    }
+
     var resultat = {
       joursSurSup: 0, minutesSupConsommees: 0,
       joursSurCp: 0, dixiemesCpConsommes: 0,
@@ -141,6 +214,71 @@
 
     resultat.joursSansSolde = restant;
     return resultat;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Minutes supplémentaires d'une journée (lot 9 — V8-18, V8-19)        */
+  /* ------------------------------------------------------------------ */
+
+  /* Types de journée qui ne génèrent JAMAIS de minutes supplémentaires
+     (RG-04). Une journée sans travail ne génère rien, y compris si des
+     minutes exceptionnelles y ont été saisies par erreur. */
+  var TYPES_SANS_MINUTES = ['ferie', 'conge_maria', 'sans_solde',
+                            'familiarisation', 'hors_planning'];
+
+  function entierPositif(v) {
+    return (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.trunc(v)) : 0;
+  }
+
+  /* Détail des minutes supplémentaires d'UNE journée, dans l'ordre exact du
+     §5.1 de la spec du lot 9. Retourne les trois composantes séparément :
+     c'est ce détail que le récapitulatif du mois affiche, et c'est lui qui garantit
+     l'invariant acquises = base + ajoutées − renoncées. */
+  function detailSupDuJour(journee, contrat) {
+    var type = journee && journee.type;
+
+    /* 1. RG-04 — rien, quoi qu'il ait été saisi. */
+    if (TYPES_SANS_MINUTES.indexOf(type) !== -1) {
+      return { base: 0, ajoutees: 0, renoncees: 0 };
+    }
+
+    /* 2. Ce que le contrat prévoit. */
+    var base = contrat.minutes_sup_jour;
+
+    /* 3. RG-09, surchargeable au jour le jour (V8-19). `sup_dues_override`
+       vaut null quand la journée dit « suivre le réglage du contrat » : null
+       et false sont DEUX valeurs différentes, d'où le test `!= null` et non
+       un test de vérité. Le réglage du contrat n'est jamais modifié.
+       NB : on ne neutralise la base que sur un `false` explicite, exactement
+       comme avant le lot 9 (`sup_dues_si_enfant_absent !== false`), pour
+       qu'un contrat dont le paramètre n'est pas renseigné continue de devoir
+       les minutes. */
+    if (type === 'absence_enfant') {
+      var dues = (journee.sup_dues_override != null)
+        ? journee.sup_dues_override
+        : contrat.sup_dues_si_enfant_absent;
+      if (dues === false) base = 0;
+    }
+
+    /* 4. Minutes travaillées au-delà du contrat ce jour-là (V8-18). */
+    var ajoutees = entierPositif(journee && journee.minutes_sup_exceptionnelles);
+
+    /* 5. Renoncement explicite (V8-18), BORNÉ : on ne peut pas renoncer à
+       plus que ce qui est dû. Sans ce plancher, un renoncement ferait
+       AUGMENTER le compteur — le Math.min n'est pas une élégance, c'est la
+       garde. Le surplus est ignoré, jamais négatif. */
+    var renoncees = Math.min(
+      entierPositif(journee && journee.minutes_sup_renoncees),
+      base + ajoutees
+    );
+
+    return { base: base, ajoutees: ajoutees, renoncees: renoncees };
+  }
+
+  /* Minutes supplémentaires nettes d'une journée (§5.1). */
+  function minutesSupDuJour(journee, contrat) {
+    var d = detailSupDuJour(journee, contrat);
+    return d.base + d.ajoutees - d.renoncees;
   }
 
   /* Montant en centimes correspondant à `minutes` de travail au taux du
@@ -208,6 +346,98 @@
     return true;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Imputation imposée : répartition d'une période sur ses mois (lot 9)  */
+  /* ------------------------------------------------------------------ */
+
+  /* Répartit `n` jours entre les trois destinations (congés payés,
+     récupération, sans solde) au prorata de ce qui RESTE à répartir dans
+     chacune. Arithmétique entière de bout en bout : on prend la part entière,
+     puis on attribue le reliquat aux destinations dont la fraction perdue est
+     la plus grande. Aucun jour n'est ni perdu ni inventé.
+     `restants` : [cp, sup, sansSolde] — modifié par l'appelant, pas ici. */
+  function repartirEntreDestinations(n, restants) {
+    var part = [0, 0, 0];
+    var restePool = restants[0] + restants[1] + restants[2];
+    if (n <= 0 || restePool <= 0) return part;
+
+    var fractions = [];
+    var somme = 0;
+    for (var c = 0; c < 3; c++) {
+      var ideal = restants[c] * n / restePool;
+      var entier = Math.min(restants[c], Math.floor(ideal));
+      part[c] = entier;
+      somme += entier;
+      fractions.push({ destination: c, reste: ideal - Math.floor(ideal) });
+    }
+    /* Ordre déterministe : plus grande fraction perdue d'abord, puis l'ordre
+       congés payés -> récupération -> sans solde (RG-07). */
+    fractions.sort(function (a, b) {
+      return (b.reste - a.reste) || (a.destination - b.destination);
+    });
+    var i = 0;
+    while (somme < n && i < 3 * (n + 3)) {
+      var d = fractions[i % 3].destination;
+      if (part[d] < restants[d]) { part[d]++; somme++; }
+      i++;
+    }
+    return part;
+  }
+
+  /* Découpe une imputation posée sur une période en une part par mois
+     calendaire touché, au prorata des jours ouvrables de la période tombant
+     dans chaque mois (§5.3 et piège n° 4 de la spec du lot 9).
+     La SOMME des parts égale EXACTEMENT l'imputation posée : aucune perte
+     d'arrondi, quel que soit le nombre de mois. */
+  function repartirImputationParMois(imputation, planning) {
+    var tranches = joursOuvrablesParMois(imputation.date_debut, imputation.date_fin, planning);
+    var poidsTotal = 0;
+    for (var t = 0; t < tranches.length; t++) poidsTotal += tranches[t].jours;
+
+    var restants = [
+      imputation.jours_sur_cp || 0,
+      imputation.jours_sur_sup || 0,
+      imputation.jours_sans_solde || 0
+    ];
+    var poolTotal = restants[0] + restants[1] + restants[2];
+    var parts = [];
+    if (poidsTotal === 0) return parts;
+
+    var cumulPoids = 0;
+    var cumulJours = 0;
+    for (var k = 0; k < tranches.length; k++) {
+      cumulPoids += tranches[k].jours;
+      var cible = (k === tranches.length - 1)
+        ? poolTotal
+        : Math.floor(poolTotal * cumulPoids / poidsTotal);
+      var n = cible - cumulJours;
+      cumulJours = cible;
+
+      var part = repartirEntreDestinations(n, restants);
+      restants[0] -= part[0];
+      restants[1] -= part[1];
+      restants[2] -= part[2];
+
+      parts.push({
+        cle: tranches[k].cle,
+        nbJours: part[0] + part[1] + part[2],
+        joursSurCp: part[0], joursSurSup: part[1], joursSansSolde: part[2]
+      });
+    }
+    return parts;
+  }
+
+  /* L'imputation qui COUVRE une période de congé du mois, s'il en existe une :
+     la période observée dans le mois est entièrement contenue dans la période
+     imputée. Sinon null — l'ordre par défaut (RG-07) s'applique. */
+  function imputationCouvrante(imputations, periode) {
+    for (var i = 0; i < (imputations || []).length; i++) {
+      var imp = imputations[i];
+      if (imp && imp.date_debut <= periode.debut && imp.date_fin >= periode.fin) return imp;
+    }
+    return null;
+  }
+
   /* Calcule le récapitulatif d'un mois pour un contrat.
 
      Entrées :
@@ -237,9 +467,17 @@
     var parJour = {};
     for (var i = 0; i < journees.length; i++) parJour[journees[i].jour] = journees[i];
 
+    /* Lot 9 : imputations posées dont la période recoupe le mois (forme de
+       db.js). Absent ou vide -> comportement d'avant le lot 9. */
+    var imputations = entrees.imputations || [];
+
     var joursPresence = 0;
     var entretienCentimes = 0;
-    var joursGenerantSup = 0;        // RG-03 : jours du planning où Maria travaille
+    /* RG-03 / RG-04, détaillé depuis le lot 9 : base contractuelle, minutes
+       exceptionnelles ajoutées, minutes auxquelles Maria a renoncé. */
+    var minutesSupBase = 0;
+    var minutesSupAjoutees = 0;
+    var minutesSupRenoncees = 0;
     var joursConge = [];             // jours 'conge_maria' posés dans le mois
     var joursSansSoldeSaisis = 0;    // lignes 'sans_solde' saisies explicitement
     var joursFamiliarisation = 0;
@@ -277,14 +515,14 @@
           entretienCentimes += (ligne && Number.isInteger(ligne.entretien_centimes))
             ? ligne.entretien_centimes
             : contrat.entretien_centimes_jour;
-          joursGenerantSup++;
           break;
 
         case 'absence_enfant':
           /* RG-09 : salaire dû, pas d'indemnité d'entretien ; les minutes
              supplémentaires restent dues, sauf si le paramètre du contrat
-             dit le contraire (règle en réflexion chez Maria, §8 specs). */
-          if (contrat.sup_dues_si_enfant_absent !== false) joursGenerantSup++;
+             dit le contraire (règle en réflexion chez Maria, §8 specs) ou si
+             la journée le surcharge (V8-19). Traité par detailSupDuJour,
+             juste après ce switch. */
           break;
 
         case 'ferie':
@@ -326,28 +564,112 @@
         default:
           throw new Error('calculerMois : type de journée inconnu « ' + type + ' » le ' + d);
       }
+
+      /* RG-03 / RG-04 : minutes supplémentaires de la journée, détaillées.
+         `minutes_sup_jour` est un paramètre du contrat (30 aujourd'hui,
+         peut-être 0 demain) : aucun code à changer. Une journée sans ligne
+         saisie ne porte aucune flexibilité — d'où le littéral { type }. */
+      var detailSup = detailSupDuJour(ligne || { type: type }, contrat);
+      minutesSupBase += detailSup.base;
+      minutesSupAjoutees += detailSup.ajoutees;
+      minutesSupRenoncees += detailSup.renoncees;
     }
 
-    /* RG-03 / RG-04 : minutes supplémentaires du mois. `minutes_sup_jour`
-       est un paramètre du contrat (30 aujourd'hui, peut-être 0 demain —
-       question ouverte du §7 du cahier des charges) : aucun code à changer. */
-    var minutesSupAcquises = joursGenerantSup * contrat.minutes_sup_jour;
+    /* Invariant testé (A9) : le net acquis est toujours la base, plus les
+       minutes exceptionnelles, moins les minutes auxquelles Maria a renoncé. */
+    var minutesSupAcquises = minutesSupBase + minutesSupAjoutees - minutesSupRenoncees;
 
     /* RG-06 : décompte des congés en jours ouvrables, période par période.
-       NB : une période à cheval sur deux mois est décomptée mois par mois
-       sur les jours visibles de chaque mois (limitation signalée dans la
-       restitution du lot 1). */
+       Lot 9 : si une imputation posée COUVRE la période, c'est SA part du
+       mois qui est retenue — décomptée sur la période entière, jamais
+       redécoupée mois par mois. Sinon, décompte local comme avant. */
     var joursCongesDecomptes = 0;
     var periodes = grouperPeriodesConge(joursConge, planning);
+    var cleMois = annee + '-' + String(mois).padStart(2, '0');
+    var plan = [];
+    var dejaImputees = [];
+    var auMoinsUneImposee = false;
+
     for (var pIdx = 0; pIdx < periodes.length; pIdx++) {
-      joursCongesDecomptes += decompterJoursOuvrables(periodes[pIdx].debut, periodes[pIdx].fin, planning);
+      var periode = periodes[pIdx];
+      var impCouvrante = imputationCouvrante(imputations, periode);
+      /* Une même imputation ne peut être consommée qu'une fois par mois : sa
+         part du mois vaut pour toutes les journées de la période qu'elle
+         couvre. Le cas ne devrait pas se présenter (deux périodes séparées
+         par un jour travaillé donnent deux imputations distinctes), mais un
+         double décompte de congés serait invisible et introuvable. */
+      if (impCouvrante && dejaImputees.indexOf(impCouvrante) !== -1) continue;
+      if (impCouvrante) {
+        dejaImputees.push(impCouvrante);
+        var parts = repartirImputationParMois(impCouvrante, planning);
+        var partMois = null;
+        for (var q = 0; q < parts.length; q++) {
+          if (parts[q].cle === cleMois) partMois = parts[q];
+        }
+        partMois = partMois || { nbJours: 0, joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0 };
+        plan.push({
+          nbJours: partMois.nbJours,
+          imposee: {
+            joursSurCp: partMois.joursSurCp,
+            joursSurSup: partMois.joursSurSup,
+            joursSansSolde: partMois.joursSansSolde
+          },
+          date_debut: impCouvrante.date_debut,
+          date_fin: impCouvrante.date_fin,
+          source: 'imposee'
+        });
+        auMoinsUneImposee = true;
+      } else {
+        plan.push({
+          nbJours: decompterJoursOuvrables(periode.debut, periode.fin, planning),
+          imposee: null,
+          date_debut: periode.debut,
+          date_fin: periode.fin,
+          source: 'defaut'
+        });
+      }
     }
 
-    /* RG-05 / RG-07 : imputation sur les compteurs disponibles. */
-    var imputation = imputerConges(joursCongesDecomptes, {
-      minutesSup: entreeMinutesSup,
-      dixiemesCp: entreeCpAcquis - entreeCpPris
-    }, contrat);
+    /* RG-05 / RG-07 : imputation sur les compteurs disponibles.
+       Sans aucune imputation imposée, on garde EXACTEMENT le chemin d'avant
+       le lot 9 : un seul appel, sur le total du mois. C'est ce qui garantit
+       la non-régression des 10 cas de référence. */
+    var imputation;
+    if (!auMoinsUneImposee) {
+      for (var s = 0; s < plan.length; s++) joursCongesDecomptes += plan[s].nbJours;
+      imputation = imputerConges(joursCongesDecomptes, {
+        minutesSup: entreeMinutesSup,
+        dixiemesCp: entreeCpAcquis - entreeCpPris
+      }, contrat);
+    } else {
+      /* Au moins une période imposée : on impute période par période, dans
+         l'ordre chronologique, en décrémentant le disponible au fur et à
+         mesure — deux périodes ne peuvent pas consommer deux fois le même
+         jour de congé payé. */
+      var dispoSup = entreeMinutesSup;
+      var dispoCp = entreeCpAcquis - entreeCpPris;
+      imputation = {
+        joursSurSup: 0, minutesSupConsommees: 0,
+        joursSurCp: 0, dixiemesCpConsommes: 0,
+        joursSansSolde: 0
+      };
+      for (var v = 0; v < plan.length; v++) {
+        joursCongesDecomptes += plan[v].nbJours;
+        var r = imputerConges(plan[v].nbJours,
+          { minutesSup: dispoSup, dixiemesCp: dispoCp }, contrat, plan[v].imposee);
+        imputation.joursSurSup += r.joursSurSup;
+        imputation.minutesSupConsommees += r.minutesSupConsommees;
+        imputation.joursSurCp += r.joursSurCp;
+        imputation.dixiemesCpConsommes += r.dixiemesCpConsommes;
+        imputation.joursSansSolde += r.joursSansSolde;
+        dispoSup -= r.minutesSupConsommees;
+        dispoCp -= r.dixiemesCpConsommes;
+      }
+    }
+
+    var imputationsAppliquees = plan.map(function (item) {
+      return { date_debut: item.date_debut, date_fin: item.date_fin, source: item.source };
+    });
 
     /* RG-08 : retenue = minutes_par_jour_conge × taux horaire brut par jour
        sans solde. Un seul arrondi sur le total (§4.2). */
@@ -385,8 +707,18 @@
       joursPresence: joursPresence,
       entretienCentimes: entretienCentimes,
       minutesSupAcquises: minutesSupAcquises,
+      /* Détail du mois (lot 9) : ce que le contrat prévoit, ce qui a été
+         travaillé en plus, ce à quoi Maria a renoncé. Le récapitulatif du mois les
+         affiche ; la somme algébrique vaut toujours minutesSupAcquises. */
+      minutesSupBase: minutesSupBase,
+      minutesSupAjoutees: minutesSupAjoutees,
+      minutesSupRenoncees: minutesSupRenoncees,
       joursCongesDecomptes: joursCongesDecomptes,
       imputation: imputation,
+      /* Pour chaque période de congé du mois : la période retenue et
+         l'origine de sa ventilation ('imposee' = choisie par Maria,
+         'defaut' = ordre d'imputation du contrat, RG-07). */
+      imputationsAppliquees: imputationsAppliquees,
       retenueSansSoldeCentimes: retenueSansSoldeCentimes,
       dixiemesCpAcquis: dixiemesCpAcquis,
       compteurSortie: compteurSortie,
@@ -406,6 +738,7 @@
     estJourFerie: estJourFerie,
     decompterJoursOuvrables: decompterJoursOuvrables,
     imputerConges: imputerConges,
+    minutesSupDuJour: minutesSupDuJour,
     montantCentimes: montantCentimes,
     salaireApplicable: salaireApplicable,
     calculerMois: calculerMois,
