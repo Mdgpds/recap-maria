@@ -688,6 +688,154 @@ definir('T20 — Non-régression : mois sans imputation ni flexibilité', functi
   egal(JSON.stringify(vide), JSON.stringify(r), 'T20.imputations vides');
 });
 
+/* ================================================================== */
+/* CORRECTIONS DE RELECTURE DU LOT 9 (T21 à T23)                      */
+/* ================================================================== */
+
+definir('T21 — A1 : le décompte RG-06 n\'est jamais écrasé par la ligne posée', function () {
+  /* Semaine du lundi 27 au vendredi 31 juillet 2026 : RG-06 en compte 6,
+     samedi 1er août inclus. Une imputation posée à 5 jours passe pourtant la
+     contrainte SQL (5 + 0 + 0 = 5) : c'est au moteur de la refuser, sans quoi
+     le récapitulatif afficherait « 5 jours de congés » à côté de l'encart qui
+     explique qu'une semaine en compte 6 — le litige historique avec les
+     familles, imprimé sur le document. */
+  egal(Engine.decompterJoursOuvrables('2026-07-27', '2026-07-31'), 6, 'T21.décompte réel');
+
+  var journees = [
+    { jour: '2026-07-27', type: 'conge_maria' },
+    { jour: '2026-07-28', type: 'conge_maria' },
+    { jour: '2026-07-29', type: 'conge_maria' },
+    { jour: '2026-07-30', type: 'conge_maria' },
+    { jour: '2026-07-31', type: 'conge_maria' }
+  ];
+  var compteurEntree = { minutesSup: 5400, dixiemesCpAcquis: 100, dixiemesCpPris: 0 };
+
+  function calculerAvec(imputation) {
+    return Engine.calculerMois({
+      contrat: contrat(), salaire: SALAIRE_REF, journees: journees,
+      imputations: [imputation], compteurEntree: compteurEntree,
+      annee: 2026, mois: 7
+    });
+  }
+
+  /* Décompte sous-évalué : Maria perdrait un jour de congé au décompte. */
+  var e1 = leveCode(function () {
+    calculerAvec({
+      date_debut: '2026-07-27', date_fin: '2026-07-31',
+      jours_ouvrables: 5, jours_sur_cp: 5, jours_sur_sup: 0, jours_sans_solde: 0
+    });
+  }, 'IMPUTATION_INCOMPLETE', 'T21.décompte à 5');
+  egal(e1.attendu, 6, 'T21.attendu = décompte RG-06 réel');
+  egal(e1.recu, 5, 'T21.reçu = ventilation transmise');
+
+  /* Décompte sur-évalué : Maria perdrait un jour de congés payés. */
+  leveCode(function () {
+    calculerAvec({
+      date_debut: '2026-07-27', date_fin: '2026-07-31',
+      jours_ouvrables: 7, jours_sur_cp: 7, jours_sur_sup: 0, jours_sans_solde: 0
+    });
+  }, 'IMPUTATION_INCOMPLETE', 'T21.décompte à 7');
+
+  /* Ligne incohérente avec elle-même (modifiée à la main hors contrainte). */
+  leveCode(function () {
+    calculerAvec({
+      date_debut: '2026-07-27', date_fin: '2026-07-31',
+      jours_ouvrables: 5, jours_sur_cp: 3, jours_sur_sup: 3, jours_sans_solde: 0
+    });
+  }, 'IMPUTATION_INCOMPLETE', 'T21.ligne incohérente');
+
+  /* Et le décompte juste passe, lui, sans rien changer d'autre. */
+  var ok = calculerAvec({
+    date_debut: '2026-07-27', date_fin: '2026-07-31',
+    jours_ouvrables: 6, jours_sur_cp: 6, jours_sur_sup: 0, jours_sans_solde: 0
+  });
+  egal(ok.joursCongesDecomptes, 6, 'T21.décompte juste accepté');
+  egal(ok.compteurSortie.dixiemesCpPris, 60, 'T21.60 dixièmes consommés');
+});
+
+definir('T22 — A2 : un choix écarté ne se confond pas avec une absence de choix', function () {
+  /* Imputation posée du lundi 6 au vendredi 17 juillet 2026 (14 juillet
+     férié), RG-06 = 11, choix de Maria : tout sur la récupération. */
+  var imputation = {
+    date_debut: '2026-07-06', date_fin: '2026-07-17',
+    jours_ouvrables: 11, jours_sur_cp: 0, jours_sur_sup: 11, jours_sans_solde: 0
+  };
+  egal(Engine.decompterJoursOuvrables('2026-07-06', '2026-07-17'), 11, 'T22.décompte RG-06');
+
+  var joursConformes = ['2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09', '2026-07-10',
+                        '2026-07-13', '2026-07-15', '2026-07-16', '2026-07-17'];
+  function journees(liste) {
+    return liste.map(function (j) { return { jour: j, type: 'conge_maria' }; });
+  }
+  function calculer(liste) {
+    return Engine.calculerMois({
+      contrat: contrat(), salaire: SALAIRE_REF, journees: journees(liste),
+      imputations: [imputation],
+      compteurEntree: { minutesSup: 5940, dixiemesCpAcquis: 300, dixiemesCpPris: 0 },
+      annee: 2026, mois: 7
+    });
+  }
+
+  /* Cas conforme : le choix s'applique. */
+  var conforme = calculer(joursConformes);
+  egal(conforme.imputationsAppliquees[0].source, 'imposee', 'T22.conforme.source');
+  egal(conforme.imputation.joursSurSup, 11, 'T22.conforme.joursSurSup');
+  egal(conforme.imputation.joursSurCp, 0, 'T22.conforme.joursSurCp');
+
+  /* Cas dégradé : une journée ajoutée le lundi 20, imputation non remise à
+     jour. L'ordre du contrat reprend la main — mais le moteur DIT que le
+     choix de Maria a été écarté, et quelle période était concernée. */
+  var degrade = calculer(joursConformes.concat(['2026-07-20']));
+  egal(degrade.imputationsAppliquees[0].source, 'defaut_choix_ecarte', 'T22.dégradé.source');
+  egalObjet(degrade.imputationsAppliquees[0].choixEcarte, {
+    date_debut: '2026-07-06', date_fin: '2026-07-17'
+  }, 'T22.dégradé.choixEcarte');
+
+  /* Sans aucune imputation posée, la source reste « defaut » tout court. */
+  var sansChoix = Engine.calculerMois({
+    contrat: contrat(), salaire: SALAIRE_REF, journees: journees(joursConformes),
+    compteurEntree: { minutesSup: 5940, dixiemesCpAcquis: 300, dixiemesCpPris: 0 },
+    annee: 2026, mois: 7
+  });
+  egal(sansChoix.imputationsAppliquees[0].source, 'defaut', 'T22.sans choix.source');
+  egal(sansChoix.imputationsAppliquees[0].choixEcarte, undefined, 'T22.sans choix.aucun écarté');
+});
+
+definir('T23 — A3 : un renoncement exprimé n\'est jamais ignoré en silence', function () {
+  /* Une valeur non entière — la valeur naturelle d'un champ de saisie —
+     était silencieusement repliée sur 0 : les minutes restaient acquises,
+     donc un chiffre faux EN FAVEUR de Maria, contestable par les familles.
+     On refuse désormais, avec un code. */
+  ['30', 30.5, -30, NaN, {}, true].forEach(function (v) {
+    leveCode(function () {
+      Engine.minutesSupDuJour({ type: 'presence', minutes_sup_renoncees: v }, contrat());
+    }, 'MINUTES_INVALIDES', 'T23.renoncees ' + String(v));
+    leveCode(function () {
+      Engine.minutesSupDuJour({ type: 'presence', minutes_sup_exceptionnelles: v }, contrat());
+    }, 'MINUTES_INVALIDES', 'T23.exceptionnelles ' + String(v));
+  });
+
+  /* Absent, null et undefined restent « rien de saisi » : aucune erreur,
+     valeur 0. C'est le cas de toutes les journées d'avant le lot 9. */
+  egal(Engine.minutesSupDuJour({ type: 'presence' }, contrat()), 30, 'T23.absent');
+  egal(Engine.minutesSupDuJour(
+    { type: 'presence', minutes_sup_renoncees: null, minutes_sup_exceptionnelles: null },
+    contrat()), 30, 'T23.null');
+  egal(Engine.minutesSupDuJour(
+    { type: 'presence', minutes_sup_renoncees: undefined }, contrat()), 30, 'T23.undefined');
+
+  /* Et une journée fautive fait échouer le mois entier plutôt que de
+     produire un compteur faux. */
+  leveCode(function () {
+    Engine.calculerMois({
+      contrat: contrat(), salaire: SALAIRE_REF,
+      journees: [{ jour: '2025-09-02', type: 'presence', minutes_sup_renoncees: '30' }],
+      compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
+      annee: 2025, mois: 9
+    });
+  }, 'MINUTES_INVALIDES', 'T23.calculerMois');
+});
+
 definir('A9 — Invariant : acquises = base + ajoutées − renoncées', function () {
   /* Vérifié sur un éventail de mois, avec et sans flexibilité. */
   var mois = [

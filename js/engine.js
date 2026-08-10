@@ -226,8 +226,26 @@
   var TYPES_SANS_MINUTES = ['ferie', 'conge_maria', 'sans_solde',
                             'familiarisation', 'hors_planning'];
 
-  function entierPositif(v) {
-    return (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.trunc(v)) : 0;
+  /* Lecture d'un nombre de minutes saisi sur une journée.
+
+     CORRECTION RELECTURE LOT 9 (A3) : ce lecteur repliait toute valeur non
+     numérique sur 0. Un renoncement transmis en chaîne — la valeur naturelle
+     d'un champ de saisie — était donc silencieusement ignoré, et les minutes
+     restaient acquises : un chiffre faux, en faveur de Maria, contestable par
+     les familles. Un repli muet sur une valeur exprimée est toujours pire
+     qu'un refus. On lève désormais un CODE.
+
+     Absent, `null` ou `undefined` = « rien de saisi » et vaut 0 : c'est le
+     cas ordinaire de toutes les journées d'avant le lot 9. */
+  function minutesSaisies(valeur, champ) {
+    if (valeur == null) return 0;
+    if (typeof valeur !== 'number' || !isFinite(valeur) ||
+        !Number.isInteger(valeur) || valeur < 0) {
+      var e = erreurCode('MINUTES_INVALIDES');
+      e.champ = champ;
+      throw e;
+    }
+    return valeur;
   }
 
   /* Détail des minutes supplémentaires d'UNE journée, dans l'ordre exact du
@@ -261,14 +279,15 @@
     }
 
     /* 4. Minutes travaillées au-delà du contrat ce jour-là (V8-18). */
-    var ajoutees = entierPositif(journee && journee.minutes_sup_exceptionnelles);
+    var ajoutees = minutesSaisies(journee && journee.minutes_sup_exceptionnelles,
+                                  'minutes_sup_exceptionnelles');
 
     /* 5. Renoncement explicite (V8-18), BORNÉ : on ne peut pas renoncer à
        plus que ce qui est dû. Sans ce plancher, un renoncement ferait
        AUGMENTER le compteur — le Math.min n'est pas une élégance, c'est la
        garde. Le surplus est ignoré, jamais négatif. */
     var renoncees = Math.min(
-      entierPositif(journee && journee.minutes_sup_renoncees),
+      minutesSaisies(journee && journee.minutes_sup_renoncees, 'minutes_sup_renoncees'),
       base + ajoutees
     );
 
@@ -400,6 +419,42 @@
       imputation.jours_sans_solde || 0
     ];
     var poolTotal = restants[0] + restants[1] + restants[2];
+
+    /* CORRECTION RELECTURE LOT 9 (A1) — LE POINT CRITIQUE DU LOT.
+
+       Le décompte RG-06 d'une période est une donnée CALCULÉE, jamais une
+       donnée d'entrée. Le moteur le calcule ici (`poidsTotal`) : il doit
+       donc vérifier que la ventilation transmise le couvre, au lieu de
+       répartir aveuglément la valeur reçue.
+
+       Sans cette garde, une ligne d'imputation portant `jours_ouvrables: 5`
+       sur une semaine du lundi au vendredi — ligne parfaitement valide pour
+       la contrainte SQL, qui ne contrôle que la cohérence interne de la
+       ligne — faisait afficher « 5 jours de congés » là où RG-06 en compte
+       6, samedi inclus, avec l'encart explicatif du récapitulatif juste à côté.
+       C'est mot pour mot le litige historique avec les familles
+       (référentiel A.2). Le cas symétrique (7 au lieu de 6) faisait perdre
+       un jour de congés payés à Maria, sans aucun signal.
+
+       Cette garde rend aussi `IMPUTATION_INCOMPLETE` réellement atteignable
+       depuis `calculerMois` : sans elle, le contrôle n° 1 d'`imputerConges`
+       comparait une somme à elle-même. */
+    if (poolTotal !== poidsTotal) {
+      var eDecompte = erreurCode('IMPUTATION_INCOMPLETE');
+      eDecompte.attendu = poidsTotal;      // décompte RG-06 réel de la période
+      eDecompte.recu = poolTotal;          // somme de la ventilation transmise
+      throw eDecompte;
+    }
+    /* `jours_ouvrables` est censé égaler la ventilation (contrainte SQL
+       `imputation_complete`). S'il en diverge — ligne modifiée à la main —,
+       on refuse plutôt que de choisir silencieusement une des deux valeurs. */
+    if (imputation.jours_ouvrables != null && imputation.jours_ouvrables !== poolTotal) {
+      var eLigne = erreurCode('IMPUTATION_INCOMPLETE');
+      eLigne.attendu = poolTotal;
+      eLigne.recu = imputation.jours_ouvrables;
+      throw eLigne;
+    }
+
     var parts = [];
     if (poidsTotal === 0) return parts;
 
@@ -427,15 +482,35 @@
     return parts;
   }
 
-  /* L'imputation qui COUVRE une période de congé du mois, s'il en existe une :
-     la période observée dans le mois est entièrement contenue dans la période
-     imputée. Sinon null — l'ordre par défaut (RG-07) s'applique. */
-  function imputationCouvrante(imputations, periode) {
+  /* Cherche l'imputation applicable à une période de congé du mois.
+
+     `couvrante` : la période observée dans le mois est entièrement contenue
+     dans la période imputée — la ventilation choisie par Maria s'applique.
+
+     `ecartee` : une imputation existe et recoupe la période, mais ne la
+     couvre pas (une journée de congé a été ajoutée après coup, et rien ne l'a
+     resynchronisée). L'ordre par défaut du contrat s'applique alors.
+
+     CORRECTION RELECTURE LOT 9 (A2) : ce second cas était auparavant
+     indistinguable d'une absence de choix — la sortie disait `'defaut'` dans
+     les deux cas. Or RG-07 dit « à défaut de choix explicite » : ici le choix
+     n'est pas absent, il est devenu inapplicable. Le moteur doit le dire,
+     pour que le lot 10 puisse le dire à Maria — une journée ajoutée peut
+     faire basculer onze jours de récupération en douze jours de congés
+     payés, sur deux compteurs qui se propagent sur des années. */
+  function imputationApplicable(imputations, periode) {
+    var ecartee = null;
     for (var i = 0; i < (imputations || []).length; i++) {
       var imp = imputations[i];
-      if (imp && imp.date_debut <= periode.debut && imp.date_fin >= periode.fin) return imp;
+      if (!imp) continue;
+      if (imp.date_debut <= periode.debut && imp.date_fin >= periode.fin) {
+        return { couvrante: imp, ecartee: null };
+      }
+      if (!ecartee && imp.date_debut <= periode.fin && imp.date_fin >= periode.debut) {
+        ecartee = imp;
+      }
     }
-    return null;
+    return { couvrante: null, ecartee: ecartee };
   }
 
   /* Calcule le récapitulatif d'un mois pour un contrat.
@@ -592,7 +667,8 @@
 
     for (var pIdx = 0; pIdx < periodes.length; pIdx++) {
       var periode = periodes[pIdx];
-      var impCouvrante = imputationCouvrante(imputations, periode);
+      var applicable = imputationApplicable(imputations, periode);
+      var impCouvrante = applicable.couvrante;
       /* Une même imputation ne peut être consommée qu'une fois par mois : sa
          part du mois vaut pour toutes les journées de la période qu'elle
          couvre. Le cas ne devrait pas se présenter (deux périodes séparées
@@ -620,12 +696,19 @@
         });
         auMoinsUneImposee = true;
       } else {
+        /* Correction relecture A2 : « aucun choix » et « choix écarté » sont
+           deux situations différentes, et l'écran doit pouvoir les
+           distinguer. `choixEcarte` porte la période choisie par Maria qui
+           n'a pas pu s'appliquer. */
         plan.push({
           nbJours: decompterJoursOuvrables(periode.debut, periode.fin, planning),
           imposee: null,
           date_debut: periode.debut,
           date_fin: periode.fin,
-          source: 'defaut'
+          source: applicable.ecartee ? 'defaut_choix_ecarte' : 'defaut',
+          choixEcarte: applicable.ecartee
+            ? { date_debut: applicable.ecartee.date_debut, date_fin: applicable.ecartee.date_fin }
+            : null
         });
       }
     }
@@ -668,7 +751,9 @@
     }
 
     var imputationsAppliquees = plan.map(function (item) {
-      return { date_debut: item.date_debut, date_fin: item.date_fin, source: item.source };
+      var sortie = { date_debut: item.date_debut, date_fin: item.date_fin, source: item.source };
+      if (item.choixEcarte) sortie.choixEcarte = item.choixEcarte;
+      return sortie;
     });
 
     /* RG-08 : retenue = minutes_par_jour_conge × taux horaire brut par jour
@@ -716,8 +801,13 @@
       joursCongesDecomptes: joursCongesDecomptes,
       imputation: imputation,
       /* Pour chaque période de congé du mois : la période retenue et
-         l'origine de sa ventilation ('imposee' = choisie par Maria,
-         'defaut' = ordre d'imputation du contrat, RG-07). */
+         l'origine de sa ventilation.
+           'imposee'             — la ventilation choisie par Maria s'applique
+           'defaut'              — aucun choix : ordre du contrat (RG-07)
+           'defaut_choix_ecarte' — un choix existe mais ne couvre plus la
+                                   période ; l'ordre du contrat s'applique et
+                                   `choixEcarte` porte la période concernée.
+                                   À signaler à l'écran (lot 10). */
       imputationsAppliquees: imputationsAppliquees,
       retenueSansSoldeCentimes: retenueSansSoldeCentimes,
       dixiemesCpAcquis: dixiemesCpAcquis,
