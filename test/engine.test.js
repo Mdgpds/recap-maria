@@ -861,4 +861,136 @@ definir('A9 — Invariant : acquises = base + ajoutées − renoncées', functio
   });
 });
 
+/* ================================================================== */
+/* CORRECTIONS DE LA 2e PASSE DE RELECTURE DU LOT 9 (T24, T25)        */
+/* ================================================================== */
+
+definir('T24 — B1 : une imputation plus large que les journées posées est écartée', function () {
+  /* Maria pose la semaine du lundi 27 au vendredi 31 juillet 2026, puis
+     retravaille le mercredi, le jeudi et le vendredi. L'imputation, elle,
+     n'est pas retouchée : elle ENCADRE toujours la période observée, mais ne
+     lui correspond plus.
+
+     Avant ce correctif, le moteur appliquait la ventilation entière EN
+     SILENCE : les 29, 30 et 31 juillet étaient payés en présence — entretien
+     et minutes supplémentaires — ET débités comme congé. Vingt-six journées
+     comptées dans un mois qui n'en compte que vingt-deux, et quatre jours de
+     congés payés perdus pour des jours travaillés. RG-12 : aucun compteur ne
+     se remet à zéro, l'écart se serait propagé sur toutes les années
+     suivantes. */
+  var imputation = {
+    date_debut: '2026-07-27', date_fin: '2026-07-31',
+    jours_ouvrables: 6, jours_sur_cp: 6, jours_sur_sup: 0, jours_sans_solde: 0
+  };
+  var journees = [
+    { jour: '2026-07-27', type: 'conge_maria' },
+    { jour: '2026-07-28', type: 'conge_maria' }
+  ];
+  var entree = { minutesSup: 5400, dixiemesCpAcquis: 100, dixiemesCpPris: 0 };
+
+  var r = Engine.calculerMois({
+    contrat: contrat(), salaire: SALAIRE_REF, journees: journees,
+    imputations: [imputation], compteurEntree: entree, annee: 2026, mois: 7
+  });
+
+  egal(r.joursCongesDecomptes, 2, 'T24.seules les journées posées sont décomptées');
+  egal(r.imputation.dixiemesCpConsommes, 20, 'T24.20 dixièmes, pas 60');
+  egal(r.joursPresence + r.joursCongesDecomptes <= 22, true,
+    'T24.jamais plus de journées que le mois n’en compte');
+  egal(r.imputationsAppliquees[0].source, 'defaut_choix_ecarte', 'T24.le choix écarté est DIT');
+  egalObjet(r.imputationsAppliquees[0].choixEcarte, {
+    date_debut: '2026-07-27', date_fin: '2026-07-31'
+  }, 'T24.la période devenue inapplicable est nommée');
+
+  /* Le résultat est exactement celui du même mois sans imputation : l'ordre
+     du contrat reprend la main, rien n'est inventé. */
+  var sansImputation = Engine.calculerMois({
+    contrat: contrat(), salaire: SALAIRE_REF, journees: journees,
+    compteurEntree: entree, annee: 2026, mois: 7
+  });
+  egal(r.joursCongesDecomptes, sansImputation.joursCongesDecomptes, 'T24.décompte identique');
+  egal(r.imputation.dixiemesCpConsommes, sansImputation.imputation.dixiemesCpConsommes,
+    'T24.consommation identique');
+
+  /* Et l'imputation qui correspond VRAIMENT aux journées s'applique toujours. */
+  var conforme = Engine.calculerMois({
+    contrat: contrat(), salaire: SALAIRE_REF,
+    journees: ['27', '28', '29', '30', '31'].map(function (j) {
+      return { jour: '2026-07-' + j, type: 'conge_maria' };
+    }),
+    imputations: [imputation], compteurEntree: entree, annee: 2026, mois: 7
+  });
+  egal(conforme.imputationsAppliquees[0].source, 'imposee', 'T24.le cas conforme s’applique');
+  egal(conforme.imputation.dixiemesCpConsommes, 60, 'T24.le cas conforme consomme 60 dixièmes');
+
+  /* Un férié à l'intérieur de la période n'est jamais posé en congé : il ne
+     doit pas faire écarter une imputation par ailleurs conforme. */
+  var avecFerie = Engine.calculerMois({
+    contrat: contrat(), salaire: SALAIRE_REF,
+    journees: ['13', '15', '16', '17'].map(function (j) {
+      return { jour: '2026-07-' + j, type: 'conge_maria' };
+    }),
+    imputations: [{ date_debut: '2026-07-13', date_fin: '2026-07-17',
+      jours_ouvrables: 5, jours_sur_cp: 5, jours_sur_sup: 0, jours_sans_solde: 0 }],
+    compteurEntree: entree, annee: 2026, mois: 7
+  });
+  egal(avecFerie.imputationsAppliquees[0].source, 'imposee',
+    'T24.le 14 juillet férié ne fait pas écarter l’imputation');
+});
+
+definir('T25 — C1 : les réserves sont vérifiées sur la période, pas sur la part du mois', function () {
+  /* Période du 28 juillet au 4 août 2026 : RG-06 en compte 7 — 4 jours en
+     juillet, 3 en août. Ventilation : 7 jours sur les congés payés. Réserve
+     d'entrée : 50 dixièmes, soit 5 jours pour 7 demandés.
+
+     Avant ce correctif, juillet passait (4 jours, 40 dixièmes, mois
+     clôturable) et seul août refusait. Le premier mois était donc présentable
+     et verrouillable sur une ventilation qui ne pourrait jamais être honorée.
+     §5.3 : le décompte et la ventilation d'une période sont insécables. */
+  var imputation = {
+    date_debut: '2026-07-28', date_fin: '2026-08-04',
+    jours_ouvrables: 7, jours_sur_cp: 7, jours_sur_sup: 0, jours_sans_solde: 0
+  };
+  var juillet = ['28', '29', '30', '31'].map(function (j) {
+    return { jour: '2026-07-' + j, type: 'conge_maria' };
+  });
+
+  leveCode(function () {
+    Engine.calculerMois({
+      contrat: contrat(), salaire: SALAIRE_REF, journees: juillet,
+      imputations: [imputation],
+      compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 50, dixiemesCpPris: 0 },
+      annee: 2026, mois: 7
+    });
+  }, 'IMPUTATION_DEPASSE_RESERVES', 'T25.refus dès le mois où la période commence');
+
+  /* Avec les réserves suffisantes, la même période passe — et le second mois
+     n'est pas contrôlé une seconde fois sur la période entière, sans quoi il
+     refuserait à tort ce que le premier a déjà consommé. */
+  var ok = Engine.calculerMois({
+    contrat: contrat(), salaire: SALAIRE_REF, journees: juillet,
+    imputations: [imputation],
+    compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 100, dixiemesCpPris: 0 },
+    annee: 2026, mois: 7
+  });
+  egal(ok.joursCongesDecomptes, 4, 'T25.juillet décompte sa part');
+  egal(ok.imputation.dixiemesCpConsommes, 40, 'T25.juillet consomme sa part');
+
+  var aout = Engine.calculerMois({
+    contrat: contrat(), salaire: SALAIRE_REF,
+    journees: [{ jour: '2026-08-03', type: 'conge_maria' },
+               { jour: '2026-08-04', type: 'conge_maria' }],
+    imputations: [imputation],
+    compteurEntree: {
+      minutesSup: ok.compteurSortie.minutesSup,
+      dixiemesCpAcquis: ok.compteurSortie.dixiemesCpAcquis,
+      dixiemesCpPris: ok.compteurSortie.dixiemesCpPris
+    },
+    annee: 2026, mois: 8
+  });
+  egal(aout.joursCongesDecomptes, 3, 'T25.août décompte sa part sans être refusé');
+  egal(ok.imputation.dixiemesCpConsommes + aout.imputation.dixiemesCpConsommes, 70,
+    'T25.la somme des deux mois égale l’imputation posée');
+});
+
 module.exports = { cas: cas };

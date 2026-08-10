@@ -119,4 +119,72 @@ cas.push({
   }
 });
 
+/* ================================================================== */
+/* LOT 9 — les refus liés aux congés ont enfin une phrase française   */
+/* ================================================================== */
+
+cas.push({
+  nom: 'A2 — les quatre codes du moteur ne tombent plus sur le repli',
+  fn: function () {
+    function code(c, extra) {
+      var e = new Error(c); e.code = c;
+      if (extra) Object.keys(extra).forEach(function (k) { e[k] = extra[k]; });
+      return e;
+    }
+    var m = silence(function () { return Messages.lisible(code('IMPUTATION_NEGATIVE')); });
+    egal(m, 'une des valeurs de la répartition est négative : reprenez la répartition.',
+      'IMPUTATION_NEGATIVE');
+    egal(m === Messages.DEFAUT, false, 'ce n’est plus le repli');
+
+    var d = silence(function () { return Messages.lisible(code('IMPUTATION_DEPASSE_RESERVES')); });
+    egal(d.indexOf('pas assez de congés payés') !== -1, true, 'IMPUTATION_DEPASSE_RESERVES');
+    egal(d === Messages.DEFAUT, false, 'ce n’est plus le repli');
+
+    var mi = silence(function () { return Messages.lisible(code('MINUTES_INVALIDES')); });
+    egal(mi.indexOf('nombre entier') !== -1, true, 'MINUTES_INVALIDES');
+    egal(mi === Messages.DEFAUT, false, 'ce n’est plus le repli');
+
+    /* Aucun sigle technique, aucun mot d'anglais, aucun code d'erreur. */
+    [m, d, mi].forEach(function (phrase) {
+      egal(/IMPUTATION|MINUTES_|23P01|constraint|null|undefined/.test(phrase), false,
+        'aucun terme technique dans « ' + phrase.slice(0, 30) + '… »');
+    });
+  }
+});
+
+cas.push({
+  nom: 'A2 — un décompte incomplet dit les chiffres, pas le code',
+  fn: function () {
+    var e = new Error('IMPUTATION_INCOMPLETE');
+    e.code = 'IMPUTATION_INCOMPLETE'; e.attendu = 6; e.recu = 5;
+    var m = silence(function () { return Messages.lisible(e); });
+    egal(m.indexOf('compte 6 jours') !== -1, true, 'le décompte réel est donné');
+    egal(m.indexOf('en couvre 5') !== -1, true, 'ce qui a été réparti est donné');
+    egal(/IMPUTATION|_/.test(m), false, 'aucun code à l’écran');
+
+    /* Sans chiffres, la phrase reste correcte et utile. */
+    var nu = new Error('IMPUTATION_INCOMPLETE'); nu.code = 'IMPUTATION_INCOMPLETE';
+    var m2 = silence(function () { return Messages.lisible(nu); });
+    egal(m2.indexOf('ne couvre pas exactement') !== -1, true, 'phrase sans chiffres');
+    egal(m2.indexOf('undefined') === -1, true, 'jamais « undefined » à l’écran');
+  }
+});
+
+cas.push({
+  nom: 'A2 — le chevauchement de deux périodes de congé est nommé',
+  fn: function () {
+    /* L'erreur réelle de Postgres, telle que PostgREST la renvoie. */
+    var e = {
+      code: '23P01',
+      message: 'conflicting key value violates exclusion constraint ' +
+               '"imputation_sans_chevauchement"'
+    };
+    var m = silence(function () { return Messages.lisible(e); });
+    egal(m.indexOf('chevauche une période de congé') !== -1, true, 'le chevauchement est dit');
+    egal(m === Messages.DEFAUT, false, 'ce n’est plus le repli');
+    egal(/constraint|imputation_sans|23P01/.test(m), false,
+      'ni nom de contrainte ni code ne fuient à l’écran');
+  }
+});
+
 module.exports = { cas: cas };

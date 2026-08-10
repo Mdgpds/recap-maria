@@ -100,7 +100,7 @@
      le litige historique avec les familles. */
   function joursOuvrablesParMois(debutStr, finStr, joursPlanning) {
     var planning = joursPlanning || PLANNING_DEFAUT;
-    if (finStr < debutStr) throw new Error('decompterJoursOuvrables : fin < debut');
+    if (finStr < debutStr) throw new Error('joursOuvrablesParMois : fin < debut');
 
     var reprise = Feries.ajouterJours(finStr, 1);
     while (planning.indexOf(jourSemaine(reprise)) === -1 || Feries.estJourFerie(reprise)) {
@@ -498,6 +498,41 @@
      pour que le lot 10 puisse le dire à Maria — une journée ajoutée peut
      faire basculer onze jours de récupération en douze jours de congés
      payés, sur deux compteurs qui se propagent sur des années. */
+  /* CORRECTION RELECTURE LOT 9, 2ᵉ PASSE (B1).
+
+     Encadrer n'est pas correspondre. `imputationApplicable` se contentait de
+     vérifier que l'imputation ENCADRE la période observée dans le mois : une
+     imputation restée plus LARGE que les journées réellement posées était donc
+     acceptée telle quelle, et sa ventilation entière appliquée en silence.
+
+     Le cas se produit dès que Maria raccourcit un congé sans que l'imputation
+     soit refaite : elle pose la semaine du 27 au 31 juillet, puis retravaille
+     le mercredi, le jeudi et le vendredi. Le moteur comptait alors ces trois
+     journées DEUX FOIS — payées en présence, avec entretien et minutes
+     supplémentaires, et débitées comme congé. Vingt-six journées dans un mois
+     qui n'en compte que vingt-deux, et quatre jours de congés payés perdus
+     pour des jours travaillés. Aucun compteur ne se remet à zéro (RG-12) :
+     l'écart se serait propagé sur toutes les années suivantes.
+
+     Le contrôle ci-dessous ne décide rien de métier : il constate que le choix
+     de Maria ne décrit plus ses journées, et laisse l'appelant le SIGNALER —
+     exactement comme le correctif A2 le fait pour l'écart inverse.
+
+     Un jour n'est comparé que s'il a été traité par la boucle du mois (jour du
+     planning, dans les bornes du contrat) ; un férié à l'intérieur d'une
+     période de congé n'est jamais posé en congé et ne compte donc pas. */
+  function imputationCorrespondAuxJournees(imputation, typeDuJourTraite, joursDuMoisCourant) {
+    for (var i = 0; i < joursDuMoisCourant.length; i++) {
+      var d = joursDuMoisCourant[i];
+      if (d < imputation.date_debut || d > imputation.date_fin) continue;
+      var t = typeDuJourTraite[d];
+      if (t === undefined) continue;          // jour non traité : neutre
+      if (t === 'ferie') continue;            // jamais posé en congé
+      if (t !== 'conge_maria') return false;  // journée travaillée dans la période imputée
+    }
+    return true;
+  }
+
   function imputationApplicable(imputations, periode) {
     var ecartee = null;
     for (var i = 0; i < (imputations || []).length; i++) {
@@ -556,6 +591,11 @@
     var joursConge = [];             // jours 'conge_maria' posés dans le mois
     var joursSansSoldeSaisis = 0;    // lignes 'sans_solde' saisies explicitement
     var joursFamiliarisation = 0;
+    /* Type retenu pour chaque journée effectivement traitée du mois — jour du
+       planning, dans les bornes du contrat. Sert au contrôle de correspondance
+       B1 plus bas : une imputation doit correspondre aux journées RÉELLEMENT
+       posées, pas seulement les encadrer. */
+    var typeDuJourTraite = {};
 
     var jours = joursDuMois(annee, mois);
     for (var j = 0; j < jours.length; j++) {
@@ -580,6 +620,7 @@
          présumé 'presence' — sauf s'il est férié (RG-10 : Maria ne
          travaille jamais un jour férié). Une ligne explicite prime. */
       var type = ligne ? ligne.type : (Feries.estJourFerie(d) ? 'ferie' : 'presence');
+      typeDuJourTraite[d] = type;
 
       switch (type) {
         case 'presence':
@@ -669,6 +710,16 @@
       var periode = periodes[pIdx];
       var applicable = imputationApplicable(imputations, periode);
       var impCouvrante = applicable.couvrante;
+      /* B1 : une imputation qui encadre la période mais ne correspond plus aux
+         journées posées est ÉCARTÉE, pas appliquée. On la traite alors comme
+         le correctif A2 traite l'écart inverse : l'ordre du contrat reprend la
+         main, et le moteur dit que le choix de Maria a été écarté. */
+      var ecarteeB1 = null;
+      if (impCouvrante &&
+          !imputationCorrespondAuxJournees(impCouvrante, typeDuJourTraite, jours)) {
+        ecarteeB1 = impCouvrante;
+        impCouvrante = null;
+      }
       /* Une même imputation ne peut être consommée qu'une fois par mois : sa
          part du mois vaut pour toutes les journées de la période qu'elle
          couvre. Le cas ne devrait pas se présenter (deux périodes séparées
@@ -692,7 +743,24 @@
           },
           date_debut: impCouvrante.date_debut,
           date_fin: impCouvrante.date_fin,
-          source: 'imposee'
+          source: 'imposee',
+          /* CORRECTION RELECTURE LOT 9, 2ᵉ PASSE (C1). Le contrôle des
+             réserves portait sur la part du MOIS, jamais sur la période. Une
+             ventilation hors réserves sur l'ensemble d'une période à cheval
+             passait donc pour le premier mois — qui devenait présentable et
+             clôturable — et n'était refusée qu'au second. §5.3 : le décompte
+             et la ventilation d'une période sont insécables ; un refus qui ne
+             porte que sur une moitié laisse le premier mois calculé sur une
+             ventilation qui ne pourra jamais être honorée.
+             La période entière est donc vérifiée AU MOIS OÙ ELLE COMMENCE,
+             contre les réserves de ce mois-là. La date à laquelle les réserves
+             font foi n'est écrite nulle part : c'est une question remontée à
+             Adrien, et le choix retenu ici est le prudent — refuser tôt. */
+          imposeeTotale: (parts.length && parts[0].cle === cleMois) ? {
+            joursSurCp: impCouvrante.jours_sur_cp || 0,
+            joursSurSup: impCouvrante.jours_sur_sup || 0,
+            joursSansSolde: impCouvrante.jours_sans_solde || 0
+          } : null
         });
         auMoinsUneImposee = true;
       } else {
@@ -705,9 +773,10 @@
           imposee: null,
           date_debut: periode.debut,
           date_fin: periode.fin,
-          source: applicable.ecartee ? 'defaut_choix_ecarte' : 'defaut',
-          choixEcarte: applicable.ecartee
-            ? { date_debut: applicable.ecartee.date_debut, date_fin: applicable.ecartee.date_fin }
+          source: (ecarteeB1 || applicable.ecartee) ? 'defaut_choix_ecarte' : 'defaut',
+          choixEcarte: (ecarteeB1 || applicable.ecartee)
+            ? { date_debut: (ecarteeB1 || applicable.ecartee).date_debut,
+                date_fin: (ecarteeB1 || applicable.ecartee).date_fin }
             : null
         });
       }
@@ -738,6 +807,15 @@
       };
       for (var v = 0; v < plan.length; v++) {
         joursCongesDecomptes += plan[v].nbJours;
+        /* C1 — au mois où la période COMMENCE, la ventilation est confrontée
+           aux réserves pour la période ENTIÈRE, pas seulement pour la part du
+           mois. Un mois clôturable sur une ventilation impossible à honorer
+           est pire qu'un refus franc. */
+        var tot = plan[v].imposeeTotale;
+        if (tot && (tot.joursSurCp * 10 > dispoCp ||
+                    tot.joursSurSup * contrat.minutes_par_jour_conge > dispoSup)) {
+          throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
+        }
         var r = imputerConges(plan[v].nbJours,
           { minutesSup: dispoSup, dixiemesCp: dispoCp }, contrat, plan[v].imposee);
         imputation.joursSurSup += r.joursSurSup;

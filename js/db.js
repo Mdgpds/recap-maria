@@ -445,9 +445,20 @@
   /* Insère une imputation et retourne la ligne créée, avec son id.
      En cas de chevauchement avec une période déjà imputée sur le même
      contrat, la base refuse l'écriture : l'erreur REMONTE telle quelle à
-     l'appelant, qui la fera traduire en français par js/messages.js. On ne
-     l'avale surtout pas — un chevauchement avalé produirait un double
-     décompte de congés, invisible et introuvable après coup. */
+     l'appelant. On ne l'avale surtout pas — un chevauchement avalé produirait
+     un double décompte de congés, invisible et introuvable après coup.
+
+     ATTENTION — correction de la 2ᵉ passe de relecture (C2). Ce commentaire
+     affirmait que l'appelant « la fera traduire en français par
+     js/messages.js ». C'ÉTAIT FAUX. La violation de la contrainte d'exclusion
+     remonte le code Postgres 23P01 (« violates exclusion constraint »), que la
+     table de traductions de js/messages.js ne reconnaît pas : Maria lirait
+     « une erreur inattendue s'est produite », sans aucun moyen de comprendre
+     ni de corriger — alors que la cause est parfaitement explicable, « cette
+     période chevauche une période de congé déjà enregistrée ».
+     La phrase manquante appartient à js/messages.js, hors du périmètre du
+     lot 9 : à ajouter au lot 10, avec la traduction des quatre codes du
+     moteur, AVANT qu'un écran n'écrive une seule imputation. */
   function enregistrerImputation(imputation) {
     return client.from('imputation_conge')
       .insert({
@@ -481,7 +492,7 @@
   /* Lit le récap d'un mois (brouillon ou figé), ou null s'il n'existe pas. */
   function getRecap(contratId, annee, mois) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
       .eq('contrat_id', contratId)
       .eq('annee', annee)
       .eq('mois', mois)
@@ -539,7 +550,7 @@
      chaîne des mois (un appel au lieu d'un par mois). */
   function listRecapsContrat(contratId) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
       .eq('contrat_id', contratId)
       .order('annee', { ascending: false })
       .order('mois', { ascending: false })
@@ -551,7 +562,7 @@
      ne pas tout ramener). */
   function listRecapsPeriode(contratId, anneeMin, anneeMax) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
       .eq('contrat_id', contratId)
       .gte('annee', anneeMin)
       .lte('annee', anneeMax)
