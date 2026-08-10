@@ -272,7 +272,8 @@
   function getJourneesMois(contratId, annee, mois) {
     var bornes = bornesMois(annee, mois);
     return client.from('journee')
-      .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire')
+      .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
+              'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override')
       .eq('contrat_id', contratId)
       .gte('jour', bornes.debut)
       .lte('jour', bornes.fin)
@@ -291,7 +292,8 @@
      directement consommable par le calcul mois par mois. */
   function getJourneesPeriode(contratId, dateDebut, dateFin) {
     return client.from('journee')
-      .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire')
+      .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
+              'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override')
       .eq('contrat_id', contratId)
       .gte('jour', dateDebut)
       .lte('jour', dateFin)
@@ -309,7 +311,19 @@
 
   /* Enregistre une exception pour un contrat et un jour (upsert sur la
      contrainte unique (contrat_id, jour)). owner est posé par défaut en base
-     (auth.uid()) et filtré par RLS : on ne le transmet jamais côté client. */
+     (auth.uid()) et filtré par RLS : on ne le transmet jamais côté client.
+
+     Lot 9 — trois champs de flexibilité supplémentaires, tous OPTIONNELS.
+     Règle de transmission, à respecter à la lettre :
+       - champ absent de `ligne`            -> non transmis, la valeur en base
+                                               est conservée ;
+       - minutes_sup_exceptionnelles /
+         minutes_sup_renoncees présents     -> transmis tels quels, entiers ;
+       - sup_dues_override présent à null   -> transmis EXPLICITEMENT à null
+                                               (retour au réglage du contrat).
+     C'est le seul champ où `null` est une valeur signifiante et non une
+     absence : null = « suivre le contrat », false = « explicitement non
+     dues ». Ne jamais confondre les deux. */
   function enregistrerJournee(ligne) {
     var payload = {
       contrat_id: ligne.contrat_id,
@@ -319,6 +333,12 @@
       entretien_centimes: (ligne.entretien_centimes == null ? null : ligne.entretien_centimes),
       commentaire: (ligne.commentaire == null ? null : ligne.commentaire)
     };
+    ['minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override']
+      .forEach(function (champ) {
+        if (Object.prototype.hasOwnProperty.call(ligne, champ) && ligne[champ] !== undefined) {
+          payload[champ] = ligne[champ];
+        }
+      });
     return client.from('journee')
       .upsert(payload, { onConflict: 'contrat_id,jour' })
       .select()
@@ -382,6 +402,75 @@
       .in('contrat_id', contratIds)
       .in('jour', jours)
       .in('type', types)
+      .then(function (r) { if (r.error) throw r.error; return true; });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Imputation choisie d'une période de congé (lot 9)                   */
+  /*                                                                     */
+  /* Une ligne = UNE période continue de congé pour UN contrat, avec son  */
+  /* décompte RG-06 en jours ouvrables et sa ventilation entre congés     */
+  /* payés, récupération et sans solde. Portée par la PÉRIODE et non par  */
+  /* le mois : une période à cheval sur deux mois garde un décompte       */
+  /* unique et insécable (le moteur en répartit la part de chaque mois).  */
+  /*                                                                     */
+  /* Aucun calcul ici : db.js transmet, le moteur calcule.                */
+  /* ------------------------------------------------------------------ */
+
+  var CHAMPS_IMPUTATION =
+    'id, contrat_id, date_debut, date_fin, jours_ouvrables, ' +
+    'jours_sur_cp, jours_sur_sup, jours_sans_solde';
+
+  /* Imputations d'un contrat dont la période RECOUPE l'intervalle demandé,
+     triées par date de début croissante. Retourne [] si aucune : l'absence
+     d'imputation n'est pas une erreur, c'est le cas ordinaire (l'ordre par
+     défaut du contrat s'applique alors, RG-07). */
+  function listImputations(contratId, debutIso, finIso) {
+    return client.from('imputation_conge')
+      .select(CHAMPS_IMPUTATION)
+      .eq('contrat_id', contratId)
+      .lte('date_debut', finIso)
+      .gte('date_fin', debutIso)
+      .order('date_debut', { ascending: true })
+      .then(deballer);
+  }
+
+  /* Raccourci sur listImputations avec les bornes d'un mois — c'est l'appel
+     dominant, et cela évite que chaque écran recalcule les bornes. */
+  function listImputationsPourMois(contratId, annee, mois) {
+    var b = bornesMois(annee, mois);
+    return listImputations(contratId, b.debut, b.fin);
+  }
+
+  /* Insère une imputation et retourne la ligne créée, avec son id.
+     En cas de chevauchement avec une période déjà imputée sur le même
+     contrat, la base refuse l'écriture : l'erreur REMONTE telle quelle à
+     l'appelant, qui la fera traduire en français par js/messages.js. On ne
+     l'avale surtout pas — un chevauchement avalé produirait un double
+     décompte de congés, invisible et introuvable après coup. */
+  function enregistrerImputation(imputation) {
+    return client.from('imputation_conge')
+      .insert({
+        contrat_id: imputation.contrat_id,
+        date_debut: imputation.date_debut,
+        date_fin: imputation.date_fin,
+        jours_ouvrables: imputation.jours_ouvrables,
+        jours_sur_cp: imputation.jours_sur_cp,
+        jours_sur_sup: imputation.jours_sur_sup,
+        jours_sans_solde: imputation.jours_sans_solde
+      })
+      .select(CHAMPS_IMPUTATION)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* Supprime une imputation par son identifiant. Contrairement aux familles
+     et aux contrats, une imputation n'est pas une donnée d'histoire : c'est
+     la ventilation d'une période de congé, qui disparaît avec elle (lot 10). */
+  function supprimerImputation(id) {
+    return client.from('imputation_conge')
+      .delete()
+      .eq('id', id)
       .then(function (r) { if (r.error) throw r.error; return true; });
   }
 
@@ -535,6 +624,10 @@
     supprimerJournee: supprimerJournee,
     poserAbsenceMaria: poserAbsenceMaria,
     retirerAbsenceMaria: retirerAbsenceMaria,
+    listImputations: listImputations,
+    listImputationsPourMois: listImputationsPourMois,
+    enregistrerImputation: enregistrerImputation,
+    supprimerImputation: supprimerImputation,
     getRecap: getRecap,
     listRecapsContrat: listRecapsContrat,
     listRecapsPeriode: listRecapsPeriode,
