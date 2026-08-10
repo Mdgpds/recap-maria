@@ -228,4 +228,120 @@ cas.push({
   }
 });
 
+/* ================================================================== */
+/* LOT 13 — Écarts entre deux instantanés d'un même mois              */
+/*                                                                    */
+/* Un mois rouvert puis reclôturé peut changer de valeurs pour deux   */
+/* raisons : une journée corrigée, ou un barème modifié entre-temps.  */
+/* Sans cette comparaison, le second cas passerait inaperçu — y       */
+/* compris pour le parent qui a déjà l'ancien document entre les      */
+/* mains.                                                             */
+/* ================================================================== */
+
+/* Instantané minimal, valeurs FICTIVES (dépôt public). */
+function instantane(opts) {
+  opts = opts || {};
+  return {
+    joursPresence:        opts.presence  === undefined ? 20     : opts.presence,
+    entretienCentimes:    opts.entretien === undefined ? 10000  : opts.entretien,
+    salaireNetCentimes:   opts.net       === undefined ? 107200 : opts.net,
+    totalAVerserCentimes: opts.total     === undefined ? 117200 : opts.total,
+    minutesSupAcquises:   opts.sup       === undefined ? 600    : opts.sup,
+    joursCongesDecomptes: opts.conges    === undefined ? 0      : opts.conges
+  };
+}
+
+cas.push({
+  nom: 'A4 — aucun changement : aucun écart, donc aucun écran intermédiaire',
+  fn: function () {
+    egal(Chaine.ecartsInstantanes(instantane(), instantane()).length, 0, 'A4.aucun écart');
+    /* Deux objets distincts de même contenu ne produisent pas d'écart : on
+       compare les valeurs, jamais les références. */
+    egal(Chaine.ecartsInstantanes(instantane(), JSON.parse(JSON.stringify(instantane()))).length,
+      0, 'A4.copie profonde');
+  }
+});
+
+cas.push({
+  nom: 'P4 — une journée corrigée : écart sur la présence et l’entretien',
+  fn: function () {
+    var avant = instantane({ presence: 20, entretien: 10000, total: 117200 });
+    var apres = instantane({ presence: 19, entretien: 9500, total: 116700 });
+    var e = Chaine.ecartsInstantanes(avant, apres);
+    egal(e.length, 3, 'P4.trois postes touchés');
+    egal(e[0].cle, 'joursPresence', 'P4.ordre du document : la présence d’abord');
+    egal(e[0].ancien, 20, 'P4.ancienne présence');
+    egal(e[0].nouveau, 19, 'P4.nouvelle présence');
+    egal(e[1].cle, 'entretienCentimes', 'P4.puis l’entretien');
+    egal(e[1].format, 'euros', 'P4.format de l’entretien');
+    egal(e[2].cle, 'totalAVerserCentimes', 'P4.puis le total');
+    /* Un poste identique ne figure JAMAIS dans le tableau. */
+    egal(e.filter(function (x) { return x.cle === 'salaireNetCentimes'; }).length, 0,
+      'P4.le salaire net inchangé est absent');
+  }
+});
+
+cas.push({
+  nom: 'P5 — barème modifié entre-temps : écart sur le salaire et le total',
+  fn: function () {
+    /* Aucune journée n'a bougé, seule la rémunération a été revalorisée.
+       C'est le cas que la comparaison existe pour attraper : sans elle, un
+       document déjà transmis à la famille changerait en silence. */
+    var e = Chaine.ecartsInstantanes(
+      instantane({ net: 107200, total: 117200 }),
+      instantane({ net: 110000, total: 120000 })
+    );
+    egal(e.length, 2, 'P5.deux postes touchés');
+    egal(e[0].cle, 'salaireNetCentimes', 'P5.salaire net');
+    egal(e[1].cle, 'totalAVerserCentimes', 'P5.total à verser');
+    egal(e[0].ancien, 107200, 'P5.ancien net');
+    egal(e[0].nouveau, 110000, 'P5.nouveau net');
+  }
+});
+
+cas.push({
+  nom: 'Lot 13 — les six postes du document sont comparés, et eux seuls',
+  fn: function () {
+    egal(Chaine.POSTES_COMPARES.length, 6, 'six postes');
+    egal(Chaine.POSTES_COMPARES.map(function (p) { return p.cle; }).join(','),
+      'joursPresence,entretienCentimes,salaireNetCentimes,totalAVerserCentimes,' +
+      'minutesSupAcquises,joursCongesDecomptes',
+      'ordre et contenu des postes');
+
+    /* Chaque poste sait comment il se présente : l'écran met en forme, il ne
+       décide pas de ce qui est comparé. */
+    Chaine.POSTES_COMPARES.forEach(function (p) {
+      egal(['jours', 'euros', 'minutes'].indexOf(p.format) !== -1, true, 'format connu : ' + p.cle);
+      egal(typeof p.libelle === 'string' && p.libelle.length > 0, true, 'libellé : ' + p.cle);
+    });
+
+    /* Un poste hors liste n'est pas comparé, même s'il diffère. */
+    var a = instantane(); a.dixiemesCpAcquis = 25;
+    var b = instantane(); b.dixiemesCpAcquis = 0;
+    egal(Chaine.ecartsInstantanes(a, b).length, 0, 'un poste hors liste est ignoré');
+  }
+});
+
+cas.push({
+  nom: 'Lot 13 — instantané absent ou incomplet : jamais de faux écart',
+  fn: function () {
+    /* Mois jamais clôturé : il n'y a pas de document antérieur. */
+    egal(Chaine.ecartsInstantanes(null, instantane()).length, 0, 'ancien absent');
+    egal(Chaine.ecartsInstantanes(instantane(), null).length, 0, 'nouveau absent');
+
+    /* Instantané produit par une version antérieure de l'application : le
+       poste manquant vaut 0 et n'invente pas un écart. */
+    var ancienPartiel = { joursPresence: 20, entretienCentimes: 10000 };
+    var nouveauPartiel = { joursPresence: 20, entretienCentimes: 10000 };
+    egal(Chaine.ecartsInstantanes(ancienPartiel, nouveauPartiel).length, 0,
+      'postes manquants des deux côtés');
+
+    /* En revanche, un poste manquant d'un côté et non nul de l'autre EST un
+       écart : on ne masque pas une différence réelle. */
+    var e = Chaine.ecartsInstantanes(ancienPartiel, instantane());
+    egal(e.length > 0, true, 'écart réel signalé malgré le poste manquant');
+    egal(e[0].ancien, 0, 'poste manquant lu comme 0');
+  }
+});
+
 module.exports = { cas: cas };

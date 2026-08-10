@@ -187,12 +187,21 @@
         'Ce contrat est terminé et rangé. Tout son historique reste consultable, ' +
         'mais aucune journée ne peut plus être modifiée.'));
     } else if (vue.clos) {
-      /* La promesse écrite au moment de la clôture est désormais tenue à
-         l'écran ET à l'écriture. */
-      corps.appendChild(Kit.note('Mois clôturé — plus aucune modification',
-        'Le récapitulatif de ' + Kit.libelleMoisAnnee(vue.annee, vue.mois) + ' est verrouillé : ' +
-        'ni les journées de ' + c.prenom_enfant + ', ni un congé posé depuis cet écran ne peuvent ' +
-        'plus changer. C’est ce qui protège vos comptes.'));
+      /* Lot 13 : un mois clôturé peut désormais être rouvert. Le bandeau ne
+         promet donc plus l'impossibilité de modifier — il promet la stabilité
+         des chiffres tant que le mois reste clôturé, et il ouvre la porte,
+         explicitement. Ce qui protège Maria n'est plus le verrou, c'est la
+         trace : d'où le lien vers l'historique, à côté de la réouverture. */
+      var recapClos = vue.entree && vue.entree.recap;
+      corps.appendChild(Kit.note(
+        'Mois clôturé' + (recapClos && recapClos.fige_le ? ' le ' + Kit.dateLongue(recapClos.fige_le) : ''),
+        'Les chiffres de ce mois ne bougeront plus, même si un salaire change plus tard. ' +
+        'Les journées de ' + c.prenom_enfant + ' ne se modifient pas tant qu’il est clôturé.'));
+      if (global.UiReouverture && recapClos) {
+        global.UiReouverture.actionsMoisCloture(corps, {
+          contrat: c, annee: vue.annee, mois: vue.mois, recap: recapClos
+        });
+      }
     } else if (vue.aVenir) {
       corps.appendChild(Kit.note('Mois à venir',
         'Vous pouvez y consulter et retirer les congés déjà posés. Le mois ne se clôture ' +

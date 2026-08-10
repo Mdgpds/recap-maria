@@ -176,7 +176,14 @@
 
     if (e.fige) {
       corps.appendChild(Kit.note('Mois clôturé' + (e.recap && e.recap.fige_le ? ' le ' + Kit.dateLongue(e.recap.fige_le) : ''),
-        'Ce document ne changera plus, même si un salaire est modifié plus tard.'));
+        'Les chiffres de ce mois ne bougeront plus, même si un salaire change plus tard.'));
+      /* Lot 13 : la porte de réouverture, et l'historique qui la rend
+         acceptable. Les deux vont toujours ensemble. */
+      if (global.UiReouverture && e.recap) {
+        global.UiReouverture.actionsMoisCloture(corps, {
+          contrat: vue.contrat, annee: vue.annee, mois: vue.mois, recap: e.recap
+        });
+      }
       corps.appendChild(sectionPartage());
       return;
     }
@@ -468,17 +475,46 @@
     Kit.ouvrirFeuille('Clôturer ' + Kit.libelleMoisAnnee(vue.annee, vue.mois) + ' ?',
       id.prenom + (id.famille ? ' — famille ' + id.famille : ''),
       function (corps) {
+        /* Lot 13 : la clôture n'est plus définitive, elle est réversible par
+           un geste tracé. Le texte le dit — promettre l'irréversible alors
+           qu'un bouton la défait ferait douter de tout le reste. */
         corps.appendChild(Kit.warnbox('La clôture verrouille le mois',
-          'Après clôture, plus aucune modification. Vérifiez vos journées avant de continuer. ' +
-          'Le partage aux parents, lui, restera possible à tout moment.'));
+          'Après clôture, les chiffres ne bougent plus. Vérifiez vos journées avant de continuer. ' +
+          'Vous pourrez rouvrir ce mois si vous devez corriger : la réouverture sera inscrite ' +
+          'dans son historique. Le partage aux parents, lui, reste possible à tout moment.'));
         var l = Kit.lines(corps);
         var r = vue.entree.resultat;
         Kit.ligne(l, 'Jours de présence', Kit.jours(r.joursPresence));
         Kit.ligne(l, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
-        var b = Kit.bouton('btn', function () { cloturer(b); });
+        var b = Kit.bouton('btn', function () { verifierPuisCloturer(b); });
         b.textContent = 'Oui, clôturer le mois';
         corps.appendChild(b);
       });
+  }
+
+  /* Reclôture d'un mois qui avait déjà été clôturé une fois : avant d'écrire
+     le nouvel instantané, on compare poste à poste avec l'ancien.
+
+     Le résultat peut différer pour deux raisons — une journée corrigée, ou un
+     barème changé entre-temps. Le second cas est le dangereux : sans cet
+     écran, rouvrir puis refermer un mois après une revalorisation modifierait
+     en silence un document déjà chez un parent.
+
+     Aucun écart, ou mois jamais clôturé : on clôture directement, sans écran
+     intermédiaire. */
+  function verifierPuisCloturer(bouton) {
+    var snap = instantane();
+    var ecarts = global.UiReouverture
+      ? global.UiReouverture.ecarts(vue.entree.recap, snap)
+      : [];
+
+    if (!ecarts.length) return cloturer(bouton, snap);
+
+    global.UiReouverture.feuilleEcarts({
+      contrat: vue.contrat, annee: vue.annee, mois: vue.mois,
+      recap: vue.entree.recap, ecarts: ecarts,
+      confirmer: function (b) { cloturer(b, snap); }
+    });
   }
 
   /* L'instantané enregistré : le ResultatMois du moteur, plus ce que le moteur
@@ -497,9 +533,14 @@
     return snap;
   }
 
-  function cloturer(bouton) {
+  /* Lot 13 : la clôture passe désormais par `recloturerRecap`, qui écrit
+     l'événement « cloture » dans la même transaction. C'est vrai AUSSI de la
+     première clôture — sans quoi l'historique d'un mois commencerait par
+     « Rouvert », sans jamais dire quand il avait été clôturé.
+     L'horodatage est produit par la base : plus d'objet Date ici. */
+  function cloturer(bouton, snap) {
     bouton.disabled = true;
-    global.DB.figerRecap(vue.contrat.id, vue.annee, vue.mois, instantane(), new Date().toISOString())
+    global.DB.recloturerRecap(vue.contrat.id, vue.annee, vue.mois, snap || instantane())
       .then(function (ligne) {
         global.App.invalider();
         Kit.fermerFeuille();

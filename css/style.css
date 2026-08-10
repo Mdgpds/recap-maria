@@ -369,8 +369,15 @@ td.ab .mini { color: var(--wa); }
   background: var(--ink); color: #fff; padding: 13px 15px; border-radius: 12px; font-size: 14px;
   opacity: 0; transform: translateY(8px); transition: .22s; pointer-events: none; z-index: 40;
 }
-.toast.on { opacity: 1; transform: translateY(0); }
+.toast.on { opacity: 1; transform: translateY(0); pointer-events: auto; }
 .toast.ko { background: var(--danger); }
+/* Action d'un message éphémère — « Annuler » après une réouverture (lot 13).
+   Une seule par message, jamais deux : un vrai choix se prend dans une
+   feuille, pas dans un message qui s'efface. */
+.toast .tact {
+  background: none; border: none; color: #fff; font: inherit; font-weight: 700;
+  text-decoration: underline; cursor: pointer; padding: 2px 0 2px 14px; float: right;
+}
 
 /* ------------------------------------------------------------------------ */
 /* Document (identité papier : fond crème, Georgia, filet bleu)              */
