@@ -30,6 +30,36 @@
        « figé » est le terme de la base, il ne sort jamais du code. */
     [/immuab|est figé|recap_mensuel .* fig/i,
       'ce mois est clôturé : il ne peut plus être modifié.'],
+
+    /* --- Congés : les refus du moteur et de la base (lot 9) --------------
+       Ces phrases manquaient : les quatre codes du moteur et la violation de
+       la contrainte d'exclusion tombaient tous sur le repli « une erreur
+       inattendue s'est produite », alors que la cause est connue et
+       explicable. Elles précèdent les règles générales sur les contraintes,
+       qui sont moins précises.
+       Aucun code, aucun nom de table, aucun mot d'anglais ne sort d'ici. */
+    [/exclusion constraint|23P01/i,
+      'cette période chevauche une période de congé déjà enregistrée. ' +
+      'Vérifiez vos dates, ou modifiez la période existante.'],
+    [/IMPUTATION_INCOMPLETE/,
+      function (e) {
+        var chiffres = (typeof e.attendu === 'number' && typeof e.recu === 'number')
+          ? ' Cette période compte ' + e.attendu + ' jour' + (e.attendu > 1 ? 's' : '') +
+            ', la répartition en couvre ' + e.recu + '.'
+          : '';
+        return 'la répartition ne couvre pas exactement les jours de cette période.' +
+               chiffres + ' Reprenez la répartition pour qu’il ne reste rien à placer.';
+      }],
+    [/IMPUTATION_NEGATIVE/,
+      'une des valeurs de la répartition est négative : reprenez la répartition.'],
+    [/IMPUTATION_DEPASSE_RESERVES/,
+      'vous n’avez pas assez de congés payés ou de récupération pour cette ' +
+      'répartition. Placez une partie des jours en sans solde, ou choisissez ' +
+      'des dates plus courtes.'],
+    [/MINUTES_INVALIDES/,
+      'les minutes saisies ne sont pas un nombre de minutes valable : ' +
+      'entrez un nombre entier, sans virgule.'],
+
     [/duplicate key|23505|unique constraint|unique violation/i,
       'cette valeur existe déjà.'],
     [/violates check constraint|23514/i,
@@ -61,7 +91,18 @@
     }
 
     for (var i = 0; i < TRADUCTIONS.length; i++) {
-      if (TRADUCTIONS[i][0].test(brut)) return TRADUCTIONS[i][1];
+      if (TRADUCTIONS[i][0].test(brut)) {
+        var phrase = TRADUCTIONS[i][1];
+        /* Une traduction peut être une fonction quand l'erreur porte des
+           chiffres utiles à Maria — « cette période compte 6 jours, la
+           répartition en couvre 5 » vaut mieux que la même phrase sans
+           repères. La fonction reçoit l'erreur ; si elle échoue, on retombe
+           sur le repli plutôt que de laisser fuir quoi que ce soit. */
+        if (typeof phrase === 'function') {
+          try { return phrase(e || {}); } catch (err) { return defaut || DEFAUT; }
+        }
+        return phrase;
+      }
     }
     return defaut || DEFAUT;
   }

@@ -445,9 +445,20 @@
   /* Insère une imputation et retourne la ligne créée, avec son id.
      En cas de chevauchement avec une période déjà imputée sur le même
      contrat, la base refuse l'écriture : l'erreur REMONTE telle quelle à
-     l'appelant, qui la fera traduire en français par js/messages.js. On ne
-     l'avale surtout pas — un chevauchement avalé produirait un double
-     décompte de congés, invisible et introuvable après coup. */
+     l'appelant. On ne l'avale surtout pas — un chevauchement avalé produirait
+     un double décompte de congés, invisible et introuvable après coup.
+
+     ATTENTION — correction de la 2ᵉ passe de relecture (C2). Ce commentaire
+     affirmait que l'appelant « la fera traduire en français par
+     js/messages.js ». C'ÉTAIT FAUX. La violation de la contrainte d'exclusion
+     remonte le code Postgres 23P01 (« violates exclusion constraint »), que la
+     table de traductions de js/messages.js ne reconnaît pas : Maria lirait
+     « une erreur inattendue s'est produite », sans aucun moyen de comprendre
+     ni de corriger — alors que la cause est parfaitement explicable, « cette
+     période chevauche une période de congé déjà enregistrée ».
+     La phrase manquante appartient à js/messages.js, hors du périmètre du
+     lot 9 : à ajouter au lot 10, avec la traduction des quatre codes du
+     moteur, AVANT qu'un écran n'écrive une seule imputation. */
   function enregistrerImputation(imputation) {
     return client.from('imputation_conge')
       .insert({
@@ -481,7 +492,7 @@
   /* Lit le récap d'un mois (brouillon ou figé), ou null s'il n'existe pas. */
   function getRecap(contratId, annee, mois) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
       .eq('contrat_id', contratId)
       .eq('annee', annee)
       .eq('mois', mois)
@@ -502,44 +513,30 @@
       .then(function (r) { return r[0]; });
   }
 
-  /* Fige un mois : enregistre d'abord l'instantané en brouillon, puis passe
-     brouillon -> figé (SEUL chemin autorisé par le trigger). `figeLeIso` est
-     posé ici (horloge de persistance, pas de calcul métier).
+  /* `figerRecap` / `figerVraiment` ONT ÉTÉ SUPPRIMÉES ICI (relecture lot 13,
+     anomalie C4). C'était l'ancien chemin de clôture : un UPDATE direct vers
+     `statut = 'fige'`, avec un `fige_le` fabriqué côté client et AUCUN
+     événement écrit. Plus aucun écran ne l'appelait depuis le lot 13, mais
+     elle restait exportée sur `DB`, sous un nom plus court et plus ancien que
+     son remplaçant — une invitation à la rappeler « par habitude ».
 
-     Correction A7 (relecture lot 6) : sur un mois DÉJÀ figé, c'est l'upsert du
-     brouillon qui partait en premier, et le trigger d'immuabilité le rejetait.
-     L'appelant recevait donc une erreur — « ce mois est clôturé, rien n'a été
-     verrouillé » — alors que le mois était bel et bien clôturé, depuis un autre
-     appareil. On lit d'abord l'état : déjà figé, on ne touche à rien et on
-     renvoie null, ce que l'appelant sait dire correctement. */
-  function figerRecap(contratId, annee, mois, donnees, figeLeIso) {
-    return getRecap(contratId, annee, mois).then(function (existant) {
-      if (existant && existant.statut === 'fige') return null;
-      return figerVraiment(contratId, annee, mois, donnees, figeLeIso);
-    });
-  }
+     Or depuis le lot 13, ce qui protège Maria n'est plus l'impossibilité de
+     modifier un mois clôturé, c'est la TRACE de chaque geste. Un mois clôturé
+     par cet ancien chemin serait un mois dont le premier événement de
+     l'historique serait « Rouvert », sans clôture avant. La fonction est donc
+     retirée, pas seulement dépréciée.
 
-  function figerVraiment(contratId, annee, mois, donnees, figeLeIso) {
-    return enregistrerRecapBrouillon(contratId, annee, mois, donnees)
-      .then(function () {
-        return client.from('recap_mensuel')
-          .update({ statut: 'fige', fige_le: figeLeIso })
-          .eq('contrat_id', contratId)
-          .eq('annee', annee)
-          .eq('mois', mois)
-          .eq('statut', 'brouillon')
-          .select()
-          .then(deballer)
-          .then(function (r) { return r[0] || null; });
-      });
-  }
+     Le seul chemin de clôture est désormais `recloturerRecap`, qui passe par
+     la fonction en base : l'horodatage vient de la base, et l'événement est
+     écrit par le trigger `recap_mensuel_tracer_statut` (migration 006), quel
+     que soit le chemin emprunté. */
 
   /* Lot 5 C4/C6 — tous les récaps d'un contrat, du plus récent au plus
      ancien. Sert à l'historique par famille et au chargement mutualisé de la
      chaîne des mois (un appel au lieu d'un par mois). */
   function listRecapsContrat(contratId) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
       .eq('contrat_id', contratId)
       .order('annee', { ascending: false })
       .order('mois', { ascending: false })
@@ -551,7 +548,7 @@
      ne pas tout ramener). */
   function listRecapsPeriode(contratId, anneeMin, anneeMax) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
       .eq('contrat_id', contratId)
       .gte('annee', anneeMin)
       .lte('annee', anneeMax)
@@ -728,7 +725,6 @@
     listRecapsContrat: listRecapsContrat,
     listRecapsPeriode: listRecapsPeriode,
     enregistrerRecapBrouillon: enregistrerRecapBrouillon,
-    figerRecap: figerRecap,
     rouvrirRecap: rouvrirRecap,
     recloturerRecap: recloturerRecap,
     listEvenementsRecap: listEvenementsRecap,
