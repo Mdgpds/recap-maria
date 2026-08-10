@@ -5,7 +5,7 @@
   "description": "Récapitulatif mensuel d'assistante maternelle — application statique, sans étape de build.",
   "scripts": {
     "test": "node test/run.js",
-    "test:ui": "node test/lot6-ui.smoke.js && node test/lot6-cloture.smoke.js && node test/lot6-periode-fiche.smoke.js"
+    "test:ui": "node test/lot6-ui.smoke.js && node test/lot6-cloture.smoke.js && node test/lot6-periode-fiche.smoke.js && node test/lot13-reouverture.smoke.js"
   },
   "devDependencies": {
     "jsdom": "^24.0.0"

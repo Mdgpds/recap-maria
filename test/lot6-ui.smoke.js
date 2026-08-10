@@ -116,7 +116,10 @@ var DB = {
     appels.retirer.push({ ids: ids, jours: jours, types: types });
     return Promise.resolve(true);
   },
-  figerRecap: function (id, a, m, donnees) {
+  /* Lot 13 : la clôture passe désormais par recloturerRecap, qui écrit
+     l'événement « cloture » dans la même transaction que le figement.
+     figerRecap reste en place mais n'est plus appelée par l'interface. */
+  recloturerRecap: function (id, a, m, donnees) {
     appels.fige.push({ contratId: id, annee: a, mois: m, donnees: donnees });
     return Promise.resolve({ id: 'r1', statut: 'fige' });
   }
@@ -125,6 +128,7 @@ global.DB = DB; window.DB = DB;
 
 /* --- Écrans --------------------------------------------------------------- */
 require('../js/ui-kit.js');
+require('../js/ui-reouverture.js');
 require('../js/ui-accueil.js');
 require('../js/ui-enfant.js');
 require('../js/ui-document.js');
@@ -253,7 +257,7 @@ var sheet = document.getElementById('sheet');
   parTexte(sheet, 'button', 'Oui, clôturer le mois').click();
   await pause(80);
 
-  assert(appels.fige.length === 1, 'la clôture appelle figerRecap une fois');
+  assert(appels.fige.length === 1, 'la clôture appelle recloturerRecap une fois (lot 13)');
   var snap = appels.fige[0].donnees;
   assert(snap.prenomEnfant === 'Léa' && snap.nomFamille === 'Papillon',
     'l’instantané embarque le prénom et le nom de famille');

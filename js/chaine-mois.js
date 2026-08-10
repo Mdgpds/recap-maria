@@ -504,10 +504,61 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Écarts entre deux instantanés d'un même mois (lot 13)               */
+  /* ------------------------------------------------------------------ */
+
+  /* Postes comparés à la reclôture d'un mois rouvert. L'ordre est celui de
+     lecture du document, pas celui du calcul. `format` dit à l'écran comment
+     présenter la valeur ; ce module ne produit jamais de texte affichable. */
+  var POSTES_COMPARES = [
+    { cle: 'joursPresence',        libelle: 'Jours de présence',              format: 'jours' },
+    { cle: 'entretienCentimes',    libelle: 'Indemnité d’entretien',          format: 'euros' },
+    { cle: 'salaireNetCentimes',   libelle: 'Salaire net',                    format: 'euros' },
+    { cle: 'totalAVerserCentimes', libelle: 'Total à verser',                 format: 'euros' },
+    { cle: 'minutesSupAcquises',   libelle: 'Heures supplémentaires du mois', format: 'minutes' },
+    { cle: 'joursCongesDecomptes', libelle: 'Congés décomptés',               format: 'jours' }
+  ];
+
+  /* Compare l'instantané déjà établi et celui qu'on s'apprête à écrire.
+     Retourne UNIQUEMENT les postes qui diffèrent :
+     [{ cle, libelle, format, ancien, nouveau }], dans l'ordre du document.
+
+     Fonction PURE, et ici plutôt que dans un écran : « aucun calcul métier
+     dans l'interface » (B.0-5). C'est elle qui empêche qu'une reclôture après
+     une revalorisation de salaire modifie en silence un montant déjà parti
+     chez un parent — le défaut le plus coûteux que la réouverture puisse
+     introduire.
+
+     Un instantané absent (mois jamais clôturé) donne [] : il n'y a pas de
+     document antérieur, donc rien à comparer. */
+  function ecartsInstantanes(ancien, nouveau) {
+    if (!ancien || !nouveau) return [];
+    var ecarts = [];
+    for (var i = 0; i < POSTES_COMPARES.length; i++) {
+      var p = POSTES_COMPARES[i];
+      var a = valeurComparee(ancien[p.cle]);
+      var n = valeurComparee(nouveau[p.cle]);
+      if (a !== n) {
+        ecarts.push({ cle: p.cle, libelle: p.libelle, format: p.format, ancien: a, nouveau: n });
+      }
+    }
+    return ecarts;
+  }
+
+  /* Un poste absent d'un instantané ancien — produit par une version
+     antérieure de l'application — vaut 0 : on ne signale pas un écart qui
+     n'en est pas un, et on ne compare jamais un nombre à `undefined`. */
+  function valeurComparee(v) {
+    return (typeof v === 'number' && isFinite(v)) ? v : 0;
+  }
+
+  /* ------------------------------------------------------------------ */
 
   var api = {
     serie: serie,
     mois1: mois1,
+    ecartsInstantanes: ecartsInstantanes,
+    POSTES_COMPARES: POSTES_COMPARES,
     fenetre: fenetre,
     fenetreContrat: fenetreContrat,
     contratCouvreLeMois: contratCouvreLeMois,

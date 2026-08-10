@@ -163,7 +163,10 @@ var DB = {
     return Promise.resolve([]);
   },
   retirerAbsenceMaria: function () { return Promise.resolve(true); },
-  figerRecap: function (id, a, m, donnees) {
+  /* Lot 13 : la clôture passe désormais par recloturerRecap, qui écrit
+     l'événement « cloture » dans la même transaction que le figement.
+     figerRecap reste en place mais n'est plus appelée par l'interface. */
+  recloturerRecap: function (id, a, m, donnees) {
     appels.fige.push({ contratId: id, annee: a, mois: m, donnees: donnees });
     /* A7 : sur un mois déjà clôturé ailleurs, db.js renvoie null sans écrire. */
     return Promise.resolve(etatTest.dejaClos ? null : { id: 'x', statut: 'fige' });
@@ -172,6 +175,7 @@ var DB = {
 global.DB = DB; window.DB = DB;
 
 require('../js/ui-kit.js');
+require('../js/ui-reouverture.js');
 require('../js/ui-accueil.js');
 require('../js/ui-enfant.js');
 require('../js/ui-document.js');
@@ -197,8 +201,17 @@ var toast = document.getElementById('toast');
   window.App.aller('enfant', { contratId: 'c-lea', annee: 2026, mois: 5 });
   await pause(200);
 
-  assert(txt(corps).indexOf('Mois clôturé — plus aucune modification') !== -1,
+  /* Lot 13 : le bandeau ne promet plus l'impossibilité de modifier — un mois
+     clôturé peut être rouvert. Il promet la stabilité des chiffres tant qu'il
+     reste clôturé, et il ouvre la porte explicitement. */
+  assert(txt(corps).indexOf('Mois clôturé') !== -1,
     'B1 : le mois clôturé porte un bandeau qui le dit');
+  assert(txt(corps).indexOf('ne bougeront plus') !== -1,
+    'B1 : le bandeau promet la stabilité des chiffres');
+  assert(parTexte(corps, 'button', 'Rouvrir pour corriger') !== null,
+    'lot 13 : le bandeau propose de rouvrir le mois');
+  assert(parTexte(corps, 'button', 'Voir l’historique de ce mois') !== null,
+    'lot 13 : le bandeau propose l’historique du mois');
   assert(corps.querySelectorAll('table.cal td[role="button"]').length === 0,
     'B1 : aucune journée n’est touchable sur un mois clôturé (obtenu ' +
     corps.querySelectorAll('table.cal td[role="button"]').length + ')');

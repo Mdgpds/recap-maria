@@ -559,8 +559,104 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Réouverture d'un mois clôturé (lot 13)                              */
+  /*                                                                     */
+  /* Depuis ce lot, un mois clôturé peut être rouvert pour être corrigé. */
+  /* Ce qui protège Maria n'est donc plus l'impossibilité de modifier,    */
+  /* mais la TRACE de chaque modification : un geste qui ne laisserait    */
+  /* pas son événement viderait le lot de son sens.                      */
+  /*                                                                     */
+  /* C'est pourquoi les trois gestes passent par des fonctions de la      */
+  /* base (migration 005) et non par deux requêtes enchaînées ici : deux  */
+  /* requêtes lancées depuis un téléphone ne sont pas une seule           */
+  /* opération, et un réseau qui tombe entre les deux laisserait un mois  */
+  /* rouvert sans trace. Le corps d'une fonction plpgsql, lui, est une    */
+  /* transaction : si l'événement n'est pas écrit, le geste est annulé    */
+  /* avec lui.                                                           */
+  /* ------------------------------------------------------------------ */
+
+  var CHAMPS_EVENEMENT = 'id, recap_id, type, survenu_le, motif';
+
+  /* Rouvre un mois clôturé : statut figé -> brouillon, `fige_le` remis à
+     null, et un événement « reouverture » écrit dans la même transaction.
+     `motif` est facultatif — on ne demande jamais de justification écrite.
+     L'instantané (`donnees`) n'est PAS touché : c'est lui qui permettra
+     d'afficher les écarts à la reclôture.
+     Retourne null si le mois n'existe pas ou n'était pas clôturé : ce n'est
+     pas une erreur, c'est « il n'y avait rien à rouvrir ». */
+  function rouvrirRecap(contratId, annee, mois, motif) {
+    return client.rpc('rouvrir_recap', {
+      p_contrat_id: contratId,
+      p_annee: annee,
+      p_mois: mois,
+      p_motif: (motif == null ? null : motif)
+    }).then(deballerUn);
+  }
+
+  /* Clôture un mois et écrit un événement « cloture ». Sert AUSSI à la
+     première clôture : sans cela, le premier événement manquerait et
+     l'historique du mois commencerait par « Rouvert ».
+     Retourne null si le mois était déjà clôturé (depuis un autre appareil) :
+     rien n'est écrasé. L'horodatage est produit par la base — aucun objet
+     Date ne traverse cette couche. */
+  function recloturerRecap(contratId, annee, mois, donnees) {
+    return client.rpc('recloturer_recap', {
+      p_contrat_id: contratId,
+      p_annee: annee,
+      p_mois: mois,
+      p_donnees: donnees
+    }).then(deballerUn);
+  }
+
+  /* Événements d'un récapitulatif, du PLUS ANCIEN au PLUS RÉCENT.
+     C'est l'écran qui inverse pour l'affichage : ne pas inverser deux fois.
+     Retourne [] s'il n'y en a pas. */
+  function listEvenementsRecap(recapId) {
+    return client.from('evenement_recap')
+      .select(CHAMPS_EVENEMENT)
+      .eq('recap_id', recapId)
+      .order('survenu_le', { ascending: true })
+      .then(deballer);
+  }
+
+  /* Marque un récapitulatif comme transmis à la famille et écrit un
+     événement « transmission ». Idempotente : un second appel ne modifie ni
+     la date ni l'historique. Fournie ici, branchée à l'écran au lot 7 — d'ici
+     là, `transmis_le` reste nul et aucun avertissement de transmission ne se
+     déclenche, ce qui est voulu. */
+  function marquerTransmis(contratId, annee, mois) {
+    return client.rpc('marquer_transmis', {
+      p_contrat_id: contratId,
+      p_annee: annee,
+      p_mois: mois
+    }).then(deballerUn);
+  }
+
+  /* Le mois est-il clôturé ? Utilitaire destiné au lot 10, qui doit le savoir
+     avant de poser un congé sur une période. */
+  function estMoisCloture(contratId, annee, mois) {
+    return client.from('recap_mensuel')
+      .select('statut')
+      .eq('contrat_id', contratId)
+      .eq('annee', annee)
+      .eq('mois', mois)
+      .maybeSingle()
+      .then(function (r) {
+        if (r.error) throw r.error;
+        return !!(r.data && r.data.statut === 'fige');
+      });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Utilitaires internes                                                */
   /* ------------------------------------------------------------------ */
+
+  /* Retour d'une fonction de la base : un objet, ou null quand la fonction
+     n'avait rien à faire. L'erreur n'est jamais avalée. */
+  function deballerUn(r) {
+    if (r.error) throw r.error;
+    return r.data || null;
+  }
 
   function deballer(r) {
     if (r.error) throw r.error;
@@ -632,6 +728,11 @@
     listRecapsContrat: listRecapsContrat,
     listRecapsPeriode: listRecapsPeriode,
     enregistrerRecapBrouillon: enregistrerRecapBrouillon,
-    figerRecap: figerRecap
+    figerRecap: figerRecap,
+    rouvrirRecap: rouvrirRecap,
+    recloturerRecap: recloturerRecap,
+    listEvenementsRecap: listEvenementsRecap,
+    marquerTransmis: marquerTransmis,
+    estMoisCloture: estMoisCloture
   };
 })(window);

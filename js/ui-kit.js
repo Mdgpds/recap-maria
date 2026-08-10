@@ -389,15 +389,41 @@
   /* ------------------------------------------------------------------ */
 
   var minuteurToast = null;
-  function toast(texte, estErreur) {
+
+  /* toast(texte, estErreur)
+     toast(texte, estErreur, { libelle, onclick, delai })  — lot 13
+
+     La troisième forme ajoute UNE action au message, « Annuler » après une
+     réouverture (V8-21). Elle reste volontairement pauvre : un seul bouton,
+     jamais deux, et le message disparaît de lui-même. Un geste qu'on peut
+     défaire tout de suite se propose ici ; un geste qui demande réflexion
+     passe par une feuille de confirmation, jamais par un message éphémère.
+
+     L'action a droit à plus de temps qu'une simple confirmation : Maria doit
+     pouvoir la lire, la comprendre et la viser du doigt. */
+  function toast(texte, estErreur, action) {
     var t = document.getElementById('toast');
     if (!t) return;
-    t.textContent = texte;
+    vider(t);
+    t.appendChild(document.createTextNode(texte));
+
+    var delai = estErreur ? 5000 : 2400;
+    if (action && action.libelle && typeof action.onclick === 'function') {
+      var b = bouton('tact', function () {
+        if (minuteurToast) clearTimeout(minuteurToast);
+        t.className = 'toast';
+        action.onclick();
+      });
+      b.textContent = action.libelle;
+      t.appendChild(b);
+      delai = action.delai || 8000;
+    }
+
     t.className = 'toast on' + (estErreur ? ' ko' : '');
     if (minuteurToast) clearTimeout(minuteurToast);
     /* Un échec reste lisible plus longtemps qu'une confirmation : Maria doit
        avoir le temps de comprendre que son écriture n'est PAS passée. */
-    minuteurToast = setTimeout(function () { t.className = 'toast'; }, estErreur ? 5000 : 2400);
+    minuteurToast = setTimeout(function () { t.className = 'toast'; }, delai);
   }
 
   function messageErreur(e) {
