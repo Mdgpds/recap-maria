@@ -123,6 +123,17 @@ var DB = {
   listContratsPourMois: function () { return Promise.resolve([LEA, TOM, ZOE]); },
   listContratsPourPeriode: function () { return Promise.resolve([LEA, TOM, ZOE]); },
   listFamillesToutes: function () { return Promise.resolve([]); },
+    /* Lot 8 — identité et familles. */
+    majContratIdentite: function (id, champs) { return Promise.resolve(champs); },
+    rattacherContratAFamille: function () { return Promise.resolve(true); },
+    renommerFamille: function () { return Promise.resolve(true); },
+    archiverFamille: function () { return Promise.resolve(true); },
+    desarchiverFamille: function () { return Promise.resolve(true); },
+    listFamillesAvecContrats: function () { return Promise.resolve([]); },
+  /* Lot 14 — la fiche contrat demande si le contrat est vierge pour décider
+     d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
+     cette fonction, l'écran lève avant même de se rendre. */
+  contratEstVierge: function () { return Promise.resolve(false); },
   getSalaires: function (id) {
     var s = (id === 'c-zoe') ? SALAIRE_SANS_NET : SALAIRE_PLEIN;
     var copie = {}; Object.keys(s).forEach(function (k) { copie[k] = s[k]; });
@@ -139,6 +150,9 @@ var DB = {
     if (etatTest.serieCassee === id) return Promise.reject(new Error('Failed to fetch'));
     return Promise.resolve(journeesDeMai(id));
   },
+  listImputationsPourMois: function () { return Promise.resolve([]); },
+  getNoteMensuelle: function () { return Promise.resolve(null); },
+    enregistrerNoteMensuelle: function (c, a, m, t) { return Promise.resolve({ texte: t }); },
   getJourneesPeriode: function (id) {
     if (etatTest.serieCassee === id) return Promise.reject(new Error('Failed to fetch'));
     return Promise.resolve({ '2026-05': journeesDeMai(id) });
@@ -230,27 +244,42 @@ var toast = document.getElementById('toast');
 
   var touchables = corps.querySelectorAll('table.cal td[role="button"]');
   assert(touchables.length > 0, 'le mois de Tom, lui, reste modifiable');
-  var mardi26 = Array.prototype.filter.call(touchables, function (td) {
-    return txt(td.querySelector('.num')) === '26';
+  /* LOT 7 — le 26 mai est POSTÉRIEUR au 24 (date du jour simulée) : il n'est
+     plus touchable, on ne saisit pas l'avenir. Le geste se pose donc sur le
+     mardi 19, qui est passé. Ce que ce cas vérifie — un geste posé sur un
+     contrat n'atteint pas le mois clôturé d'un autre — n'en dépend pas. */
+  var mardi19 = Array.prototype.filter.call(touchables, function (td) {
+    return txt(td.querySelector('.num')) === '19';
   })[0];
-  assert(!!mardi26, 'le mardi 26 mai est touchable chez Tom');
-  mardi26.click();
+  assert(!!mardi19, 'le mardi 19 mai est touchable chez Tom');
+  mardi19.click();
   await pause(60);
 
   assert(txt(sheet).indexOf('Mois déjà clôturé pour Léa') !== -1,
     'B1 : la feuille dit que Léa ne sera pas touchée');
-  var pourquoiConge = txt(sheet.querySelectorAll('.choice')[2].querySelector('.why'));
-  assert(pourquoiConge.indexOf('les 2 enfants') !== -1,
-    'A2 : le libellé compte les contrats RÉELLEMENT servis, pas « les 4 enfants » ' +
-    '(obtenu « ' + pourquoiConge + ' »)');
 
-  sheet.querySelectorAll('.choice')[2].click();
+  /* LOT 10 — le choix « Je ne travaillais pas » a été retiré de cette feuille
+     (V8-09) : les congés passent par l'onglet « Mes congés ». Ce que ce cas
+     vérifie — une écriture GROUPÉE n'atteint jamais le mois clôturé d'un
+     autre contrat — reste vrai et se vérifie sur « Je n'étais pas demandée »,
+     qui est l'autre geste groupé de cet écran. */
+  parTexte(sheet, 'button', 'Autre cas').click();
+  await pause(80);
+
+  var choixNonTravaille = parTexte(sheet, '.choice', 'Je n’étais pas demandée');
+  assert(!!choixNonTravaille, 'le geste groupé « je n’étais pas demandée » est offert');
+  var pourquoi = txt(choixNonTravaille.querySelector('.why'));
+  assert(pourquoi.indexOf('2 enfants') !== -1,
+    'A2 : le libellé compte les contrats RÉELLEMENT servis, pas « les 4 enfants » ' +
+    '(obtenu « ' + pourquoi + ' »)');
+
+  choixNonTravaille.click();
   await pause(200);
 
   assert(appels.poser.length === 1, 'une écriture groupée est partie');
   var ids = appels.poser[0].affectations.map(function (a) { return a.contratId; }).sort();
   assert(ids.join(',') === 'c-tom,c-zoe',
-    'B1 : le congé ne part QUE sur les contrats dont le mois n’est pas clôturé ' +
+    'B1 : l’écriture ne part QUE sur les contrats dont le mois n’est pas clôturé ' +
     '(obtenu ' + ids.join(',') + ')');
 
   /* ================= B2 — net manquant : pas de clôture ================== */
@@ -276,40 +305,45 @@ var toast = document.getElementById('toast');
   assert(!!bCloture, 'le mois de Tom est clôturable');
   bCloture.click();
   await pause(60);
-  parTexte(sheet, 'button', 'Oui, clôturer le mois').click();
+  /* LOT 7 (V8-04) — le 24 mai, il reste des jours travaillés : le bouton de
+     confirmation devient « Clôturer quand même ». On accepte les deux libellés
+     pour que ce cas continue de vérifier ce qu'il vérifie — le message rendu
+     quand le mois a déjà été clôturé depuis un autre appareil — et pas le
+     libellé du bouton, qui a son propre cas plus haut. */
+  var bConfirmer = parTexte(sheet, 'button', 'Clôturer quand même') ||
+                   parTexte(sheet, 'button', 'Oui, clôturer le mois');
+  assert(!!bConfirmer, 'la feuille propose de confirmer la clôture');
+  bConfirmer.click();
   await pause(200);
   assert(txt(toast).indexOf('déjà clôturé') !== -1,
     'A7 : le message dit la vérité quand le mois était déjà clôturé (obtenu « ' + txt(toast) + ' »)');
   assert(txt(toast).indexOf('figé') === -1, 'A8 : le mot « figé » n’apparaît jamais à l’écran');
   etatTest.dejaClos = false;
 
-  /* ================= B4 — l’aperçu d’une semaine dit la vérité =========== */
+  /* ================= B4 — le décompte vient du MOTEUR ==================== */
+  /* Le mode « poser une semaine entière » a disparu au lot 10 (V8-08), et avec
+     lui l'aperçu qui annonçait la consommation SUPPLÉMENTAIRE d'une semaine.
+     Ce que B4 protégeait — ne pas compter deux fois un jour déjà posé —
+     n'est plus l'affaire de l'écran : le moteur regroupe les congés du mois en
+     périodes continues avant d'imputer, et les cas T4, T8 et T18bis de la
+     suite unitaire le verrouillent. Ce qui se vérifie ICI, c'est que l'écran
+     ne recalcule rien : le décompte affiché est celui de RG-06 pour la période
+     choisie, samedi inclus. */
+  window.App.invalider();
   window.App.aller('conges', { annee: 2026, mois: 5 }, true);
-  await pause(250);
+  await pause(300);
 
   assert(txt(corps).indexOf('Lundi 18 mai') !== -1, 'le congé déjà posé est listé');
 
-  parTexte(corps, 'button', 'Poser une semaine entière').click();
-  await pause(400);
+  parTexte(corps, 'button', 'Poser des congés').click();
+  await pause(200);
 
-  /* Semaine du 18 au 22 mai : le lundi 18 est DÉJÀ posé. Le moteur décompte 6
-     jours ouvrables pour la période complète, dont 1 était déjà compté : la
-     consommation supplémentaire est de 5 jours, pas 6. */
-  var decompte = ligneDe(sheet, 'Jours décomptés');
-  assert(decompte === '5 j',
-    'B4 : l’effet réel de la semaine est de 5 jours, le lundi déjà posé n’est pas ' +
-    'compté deux fois (obtenu ' + decompte + ')');
-  assert(ligneDe(sheet, 'Déjà posés') === '1 j',
-    'B4 : le jour déjà posé est nommé plutôt que caché');
-  var lignetom = ligneDe(sheet, 'Tom');
-  assert(lignetom && lignetom.indexOf('→') !== -1, 'l’aperçu montre le solde avant → après');
-  /* Valeur attendue par la relecture : « 19 j → 14 j ». L'ancien code annonçait
-     13 j, en comptant le lundi déjà posé une seconde fois. */
-  assert(lignetom.indexOf('19 j → 14 j') !== -1,
-    'B4 : 19 j → 14 j, et non 13 j comme le donnait le double comptage ' +
-    '(obtenu « ' + lignetom + ' »)');
-  assert(txt(sheet).indexOf('Mois déjà clôturé pour Léa') !== -1,
-    'B1 : la semaine ne partira pas sur le mois clôturé de Léa, et c’est dit');
+  assert(txt(sheet).indexOf('Quand serez-vous absente ?') !== -1,
+    'LOT 10 : le parcours commence par les DATES');
+  assert(txt(sheet).indexOf('ouvrables décomptés') !== -1,
+    'LOT 10 : le décompte s’affiche sous les dates');
+  assert(txt(sheet).indexOf('samedi inclus') !== -1,
+    'RG-06 : le samedi inclus est dit, pas sous-entendu');
 
   /* ================= B5 — un contrat illisible bloque la pose =========== */
   etatTest.serieCassee = 'c-tom';
@@ -319,11 +353,11 @@ var toast = document.getElementById('toast');
 
   assert(txt(corps).indexOf('Compteurs indisponibles pour Tom') !== -1,
     'B5 : l’échec de lecture est annoncé, pas caché sous « non concerné »');
-  var bSemaine = parTexte(corps, 'button', 'Poser une semaine entière');
-  assert(bSemaine && bSemaine.disabled === true,
+  var bPoser = parTexte(corps, 'button', 'Poser des congés');
+  assert(bPoser && bPoser.disabled === true,
     'B5 : la pose est bloquée tant qu’un contrat n’est pas lisible');
   assert(ligneDe(corps, 'Tom') === 'indisponible',
-    'B5 : le contrat en échec est nommé dans les compteurs');
+    'B5 : le contrat en échec est nommé dans les réserves');
   etatTest.serieCassee = null;
 
   console.log('\n' + (echecs === 0 ? 'Tout est conforme.' : echecs + ' échec(s).'));

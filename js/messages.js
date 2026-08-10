@@ -60,6 +60,19 @@
       'les minutes saisies ne sont pas un nombre de minutes valable : ' +
       'entrez un nombre entier, sans virgule.'],
 
+    /* --- Lot 14 : mise en service et suppression franche ---------------
+       Ces deux refus viennent de la BASE et sont parfaitement explicables :
+       les laisser tomber sur « une erreur inattendue » serait leur faire dire
+       le contraire de ce qu'ils disent. */
+    [/CONTRAT_NON_VIERGE|proteger_suppression_contrat/,
+      'ce contrat porte déjà des journées ou des mois enregistrés : il ne peut ' +
+      'plus être supprimé. Choisissez « Ce contrat est terminé » pour le ranger ' +
+      'en conservant son historique.'],
+    [/compteur_initial_coherent/,
+      'ces chiffres de départ ne sont pas cohérents : vous ne pouvez pas avoir ' +
+      'pris plus de congés payés que vous n’en avez acquis, et aucune valeur ne ' +
+      'peut être négative.'],
+
     [/duplicate key|23505|unique constraint|unique violation/i,
       'cette valeur existe déjà.'],
     [/violates check constraint|23514/i,

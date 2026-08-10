@@ -9,7 +9,10 @@ var suites = [
   { titre: 'Moteur de calcul (lot 1)', suite: require('./engine.test.js') },
   { titre: 'Chaîne des mois et agrégation de période (lot 5)', suite: require('./chaine.test.js') },
   { titre: 'Messages d’échec en français (lot 5)', suite: require('./messages.test.js') },
-  { titre: 'Couche données : aucune colonne lue sans être demandée', suite: require('./couche-donnees.test.js') }
+  { titre: 'Couche données : aucune colonne lue sans être demandée', suite: require('./couche-donnees.test.js') },
+  /* Placé en dernier : ce fichier pose un décor global (window, document) pour
+     charger ui-kit.js sous Node. Il ne doit pas polluer les suites pures. */
+  { titre: 'État d’avancement d’un mois (lot 7)', suite: require('./etat-mois.test.js') }
 ];
 
 var reussis = 0;

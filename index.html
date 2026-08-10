@@ -31,6 +31,12 @@
           <input id="login-mdp" type="password" autocomplete="current-password" required>
         </label>
         <button id="btn-login" class="btn" type="submit">Se connecter</button>
+        <!-- Lot 14 — « Mot de passe oublié ». Le message de retour ne révèle
+             JAMAIS si l'adresse existe : ce formulaire serait sinon un outil
+             pour savoir qui possède un compte ici, et cette application
+             contient les revenus d'une personne et les noms de quatre
+             enfants. -->
+        <button id="btn-oubli" class="lien-login" type="button">Mot de passe oublié</button>
         <div id="msg-login" class="msg" role="status" aria-live="polite"></div>
       </form>
     </div>
@@ -45,6 +51,11 @@
     <!-- Barre d'onglets : visible UNIQUEMENT sur Accueil, Mes congés, Menu. -->
     <nav id="tabbar" class="tabbar" hidden>
       <button type="button" data-onglet="accueil"><span class="i" aria-hidden="true">⌂</span>Accueil</button>
+      <!-- Lot 8 : l'Historique devient un onglet racine. Il prend la deuxième
+           position dans l'ordre de LECTURE — c'est le deuxième geste de Maria
+           après consulter son mois — et absorbe le récapitulatif de période et
+           les anciens contrats. La rubrique « Consulter » disparaît du Menu. -->
+      <button type="button" data-onglet="historique"><span class="i" aria-hidden="true">◷</span>Historique</button>
       <button type="button" data-onglet="conges"><span class="i" aria-hidden="true">☾</span>Mes congés</button>
       <button type="button" data-onglet="menu"><span class="i" aria-hidden="true">⋯</span>Menu</button>
     </nav>

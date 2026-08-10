@@ -912,7 +912,17 @@
     calculerMois: calculerMois,
     /* utilitaires exposés pour les tests et l'interface */
     jourSemaine: jourSemaine,
-    joursDuMois: joursDuMois
+    joursDuMois: joursDuMois,
+    /* LOT 12 — `detailSupDuJour` était déjà là, calculée et utilisée par
+       `minutesSupDuJour` et par `calculerMois` ; elle n'était simplement pas
+       exposée. L'écran d'ajustement des heures en a besoin pour montrer
+       l'effet d'un choix AVANT de l'enregistrer — et il ne doit surtout pas
+       le recalculer lui-même : RG-04 (une journée de congé ne porte aucune
+       minute) et RG-09 (les minutes dues quand l'enfant est absent) vivraient
+       alors à deux endroits.
+       AUCUN CHANGEMENT DE COMPORTEMENT : une ligne ajoutée à la table
+       d'export, rien d'autre. Le différentiel exhaustif le vérifie. */
+    detailSupDuJour: detailSupDuJour
   };
 
   if (typeof module !== 'undefined' && module.exports) {

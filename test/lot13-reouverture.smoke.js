@@ -112,12 +112,26 @@ var DB = {
   listContratsPourMois: function () { return Promise.resolve([LEA]); },
   listContratsPourPeriode: function () { return Promise.resolve([LEA]); },
   listFamillesToutes: function () { return Promise.resolve([]); },
+    /* Lot 8 — identité et familles. */
+    majContratIdentite: function (id, champs) { return Promise.resolve(champs); },
+    rattacherContratAFamille: function () { return Promise.resolve(true); },
+    renommerFamille: function () { return Promise.resolve(true); },
+    archiverFamille: function () { return Promise.resolve(true); },
+    desarchiverFamille: function () { return Promise.resolve(true); },
+    listFamillesAvecContrats: function () { return Promise.resolve([]); },
+  /* Lot 14 — la fiche contrat demande si le contrat est vierge pour décider
+     d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
+     cette fonction, l'écran lève avant même de se rendre. */
+  contratEstVierge: function () { return Promise.resolve(false); },
   getSalaires: function () { return Promise.resolve([SALAIRE]); },
   getCompteurInitial: function (id) {
     return Promise.resolve({ contrat_id: id, date_reference: '2026-05-01',
       minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 });
   },
   getJourneesMois: function () { return Promise.resolve({}); },
+  listImputationsPourMois: function () { return Promise.resolve([]); },
+  getNoteMensuelle: function () { return Promise.resolve(null); },
+    enregistrerNoteMensuelle: function (c, a, m, t) { return Promise.resolve({ texte: t }); },
   getJourneesPeriode: function () { return Promise.resolve({ '2026-05': {} }); },
   listRecapsPeriode: function () { return Promise.resolve(RECAP ? [RECAP] : []); },
   listRecapsContrat: function () { return Promise.resolve(RECAP ? [RECAP] : []); },

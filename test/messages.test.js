@@ -187,4 +187,28 @@ cas.push({
   }
 });
 
+cas.push({
+  nom: 'A2 — les deux refus du lot 14 sont expliqués, pas affichés bruts',
+  fn: function () {
+    /* Un contrat qui a déjà servi : le message doit dire QUOI FAIRE, pas
+       seulement que c'est refusé. */
+    var t1 = Messages.lisible(new Error(
+      'contrat 33 : suppression impossible, 1 journée(s) et 0 récapitulatif(s) existent (CONTRAT_NON_VIERGE)'));
+    egal(t1.indexOf('journées') !== -1 || t1.indexOf('journée') !== -1, true,
+      'le refus de suppression nomme la cause');
+    egal(t1.indexOf('Ce contrat est terminé') !== -1, true,
+      'et il dit quoi faire à la place');
+    egal(/CONTRAT_NON_VIERGE|contrat 33|récapitulatif\(s\)/.test(t1), false,
+      'aucun code ni message technique ne sort (obtenu « ' + t1 + ' »)');
+
+    /* Des compteurs de départ incohérents. */
+    var t2 = Messages.lisible(new Error(
+      'new row for relation "compteur_initial" violates check constraint "compteur_initial_coherent"'));
+    egal(t2.indexOf('plus de congés payés que vous n’en avez acquis') !== -1, true,
+      'la contrainte de cohérence est expliquée en français');
+    egal(/constraint|relation|check/.test(t2), false,
+      'sans vocabulaire de base de données (obtenu « ' + t2 + ' »)');
+  }
+});
+
 module.exports = { cas: cas };

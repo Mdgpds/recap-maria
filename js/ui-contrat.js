@@ -76,18 +76,54 @@
 
     return Promise.all([
       global.DB.getSalaires(contrat.id),
-      global.DB.listRecapsContrat(contrat.id).catch(function () { return []; })
+      global.DB.listRecapsContrat(contrat.id).catch(function () { return []; }),
+      /* Lot 11 — la version à laquelle ce contrat est rattaché. Un échec ici
+         ne doit pas vider la fiche : on perd la mention d'écart, pas le
+         contrat. */
+      contrat.modele_id
+        ? global.DB.listModeles().catch(function () { return []; })
+        : Promise.resolve([])
     ]).then(function (r) {
       var salaires = r[0] || [];
       var recaps = r[1] || [];
+      var modele = (r[2] || []).filter(function (m) { return m.id === contrat.modele_id; })[0] || null;
       Kit.vider(ctx.corps);
       var corps = ctx.corps;
 
       corps.appendChild(Kit.section('Identité'));
+
+      /* LOT 8 — la photo et la couleur, en tête : c'est ce qui distingue
+         quatre cartes d'accueil autrement identiques. */
+      var portrait = Kit.ce('div', 'portrait');
+      portrait.appendChild(Kit.avatar(contrat, 'gd'));
+      var pTx = Kit.ce('div');
+      pTx.appendChild(Kit.ce('div', 'nm', Kit.nomComplet(contrat)));
+      pTx.appendChild(Kit.ce('div', 'fm', 'famille ' + ((contrat.famille && contrat.famille.nom) || '—')));
+      portrait.appendChild(pTx);
+      corps.appendChild(portrait);
+
       corps.appendChild(Kit.fld('Prénom de l’enfant', contrat.prenom_enfant));
-      corps.appendChild(Kit.fld('Nom de la famille', (contrat.famille && contrat.famille.nom) || '—'));
+      corps.appendChild(Kit.fld('Nom de l’enfant', contrat.nom || '—'));
+      corps.appendChild(Kit.fld('Genre', libelleGenre(contrat.genre)));
+
+      /* LOT 8 — LE CHAMP « Nom de la famille » A DISPARU DE CETTE FICHE.
+         Il était un champ TEXTE, et le remplir renommait le FOYER, donc tous
+         ses enfants d'un coup, sans que rien ne le dise. Le rattachement se lit
+         désormais ici, et se change par un geste qui ouvre la liste des foyers
+         existants : personne n'écrit plus un nom de famille depuis un écran
+         qui parle d'un enfant. */
+      var fFamille = Kit.fld('Famille', (contrat.famille && contrat.famille.nom) || '—');
+      corps.appendChild(fFamille);
+      if (!contrat.archive) {
+        var bFam = Kit.bouton('btn nt', function () { feuilleChangerFamille(contrat); });
+        bFam.textContent = 'Changer de famille';
+        corps.appendChild(bFam);
+      }
+
       corps.appendChild(Kit.fld('Début du contrat', Kit.dateLongue(contrat.date_debut)));
       if (contrat.date_fin) corps.appendChild(Kit.fld('Fin du contrat', Kit.dateLongue(contrat.date_fin)));
+
+      if (modele) corps.appendChild(blocModele(contrat, modele, salaires));
 
       corps.appendChild(Kit.section('Horaires'));
       corps.appendChild(Kit.fld('Jours de garde', libellePlanning(contrat.jours_planning)));
@@ -130,8 +166,11 @@
       corps.appendChild(Kit.section('Règles de ce contrat'));
       corps.appendChild(Kit.fld('Congés déduits d’abord',
         contrat.ordre_imputation === 'sup_puis_cp' ? 'récupération' : 'congés payés'));
-      corps.appendChild(Kit.fld('Heures sup si l’enfant est ' + Kit.accord('absent'),
-        contrat.sup_dues_si_enfant_absent === false ? 'non dues' : 'dues'));
+      corps.appendChild(Kit.fld('Quand ' + contrat.prenom_enfant + ' est ' +
+        Kit.accordDe(contrat, 'absent'),
+        contrat.sup_dues_si_enfant_absent === false
+          ? 'je ne compte pas mes ' + Kit.duree(contrat.minutes_sup_jour)
+          : 'mes ' + Kit.duree(contrat.minutes_sup_jour) + ' restent dues'));
       corps.appendChild(Kit.fld('Majoration fin de contrat', libelleMajoration()));
       if (!contrat.archive) {
         var bRegles = Kit.bouton('btn nt', function () { feuilleRegles(contrat); });
@@ -155,8 +194,73 @@
         });
         bFin.textContent = 'Ce contrat est terminé';
         corps.appendChild(bFin);
+
+        /* LOT 14 (V8-20) — LA SUPPRESSION FRANCHE, uniquement sur un contrat
+           VIERGE. C'est le cas de la faute de frappe : un enfant créé deux
+           fois, un prénom mal saisi. L'archiver serait absurde, il n'y a rien
+           à conserver.
+
+           ON NE MONTRE JAMAIS UNE ACTION IMPOSSIBLE : dès qu'une journée ou un
+           récapitulatif existe, le bouton n'apparaît pas — et AUCUN message
+           n'explique son absence. Un « suppression impossible car… » grisé
+           n'apprendrait rien à Maria et lui ferait croire qu'elle a raté
+           quelque chose. Le bouton d'archivage, lui, est déjà là.
+
+           La vérification affichée ici est une COURTOISIE. La garantie est en
+           base (migration 010) : les six clés étrangères qui pointent vers
+           `contrat` sont en cascade, et sans le trigger un delete emporterait
+           silencieusement des mois clôturés. */
+        global.DB.contratEstVierge(contrat.id).then(function (vierge) {
+          if (!vierge) return;
+          var bSuppr = Kit.bouton('btn nt', function () { feuilleSuppression(contrat); });
+          bSuppr.textContent = 'Supprimer ce contrat';
+          corps.appendChild(bSuppr);
+          corps.appendChild(Kit.ce('p', 'sb q',
+            'Possible car aucune journée n’a encore été saisie.'));
+        }).catch(function () {
+          /* Lecture impossible : on ne montre RIEN plutôt que de proposer une
+             suppression dont on ignore si elle est légitime. */
+        });
       }
     });
+  }
+
+  function feuilleSuppression(contrat) {
+    Kit.ouvrirFeuille('Supprimer le contrat de ' + contrat.prenom_enfant + ' ?',
+      'Cette action est définitive.', function (corps) {
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Ce contrat ne porte aucune journée ni aucun mois enregistré : il ne reste ' +
+          'rien à conserver. Si vous voulez garder son historique, choisissez plutôt ' +
+          '« Ce contrat est terminé ».'));
+
+        var msg = Kit.ce('div', 'msg');
+        corps.appendChild(msg);
+
+        var b = Kit.bouton('btn dg', function () {
+          b.disabled = true;
+          msg.className = 'msg';
+          msg.textContent = 'Suppression…';
+          global.DB.supprimerContrat(contrat.id)
+            .then(function () { return global.App.rechargerContrats(); })
+            .then(function () {
+              Kit.fermerFeuille();
+              Kit.toast('Le contrat de ' + contrat.prenom_enfant + ' est supprimé.');
+              global.App.aller('accueil', {}, true);
+            })
+            .catch(function (e) {
+              b.disabled = false;
+              msg.className = 'msg ko';
+              msg.textContent = 'Suppression impossible : ' + Kit.messageErreur(e) +
+                ' Rien n’a été supprimé.';
+            });
+        });
+        b.textContent = 'Supprimer définitivement';
+        corps.appendChild(b);
+
+        var bNon = Kit.bouton('btn nt', function () { Kit.fermerFeuille(); });
+        bNon.textContent = 'Annuler';
+        corps.appendChild(bNon);
+      });
   }
 
   function carteBareme(contrat, s, salaires, recaps, enVigueur) {
@@ -245,8 +349,28 @@
       function (corps) {
         var prenom = Kit.champ('Prénom de l’enfant', contrat.prenom_enfant);
         corps.appendChild(prenom.bloc);
-        var famille = Kit.champ('Nom de la famille', (contrat.famille && contrat.famille.nom) || '');
-        corps.appendChild(famille.bloc);
+        /* LOT 8 — le champ « Nom de la famille » est REMPLACÉ par le nom de
+           l'ENFANT. Ce sont deux choses distinctes, et les confondre était le
+           défaut. Le nom du foyer se change depuis l'écran Familles, qui
+           annonce les enfants concernés. */
+        var nomEnfant = Kit.champ('Nom de l’enfant', contrat.nom || '');
+        corps.appendChild(nomEnfant.bloc);
+
+        var genre = Kit.champSelect('Genre', [
+          ['', 'non précisé'],
+          ['f', 'une fille'],
+          ['g', 'un garçon']
+        ], contrat.genre || '');
+        corps.appendChild(genre.bloc);
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Le genre sert uniquement à accorder les phrases de l’application. ' +
+          'Sans lui, elles restent neutres.'));
+
+        var couleurChoisie = { jeton: contrat.couleur || null };
+        corps.appendChild(nuancier(couleurChoisie));
+
+        var photoCourante = { valeur: contrat.photo || null };
+        corps.appendChild(blocPhoto(photoCourante));
 
         var debut = Kit.champDate('Début du contrat', contrat.date_debut,
           { anneeMin: Number(String(contrat.date_debut).slice(0, 4)) - 3, anneeMax: maintenant.annee + 2 });
@@ -341,13 +465,16 @@
           msg.className = 'msg';
           msg.textContent = 'Enregistrement…';
 
-          var nomFamille = famille.input.value.trim();
-          var pFamille = (contrat.famille_id && nomFamille &&
-                          nomFamille !== ((contrat.famille && contrat.famille.nom) || ''))
-            ? global.DB.majFamille(contrat.famille_id, { nom: nomFamille })
-            : Promise.resolve(null);
+          /* LOT 8 — plus AUCUN appel à majFamille depuis cette fiche. Ce seul
+             appel, déclenché par un champ texte mal nommé, renommait le foyer
+             de tous les enfants. Le nom de l'enfant, son genre, sa couleur et
+             sa photo partent avec le reste du contrat. */
+          saisis.nom = nomEnfant.input.value.trim() || null;
+          saisis.genre = genre.select.value || null;
+          saisis.couleur = couleurChoisie.jeton || null;
+          saisis.photo = photoCourante.valeur || null;
 
-          pFamille
+          Promise.resolve()
             .then(function () { return global.DB.majContrat(contrat.id, saisis); })
             .then(function () { return global.App.rechargerContrats(); })
             .then(function () {
@@ -365,6 +492,406 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* LOT 11 — Le rattachement à un contrat type, et ses ÉCARTS           */
+  /*                                                                     */
+  /* UN ÉCART N'EST PAS UNE ERREUR (V8-13, risque n° 3). Tom garde son    */
+  /* ancienne rémunération parce que ses parents ne l'ont pas             */
+  /* revalorisée : c'est un fait négocié, pas un oubli. L'application le  */
+  /* CONSTATE — pas d'icône d'alerte, pas de rouge, pas d'injonction. Et  */
+  /* « Garder cet écart » ne fait rien d'autre que refermer la mention :  */
+  /* un écart ne doit pas devenir une alerte permanente.                  */
+  /* ------------------------------------------------------------------ */
+
+  var ecartsMasques = {};   // contratId -> true, le temps de la session
+
+  function blocModele(contrat, modele, salaires) {
+    var bloc = Kit.ce('div', 'modele-bloc');
+    var dernier = (salaires || [])[salaires.length - 1] || null;
+    var ecarts = global.DB.ecartsContratModele(contrat, modele, dernier);
+
+    var ligne = Kit.ce('div', 'fld');
+    ligne.appendChild(Kit.ce('span', 'lb', 'Contrat type'));
+    ligne.appendChild(Kit.ce('span', 'vl', modele.nom));
+    bloc.appendChild(ligne);
+
+    if (!ecarts.length) return bloc;
+
+    /* « Garder cet écart » referme la mention pour la session. Mais il ne la
+       fait pas DISPARAÎTRE : il reste une ligne discrète, sans injonction, qui
+       permet d'y revenir. Sans elle, Maria qui a refermé une fois n'aurait plus
+       aucun moyen d'aligner depuis cette fiche — on aurait remplacé une alerte
+       trop insistante par une porte fermée. */
+    if (ecartsMasques[contrat.id]) {
+      bloc.appendChild(ligneEcartReferme(contrat, ecarts));
+      return bloc;
+    }
+
+    var n = Kit.note(ecarts.length > 1 ? ecarts.length + ' écarts avec ' + modele.nom
+                                       : 'Un écart avec ' + modele.nom,
+      ecarts.map(function (e) { return phraseEcart(e); }).join(' · ') + '.');
+    n.classList.add('ecart');
+
+    var actions = Kit.ce('div', 'actions');
+    var bAligner = Kit.bouton('btn nt', function () {
+      feuilleAlignerCeContrat(contrat, modele, ecarts, dernier);
+    });
+    bAligner.textContent = 'Aligner sur la version';
+    actions.appendChild(bAligner);
+
+    var bGarder = Kit.bouton('btn nt', function () {
+      /* Rien d'autre que refermer : aucune écriture, aucune trace. La note est
+         remplacée SUR PLACE par la ligne discrète — refermer n'est pas fermer
+         la porte. */
+      ecartsMasques[contrat.id] = true;
+      if (n.parentNode) n.parentNode.replaceChild(ligneEcartReferme(contrat, ecarts), n);
+    });
+    bGarder.textContent = 'Garder cet écart';
+    actions.appendChild(bGarder);
+    n.appendChild(actions);
+
+    bloc.appendChild(n);
+    return bloc;
+  }
+
+  function ligneEcartReferme(contrat, ecarts) {
+    var rappel = Kit.ce('div', 'fld ecart-referme');
+    rappel.appendChild(Kit.ce('span', 'lb',
+      ecarts.length > 1 ? ecarts.length + ' écarts assumés' : 'Un écart assumé'));
+    var bVoir = Kit.bouton('lien', function () {
+      delete ecartsMasques[contrat.id];
+      global.App.rafraichir();
+    });
+    bVoir.textContent = 'Voir';
+    rappel.appendChild(bVoir);
+    return rappel;
+  }
+
+  function phraseEcart(e) {
+    if (e.format === 'remuneration') {
+      return 'rémunération ' + Kit.eur(e.valeurContrat.brut_mensuel_centimes) +
+        ' au lieu de ' + Kit.eur(e.valeurModele.brut_mensuel_centimes);
+    }
+    return e.libelle.toLowerCase() + ' ' + valeurLisible(e, e.valeurContrat) +
+      ' au lieu de ' + valeurLisible(e, e.valeurModele);
+  }
+
+  function valeurLisible(e, v) {
+    if (e.format === 'euros') return Kit.eur(v);
+    if (e.format === 'duree') return Kit.duree(v);
+    if (e.format === 'heure') return String(v).slice(0, 5);
+    if (e.format === 'planning') return libellePlanning(v);
+    if (e.format === 'oui_non') return v === false ? 'non dues' : 'dues';
+    if (e.format === 'ordre') return v === 'sup_puis_cp' ? 'récupération' : 'congés payés';
+    return String(v);
+  }
+
+  function feuilleAlignerCeContrat(contrat, modele, ecarts, dernierSalaire) {
+    var maintenant = global.App.moisCourant();
+    var touchRemuneration = ecarts.some(function (e) { return e.champ === 'remuneration'; });
+
+    Kit.ouvrirFeuille('Aligner ' + contrat.prenom_enfant + ' sur ' + modele.nom,
+      null, function (corps) {
+        var l = Kit.lines(corps);
+        ecarts.forEach(function (e) {
+          Kit.ligne(l, e.libelle,
+            valeurLisible(e, e.format === 'remuneration' ? e.valeurContrat.brut_mensuel_centimes : e.valeurContrat) +
+            ' → ' +
+            valeurLisible(e, e.format === 'remuneration' ? e.valeurModele.brut_mensuel_centimes : e.valeurModele));
+        });
+
+        var effet = null;
+        if (touchRemuneration) {
+          effet = Kit.champDate('Rémunération à partir du',
+            Kit.iso(maintenant.annee, maintenant.mois, 1),
+            { anneeMin: maintenant.annee - 1, anneeMax: maintenant.annee + 3 });
+          corps.appendChild(effet.bloc);
+        }
+
+        var msg = Kit.ce('div', 'msg');
+        corps.appendChild(msg);
+
+        var b = Kit.bouton('btn', function () {
+          b.disabled = true;
+          msg.className = 'msg';
+          msg.textContent = 'Alignement…';
+          var reglages = {};
+          ecarts.forEach(function (e) {
+            if (e.champ !== 'remuneration') reglages[e.champ] = e.valeurModele;
+          });
+          var p = Object.keys(reglages).length
+            ? global.DB.majContrat(contrat.id, reglages)
+            : Promise.resolve(null);
+          p.then(function () {
+            if (!touchRemuneration) return null;
+            /* A4 — une ligne salaire_contrat DATÉE, jamais une écriture
+               directe sur le contrat : sinon les mois passés changeraient. */
+            return global.DB.ajouterSalaire(contrat.id, {
+              date_effet: effet.valeur(),
+              brut_mensuel_centimes: modele.brut_mensuel_centimes,
+              net_mensuel_centimes: modele.net_mensuel_centimes
+            });
+          }).then(function () {
+            return global.App.rechargerContrats();
+          }).then(function () {
+            Kit.fermerFeuille();
+            Kit.toast(contrat.prenom_enfant + ' est aligné' +
+              (contrat.genre === 'f' ? 'e' : (contrat.genre === 'g' ? '' : '·e')) +
+              ' sur ' + modele.nom + '.');
+            global.App.rafraichir();
+          }).catch(function (e2) {
+            b.disabled = false;
+            msg.className = 'msg ko';
+            msg.textContent = 'L’alignement n’a pas abouti : ' + Kit.messageErreur(e2);
+          });
+        });
+        b.textContent = 'Aligner';
+        corps.appendChild(b);
+
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Les mois déjà clôturés ne changeront pas.'));
+      });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 8 — Identité : genre, couleur, photo, famille                   */
+  /* ------------------------------------------------------------------ */
+
+  function libelleGenre(g) {
+    if (g === 'f') return 'une fille';
+    if (g === 'g') return 'un garçon';
+    return 'non précisé';
+  }
+
+  /* Six pastilles, jamais un sélecteur de couleur libre. Une couleur choisie
+     au hasard finirait par ressembler à celle d'un ÉTAT du calendrier — et
+     deux systèmes de sens sur le même pixel, aucun des deux ne survit. */
+  function nuancier(choisie) {
+    var f = Kit.ce('div', 'fld nuancier');
+    f.appendChild(Kit.ce('span', 'lb', 'Couleur'));
+    var rangee = Kit.ce('div', 'teintes');
+
+    function poser(jeton) {
+      choisie.jeton = jeton;
+      Array.prototype.forEach.call(rangee.querySelectorAll('button'), function (b) {
+        var on = b.getAttribute('data-jeton') === (jeton || '');
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+
+    Kit.COULEURS_IDENTITE.forEach(function (c) {
+      var b = Kit.bouton('teinte id-' + c.jeton, function () { poser(c.jeton); });
+      b.setAttribute('data-jeton', c.jeton);
+      /* Le nom de la teinte est lu par les lecteurs d'écran ET par qui ne
+         distingue pas les couleurs : la pastille seule ne dit rien. */
+      b.setAttribute('aria-label', c.libelle);
+      b.setAttribute('title', c.libelle);
+      rangee.appendChild(b);
+    });
+    f.appendChild(rangee);
+    poser(choisie.jeton);
+    return f;
+  }
+
+  /* La photo, redimensionnée CÔTÉ CLIENT avant d'être envoyée.
+
+     Sans ce redimensionnement, une photo prise au téléphone fait 4 Mo, part
+     telle quelle en base, et se recharge à CHAQUE lecture de contrat —
+     c'est-à-dire à chaque ouverture de l'accueil, en 4G. La base refuse
+     désormais au-delà de 50 Ko (migration 007), mais compter sur ce refus
+     serait laisser Maria face à une erreur technique : on redimensionne
+     d'abord, on ne se sert du garde qu'en dernier recours. */
+  var COTE_PHOTO = 200;
+  var POIDS_MAX_OCTETS = 50 * 1024;
+
+  function blocPhoto(courante) {
+    var f = Kit.ce('div', 'fld photo-fld');
+    f.appendChild(Kit.ce('span', 'lb', 'Photo'));
+
+    var apercu = Kit.ce('div', 'apercu-photo');
+    var msg = Kit.ce('div', 'msg');
+
+    function redessiner() {
+      Kit.vider(apercu);
+      if (courante.valeur) {
+        var img = Kit.ce('img');
+        img.src = courante.valeur;
+        img.alt = '';
+        apercu.appendChild(img);
+      } else {
+        apercu.appendChild(Kit.ce('span', 'q', 'Aucune photo'));
+      }
+    }
+    redessiner();
+    f.appendChild(apercu);
+
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.style.display = 'none';
+    input.addEventListener('change', function () {
+      var fichier = input.files && input.files[0];
+      input.value = '';                       // pour pouvoir reprendre le même fichier
+      if (!fichier) return;
+      msg.className = 'msg';
+      msg.textContent = 'Préparation de la photo…';
+      reduirePhoto(fichier).then(function (dataUrl) {
+        courante.valeur = dataUrl;
+        redessiner();
+        msg.className = 'msg ok';
+        msg.textContent = 'Photo prête. Elle sera enregistrée avec le contrat.';
+      }).catch(function (e) {
+        msg.className = 'msg ko';
+        msg.textContent = e && e.message === 'PHOTO_TROP_LOURDE'
+          ? 'Cette photo reste trop lourde même après réduction. ' +
+            'Choisissez-en une autre, ou recadrez-la avant.'
+          : 'Cette image n’a pas pu être lue. Choisissez-en une autre.';
+      });
+    });
+    f.appendChild(input);
+
+    var bChoisir = Kit.bouton('btn nt', function () { input.click(); });
+    bChoisir.textContent = 'Choisir une photo';
+    f.appendChild(bChoisir);
+
+    var bRetirer = Kit.bouton('btn nt', function () {
+      courante.valeur = null;
+      redessiner();
+      msg.className = 'msg';
+      msg.textContent = 'La photo sera retirée à l’enregistrement.';
+    });
+    bRetirer.textContent = 'Retirer la photo';
+    f.appendChild(bRetirer);
+
+    f.appendChild(msg);
+    f.appendChild(Kit.ce('p', 'sb q',
+      'La photo ne figure sur aucun document remis aux familles. ' +
+      'Elle sert à reconnaître l’enfant d’un coup d’œil dans l’application.'));
+    return f;
+  }
+
+  /* Réduit à 200 px de côté, recadré au centre, en JPEG. La qualité baisse par
+     paliers jusqu'à tenir sous 50 Ko — mieux vaut une photo un peu moins nette
+     qu'un refus que Maria ne saurait pas contourner. */
+  function reduirePhoto(fichier) {
+    return new Promise(function (resoudre, rejeter) {
+      var lecteur = new FileReader();
+      lecteur.onerror = function () { rejeter(new Error('LECTURE_IMPOSSIBLE')); };
+      lecteur.onload = function () {
+        var img = new Image();
+        img.onerror = function () { rejeter(new Error('LECTURE_IMPOSSIBLE')); };
+        img.onload = function () {
+          try {
+            var cote = Math.min(img.width, img.height);
+            var canvas = document.createElement('canvas');
+            canvas.width = COTE_PHOTO;
+            canvas.height = COTE_PHOTO;
+            var g = canvas.getContext('2d');
+            g.drawImage(img,
+              (img.width - cote) / 2, (img.height - cote) / 2, cote, cote,
+              0, 0, COTE_PHOTO, COTE_PHOTO);
+
+            var qualites = [0.82, 0.7, 0.6, 0.5, 0.4];
+            for (var i = 0; i < qualites.length; i++) {
+              var url = canvas.toDataURL('image/jpeg', qualites[i]);
+              if (poidsApproximatif(url) <= POIDS_MAX_OCTETS) return resoudre(url);
+            }
+            rejeter(new Error('PHOTO_TROP_LOURDE'));
+          } catch (e) { rejeter(e); }
+        };
+        img.src = lecteur.result;
+      };
+      lecteur.readAsDataURL(fichier);
+    });
+  }
+
+  /* Poids réel des octets derrière une chaîne base64 : 3 octets pour 4
+     caractères, moins le remplissage. On mesure ce qu'on envoie, pas la
+     longueur du texte. */
+  function poidsApproximatif(dataUrl) {
+    var i = String(dataUrl).indexOf(',');
+    var b64 = i === -1 ? dataUrl : dataUrl.slice(i + 1);
+    var remplissage = b64.slice(-2) === '==' ? 2 : (b64.slice(-1) === '=' ? 1 : 0);
+    return Math.floor(b64.length * 3 / 4) - remplissage;
+  }
+
+  /* Changer un contrat de famille. Écrit `famille_id`, RIEN d'autre : aucun
+     nom n'est touché, ni celui de l'enfant, ni celui d'aucun foyer. */
+  function feuilleChangerFamille(contrat) {
+    Kit.ouvrirFeuille('Changer ' + contrat.prenom_enfant + ' de famille',
+      'Ce geste ne renomme aucune famille.',
+      function (corps) {
+        var attente = Kit.ce('div', 'attente', 'Lecture de vos familles…');
+        corps.appendChild(attente);
+
+        global.DB.listFamillesAvecContrats().then(function (familles) {
+          corps.removeChild(attente);
+          (familles || []).filter(function (f) { return !f.archive; }).forEach(function (f) {
+            var enfants = (f.contrats || []).map(function (c) { return c.prenom_enfant; });
+            var actuelle = f.id === contrat.famille_id;
+            Kit.choix(corps, 'c1', f.nom.charAt(0).toUpperCase(), f.nom,
+              (actuelle ? 'famille actuelle' : (enfants.length ? enfants.join(', ') : 'aucun enfant')),
+              actuelle ? null : function () { rattacher(contrat, f); });
+          });
+
+          var bNouvelle = Kit.bouton('btn nt', function () {
+            Kit.fermerFeuille();
+            feuilleNouvelleFamille(contrat);
+          });
+          bNouvelle.textContent = 'Créer une nouvelle famille';
+          corps.appendChild(bNouvelle);
+        }).catch(function (e) {
+          corps.removeChild(attente);
+          corps.appendChild(Kit.warnbox('Familles indisponibles',
+            ' ' + Kit.messageErreur(e) + ' Rien n’a été modifié.'));
+        });
+      });
+  }
+
+  function feuilleNouvelleFamille(contrat) {
+    Kit.ouvrirFeuille('Nouvelle famille pour ' + contrat.prenom_enfant, null, function (corps) {
+      var champ = Kit.champ('Nom de la famille', '');
+      corps.appendChild(champ.bloc);
+      var msg = Kit.ce('div', 'msg');
+      corps.appendChild(msg);
+      var b = Kit.bouton('btn', function () {
+        var nom = String(champ.input.value || '').trim();
+        if (!nom) {
+          msg.className = 'msg ko';
+          msg.textContent = 'Donnez un nom à cette famille.';
+          return;
+        }
+        b.disabled = true;
+        global.DB.creerFamille({ nom: nom })
+          .then(function (f) { return rattacher(contrat, f); })
+          .catch(function (e) {
+            b.disabled = false;
+            msg.className = 'msg ko';
+            msg.textContent = 'La famille n’a pas été créée : ' + Kit.messageErreur(e);
+          });
+      });
+      b.textContent = 'Créer et rattacher';
+      corps.appendChild(b);
+    });
+  }
+
+  function rattacher(contrat, famille) {
+    return global.DB.rattacherContratAFamille(contrat.id, famille.id)
+      .then(function () { return global.App.rechargerContrats(); })
+      .then(function () {
+        Kit.fermerFeuille();
+        Kit.toast(contrat.prenom_enfant + ' est rattaché' +
+          (contrat.genre === 'f' ? 'e' : (contrat.genre === 'g' ? '' : '·e')) +
+          ' à la famille ' + famille.nom + '.');
+        return global.App.rafraichir();
+      })
+      .catch(function (e) {
+        Kit.toast('Le rattachement n’a pas abouti : ' + Kit.messageErreur(e) +
+          ' Rien n’a changé.', true);
+      });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Les deux règles paramétrables (RG-07, RG-09)                        */
   /* ------------------------------------------------------------------ */
 
@@ -378,11 +905,18 @@
         ], contrat.ordre_imputation || 'cp_puis_sup');
         corps.appendChild(ordre.bloc);
 
-        var sup = Kit.champSelect('Heures sup si l’enfant est ' + Kit.accord('absent'), [
-          ['true', 'dues'],
-          ['false', 'non dues']
+        /* LOT 12 (V8-19) — RG-09 EN CLAIR. Le libellé technique « heures sup si
+           l'enfant est absent : dues / non dues » demandait à Maria de traduire
+           une règle de convention collective. La question se pose désormais
+           dans ses mots. */
+        corps.appendChild(Kit.section('Quand l’enfant est absent'));
+        var sup = Kit.champSelect('Mes ' + Kit.duree(contrat.minutes_sup_jour) + ' ce jour-là', [
+          ['true', 'restent dues'],
+          ['false', 'je ne les compte pas']
         ], contrat.sup_dues_si_enfant_absent === false ? 'false' : 'true');
         corps.appendChild(sup.bloc);
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Vous pouvez aussi décider au cas par cas, jour par jour, depuis le calendrier.'));
 
         corps.appendChild(Kit.warnbox('Ce changement recalcule les mois non clôturés',
           'Tous les mois de ce contrat qui ne sont pas encore clôturés seront recalculés avec ' +

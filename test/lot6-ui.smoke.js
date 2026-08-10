@@ -42,6 +42,12 @@ function assert(cond, msg) {
 }
 function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 20); }); }
 function txt(el) { return el ? el.textContent : ''; }
+function sansInsecable(t) { return String(t).replace(/\u00a0/g, ' '); }
+function boutonExact(racineEl, libelle) {
+  return Array.prototype.filter.call(racineEl.querySelectorAll('button'), function (e) {
+    return e.textContent.trim() === libelle;
+  })[0] || null;
+}
 function parTexte(racineEl, selecteur, morceau) {
   return Array.prototype.filter.call(racineEl.querySelectorAll(selecteur), function (e) {
     return e.textContent.indexOf(morceau) !== -1;
@@ -98,6 +104,17 @@ var DB = {
   listContratsPourMois: function () { return Promise.resolve([LEA, TOM]); },
   listContratsPourPeriode: function () { return Promise.resolve([LEA, TOM]); },
   listFamillesToutes: function () { return Promise.resolve([]); },
+    /* Lot 8 — identité et familles. */
+    majContratIdentite: function (id, champs) { return Promise.resolve(champs); },
+    rattacherContratAFamille: function () { return Promise.resolve(true); },
+    renommerFamille: function () { return Promise.resolve(true); },
+    archiverFamille: function () { return Promise.resolve(true); },
+    desarchiverFamille: function () { return Promise.resolve(true); },
+    listFamillesAvecContrats: function () { return Promise.resolve([]); },
+  /* Lot 14 — la fiche contrat demande si le contrat est vierge pour décider
+     d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
+     cette fonction, l'écran lève avant même de se rendre. */
+  contratEstVierge: function () { return Promise.resolve(false); },
   getSalaires: function (id) {
     var s = {}; Object.keys(SALAIRE).forEach(function (k) { s[k] = SALAIRE[k]; });
     s.contrat_id = id;
@@ -105,6 +122,9 @@ var DB = {
   },
   getCompteurInitial: function () { return Promise.resolve(null); },
   getJourneesMois: function () { return Promise.resolve({}); },
+  listImputationsPourMois: function () { return Promise.resolve([]); },
+  getNoteMensuelle: function () { return Promise.resolve(null); },
+    enregistrerNoteMensuelle: function (c, a, m, t) { return Promise.resolve({ texte: t }); },
   getJourneesPeriode: function () { return Promise.resolve({}); },
   listRecapsPeriode: function () { return Promise.resolve([]); },
   listRecapsContrat: function () { return Promise.resolve([]); },
@@ -169,8 +189,18 @@ var sheet = document.getElementById('sheet');
   assert(txt(cartes[0]).indexOf('à verser') !== -1, 'mini-chiffre « à verser » présent');
   assert(txt(corps).indexOf('entretien') === -1,
     '§2.1 : aucun montant d’entretien isolé sur l’accueil');
-  assert(!!parTexte(corps, '.todo', 'Clôturer le mois de Léa'), '« À faire » : le mois de Léa à clôturer');
-  assert(txt(cartes[0]).indexOf('à clôturer') !== -1, 'la carte annonce « Mai à clôturer »');
+  /* LOT 7 (V8-03) — on est le 24 mai : le mois COURANT n'est pas encore proposé
+     à la clôture. Il ne le sera qu'à partir du 25. Avant le lot 7, l'accueil
+     invitait Maria à figer un mois dont il restait un tiers à vivre — et la
+     clôture est le seul geste irréversible de l'application. */
+  assert(!parTexte(corps, '.todo', 'Clôturer mai pour Léa'),
+    'V8-03 : le 24, le mois courant n’est PAS proposé à la clôture');
+  assert(txt(cartes[0]).indexOf('en cours') !== -1,
+    'la carte annonce « en cours », avec le mot et pas seulement la couleur');
+  assert(txt(cartes[0]).indexOf('provisoire') !== -1,
+    'LOT 7 : un total qui peut encore bouger le dit');
+  assert(!!cartes[0].querySelector('.pastille.en_cours .rond'),
+    'la pastille d’état est présente, en renfort du mot');
 
   /* ---------- 2. Espace enfant ---------- */
   cartes[0].click();
@@ -181,19 +211,57 @@ var sheet = document.getElementById('sheet');
   assert(txt(barre).indexOf('Léa — mai 2026') !== -1, 'titre de la barre : enfant et mois');
   assert(!!corps.querySelector('table.cal'), 'calendrier présent');
 
+  /* LOT 12 (V8-17) — un CINQUIÈME panneau : « Mes notes sur ce mois ». Il est
+     placé AVANT les compteurs, à la demande de Maria : c'est ce qu'elle relit
+     le plus souvent, et le chercher sous trois panneaux de chiffres revenait à
+     ne pas l'écrire. Les panneaux sont donc repérés par leur TITRE plutôt que
+     par leur rang — un test qui compte des positions se casse au prochain
+     panneau ajouté, et ne dit rien de ce qui compte. */
   var panneaux = corps.querySelectorAll('.pane');
-  assert(panneaux.length === 4, '§2.2 : quatre panneaux (obtenu ' + panneaux.length + ')');
-  assert(txt(panneaux[1]).indexOf('Total à verser') !== -1, 'le panneau du mois porte le total à verser');
-  assert(txt(panneaux[1]).indexOf('× 5,00') !== -1, 'entretien détaillé « n j × 5,00 € »');
-  assert(txt(panneaux[2]).indexOf('Récupération') !== -1 && txt(panneaux[2]).indexOf('Congés payés') !== -1,
+  assert(panneaux.length === 5, '§2.2 + V8-17 : cinq panneaux (obtenu ' + panneaux.length + ')');
+  var pMois = parTexte(corps, '.pane', 'Le mois de');
+  assert(!!pMois && txt(pMois).indexOf('Total à verser') !== -1,
+    'le panneau du mois porte le total à verser');
+  assert(txt(pMois).indexOf('× 5,00') !== -1, 'entretien détaillé « n j × 5,00 € »');
+  var pNote = parTexte(corps, '.pane', 'Mes notes sur ce mois');
+  assert(!!pNote, 'V8-17 : le panneau de note est présent');
+  assert(txt(pNote).indexOf('n’apparaît pas sur le document remis à la famille') !== -1,
+    'V8-17 : et il dit à qui la note est destinée');
+  var pCompteurs = parTexte(corps, '.pane', 'Compteurs de');
+  assert(!!pCompteurs && txt(pCompteurs).indexOf('Récupération') !== -1 &&
+         txt(pCompteurs).indexOf('Congés payés') !== -1,
     'compteurs du contrat en barres');
-  assert(panneaux[2].querySelectorAll('.cptr .cb i').length === 2, 'deux barres de progression');
-  assert(txt(panneaux[3]).indexOf('Depuis le début du contrat') !== -1, 'panneau « depuis le début »');
+  assert(pCompteurs.querySelectorAll('.cptr .cb i').length === 2, 'deux barres de progression');
+  assert(!!parTexte(corps, '.pane', 'Depuis le début du contrat'),
+    'panneau « depuis le début »');
 
-  /* Mai 2026 : 21 jours du lundi au vendredi, dont 4 fériés (1, 8, 14, 25). */
+  /* V8-17 — l'ORDRE compte : la note vient avant les compteurs. */
+  var indexNote = Array.prototype.indexOf.call(panneaux, pNote);
+  var indexCompteurs = Array.prototype.indexOf.call(panneaux, pCompteurs);
+  assert(indexNote < indexCompteurs,
+    'V8-17 : la note est placée AVANT les compteurs (note ' + indexNote +
+    ', compteurs ' + indexCompteurs + ')');
+
+  /* Mai 2026 : 21 jours du lundi au vendredi, dont 4 fériés (1, 8, 14, 25).
+     LOT 7 — on ne saisit pas l'avenir : les jours POSTÉRIEURS au 24 ne sont
+     plus touchables. Un jour à venir touchable permettait de noter une absence
+     qui n'a pas encore eu lieu, ce qui rendait le décompte des jours restants
+     faux et la projection incohérente. Restent les jours ouvrés non fériés du
+     1er au 24 : 13. */
   var touchables = corps.querySelectorAll('table.cal td[role="button"]');
-  assert(touchables.length === 17,
-    '17 journées touchables : ni week-end ni férié (obtenu ' + touchables.length + ')');
+  assert(touchables.length === 13,
+    'LOT 7 : 13 journées touchables — ni week-end, ni férié, ni à venir (obtenu ' +
+    touchables.length + ')');
+  var futurs = corps.querySelectorAll('table.cal td.futur');
+  assert(futurs.length > 0, 'LOT 7 : les jours à venir sont marqués');
+  assert(Array.prototype.every.call(futurs, function (td) {
+    return td.getAttribute('role') !== 'button';
+  }), 'LOT 7 : aucun jour à venir ne réagit à l’appui');
+  var auj = corps.querySelectorAll('table.cal td.auj');
+  assert(auj.length === 1 && txt(auj[0].querySelector('.num')) === '24',
+    'LOT 7 : le repère « aujourd’hui » est posé sur le 24, et sur lui seul');
+  assert(txt(corps).indexOf('Rien à faire les jours normaux') !== -1,
+    'V8-06 : la phrase permanente figure sous le calendrier');
   var feries = Array.prototype.filter.call(corps.querySelectorAll('table.cal td.fe'), function (td) {
     return td.getAttribute('role') === 'button';
   });
@@ -210,31 +278,29 @@ var sheet = document.getElementById('sheet');
   assert(document.getElementById('sheetwrap').hidden === false, 'la feuille s’ouvre');
   assert(txt(sheet).indexOf('Mardi 19 mai') !== -1, 'la feuille annonce le jour');
   var choix = sheet.querySelectorAll('.choice');
-  assert(choix.length === 3, '§2.3 : trois choix (obtenu ' + choix.length + ')');
-  assert(txt(choix[0]).indexOf('Léa était là') !== -1, 'choix 1 : « Léa était là »');
+  /* LOT 10 (V8-09) — DEUX choix, plus trois. « Je ne travaillais pas » a été
+     retiré : il posait la journée mais laissait la VENTILATION au moteur,
+     identique pour les quatre enfants. Or les réserves diffèrent d'un contrat
+     à l'autre, et c'est précisément l'arbitrage que le lot 10 rend à Maria.
+     Les congés passent désormais par l'onglet « Mes congés ». */
+  assert(choix.length === 2, 'V8-09 : deux marquages seulement (obtenu ' + choix.length + ')');
+  assert(txt(choix[0]).indexOf('était là') !== -1, 'choix 1 : l’enfant était là');
   var pourquoiAbsence = txt(choix[1].querySelector('.why'));
   assert(pourquoiAbsence.indexOf('5,00') !== -1,
     'effet de l’absence calculé par le moteur : −5,00 € (obtenu « ' + pourquoiAbsence + ' »)');
-  /* L'espace est INSÉCABLE (format.js) : c'est voulu, une durée ne doit jamais
-     se couper en fin de ligne. Le test le vérifie tel quel. */
-  assert(pourquoiAbsence.indexOf('30 min') !== -1 && pourquoiAbsence.indexOf('restent dues') !== -1,
+  assert(sansInsecable(pourquoiAbsence).indexOf('30 min') !== -1 &&
+         pourquoiAbsence.indexOf('restent dues') !== -1,
     'RG-09 : « vos 30 min restent dues »');
-  var pourquoiConge = txt(choix[2].querySelector('.why'));
-  assert(pourquoiConge.indexOf('−1 jour') !== -1,
-    'décompte du congé calculé par le moteur : −1 jour (obtenu « ' + pourquoiConge + ' »)');
-  assert(pourquoiConge.indexOf('2 enfants') !== -1, 'le congé annonce les contrats réellement servis');
+  assert(!parTexte(sheet, '.choice', 'Je ne travaillais pas'),
+    'V8-09 : le pinceau « Mon congé » a disparu de la feuille de journée');
+  assert(txt(sheet).indexOf('Mes congés') !== -1,
+    'V8-09 : la phrase qui dit où poser un congé est présente');
 
-  /* ---------- 4. « Je ne travaillais pas » écrit sur tous les contrats ---------- */
-  choix[2].click();
+  /* ---------- 4. Une absence d’enfant s’écrit ---------- */
+  choix[1].click();
   await pause(80);
-
-  assert(appels.poser.length === 1, 'une seule écriture pour tous les contrats');
-  var a = appels.poser[0];
-  assert(a.type === 'conge_maria', 'type écrit : conge_maria');
-  assert(a.affectations.length === 2, 'les deux contrats reçoivent le jour');
-  assert(a.affectations.every(function (x) { return x.jours.join(',') === '2026-05-19'; }),
-    'chaque contrat ne reçoit que SON propre jour');
-  assert(document.getElementById('sheetwrap').hidden === true, 'la feuille se referme après un enregistrement réussi');
+  assert(document.getElementById('sheetwrap').hidden === true,
+    'la feuille se referme après un enregistrement réussi');
 
   /* ---------- 5. Document et clôture ---------- */
   window.App.aller('document', { contratId: 'c-lea', annee: 2026, mois: 5 });
@@ -255,7 +321,18 @@ var sheet = document.getElementById('sheet');
   bCloture.click();
   await pause(20);
   assert(txt(sheet).indexOf('verrouille le mois') !== -1, 'avertissement avant clôture');
-  parTexte(sheet, 'button', 'Oui, clôturer le mois').click();
+  /* LOT 7 (V8-04) — on est le 24 mai : sept jours travaillés restent à venir.
+     La clôture reste POSSIBLE, mais elle est précédée d'un avertissement et le
+     bouton devient « Clôturer quand même ». Clôturer un mois inachevé en
+     croyant ses chiffres définitifs est le seul risque irréversible de
+     l'application. */
+  assert(txt(sheet).indexOf('jours travaillés sont encore à venir') !== -1,
+    'V8-04 : la clôture anticipée avertit du nombre de jours restants');
+  assert(txt(sheet).indexOf('ces journées ne seront pas comptées') !== -1,
+    'V8-04 : et de la conséquence');
+  var bQuandMeme = parTexte(sheet, 'button', 'Clôturer quand même');
+  assert(!!bQuandMeme, 'V8-04 : le bouton devient « Clôturer quand même »');
+  bQuandMeme.click();
   await pause(80);
 
   assert(appels.fige.length === 1, 'la clôture appelle recloturerRecap une fois (lot 13)');
@@ -265,49 +342,66 @@ var sheet = document.getElementById('sheet');
   assert(Array.isArray(snap.joursConge), 'l’instantané embarque les jours de congé du mois');
   assert(typeof snap.totalAVerserCentimes === 'number', 'l’instantané est bien le résultat du moteur');
 
-  /* ---------- 6. Mes congés ---------- */
+  /* ---------- 6. Mes congés (refondu au lot 10) ---------- */
   window.App.aller('conges', {}, true);
-  await pause(80);
+  await pause(250);
 
   assert(tabbar.hidden === false, 'barre d’onglets visible sur Mes congés');
-  assert(txt(corps).indexOf('Congés payés restants par contrat') !== -1,
-    '§2.5 : congés payés contrat par contrat');
+  /* LOT 10 — les réserves montrent désormais les congés payés ET la
+     récupération. Sans la seconde, Maria ne pouvait pas savoir, avant de
+     poser, si sa récupération lui éviterait le sans-solde — c'est-à-dire une
+     retenue sur salaire. */
+  assert(txt(corps).indexOf('Vos réserves') !== -1, '§2.5 : les réserves, contrat par contrat');
+  assert(txt(corps).indexOf('de congés payés') !== -1 && txt(corps).indexOf('de récupération') !== -1,
+    'LOT 10 : congés payés ET récupération sont affichés');
   assert(txt(corps).indexOf('Les compteurs diffèrent') !== -1, 'la phrase d’explication est présente');
   assert(txt(corps).indexOf('Total des congés payés') === -1, '§2.5 : jamais de compteur global');
 
-  parTexte(corps, 'button', 'Poser une semaine entière').click();
-  await pause(200);
-  assert(txt(sheet).indexOf('Jours décomptés') !== -1, 'aperçu avant confirmation');
-  assert(txt(sheet).indexOf('6 j') !== -1, 'RG-06 : une semaine complète compte 6 jours');
-  assert(txt(sheet).indexOf('Samedi inclus') !== -1, 'le samedi inclus est expliqué');
-  assert(!!parTexte(sheet, 'button', 'Confirmer cette période'), 'rien n’est posé avant confirmation');
+  /* V8-08 — UN SEUL bouton de pose. */
+  assert(!!boutonExact(corps, 'Poser des congés'), 'V8-08 : « Poser des congés »');
+  assert(!parTexte(corps, 'button', 'Poser une semaine entière'),
+    'V8-08 : le mode « une semaine entière » a disparu');
+  assert(!parTexte(corps, 'button', 'Poser une seule journée'),
+    'V8-08 : le faux raccourci « une seule journée » a disparu');
+  assert(!!parTexte(corps, 'button', 'Retirer des congés'), 'le retrait reste offert');
 
-  var avant = appels.poser.length;
-  parTexte(sheet, 'button', 'Confirmer cette période').click();
-  await pause(120);
-  assert(appels.poser.length === avant + 1, 'la semaine est posée en une seule écriture');
-  var semaine = appels.poser[appels.poser.length - 1];
-  assert(semaine.affectations.length === 2, 'la semaine est posée sur les deux contrats');
-  assert(semaine.affectations[0].jours.length >= 4 && semaine.affectations[0].jours.length <= 5,
-    'les jours posés sont ceux du planning (fériés exclus) — obtenu ' +
-    semaine.affectations[0].jours.length);
-
-  /* ---------- 7. Menu et anciens contrats ---------- */
+  /* ---------- 7. Menu ---------- */
   window.App.aller('menu', {}, true);
-  await pause(80);
+  await pause(120);
   assert(tabbar.hidden === false, 'barre d’onglets visible sur le Menu');
   assert(txt(corps).indexOf('maria@exemple.test') !== -1, 'le compte connecté est affiché');
-  assert(!!parTexte(corps, '.menu', 'Anciens contrats'), 'entrée « Anciens contrats »');
-  assert(txt(parTexte(corps, '.menu', 'Anciens contrats')).indexOf('Manon') !== -1,
-    'les contrats rangés sont nommés');
 
-  parTexte(corps, '.menu', 'Anciens contrats').click();
-  await pause(30);
-  parTexte(sheet, '.choice', 'Manon').click();
-  await pause(80);
-  assert(txt(corps).indexOf('lecture seule') !== -1, '§2.6 : un ancien contrat s’ouvre en lecture seule');
-  assert(corps.querySelectorAll('table.cal td[role="button"]').length === 0,
-    'aucune journée n’est modifiable sur un ancien contrat');
+  /* LOT 8 — la rubrique « Consulter » a DISPARU du Menu, et avec elle
+     « Anciens contrats » et « Récapitulatif sur une période ». Les deux
+     vivaient à deux gestes de profondeur dans un menu qu'on n'ouvre que quand
+     on cherche ; ils sont désormais sur l'onglet Historique, qui est
+     justement l'endroit où l'on va chercher le passé. */
+  assert(txt(corps).indexOf('Consulter') === -1,
+    'LOT 8 : la rubrique « Consulter » a disparu du Menu');
+  assert(!parTexte(corps, '.menu', 'Anciens contrats'),
+    'LOT 8 : « Anciens contrats » n’est plus une entrée du Menu');
+  assert(!!parTexte(corps, '.menu', 'Familles'), 'LOT 8 : le Menu propose « Familles »');
+  assert(!!parTexte(corps, '.menu', 'Ajouter un enfant'), 'le Menu garde « Ajouter un enfant »');
+
+  /* ---------- 7bis. Onglet Historique ---------- */
+  window.App.aller('historique', {}, true);
+  await pause(150);
+  assert(tabbar.hidden === false, 'LOT 8 : l’Historique est un onglet racine');
+  assert(txt(corps).indexOf('Contrats en cours') !== -1, 'LOT 8 : les contrats en cours d’abord');
+  assert(txt(corps).indexOf('Contrats terminés') !== -1,
+    'LOT 8 : les contrats terminés sous leur propre intertitre');
+  assert(txt(corps).indexOf('Manon') !== -1, 'LOT 8 : le contrat rangé est listé, pas caché');
+  assert(!!parTexte(corps, '.menu', 'Récapitulatif sur une période'),
+    'LOT 8 : le récapitulatif de période est accessible depuis l’Historique');
+  assert(txt(corps).indexOf('mois d’historique') !== -1,
+    'LOT 8 : chaque carte annonce son nombre de mois');
+
+  var carteManon = parTexte(corps, '.big', 'Manon');
+  assert(!!carteManon, 'LOT 8 : Manon a sa carte');
+  carteManon.click();
+  await pause(200);
+  assert(txt(barre).indexOf('Historique — Manon') !== -1,
+    'LOT 8 : la carte ouvre l’historique de ce contrat');
 
   console.log('\n' + (echecs === 0 ? 'Tout est conforme.' : echecs + ' échec(s).'));
   process.exit(echecs === 0 ? 0 : 1);

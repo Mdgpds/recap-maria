@@ -1,29 +1,39 @@
 /* ============================================================================
-   ui-conges.js — Onglet « Mes congés » (§2.5 des specs).
+   ui-conges.js — Onglet « Mes congés ». Refondu au LOT 10.
 
    C'est la SEULE chose globale de l'application. Tout le reste est rangé par
-   famille. Et pourtant, même ici, AUCUN COMPTEUR GLOBAL : les congés payés
-   restants sont affichés contrat par contrat, avec la phrase qui explique
-   pourquoi ils diffèrent.
+   famille. Et pourtant, même ici, AUCUN COMPTEUR GLOBAL : les réserves sont
+   affichées contrat par contrat, avec la phrase qui explique pourquoi elles
+   diffèrent.
 
-   « Poser des congés » ne pose rien avant d'avoir montré ce que ça coûte. Et
-   ce coût est obtenu de la seule façon qui ne puisse pas mentir : en REJOUANT
-   les mois concernés avec Engine.calculerMois(), journées existantes
-   comprises, puis en comparant au même rejeu sans les nouveaux jours.
+   CE QUE LE LOT 10 CHANGE, ET POURQUOI.
 
-   C'était le défaut B4 de la relecture : la version précédente décomptait la
-   semaine ISOLÉMENT (decompterJoursOuvrables) puis imputait ce total sur le
-   compteur courant. Or le moteur, lui, regroupe TOUS les congés du mois en
-   périodes continues avant d'imputer. Un congé déjà posé dans la semaine était
-   donc compté deux fois, et l'aperçu annonçait un jour de trop — la même
-   sur-estimation pilotant l'alerte « sans solde », qui pouvait se déclencher à
-   tort. Le rejeu supprime la classe entière de ce défaut : il n'y a plus qu'un
-   seul chemin de calcul, celui du moteur.
+   Jusqu'ici, poser un congé était un geste unique : Maria choisissait des
+   dates, et l'application décidait seule comment les payer — congés payés
+   d'abord, puis récupération, puis sans solde, dans l'ordre du contrat. Le
+   même arbitrage pour les quatre enfants.
 
-   Deux autres exigences tenues ici :
-   - un contrat dont les compteurs n'ont pas pu être lus BLOQUE la pose au lieu
-     d'être écarté en silence sous un discret « non concerné » (B5) ;
-   - un contrat dont le mois est déjà clôturé ne reçoit rien, et on le dit (B1).
+   Or les réserves ne sont PAS les mêmes d'un contrat à l'autre. Tom a 6 jours
+   de congés payés quand Léa en a 19, parce que les contrats n'ont pas commencé
+   en même temps. La même semaine d'août se paie donc confortablement chez Léa
+   et passe en partie sans solde chez Tom — c'est-à-dire en retenue sur salaire.
+   Aucun choix global ne peut convenir. C'est la demande centrale de Maria.
+
+   Le parcours passe donc en trois temps :
+     1. les DATES, avec le décompte en jours ouvrables (RG-06) en direct ;
+     2. la VENTILATION, une page par contrat, ses réserves sous les yeux ;
+     3. un RÉCAPITULATIF, avant d'écrire quoi que ce soit.
+
+   CE QUI DISPARAÎT (V8-08, V8-09) : le mode « une semaine entière », le faux
+   raccourci « poser une seule journée » — qui ne posait rien, il expliquait
+   comment faire ailleurs —, et le pinceau « Mon congé » du mode
+   multi-sélection du calendrier.
+
+   AUCUN CALCUL MÉTIER DANS CE FICHIER (B.0-5, A9). Le décompte en jours
+   ouvrables vient de `Engine.decompterJoursOuvrables`, la répartition par
+   défaut de `Engine.imputerConges`, la retenue de sans-solde de
+   `Engine.montantCentimes`. Deux sources de vérité, c'est une source de vérité
+   de moins.
    ========================================================================= */
 (function (global) {
   'use strict';
@@ -33,17 +43,16 @@
   var Engine = global.Engine;
   var Feries = global.Feries;
 
-  /* Fenêtre de choix des semaines : quatre semaines en arrière (un congé peut
-     se saisir après coup) et vingt en avant. La navigation par mois de cet
-     écran et du calendrier couvre la même profondeur, pour qu'un congé posé
-     d'avance reste consultable et retirable (correction A13). */
-  var SEMAINES_AVANT = 4;
-  var SEMAINES_APRES = 20;
+  /* Types posés par une absence de Maria. Le retrait ne cible que ceux-là :
+     une absence d'enfant ou une familiarisation saisie le même jour ne doit
+     jamais disparaître. */
+  var TYPES_ABSENCE_MARIA = ['conge_maria', 'sans_solde', 'hors_planning'];
 
-  var vue = null;
+  var vue = null;        // état de l'onglet
+  var parcours = null;   // état du parcours de pose, quand il est ouvert
 
   /* ------------------------------------------------------------------ */
-  /* Affichage                                                           */
+  /* 1. L'onglet                                                         */
   /* ------------------------------------------------------------------ */
 
   function afficher(ctx) {
@@ -127,17 +136,15 @@
     global.App.remplacer('conges', { annee: m.annee, mois: m.mois });
   }
 
-  /* ------------------------------------------------------------------ */
-  /* Rendu                                                               */
-  /* ------------------------------------------------------------------ */
-
   function rendre(corps) {
     var fiches = vue.fiches;
     var enErreur = fiches.filter(function (f) { return f.erreur; });
 
     if (enErreur.length) {
-      /* Correction B5 : l'échec de lecture d'un contrat n'est pas un détail
-         gris, c'est un état incohérent. Il se voit, et il bloque la pose. */
+      /* Correction B5 (relecture lot 6) : l'échec de lecture d'un contrat
+         n'est pas un détail gris, c'est un état incohérent. Il se voit, et il
+         BLOQUE la pose — poser maintenant laisserait ce contrat en dehors, et
+         ses compteurs divergeraient des autres pour toujours. */
       corps.appendChild(Kit.warnbox(
         'Compteurs indisponibles pour ' +
         enErreur.map(function (f) { return f.contrat.prenom_enfant; }).join(', '),
@@ -148,32 +155,25 @@
     }
 
     corps.appendChild(panneauPoses());
-    corps.appendChild(panneauCompteurs());
+    corps.appendChild(panneauReserves());
 
-    var bSemaine = Kit.bouton('btn', function () { feuilleSemaine(); });
-    bSemaine.textContent = 'Poser une semaine entière';
-    bSemaine.disabled = enErreur.length > 0;
-    corps.appendChild(bSemaine);
-
-    /* Restauration R6 : la plage libre du lot 5. Trois semaines d'été ne
-       doivent pas coûter trois passages, et un congé oublié il y a trois mois
-       doit rester posable. */
-    var bPlage = Kit.bouton('btn nt', function () { feuillePlage(); });
-    bPlage.textContent = 'Poser plusieurs jours (du… au…)';
-    bPlage.disabled = enErreur.length > 0;
-    corps.appendChild(bPlage);
-
-    var bJour = Kit.bouton('btn nt', function () { feuilleJour(); });
-    bJour.textContent = 'Poser une seule journée';
-    corps.appendChild(bJour);
+    /* V8-08 — UN SEUL bouton. « Poser une semaine entière » et « Poser une
+       seule journée » ont disparu : le premier était un cas particulier du
+       second geste, et le second ne posait rien du tout — il expliquait
+       comment faire ailleurs. Trois boutons pour un geste, dont un qui ne fait
+       rien, c'est trois occasions de se tromper. */
+    var bPoser = Kit.bouton('btn', function () { ouvrirParcours(); });
+    bPoser.textContent = 'Poser des congés';
+    bPoser.disabled = enErreur.length > 0;
+    corps.appendChild(bPoser);
 
     var bRetrait = Kit.bouton('btn nt', function () { feuilleRetrait(); });
     bRetrait.textContent = 'Retirer des congés';
     corps.appendChild(bRetrait);
 
     corps.appendChild(Kit.note('Un congé vaut pour ' + libelleContrats(fiches.length),
-      'Vous le posez une fois, il s’applique partout. Une semaine complète compte 6 jours, ' +
-      'samedi inclus.'));
+      'Vous le posez une fois, il s’applique partout — mais vous choisissez, pour chaque ' +
+      'enfant, comment il est décompté. Une semaine complète compte 6 jours, samedi inclus.'));
   }
 
   function libelleContrats(n) {
@@ -208,8 +208,12 @@
     return p;
   }
 
-  function panneauCompteurs() {
-    var p = Kit.pane('Congés payés restants par contrat');
+  /* Les réserves, CONTRAT PAR CONTRAT, congés payés ET récupération. La
+     version précédente n'affichait que les congés payés : Maria ne pouvait
+     donc pas savoir, avant de poser, si sa récupération suffirait à éviter le
+     sans-solde. Or c'est exactement l'arbitrage que le lot 10 lui rend. */
+  function panneauReserves() {
+    var p = Kit.pane('Vos réserves');
     var l = Kit.lines(p);
     vue.fiches.forEach(function (f) {
       if (f.erreur) {
@@ -217,8 +221,9 @@
         return;
       }
       var cp = cpDe(f);
-      /* Correction A3 : un seul seuil dans toute l'application. */
-      Kit.ligne(l, f.contrat.prenom_enfant, Kit.joursCp(cp),
+      var sup = supDe(f);
+      Kit.ligne(l, f.contrat.prenom_enfant,
+        Kit.joursCp(cp) + ' de congés payés · ' + joursDeRecup(f.contrat, sup) + ' de récupération',
         { alerte: cp < Kit.SEUIL_CP_BAS_DIXIEMES });
     });
     p.appendChild(Kit.ce('div', 'sb q',
@@ -226,116 +231,32 @@
     return p;
   }
 
+  /* La récupération se lit en MINUTES en base, et se dépense en JOURNÉES de
+     congé. « 36 h » ne dit pas à Maria combien de jours elle peut prendre ;
+     « 4 jours (36 h) » le dit. La conversion utilise les minutes d'une journée
+     de congé DU CONTRAT — jamais 7 h, jamais 8 h en dur. */
+  function joursDeRecup(contrat, minutes) {
+    var parJour = contrat.minutes_par_jour_conge || 0;
+    if (!parJour) return Kit.heures(minutes);
+    var n = Math.floor(minutes / parJour);
+    return Kit.jours(n) + ' (' + Kit.heures(minutes) + ')';
+  }
+
   function cpDe(fiche) {
     return Kit.cpDisponible(fiche.entree && fiche.entree.resultat && fiche.entree.resultat.compteurSortie);
   }
-
-  /* ------------------------------------------------------------------ */
-  /* Poser une seule journée                                             */
-  /* ------------------------------------------------------------------ */
-
-  function feuilleJour() {
-    Kit.ouvrirFeuille('Poser une seule journée',
-      'Touchez le jour sur le calendrier d’un enfant : le congé sera posé sur ' +
-      libelleContrats(vue.fiches.length) + '.',
-      function (corps) {
-        vue.fiches.forEach(function (f) {
-          Kit.choix(corps, 'c3', '☾', 'Calendrier de ' + f.contrat.prenom_enfant,
-            'Famille ' + ((f.contrat.famille && f.contrat.famille.nom) || '—'),
-            function () {
-              Kit.fermerFeuille();
-              global.App.aller('enfant',
-                { contratId: f.contrat.id, annee: vue.annee, mois: vue.mois });
-            });
-        });
-      });
+  function supDe(fiche) {
+    return Kit.supDisponible(fiche.entree && fiche.entree.resultat && fiche.entree.resultat.compteurSortie);
   }
 
   /* ------------------------------------------------------------------ */
-  /* Choix d'une semaine / d'une plage                                   */
+  /* Outils de période                                                   */
   /* ------------------------------------------------------------------ */
 
-  function lundiDe(isoJour) {
-    return Feries.ajouterJours(isoJour, 1 - Engine.jourSemaine(isoJour));
-  }
-
-  function semainesProposees() {
-    var lundi = lundiDe(global.App.aujourdhui());
-    var out = [];
-    for (var k = -SEMAINES_AVANT; k <= SEMAINES_APRES; k++) {
-      var l = Feries.ajouterJours(lundi, k * 7);
-      out.push({ debut: l, fin: Feries.ajouterJours(l, 4), libelle: libellePlage(l, Feries.ajouterJours(l, 4)) });
-    }
-    return out;
-  }
-
-  function libellePlage(a, b) {
-    var ja = Number(a.slice(8, 10)), jb = Number(b.slice(8, 10));
-    var ma = Number(a.slice(5, 7)), mb = Number(b.slice(5, 7));
-    if (ma === mb && a.slice(0, 4) === b.slice(0, 4)) {
-      return 'du ' + ja + ' au ' + jb + ' ' + Kit.libelleMois(mb) + ' ' + b.slice(0, 4);
-    }
-    return 'du ' + ja + ' ' + Kit.libelleMois(ma) + ' au ' + jb + ' ' + Kit.libelleMois(mb) + ' ' + b.slice(0, 4);
-  }
-
-  function feuilleSemaine() {
-    var semaines = semainesProposees();
-    Kit.ouvrirFeuille('Poser une semaine entière',
-      'Choisissez la semaine : vous verrez son effet réel avant de confirmer.',
-      function (corps) {
-        var sel = Kit.champSelect('Semaine',
-          semaines.map(function (s, i) { return [i, s.libelle]; }), SEMAINES_AVANT);
-        corps.appendChild(sel.bloc);
-        var zone = Kit.ce('div');
-        corps.appendChild(zone);
-        function maj() { montrerApercu(zone, semaines[Number(sel.select.value)]); }
-        sel.select.addEventListener('change', maj);
-        maj();
-      });
-  }
-
-  function feuillePlage() {
-    var auj = global.App.aujourdhui();
-    var maintenant = global.App.moisCourant();
-    Kit.ouvrirFeuille('Poser plusieurs jours',
-      'Deux dates, et vous verrez l’effet réel avant de confirmer.',
-      function (corps) {
-        var du = Kit.champDate('Du', auj, { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 });
-        var au = Kit.champDate('Au', auj, { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 });
-        corps.appendChild(du.bloc);
-        corps.appendChild(au.bloc);
-        var zone = Kit.ce('div');
-        corps.appendChild(zone);
-        var b = Kit.bouton('btn nt', function () {
-          var d = du.valeur(), f = au.valeur();
-          if (f < d) { Kit.toast('La fin de la période précède son début.', true); return; }
-          montrerApercu(zone, { debut: d, fin: f, libelle: libellePlage(d, f) });
-        });
-        b.textContent = 'Voir l’effet';
-        corps.appendChild(b);
-      });
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Aperçu — calculé par le moteur, sur le vrai périmètre               */
-  /* ------------------------------------------------------------------ */
-
-  function montrerApercu(zone, plage) {
-    Kit.vider(zone);
-    zone.appendChild(Kit.ce('div', 'attente', 'Calcul de l’effet…'));
-    preparer(plage).then(function (prep) {
-      Kit.vider(zone);
-      zone.appendChild(vueApercu(prep, plage));
-    }).catch(function (e) {
-      Kit.vider(zone);
-      zone.appendChild(Kit.warnbox('Effet incalculable', Kit.messageErreur(e) +
-        ' Rien n’a été posé. Réessayez une fois le réseau revenu.'));
-    });
-  }
-
-  /* Jours d'une plage qui appartiennent RÉELLEMENT à un contrat : son planning,
-     ses bornes, hors fériés. Le filtre « mois clôturé » vient ensuite, car il
-     demande une lecture en base. */
+  /* Les jours du planning d'un contrat dans une période, fériés et bornes du
+     contrat exclus. Ce sont les journées qui seront réellement ÉCRITES ;
+     le DÉCOMPTE en jours ouvrables, lui, est tout autre chose (RG-06 compte le
+     samedi, que Maria travaille ou non) et vient du moteur. */
   function joursDuContrat(contrat, plage) {
     var planning = contrat.jours_planning || [1, 2, 3, 4, 5];
     var out = [];
@@ -359,387 +280,623 @@
     return out;
   }
 
-  /* Prépare tout ce qu'il faut pour décider : effet par contrat, contrats dont
-     le mois est clôturé, journées manuelles qui seraient écrasées. */
-  function preparer(plage) {
-    var fiches = vue.fiches;
-    var moisConcernes = moisDeJours(joursDuContrat({ jours_planning: [1, 2, 3, 4, 5, 6, 7] }, plage));
-    if (!moisConcernes.length) return Promise.resolve({ effets: [], clos: [], ecrases: [] });
+  function moisDePeriode(plage) {
+    return moisDeJours(joursDuContrat({ jours_planning: [1, 2, 3, 4, 5, 6, 7] }, plage));
+  }
 
-    return Promise.all(moisConcernes.map(function (mm) {
+  function libellePlage(a, b) {
+    if (a === b) return 'le ' + Kit.jourLong(a).toLowerCase();
+    return 'du ' + Kit.jourLong(a).toLowerCase() + ' au ' + Kit.jourLong(b).toLowerCase();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 2. Le parcours de pose — trois étapes                               */
+  /* ------------------------------------------------------------------ */
+
+  function ouvrirParcours() {
+    var auj = global.App.aujourdhui();
+    parcours = { debut: auj, fin: auj, etape: 1, index: 0, plans: [] };
+    etapeDates();
+  }
+
+  /* --- Étape 1 : les dates ------------------------------------------- */
+
+  function etapeDates() {
+    var maintenant = global.App.moisCourant();
+    Kit.ouvrirFeuille('Quand serez-vous absente ?',
+      'Pour une seule journée, mettez la même date dans les deux champs.',
+      function (corps) {
+        var bornes = { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 };
+        var du = Kit.champDate('Du', parcours.debut, bornes);
+        var au = Kit.champDate('Au', parcours.fin, bornes);
+        corps.appendChild(du.bloc);
+        corps.appendChild(au.bloc);
+
+        var zone = Kit.ce('div');
+        corps.appendChild(zone);
+
+        var bSuite = Kit.bouton('btn', function () { verifierPuisVentiler(bSuite); });
+        bSuite.textContent = 'Continuer';
+        corps.appendChild(bSuite);
+
+        /* Le décompte se met à jour EN DIRECT. Sans cela, Maria découvre après
+           coup qu'une semaine du lundi au vendredi compte 6 jours — c'est
+           précisément le désaccord historique avec les familles, et il ne doit
+           surprendre personne. */
+        function rafraichirDecompte() {
+          parcours.debut = du.valeur();
+          parcours.fin = au.valeur();
+          Kit.vider(zone);
+
+          if (parcours.fin < parcours.debut) {
+            zone.appendChild(Kit.warnbox('La fin précède le début',
+              ' Choisissez une date de fin postérieure ou égale à la date de début.'));
+            bSuite.disabled = true;
+            return;
+          }
+
+          /* RG-06 — le décompte vient du MOTEUR, jamais recalculé ici.
+             Le planning passé est celui de la RÈGLE (lundi-samedi), pas celui
+             d'un contrat : une semaine complète compte 6 jours même si Maria
+             ne travaille pas le samedi. */
+          var n = Engine.decompterJoursOuvrables(parcours.debut, parcours.fin);
+          parcours.jours = n;
+          var b = Kit.ce('div', 'decompte');
+          b.appendChild(Kit.ce('div', 'gros', Kit.jours(n) + ' ouvrables décomptés'));
+          b.appendChild(Kit.ce('div', 'q', 'samedi inclus · ' +
+            libellePlage(parcours.debut, parcours.fin).replace(/^./, function (c) {
+              return c.toUpperCase();
+            }) + '.'));
+          zone.appendChild(b);
+          bSuite.disabled = n === 0;
+          if (n === 0) {
+            zone.appendChild(Kit.ce('p', 'sb q',
+              'Cette période ne contient aucun jour ouvrable : rien ne serait décompté.'));
+          }
+        }
+
+        du.bloc.addEventListener('change', rafraichirDecompte);
+        au.bloc.addEventListener('change', rafraichirDecompte);
+        rafraichirDecompte();
+      });
+  }
+
+  /* Avant de ventiler : la période recouvre-t-elle un mois DÉJÀ CLÔTURÉ ?
+     Depuis le lot 13 un mois clôturé peut être rouvert, mais jamais en
+     silence : rouvrir, c'est faire diverger un document déjà remis à une
+     famille. On le dit, on le trace, et on ne pose rien avant. */
+  function verifierPuisVentiler(bouton) {
+    bouton.disabled = true;
+    var plage = { debut: parcours.debut, fin: parcours.fin };
+    var moisConcernes = moisDePeriode(plage);
+
+    Promise.all(moisConcernes.map(function (mm) {
       return global.App.recapsDuMois(mm.annee, mm.mois).then(function (r) {
-        return { cle: Chaine.cleMois(mm.annee, mm.mois), recaps: r };
+        return { annee: mm.annee, mois: mm.mois, cle: Chaine.cleMois(mm.annee, mm.mois), recaps: r };
       });
     })).then(function (liste) {
-      var recapsParMois = {};
-      liste.forEach(function (x) { recapsParMois[x.cle] = x.recaps; });
-      return Promise.all(fiches.map(function (f) {
-        return effetSurContrat(f, plage, recapsParMois);
-      })).then(function (effets) {
-        var clos = [];
-        effets.forEach(function (e) {
-          if (e.moisClos.length) clos.push(e);
+      var clos = [];
+      liste.forEach(function (x) {
+        var contrats = vue.fiches.filter(function (f) {
+          return joursDuContrat(f.contrat, plage).some(function (d) {
+            return d.slice(0, 7) === x.cle;
+          }) && global.App.estClos(x.recaps, f.contrat.id);
         });
-        return { effets: effets, clos: clos };
+        if (contrats.length) clos.push({ annee: x.annee, mois: x.mois, fiches: contrats });
       });
+
+      bouton.disabled = false;
+      if (clos.length) return feuilleMoisClos(clos);
+      return preparerVentilations();
+    }).catch(function (e) {
+      bouton.disabled = false;
+      Kit.toast('Impossible de vérifier l’état des mois : ' + Kit.messageErreur(e) +
+        ' Rien n’a été posé.', true);
     });
   }
 
-  /* L'effet réel d'une pose sur un contrat : les mois concernés sont REJOUÉS
-     par le moteur, avec et sans les nouveaux jours. Aucun décompte n'est refait
-     à la main, aucune imputation n'est réécrite. */
-  function effetSurContrat(fiche, plage, recapsParMois) {
-    var c = fiche.contrat;
-    var vide = {
-      contrat: c, fiche: fiche, jours: 0, joursPoses: [], moisClos: [],
-      cpAvant: cpDe(fiche), cpApres: cpDe(fiche), sansSolde: 0, ecrase: []
-    };
-    if (fiche.erreur) return Promise.resolve(vide);
+  function feuilleMoisClos(clos) {
+    var premier = clos[0];
+    var prenoms = premier.fiches.map(function (f) { return f.contrat.prenom_enfant; });
+    Kit.ouvrirFeuille(Kit.moisCapitale(premier.annee, premier.mois) + ' est clôturé',
+      liste(prenoms), function (corps) {
+        corps.appendChild(Kit.warnbox(
+          Kit.moisCapitale(premier.annee, premier.mois) + ' est clôturé pour ' +
+            liste(prenoms) + '.',
+          ' Pour poser ces congés, il faut rouvrir ce mois. Il sera à clôturer à nouveau ' +
+          'ensuite, et vous devrez renvoyer les récapitulatifs déjà transmis.'));
 
-    var tous = joursDuContrat(c, plage);
-    if (!tous.length) return Promise.resolve(vide);
+        var bRouvrir = Kit.bouton('btn', function () { rouvrirPuisVentiler(clos, bRouvrir); });
+        bRouvrir.textContent = 'Rouvrir ' + Kit.libelleMois(premier.mois) + ' et continuer';
+        corps.appendChild(bRouvrir);
 
-    /* Correction B1 : un mois déjà clôturé pour CE contrat ne reçoit rien. */
-    var moisClos = [];
-    var jours = tous.filter(function (d) {
-      var cle = d.slice(0, 7);
-      var recaps = recapsParMois[cle];
-      if (global.App.estClos(recaps, c.id)) {
-        if (moisClos.indexOf(cle) === -1) moisClos.push(cle);
-        return false;
-      }
-      return true;
-    });
-    vide.moisClos = moisClos;
-    if (!jours.length) return Promise.resolve(vide);
-
-    var moisTouches = moisDeJours(jours);
-    var premier = moisTouches[0];
-    var dernier = moisTouches[moisTouches.length - 1];
-
-    /* Tous les mois de la fenêtre, y compris ceux sans jour ajouté : le
-       compteur du mois N alimente le mois N+1, on ne peut pas en sauter un. */
-    var fenetre = [];
-    var cur = { annee: premier.annee, mois: premier.mois };
-    var garde = 0;
-    while (Chaine.cmpMois(cur.annee, cur.mois, dernier.annee, dernier.mois) <= 0 && garde < 36) {
-      fenetre.push({ annee: cur.annee, mois: cur.mois });
-      cur = Chaine.moisSuivant(cur.annee, cur.mois);
-      garde++;
-    }
-
-    return global.App.serie(c, dernier).then(function (chaine) {
-      return Promise.all(fenetre.map(function (mm) {
-        return global.App.journees(c.id, mm.annee, mm.mois).then(function (j) {
-          return { cle: Chaine.cleMois(mm.annee, mm.mois), jours: j };
-        });
-      })).then(function (js) {
-        var journeesParMois = {};
-        js.forEach(function (x) { journeesParMois[x.cle] = x.jours; });
-
-        var entreePremier = global.App.moisDe(chaine, premier.annee, premier.mois);
-        if (!entreePremier) return vide;
-
-        var compteur = entreePremier.compteurEntree;
-        var reference = null, simule = null;
-        var sansSolde = 0, decompte = 0, dejaPoses = 0;
-        var etatSimule = compteur;
-
-        fenetre.forEach(function (mm) {
-          var cle = Chaine.cleMois(mm.annee, mm.mois);
-          var entree = global.App.moisDe(chaine, mm.annee, mm.mois);
-          var salaire = (entree && entree.salaire) || { brut_mensuel_centimes: 0, net_mensuel_centimes: 0 };
-          var base = Object.keys(journeesParMois[cle] || {}).map(function (k) {
-            return journeesParMois[cle][k];
-          });
-
-          /* Le mois tel qu'il est aujourd'hui — repris de la chaîne pour un
-             mois clôturé (jamais recalculé), rejoué sinon. */
-          var avant = (entree && entree.fige) ? entree.resultat : Engine.calculerMois({
-            contrat: c, salaire: salaire, journees: base,
-            compteurEntree: entree ? entree.compteurEntree : compteur,
-            annee: mm.annee, mois: mm.mois
-          });
-
-          var ajoutes = jours.filter(function (d) { return d.slice(0, 7) === cle; });
-          ajoutes.forEach(function (d) {
-            var deja = (journeesParMois[cle] || {})[d];
-            if (deja && deja.type === 'conge_maria') dejaPoses++;
-          });
-          var avecCongé = base.filter(function (l) { return ajoutes.indexOf(l.jour) === -1; })
-            .concat(ajoutes.map(function (d) {
-              return { contrat_id: c.id, jour: d, type: 'conge_maria',
-                       minutes_reelles: null, entretien_centimes: null };
-            }));
-          var apres = Engine.calculerMois({
-            contrat: c, salaire: salaire, journees: avecCongé,
-            compteurEntree: etatSimule, annee: mm.annee, mois: mm.mois
-          });
-
-          etatSimule = apres.compteurSortie;
-          reference = avant;
-          simule = apres;
-          decompte += (apres.joursCongesDecomptes || 0) - (avant.joursCongesDecomptes || 0);
-          sansSolde += ((apres.imputation || {}).joursSansSolde || 0) -
-                       ((avant.imputation || {}).joursSansSolde || 0);
-        });
-
-        /* Correction A5 : une journée saisie à la main sur ce contrat serait
-           remplacée par l'upsert groupé, ses heures réelles perdues. */
-        var ecrase = jours.filter(function (d) {
-          var l = (journeesParMois[d.slice(0, 7)] || {})[d];
-          return l && (l.type === 'familiarisation' ||
-                       l.minutes_reelles != null || l.entretien_centimes != null);
-        });
-
-        return {
-          contrat: c, fiche: fiche,
-          jours: decompte,
-          dejaPoses: dejaPoses,
-          joursPoses: jours,
-          moisClos: moisClos,
-          cpAvant: Kit.cpDisponible(reference ? reference.compteurSortie : null),
-          cpApres: Kit.cpDisponible(simule ? simule.compteurSortie : null),
-          sansSolde: sansSolde,
-          ecrase: ecrase
-        };
+        var bAutres = Kit.bouton('btn nt', function () { etapeDates(); });
+        bAutres.textContent = 'Choisir d’autres dates';
+        corps.appendChild(bAutres);
       });
-    });
   }
 
-  function vueApercu(prep, plage) {
-    var bloc = Kit.ce('div');
-    var effets = prep.effets;
-    var utiles = effets.filter(function (e) { return e.joursPoses.length; });
-    var indisponibles = effets.filter(function (e) { return e.fiche.erreur; });
-
-    if (!utiles.length) {
-      bloc.appendChild(Kit.ce('p', 'vide',
-        'Cette période ne contient aucun jour de travail à poser : fériés, hors planning, ' +
-        'hors de vos contrats, ou mois déjà clôturés.'));
-      return bloc;
-    }
-
-    var p = Kit.pane('Période ' + plage.libelle);
-    var l = Kit.lines(p);
-    var decompte = utiles.reduce(function (max, e) { return Math.max(max, e.jours); }, 0);
-    var dejaPoses = utiles.reduce(function (max, e) { return Math.max(max, e.dejaPoses || 0); }, 0);
-    Kit.ligne(l, 'Jours décomptés', Kit.jours(decompte));
-    Kit.ligne(l, 'Samedi inclus — jours ouvrables', '', { discret: true });
-    if (dejaPoses) {
-      /* Le chiffre ci-dessus est bien l'effet RÉEL de ce geste : les jours déjà
-         posés dans la période sont déjà comptés dans vos compteurs, ils ne le
-         sont pas une seconde fois. */
-      Kit.ligne(l, 'Déjà posés dans cette période', Kit.jours(dejaPoses), { discret: true });
-    }
-    effets.forEach(function (e) {
-      if (e.fiche.erreur) {
-        Kit.ligne(l, e.contrat.prenom_enfant, 'indisponible', { alerte: true });
-        return;
-      }
-      if (!e.joursPoses.length) {
-        Kit.ligne(l, e.contrat.prenom_enfant,
-          e.moisClos.length ? 'mois clôturé' : 'non concerné', { discret: !e.moisClos.length, alerte: !!e.moisClos.length });
-        return;
-      }
-      /* Correction A4 : le seuil d'alerte porte sur « moins d'un jour entier »,
-         pas sur un zéro exact. imputerConges ne consomme que des multiples de
-         10 dixièmes : un solde de 6,5 j ne peut jamais atteindre 0 pile, et
-         l'alerte ne se déclenchait donc jamais pour lui. */
-      Kit.ligne(l, e.contrat.prenom_enfant,
-        Kit.joursCp(e.cpAvant) + ' → ' + Kit.joursCp(e.cpApres),
-        { alerte: e.cpApres < 10 || e.sansSolde > 0 });
-    });
-    bloc.appendChild(p);
-
-    var critiques = utiles.filter(function (e) { return e.sansSolde > 0; });
-    var vides = utiles.filter(function (e) { return e.sansSolde === 0 && e.cpApres < 10; });
-
-    if (critiques.length) {
-      bloc.appendChild(Kit.warnbox(
-        critiques.map(function (e) { return e.contrat.prenom_enfant; }).join(', ') +
-        ' : une partie de cette période serait SANS SOLDE',
-        'Congés payés et récupération ne suffisent pas. ' +
-        critiques.map(function (e) {
-          return e.contrat.prenom_enfant + ' : ' + Kit.jours(e.sansSolde) + ' sans solde';
-        }).join(' · ') + '.'));
-    } else if (vides.length) {
-      bloc.appendChild(Kit.warnbox(
-        vides.map(function (e) { return e.contrat.prenom_enfant; }).join(', ') +
-        ' n’aura plus de congés payés après cette période',
-        'Un prochain congé serait pris sur la récupération, puis sans solde.'));
-    }
-
-    if (prep.clos.length) {
-      bloc.appendChild(Kit.warnbox(
-        'Mois déjà clôturé pour ' +
-        prep.clos.map(function (e) { return e.contrat.prenom_enfant; }).join(', '),
-        'Ces contrats ne recevront rien sur les mois verrouillés : leur récapitulatif est ' +
-        'déjà parti. Leurs compteurs vont donc s’écarter des autres — c’est normal, et c’est dit.'));
-    }
-
-    var ecrases = utiles.filter(function (e) { return e.ecrase.length; });
-    if (ecrases.length) {
-      bloc.appendChild(Kit.warnbox(
-        'Une saisie manuelle sera remplacée chez ' +
-        ecrases.map(function (e) { return e.contrat.prenom_enfant; }).join(', '),
-        'Ces journées portent des heures réelles ou une indemnité saisies à la main ' +
-        '(familiarisation). Poser un congé les efface définitivement.'));
-    }
-
-    if (indisponibles.length) {
-      bloc.appendChild(Kit.warnbox(
-        'Impossible de poser : compteurs illisibles pour ' +
-        indisponibles.map(function (e) { return e.contrat.prenom_enfant; }).join(', '),
-        'Un congé posé maintenant laisserait ' +
-        (indisponibles.length > 1 ? 'ces contrats' : 'ce contrat') +
-        ' en dehors, sans que rien ne le signale ensuite. Réessayez une fois le réseau revenu.'));
-      return bloc;
-    }
-
-    bloc.appendChild(Kit.ce('p', 'sb q',
-      'Effet calculé par le moteur sur les mois concernés, congés déjà posés compris.'));
-
-    var b = Kit.bouton('btn', function () { poser(utiles, plage, b); });
-    b.textContent = 'Confirmer cette période';
-    bloc.appendChild(b);
-    return bloc;
-  }
-
-  function poser(effets, plage, bouton) {
-    var affectations = effets.map(function (e) {
-      return { contratId: e.contrat.id, jours: e.joursPoses };
-    });
-    if (!affectations.length) { Kit.toast('Aucun jour à poser.', true); return; }
-
+  function rouvrirPuisVentiler(clos, bouton) {
     bouton.disabled = true;
+    var gestes = [];
+    clos.forEach(function (x) {
+      x.fiches.forEach(function (f) {
+        /* Le motif part avec la réouverture : c'est lui qui rendra
+           l'historique du mois lisible dans six mois. La base écrit
+           l'événement elle-même (migration 006), quel que soit le chemin. */
+        gestes.push(global.DB.rouvrirRecap(f.contrat.id, x.annee, x.mois,
+          'Congés posés après clôture'));
+      });
+    });
+    Promise.all(gestes).then(function () {
+      global.App.invalider();
+      return preparerVentilations();
+    }).catch(function (e) {
+      bouton.disabled = false;
+      Kit.toast('La réouverture n’a pas abouti : ' + Kit.messageErreur(e) +
+        ' Aucun congé n’a été posé.', true);
+    });
+  }
+
+  /* --- Étape 2 : la ventilation, une page par contrat ----------------- */
+
+  /* Pour chaque contrat : ses réserves, le nombre de jours à répartir, et la
+     répartition PROPOSÉE PAR LE MOTEUR selon l'ordre du contrat (RG-07).
+     Proposée, pas imposée : Maria la modifie librement. */
+  function preparerVentilations() {
+    var plage = { debut: parcours.debut, fin: parcours.fin };
+
+    parcours.plans = vue.fiches.filter(function (f) { return !f.erreur; }).map(function (f) {
+      var c = f.contrat;
+      var joursPoses = joursDuContrat(c, plage);
+      var cp = cpDe(f);
+      var sup = supDe(f);
+
+      /* Le décompte en jours ouvrables est celui de la RÈGLE, identique pour
+         tous les contrats. Ce qui diffère d'un contrat à l'autre, ce sont les
+         RÉSERVES — et donc la façon de le payer. */
+      var n = joursPoses.length ? Engine.decompterJoursOuvrables(plage.debut, plage.fin) : 0;
+
+      var propose = { joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0 };
+      if (n > 0) {
+        /* Répartition par défaut : celle du moteur, dans l'ordre du contrat.
+           Aucune règle d'imputation n'est réécrite ici. */
+        var r = Engine.imputerConges(n, { dixiemesCp: cp, minutesSup: sup }, c);
+        propose = {
+          joursSurCp: r.joursSurCp,
+          joursSurSup: r.joursSurSup,
+          joursSansSolde: r.joursSansSolde
+        };
+      }
+
+      return {
+        fiche: f, contrat: c, joursPoses: joursPoses, jours: n,
+        cp: cp, sup: sup,
+        maxCp: Math.floor(cp / 10),
+        maxSup: c.minutes_par_jour_conge ? Math.floor(sup / c.minutes_par_jour_conge) : 0,
+        choix: propose
+      };
+    }).filter(function (p) { return p.jours > 0 && p.joursPoses.length > 0; });
+
+    if (!parcours.plans.length) {
+      Kit.fermerFeuille();
+      Kit.toast('Aucun de vos contrats n’est concerné par ces dates.', true);
+      return;
+    }
+    parcours.index = 0;
+    etapeVentilation();
+  }
+
+  function etapeVentilation() {
+    var p = parcours.plans[parcours.index];
+    var c = p.contrat;
+
+    Kit.ouvrirFeuille(c.prenom_enfant + ' — ' + Kit.jours(p.jours) + ' à répartir',
+      etiquetteEtapes(), function (corps) {
+        corps.appendChild(barreEtapes());
+
+        var res = Kit.pane('Vos réserves pour ce contrat');
+        var lr = Kit.lines(res);
+        Kit.ligne(lr, 'Congés payés', Kit.joursCp(p.cp));
+        Kit.ligne(lr, 'Récupération', joursDeRecup(c, p.sup));
+        corps.appendChild(res);
+
+        corps.appendChild(Kit.section('Comment les prendre ?'));
+
+        var reste = Kit.ce('div', 'reste');
+        var effet = Kit.ce('div', 'effet-sans-solde');
+        var bSuite = Kit.bouton('btn', function () { validerEtape(); });
+        bSuite.textContent = parcours.index === parcours.plans.length - 1
+          ? 'Voir le récapitulatif' : 'Continuer';
+
+        function majAffichage() {
+          var somme = p.choix.joursSurCp + p.choix.joursSurSup + p.choix.joursSansSolde;
+          var manque = p.jours - somme;
+          Kit.vider(reste);
+          reste.className = 'reste' + (manque === 0 ? ' ok' : ' ko');
+          reste.appendChild(Kit.ce('span', null, 'Reste à répartir'));
+          reste.appendChild(Kit.ce('b', null, String(manque)));
+
+          /* A2 — « Continuer » reste INACTIF tant que le reste n'est pas nul.
+             Une ventilation incomplète serait refusée par le moteur avec un
+             code d'erreur ; mieux vaut ne jamais la laisser partir. */
+          bSuite.disabled = manque !== 0;
+
+          Kit.vider(effet);
+          if (p.choix.joursSansSolde > 0) {
+            /* V8-11 — l'effet en euros, IMMÉDIATEMENT. Le sans-solde est une
+               retenue sur salaire : Maria doit le voir avant de choisir, pas
+               le découvrir sur le document du mois. Le montant vient du
+               moteur (A4). */
+            var brut = brutDe(p.fiche);
+            var minutes = p.choix.joursSansSolde * (c.minutes_par_jour_conge || 0);
+            var retenue = brut ? Engine.montantCentimes(brut, minutes) : null;
+            effet.appendChild(Kit.warnbox(
+              Kit.jours(p.choix.joursSansSolde) + ' sans solde',
+              retenue != null
+                ? ' : retenue de ' + Kit.eur(retenue) + ' sur le salaire de ' +
+                  c.prenom_enfant + '.'
+                : ' : la retenue ne peut pas être chiffrée, le barème de ce contrat ' +
+                  'n’est pas renseigné.'));
+          }
+        }
+
+        corps.appendChild(compteur('Congés payés', p.choix, 'joursSurCp', p.maxCp, majAffichage));
+        corps.appendChild(compteur('Récupération', p.choix, 'joursSurSup', p.maxSup, majAffichage));
+        /* A3 — le sans-solde n'a pas de borne haute : c'est le seul moyen de
+           poser un congé quand les réserves sont épuisées. Il est borné par le
+           nombre de jours de la période, pas par une réserve. */
+        corps.appendChild(compteur('Sans solde', p.choix, 'joursSansSolde', p.jours, majAffichage));
+
+        corps.appendChild(reste);
+        corps.appendChild(effet);
+
+        if (p.maxCp + p.maxSup < p.jours) {
+          corps.appendChild(Kit.note('Les réserves de ' + c.prenom_enfant + ' ne suffisent pas',
+            c.prenom_enfant + ' a ' + Kit.joursCp(p.cp) + ' de congés payés et ' +
+            joursDeRecup(c, p.sup) + ' de récupération, pour ' + Kit.jours(p.jours) +
+            ' à couvrir. Le reste passera en sans solde.'));
+        }
+
+        corps.appendChild(bSuite);
+
+        if (parcours.index > 0) {
+          var bRetour = Kit.bouton('btn nt', function () {
+            parcours.index--;
+            etapeVentilation();
+          });
+          bRetour.textContent = 'Revenir à ' + parcours.plans[parcours.index - 1].contrat.prenom_enfant;
+          corps.appendChild(bRetour);
+        }
+
+        majAffichage();
+      });
+  }
+
+  /* Un compteur « − n + », borné. La borne haute est passée en paramètre
+     parce qu'elle n'est pas la même pour les trois lignes : les réserves pour
+     les deux premières, la durée de la période pour le sans-solde.
+     Piège n° 5 de la spécification : un « reste à répartir » NÉGATIF signifie
+     que les bornes sont mal posées. La borne basse est zéro, toujours. */
+  function compteur(libelle, cible, champ, maximum, apres) {
+    var f = Kit.ce('div', 'compteur-jours');
+    f.appendChild(Kit.ce('span', 'lb', libelle));
+
+    var groupe = Kit.ce('div', 'grp');
+    var valeur = Kit.ce('b', 'val', String(cible[champ]));
+
+    function poser(delta) {
+      var v = cible[champ] + delta;
+      if (v < 0) v = 0;
+      if (v > maximum) v = maximum;
+      cible[champ] = v;
+      valeur.textContent = String(v);
+      moins.disabled = v <= 0;
+      plus.disabled = v >= maximum;
+      if (apres) apres();
+    }
+
+    var moins = Kit.bouton('pas', function () { poser(-1); });
+    moins.textContent = '−';
+    moins.setAttribute('aria-label', 'Retirer un jour de ' + libelle.toLowerCase());
+    var plus = Kit.bouton('pas', function () { poser(1); });
+    plus.textContent = '+';
+    plus.setAttribute('aria-label', 'Ajouter un jour de ' + libelle.toLowerCase());
+
+    groupe.appendChild(moins);
+    groupe.appendChild(valeur);
+    groupe.appendChild(plus);
+    f.appendChild(groupe);
+
+    moins.disabled = cible[champ] <= 0;
+    plus.disabled = cible[champ] >= maximum;
+    return f;
+  }
+
+  function brutDe(fiche) {
+    var r = fiche.entree && fiche.entree.resultat;
+    return (r && r.salaireBrutCentimes) || 0;
+  }
+
+  function etiquetteEtapes() {
+    return 'Étape ' + (parcours.index + 1) + ' sur ' + parcours.plans.length +
+      ' · ' + libellePlage(parcours.debut, parcours.fin);
+  }
+
+  function barreEtapes() {
+    var b = Kit.ce('div', 'etapes');
+    parcours.plans.forEach(function (p, i) {
+      var classe = 'et' + (i < parcours.index ? ' fait' : '') + (i === parcours.index ? ' on' : '');
+      var e = Kit.ce('span', classe);
+      if (i < parcours.index) e.appendChild(Kit.ce('span', 'ck', '✓'));
+      e.appendChild(Kit.avatar(p.contrat, 'pt'));
+      e.appendChild(Kit.ce('span', null, p.contrat.prenom_enfant));
+      b.appendChild(e);
+    });
+    return b;
+  }
+
+  function validerEtape() {
+    if (parcours.index < parcours.plans.length - 1) {
+      parcours.index++;
+      etapeVentilation();
+      return;
+    }
+    etapeRecapitulatif();
+  }
+
+  /* --- Étape 3 : le récapitulatif, avant d'écrire quoi que ce soit ---- */
+
+  function etapeRecapitulatif() {
+    Kit.ouvrirFeuille('Vérifiez avant de poser',
+      libellePlage(parcours.debut, parcours.fin), function (corps) {
+        var totalSansSolde = 0;
+        var retenueTotale = 0;
+        var chiffrable = true;
+
+        parcours.plans.forEach(function (p) {
+          var c = p.contrat;
+          var pane = Kit.pane(c.prenom_enfant);
+          var l = Kit.lines(pane);
+          if (p.choix.joursSurCp) Kit.ligne(l, 'Congés payés', Kit.jours(p.choix.joursSurCp));
+          if (p.choix.joursSurSup) Kit.ligne(l, 'Récupération', Kit.jours(p.choix.joursSurSup));
+          if (p.choix.joursSansSolde) {
+            Kit.ligne(l, 'Sans solde', Kit.jours(p.choix.joursSansSolde), { alerte: true });
+            totalSansSolde += p.choix.joursSansSolde;
+            var brut = brutDe(p.fiche);
+            if (brut) {
+              retenueTotale += Engine.montantCentimes(brut,
+                p.choix.joursSansSolde * (c.minutes_par_jour_conge || 0));
+            } else {
+              chiffrable = false;
+            }
+          }
+          Kit.ligne(l, 'Total décompté', Kit.jours(p.jours), { total: true });
+          corps.appendChild(pane);
+        });
+
+        if (totalSansSolde > 0) {
+          corps.appendChild(Kit.warnbox(
+            Kit.jours(totalSansSolde) + ' sans solde en tout',
+            chiffrable ? ' : ' + Kit.eur(retenueTotale) + ' de retenue sur vos salaires.'
+                       : ' : la retenue ne peut pas être entièrement chiffrée, un barème manque.'));
+        }
+
+        var b = Kit.bouton('btn', function () { poser(b); });
+        b.textContent = 'Poser ces congés';
+        corps.appendChild(b);
+
+        var bRetour = Kit.bouton('btn nt', function () {
+          parcours.index = parcours.plans.length - 1;
+          etapeVentilation();
+        });
+        bRetour.textContent = 'Revenir à la répartition';
+        corps.appendChild(bRetour);
+      });
+  }
+
+  /* L'écriture : les journées, puis l'imputation de chaque contrat.
+
+     L'IMPUTATION PORTE LA PÉRIODE ENTIÈRE, pas chaque journée (piège n° 2).
+     RG-06 se compte sur une période continue : la découper journée par journée
+     ferait perdre le samedi, et une semaine complète cesserait de valoir
+     6 jours. C'est le décompte que les familles contestent depuis toujours. */
+  function poser(bouton) {
+    bouton.disabled = true;
+    var plans = parcours.plans;
+    var affectations = plans.map(function (p) {
+      return { contratId: p.contrat.id, jours: p.joursPoses };
+    });
+
     global.DB.poserAbsenceMaria(affectations, 'conge_maria', null)
       .then(function () {
+        return Promise.all(plans.map(function (p) {
+          return global.DB.enregistrerImputation({
+            contrat_id: p.contrat.id,
+            date_debut: parcours.debut,
+            date_fin: parcours.fin,
+            jours_ouvrables: p.jours,
+            jours_sur_cp: p.choix.joursSurCp,
+            jours_sur_sup: p.choix.joursSurSup,
+            jours_sans_solde: p.choix.joursSansSolde
+          });
+        }));
+      })
+      .then(function (imputations) {
         global.App.invalider();
         Kit.fermerFeuille();
-        Kit.toast('Période ' + plage.libelle + ' posée sur ' +
-          (affectations.length > 1 ? affectations.length + ' contrats' : 'un contrat'));
+        /* V8-21 — un « Annuler » de 5 secondes. Poser des congés touche
+           quatre contrats, leurs journées ET leurs compteurs : c'est
+           exactement le genre de geste qu'on ne veut pas défaire à la main. */
+        Kit.toast('Congés posés ' + libellePlage(parcours.debut, parcours.fin) +
+          ' sur ' + libelleContrats(plans.length) + '.', false, {
+            libelle: 'Annuler',
+            delai: 5000,
+            onclick: function () { annulerPose(plans, imputations); }
+          });
+        parcours = null;
         return global.App.rafraichir();
       })
       .catch(function (e) {
         bouton.disabled = false;
-        Kit.toast('Enregistrement impossible : ' + Kit.messageErreur(e) + ' Rien n’a été posé.', true);
+        Kit.toast('Enregistrement impossible : ' + Kit.messageErreur(e) +
+          ' Vérifiez vos congés avant de recommencer.', true);
+        global.App.invalider();
       });
   }
 
-  /* ------------------------------------------------------------------ */
-  /* Retirer des congés sur une plage (restauration R6)                  */
-  /* ------------------------------------------------------------------ */
+  function annulerPose(plans, imputations) {
+    var gestes = (imputations || []).filter(Boolean).map(function (i) {
+      return global.DB.supprimerImputation(i.id);
+    });
+    gestes.push(global.DB.retirerAbsenceMaria(
+      plans.map(function (p) { return p.contrat.id; }),
+      plans.reduce(function (acc, p) { return acc.concat(p.joursPoses); }, []),
+      TYPES_ABSENCE_MARIA));
 
-  var TYPES_ABSENCE_MARIA = ['conge_maria', 'sans_solde', 'hors_planning'];
-
-  function feuilleRetrait() {
-    var auj = global.App.aujourdhui();
-    var maintenant = global.App.moisCourant();
-    Kit.ouvrirFeuille('Retirer des congés',
-      'Les journées redeviennent normales. Les absences d’enfant et les familiarisations ' +
-      'ne sont jamais touchées.',
-      function (corps) {
-        var du = Kit.champDate('Du', auj, { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 });
-        var au = Kit.champDate('Au', auj, { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 });
-        corps.appendChild(du.bloc);
-        corps.appendChild(au.bloc);
-        var zone = Kit.ce('div');
-        corps.appendChild(zone);
-
-        var bVoir = Kit.bouton('btn nt', function () {
-          var d = du.valeur(), f = au.valeur();
-          if (f < d) { Kit.toast('La fin de la période précède son début.', true); return; }
-          montrerRetrait(zone, { debut: d, fin: f, libelle: libellePlage(d, f) });
-        });
-        bVoir.textContent = 'Voir ce qui serait retiré';
-        corps.appendChild(bVoir);
-      });
-  }
-
-  function montrerRetrait(zone, plage) {
-    Kit.vider(zone);
-    zone.appendChild(Kit.ce('div', 'attente', 'Recherche des congés posés…'));
-
-    var fiches = vue.fiches;
-    var moisConcernes = moisDeJours(joursDuContrat({ jours_planning: [1, 2, 3, 4, 5, 6, 7] }, plage));
-
-    Promise.all(moisConcernes.map(function (mm) {
-      return global.App.recapsDuMois(mm.annee, mm.mois).then(function (r) {
-        return { cle: Chaine.cleMois(mm.annee, mm.mois), recaps: r };
-      });
-    })).then(function (liste) {
-      var recapsParMois = {};
-      liste.forEach(function (x) { recapsParMois[x.cle] = x.recaps; });
-
-      return Promise.all(fiches.map(function (f) {
-        return Promise.all(moisConcernes.map(function (mm) {
-          return global.App.journees(f.contrat.id, mm.annee, mm.mois);
-        })).then(function (js) {
-          var jours = [], clos = [];
-          js.forEach(function (parJour) {
-            Object.keys(parJour || {}).forEach(function (d) {
-              if (d < plage.debut || d > plage.fin) return;
-              if (TYPES_ABSENCE_MARIA.indexOf(parJour[d].type) === -1) return;
-              var cle = d.slice(0, 7);
-              if (global.App.estClos(recapsParMois[cle], f.contrat.id)) {
-                if (clos.indexOf(cle) === -1) clos.push(cle);
-                return;
-              }
-              jours.push(d);
-            });
-          });
-          jours.sort();
-          return { contrat: f.contrat, jours: jours, clos: clos };
-        });
-      }));
-    }).then(function (parContrat) {
-      Kit.vider(zone);
-      var utiles = parContrat.filter(function (x) { return x.jours.length; });
-      if (!utiles.length) {
-        zone.appendChild(Kit.ce('p', 'vide',
-          'Aucun congé à retirer sur cette période (ou ils sont sur des mois clôturés).'));
-        return;
-      }
-      var p = Kit.pane('À retirer — ' + plage.libelle);
-      var l = Kit.lines(p);
-      parContrat.forEach(function (x) {
-        Kit.ligne(l, x.contrat.prenom_enfant,
-          x.jours.length ? Kit.jours(x.jours.length) : '—', { discret: !x.jours.length });
-      });
-      zone.appendChild(p);
-
-      var closTous = parContrat.filter(function (x) { return x.clos.length; });
-      if (closTous.length) {
-        zone.appendChild(Kit.warnbox('Des mois clôturés sont concernés',
-          'Les congés posés sur un mois déjà clôturé ne peuvent plus être retirés : ' +
-          'le document est parti chez les parents.'));
-      }
-
-      var b = Kit.bouton('btn dg', function () {
-        b.disabled = true;
-        var ids = utiles.map(function (x) { return x.contrat.id; });
-        var jours = {};
-        utiles.forEach(function (x) { x.jours.forEach(function (d) { jours[d] = true; }); });
-        global.DB.retirerAbsenceMaria(ids, Object.keys(jours).sort(), TYPES_ABSENCE_MARIA)
-          .then(function () {
-            global.App.invalider();
-            Kit.fermerFeuille();
-            Kit.toast('Congés retirés');
-            return global.App.rafraichir();
-          })
-          .catch(function (e) {
-            b.disabled = false;
-            Kit.toast('Retrait impossible : ' + Kit.messageErreur(e) + ' Rien n’a changé.', true);
-          });
-      });
-      b.textContent = 'Retirer ces congés';
-      zone.appendChild(b);
+    Promise.all(gestes).then(function () {
+      global.App.invalider();
+      Kit.toast('C’est annulé — vos compteurs sont rendus.');
+      return global.App.rafraichir();
     }).catch(function (e) {
-      Kit.vider(zone);
-      zone.appendChild(Kit.warnbox('Lecture impossible', Kit.messageErreur(e)));
+      Kit.toast('L’annulation n’a pas abouti : ' + Kit.messageErreur(e) +
+        ' Vos congés sont toujours posés.', true);
+      global.App.invalider();
+      return global.App.rafraichir();
     });
   }
 
-  global.UiConges = { afficher: afficher, SEMAINES_APRES: SEMAINES_APRES };
+  function liste(noms) {
+    if (!noms.length) return '';
+    if (noms.length === 1) return noms[0];
+    return noms.slice(0, -1).join(', ') + ' et ' + noms[noms.length - 1];
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 3. Retirer des congés                                               */
+  /*                                                                     */
+  /* Retirer une PÉRIODE, pas des journées éparses : c'est la période qui */
+  /* porte le décompte RG-06 et sa ventilation. Retirer l'imputation sans */
+  /* remettre les journées en présence rendrait les compteurs mais        */
+  /* laisserait le calendrier faux (piège n° 4) — et inversement.        */
+  /* ------------------------------------------------------------------ */
+
+  function feuilleRetrait() {
+    Kit.ouvrirFeuille('Retirer des congés',
+      'Choisissez une période déjà posée.', function (corps) {
+        var attente = Kit.ce('div', 'attente', 'Lecture de vos périodes…');
+        corps.appendChild(attente);
+
+        /* `listImputations` prend des bornes : sans elles, PostgREST reçoit
+           « undefined » et ne rend rien. La fenêtre part du début du contrat
+           le plus ancien et va un an après le mois affiché — une période de
+           congé posée d'avance doit rester retirable, c'est la correction A13
+           du lot 6. */
+        var fenetre = fenetreDesPeriodes();
+        Promise.all(vue.fiches.map(function (f) {
+          return global.DB.listImputations(f.contrat.id, fenetre.debut, fenetre.fin)
+            .then(function (l) { return { fiche: f, imputations: l || [] }; })
+            .catch(function () { return { fiche: f, imputations: [] }; });
+        })).then(function (parContrat) {
+          corps.removeChild(attente);
+          var periodes = regrouperParPeriode(parContrat);
+
+          if (!periodes.length) {
+            corps.appendChild(Kit.ce('p', 'vide',
+              'Aucune période de congé enregistrée. Les congés posés avant la refonte ' +
+              'se retirent depuis le calendrier d’un enfant.'));
+            return;
+          }
+
+          periodes.forEach(function (p) {
+            Kit.choix(corps, 'c1', '−', libellePlage(p.debut, p.fin).replace(/^./, function (c) {
+              return c.toUpperCase();
+            }), Kit.jours(p.jours) + ' décomptés · ' +
+              liste(p.entrees.map(function (e) { return e.fiche.contrat.prenom_enfant; })),
+              function () { confirmerRetrait(p); });
+          });
+        }).catch(function (e) {
+          if (attente.parentNode) corps.removeChild(attente);
+          corps.appendChild(Kit.warnbox('Périodes indisponibles',
+            ' ' + Kit.messageErreur(e) + ' Rien n’a été retiré.'));
+        });
+      });
+  }
+
+  function fenetreDesPeriodes() {
+    var debut = vue.annee + '-' + String(vue.mois).padStart(2, '0') + '-01';
+    vue.fiches.forEach(function (f) {
+      if (f.contrat.date_debut && f.contrat.date_debut < debut) debut = f.contrat.date_debut;
+    });
+    return { debut: debut, fin: (vue.annee + 1) + '-12-31' };
+  }
+
+  /* Une même période posée sur quatre contrats fait QUATRE imputations. Maria
+     n'en a posé qu'une : on les regroupe pour qu'elle en retire une. */
+  function regrouperParPeriode(parContrat) {
+    var index = {};
+    parContrat.forEach(function (x) {
+      x.imputations.forEach(function (i) {
+        var cle = i.date_debut + '|' + i.date_fin;
+        if (!index[cle]) {
+          index[cle] = { debut: i.date_debut, fin: i.date_fin, jours: i.jours_ouvrables, entrees: [] };
+        }
+        index[cle].entrees.push({ fiche: x.fiche, imputation: i });
+      });
+    });
+    return Object.keys(index).map(function (k) { return index[k]; })
+      .sort(function (a, b) { return a.debut < b.debut ? 1 : -1; });
+  }
+
+  function confirmerRetrait(p) {
+    var prenoms = p.entrees.map(function (e) { return e.fiche.contrat.prenom_enfant; });
+    Kit.ouvrirFeuille('Retirer les congés ' + libellePlage(p.debut, p.fin) + ' ?',
+      null, function (corps) {
+        corps.appendChild(Kit.note('Ce qui sera rendu',
+          Kit.jours(p.jours) + ' décomptés seront rendus à vos compteurs, sur ' +
+          (prenoms.length > 1 ? 'les ' + prenoms.length + ' contrats' : 'le contrat') +
+          ' de ' + liste(prenoms) + '. Les journées redeviendront normales.'));
+
+        var b = Kit.bouton('btn dg', function () { retirer(p, b); });
+        b.textContent = 'Retirer ces congés';
+        corps.appendChild(b);
+
+        var bNon = Kit.bouton('btn nt', function () { Kit.fermerFeuille(); });
+        bNon.textContent = 'Annuler';
+        corps.appendChild(bNon);
+      });
+  }
+
+  function retirer(p, bouton) {
+    bouton.disabled = true;
+    var plage = { debut: p.debut, fin: p.fin };
+    var ids = p.entrees.map(function (e) { return e.fiche.contrat.id; });
+    var jours = [];
+    p.entrees.forEach(function (e) {
+      joursDuContrat(e.fiche.contrat, plage).forEach(function (d) {
+        if (jours.indexOf(d) === -1) jours.push(d);
+      });
+    });
+
+    /* Les deux gestes vont ensemble : l'imputation ET les journées. L'un sans
+       l'autre laisse l'application incohérente — compteurs rendus mais
+       calendrier faux, ou l'inverse. */
+    Promise.all(p.entrees.map(function (e) {
+      return global.DB.supprimerImputation(e.imputation.id);
+    })).then(function () {
+      return global.DB.retirerAbsenceMaria(ids, jours, TYPES_ABSENCE_MARIA);
+    }).then(function () {
+      global.App.invalider();
+      Kit.fermerFeuille();
+      Kit.toast('Congés retirés ' + libellePlage(p.debut, p.fin) + '.');
+      return global.App.rafraichir();
+    }).catch(function (e) {
+      bouton.disabled = false;
+      Kit.toast('Le retrait n’a pas abouti : ' + Kit.messageErreur(e) +
+        ' Vérifiez vos congés.', true);
+      global.App.invalider();
+    });
+  }
+
+  global.UiConges = { afficher: afficher, TYPES_ABSENCE_MARIA: TYPES_ABSENCE_MARIA };
 })(window);
