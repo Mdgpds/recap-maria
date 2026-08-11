@@ -94,6 +94,46 @@
     return seq.then(function () { return parMois; });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Les imputations de congé posées (correctif B1 de la relecture PR9)   */
+  /*                                                                     */
+  /* CE CHARGEMENT MANQUAIT, ET C'EST TOUT LE LOT 10 QUI NE SERVAIT À     */
+  /* RIEN. Le lot 9 avait donné au moteur la capacité d'accepter une      */
+  /* ventilation IMPOSÉE — « ces 6 jours, je les prends 0 sur mes congés  */
+  /* payés et 6 sans solde ». Le lot 10 a construit l'écran qui la fait   */
+  /* choisir et l'écrit en base. Personne n'a branché les deux : ce       */
+  /* fichier est le SEUL appelant du moteur pour tous les écrans, et il   */
+  /* ne transmettait pas `imputations`. Le moteur retombait donc          */
+  /* systématiquement sur l'ordre par défaut du contrat (RG-07), et le    */
+  /* choix de Maria — écrit, visible, confirmé à l'écran — n'avait aucun  */
+  /* effet sur le récapitulatif remis à la famille.                       */
+  /*                                                                     */
+  /* La fenêtre de lecture DÉBORDE volontairement des bornes de la        */
+  /* chaîne : une période posée du 29 juillet au 4 août doit être connue  */
+  /* du mois d'août, alors qu'elle COMMENCE en juillet. `listImputations` */
+  /* interroge par recouvrement (`date_debut <= fin` et `date_fin >=      */
+  /* debut`), ce qui suffit — encore faut-il l'appeler.                   */
+  /* ------------------------------------------------------------------ */
+  function chargerImputations(DB, contratId, debut, fin) {
+    /* Contrôle de CAPACITÉ, pas rattrapage d'erreur : les décors de test
+       anciens n'exposent pas cette fonction. Une erreur réelle, elle,
+       remonte — une imputation silencieusement perdue redonnerait
+       exactement le défaut qu'on corrige ici. */
+    if (typeof DB.listImputations !== 'function') return Promise.resolve([]);
+    return DB.listImputations(contratId, debut, fin).then(function (l) { return l || []; });
+  }
+
+  /* Les imputations dont la période RECOUPE le mois. Le moteur veut la ligne
+     ENTIÈRE — bornes comprises — pour décompter la période d'un seul tenant
+     (RG-06) et n'en retenir que la part du mois. On ne découpe rien ici. */
+  function imputationsDuMois(imputations, annee, mois) {
+    var d = premierJour(annee, mois);
+    var f = dernierJour(annee, mois);
+    return (imputations || []).filter(function (i) {
+      return i && i.date_debut <= f && i.date_fin >= d;
+    });
+  }
+
   function chargerRecaps(DB, contratId, anneeMin, anneeMax) {
     if (typeof DB.listRecapsPeriode === 'function') {
       return DB.listRecapsPeriode(contratId, anneeMin, anneeMax).then(function (lignes) {
@@ -247,10 +287,12 @@
 
       return Promise.all([
         chargerJournees(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
-        chargerRecaps(DB, contrat.id, debutChaine.annee, cible.annee)
+        chargerRecaps(DB, contrat.id, debutChaine.annee, cible.annee),
+        chargerImputations(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois))
       ]).then(function (charge) {
         var journeesParMois = charge[0] || {};
         var recapsParMois = charge[1];
+        var imputations = charge[2] || [];
 
         var entrees = [];
         var cur = { annee: debutChaine.annee, mois: debutChaine.mois };
@@ -305,7 +347,10 @@
                   var journees = Object.keys(parJour).map(function (k) { return parJour[k]; });
                   var r = Engine.calculerMois({
                     contrat: contrat, salaire: salaireCalcul, journees: journees,
-                    compteurEntree: compteurEntree, annee: mm.annee, mois: mm.mois
+                    compteurEntree: compteurEntree, annee: mm.annee, mois: mm.mois,
+                    /* Correctif B1 : la ventilation choisie par Maria entre
+                       ici, ou elle n'entre nulle part. */
+                    imputations: imputationsDuMois(imputations, mm.annee, mm.mois)
                   });
                   compteur = r.compteurSortie;
                   entree = {

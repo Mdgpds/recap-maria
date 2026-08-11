@@ -336,20 +336,48 @@
           }
 
           /* RG-06 — le décompte vient du MOTEUR, jamais recalculé ici.
-             Le planning passé est celui de la RÈGLE (lundi-samedi), pas celui
-             d'un contrat : une semaine complète compte 6 jours même si Maria
-             ne travaille pas le samedi. */
-          var n = Engine.decompterJoursOuvrables(parcours.debut, parcours.fin);
-          parcours.jours = n;
+
+             CORRECTIF B2 DE LA RELECTURE PR9. Le commentaire qui tenait cette
+             place affirmait : « Le planning passé est celui de la RÈGLE
+             (lundi-samedi) ». C'était faux deux fois. Aucun planning n'était
+             passé, et le défaut du moteur est lundi-VENDREDI, pas
+             lundi-samedi. L'écran annonçait donc 4 jours là où le moteur en
+             compte 6 pour un contrat du lundi au jeudi — et écrivait ce 4
+             dans l'imputation, que le moteur aurait refusée.
+
+             Le décompte DÉPEND du planning : un jeudi d'absence coûte 3 jours
+             ouvrables à un contrat du lundi au jeudi (jeudi, vendredi,
+             samedi ; reprise le lundi) et 1 seul à un contrat du lundi au
+             vendredi. Il n'y a donc pas UN chiffre à annoncer ici, mais autant
+             que de plannings. On interroge le moteur pour chacun et on annonce
+             l'étendue réelle — exactement ce que fait déjà l'espace enfant. */
+          var servis = (vue.fiches || []).filter(function (f) {
+            return !f.erreur && joursDuContrat(f.contrat, parcours).length > 0;
+          });
+          var decomptes = servis.map(function (f) {
+            return Engine.decompterJoursOuvrables(parcours.debut, parcours.fin,
+              f.contrat.jours_planning || [1, 2, 3, 4, 5]);
+          });
+          var mini = decomptes.length ? Math.min.apply(null, decomptes) : 0;
+          var maxi = decomptes.length ? Math.max.apply(null, decomptes) : 0;
+          parcours.jours = maxi;
+
           var b = Kit.ce('div', 'decompte');
-          b.appendChild(Kit.ce('div', 'gros', Kit.jours(n) + ' ouvrables décomptés'));
+          b.appendChild(Kit.ce('div', 'gros', mini === maxi
+            ? Kit.jours(maxi) + ' ouvrables décomptés'
+            : 'de ' + mini + ' à ' + Kit.jours(maxi) + ' ouvrables décomptés'));
           b.appendChild(Kit.ce('div', 'q', 'samedi inclus · ' +
             libellePlage(parcours.debut, parcours.fin).replace(/^./, function (c) {
               return c.toUpperCase();
             }) + '.'));
+          if (mini !== maxi) {
+            b.appendChild(Kit.ce('div', 'q',
+              'Le nombre dépend des jours de garde de chaque contrat. Le détail ' +
+              'vous sera donné enfant par enfant à l’étape suivante.'));
+          }
           zone.appendChild(b);
-          bSuite.disabled = n === 0;
-          if (n === 0) {
+          bSuite.disabled = maxi === 0;
+          if (maxi === 0) {
             zone.appendChild(Kit.ce('p', 'sb q',
               'Cette période ne contient aucun jour ouvrable : rien ne serait décompté.'));
           }
@@ -395,19 +423,50 @@
     });
   }
 
+  /* CORRECTIF A4 (lot 10) DE LA RELECTURE PR9 — LA FEUILLE ANNONÇAIT UN MOIS
+     ET LE BOUTON EN ROUVRAIT PLUSIEURS.
+
+     Elle affichait « Juillet 2026 est clôturé » et « Rouvrir juillet et
+     continuer » ; `rouvrirPuisVentiler` bouclait sur TOUT `clos` — juillet ET
+     août, pour les quatre contrats, soit huit réouvertures réelles en base. Et
+     si Maria refermait ensuite la feuille de ventilation, deux mois fois
+     quatre contrats restaient dé-clôturés, aucun congé n'était posé, et rien
+     ne le signalait. La réouverture, elle, n'est pas réversible : elle laisse
+     une trace indélébile dans l'historique du mois (lot 13).
+
+     La feuille énumère donc TOUS les mois concernés, et le bouton dit combien
+     de réouvertures il déclenche. On ne change pas ce que fait le geste : on
+     cesse de le sous-annoncer. */
   function feuilleMoisClos(clos) {
     var premier = clos[0];
     var prenoms = premier.fiches.map(function (f) { return f.contrat.prenom_enfant; });
-    Kit.ouvrirFeuille(Kit.moisCapitale(premier.annee, premier.mois) + ' est clôturé',
-      liste(prenoms), function (corps) {
+    var tousLesMois = clos.map(function (x) {
+      return Kit.libelleMoisAnnee(x.annee, x.mois);
+    });
+    var nbReouvertures = clos.reduce(function (n, x) { return n + x.fiches.length; }, 0);
+    var titre = clos.length > 1
+      ? tousLesMois.length + ' mois sont clôturés'
+      : Kit.moisCapitale(premier.annee, premier.mois) + ' est clôturé';
+
+    Kit.ouvrirFeuille(titre, liste(prenoms), function (corps) {
         corps.appendChild(Kit.warnbox(
-          Kit.moisCapitale(premier.annee, premier.mois) + ' est clôturé pour ' +
-            liste(prenoms) + '.',
-          ' Pour poser ces congés, il faut rouvrir ce mois. Il sera à clôturer à nouveau ' +
-          'ensuite, et vous devrez renvoyer les récapitulatifs déjà transmis.'));
+          (clos.length > 1
+            ? 'Ces mois sont clôturés : ' + liste(tousLesMois) + '.'
+            : Kit.moisCapitale(premier.annee, premier.mois) + ' est clôturé pour ' +
+              liste(prenoms) + '.'),
+          ' Pour poser ces congés, il faut ' +
+          (nbReouvertures > 1
+            ? 'rouvrir ' + nbReouvertures + ' récapitulatifs — ' +
+              liste(tousLesMois) + ', pour ' + liste(prenoms) + '. Chaque ' +
+              'réouverture laisse une trace définitive dans l’historique du mois.'
+            : 'rouvrir ce mois.') +
+          ' Ils seront à clôturer à nouveau ensuite, et vous devrez renvoyer les ' +
+          'récapitulatifs déjà transmis.'));
 
         var bRouvrir = Kit.bouton('btn', function () { rouvrirPuisVentiler(clos, bRouvrir); });
-        bRouvrir.textContent = 'Rouvrir ' + Kit.libelleMois(premier.mois) + ' et continuer';
+        bRouvrir.textContent = nbReouvertures > 1
+          ? 'Rouvrir ces ' + nbReouvertures + ' récapitulatifs et continuer'
+          : 'Rouvrir ' + Kit.libelleMois(premier.mois) + ' et continuer';
         corps.appendChild(bRouvrir);
 
         var bAutres = Kit.bouton('btn nt', function () { etapeDates(); });
@@ -443,19 +502,75 @@
   /* Pour chaque contrat : ses réserves, le nombre de jours à répartir, et la
      répartition PROPOSÉE PAR LE MOTEUR selon l'ordre du contrat (RG-07).
      Proposée, pas imposée : Maria la modifie librement. */
+  /* CORRECTIF A7 (lot 10) DE LA RELECTURE PR9 — LES RÉSERVES VENAIENT DU
+     MAUVAIS MOIS.
+
+     Le panneau « Vos réserves » et les bornes des compteurs étaient ceux du
+     compteur de sortie du mois OUVERT DANS L'ONGLET, pas du mois où la période
+     commence. Maria pouvait donc poser un congé de décembre depuis l'écran de
+     juillet et arbitrer sur des chiffres faux (B.0-4 : ne jamais présenter un
+     chiffre qui n'est pas celui de la situation décrite).
+
+     On lit donc la chaîne au mois de DÉBUT DE LA PÉRIODE. C'est un aller-retour
+     de plus, mis en cache par `App.serie`, et il n'a lieu que lorsque le mois
+     diffère. */
   function preparerVentilations() {
     var plage = { debut: parcours.debut, fin: parcours.fin };
+    var moisPeriode = Chaine.moisDeDate(plage.debut);
+    var memeMois = moisPeriode.annee === vue.annee && moisPeriode.mois === vue.mois;
 
-    parcours.plans = vue.fiches.filter(function (f) { return !f.erreur; }).map(function (f) {
+    var prepare = memeMois
+      ? Promise.resolve(vue.fiches)
+      : Promise.all(vue.fiches.map(function (f) {
+          if (f.erreur) return f;
+          return global.App.serie(f.contrat, moisPeriode).then(function (chaine) {
+            var e = global.App.moisDe(chaine, moisPeriode.annee, moisPeriode.mois);
+            /* Pas d'entrée pour ce mois : le contrat ne le couvre pas. On
+               garde la fiche telle quelle ; `joursDuContrat` l'écartera. */
+            return e ? { contrat: f.contrat, entree: e, journees: f.journees, erreur: null } : f;
+          }).catch(function (err) {
+            return { contrat: f.contrat, entree: null, journees: {}, erreur: err };
+          });
+        }));
+
+    return prepare.then(function (fiches) {
+      return preparerVentilationsAvec(fiches, plage);
+    }).catch(function (e) {
+      Kit.fermerFeuille();
+      Kit.toast('Impossible de lire vos compteurs pour cette période : ' +
+        Kit.messageErreur(e) + ' Rien n’a été posé.', true);
+    });
+  }
+
+  function preparerVentilationsAvec(fiches, plage) {
+    parcours.plans = fiches.filter(function (f) { return !f.erreur; }).map(function (f) {
       var c = f.contrat;
       var joursPoses = joursDuContrat(c, plage);
       var cp = cpDe(f);
       var sup = supDe(f);
 
-      /* Le décompte en jours ouvrables est celui de la RÈGLE, identique pour
-         tous les contrats. Ce qui diffère d'un contrat à l'autre, ce sont les
-         RÉSERVES — et donc la façon de le payer. */
-      var n = joursPoses.length ? Engine.decompterJoursOuvrables(plage.debut, plage.fin) : 0;
+      /* CORRECTIFS B2 ET A6 DE LA RELECTURE PR9 — deux erreurs au même
+         endroit, sur la même ligne.
+
+         B2 : le décompte dépend du PLANNING du contrat. Sans lui, l'écran
+         annonçait un chiffre et le moteur en comptait un autre ; une fois les
+         imputations branchées (B1), le moteur aurait refusé le mois entier
+         avec IMPUTATION_INCOMPLETE.
+
+         A6 : les BORNES sont celles du contrat, pas celles de la période
+         saisie. Un contrat qui démarre le 3 août, sur une période posée du
+         27 juillet au 7 août, n'a de congé qu'à partir du 3 : décompter du 27
+         lui facturait douze jours ouvrables pour cinq journées d'absence.
+
+         Les bornes retenues sont donc le premier et le dernier jour RÉELLEMENT
+         posés pour ce contrat — ce sont aussi celles que le moteur regroupera
+         à partir des journées, et l'imputation doit les recouvrir exactement,
+         sinon elle est écartée. */
+      var bornes = joursPoses.length
+        ? { debut: joursPoses[0], fin: joursPoses[joursPoses.length - 1] }
+        : null;
+      var planning = c.jours_planning || [1, 2, 3, 4, 5];
+      var n = bornes ? Engine.decompterJoursOuvrables(bornes.debut, bornes.fin, planning) : 0;
 
       var propose = { joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0 };
       if (n > 0) {
@@ -471,6 +586,9 @@
 
       return {
         fiche: f, contrat: c, joursPoses: joursPoses, jours: n,
+        /* Les bornes de CE contrat, portées jusqu'à l'écriture : c'est ce
+           couple qui part dans `imputation_conge`, pas la plage saisie. */
+        bornes: bornes,
         cp: cp, sup: sup,
         maxCp: Math.floor(cp / 10),
         maxSup: c.minutes_par_jour_conge ? Math.floor(sup / c.minutes_par_jour_conge) : 0,
@@ -701,28 +819,69 @@
      RG-06 se compte sur une période continue : la découper journée par journée
      ferait perdre le samedi, et une semaine complète cesserait de valoir
      6 jours. C'est le décompte que les familles contestent depuis toujours. */
+  /* CORRECTIF B3 DE LA RELECTURE PR9 — L'ORDRE DES DEUX ÉCRITURES EST INVERSÉ.
+
+     Avant : les journées partaient d'abord, les imputations ensuite. Quand la
+     contrainte d'exclusion refusait la seconde — Maria repose une période qui
+     en chevauche une déjà enregistrée, ce qui arrive dès qu'elle rallonge un
+     congé — sept journées fois quatre contrats étaient DÉJÀ ÉCRITES, sans
+     ventilation, et consommaient des congés payés selon l'ordre par défaut.
+     Le message disait « Enregistrement impossible ». Il était faux.
+
+     Maintenant : les imputations d'abord. C'est elles qui portent le refus le
+     plus probable, et une imputation seule ne change RIEN aux compteurs tant
+     qu'aucune journée de congé n'existe — le moteur l'écarte. Si l'écriture
+     des journées échoue ensuite, les imputations déjà posées sont retirées.
+
+     Et le lot d'imputations lui-même est repris : sans cela, un refus sur le
+     deuxième contrat laissait le premier ventilé et les autres non. */
   function poser(bouton) {
     bouton.disabled = true;
     var plans = parcours.plans;
     var affectations = plans.map(function (p) {
       return { contratId: p.contrat.id, jours: p.joursPoses };
     });
+    var posees = [];
 
-    global.DB.poserAbsenceMaria(affectations, 'conge_maria', null)
-      .then(function () {
-        return Promise.all(plans.map(function (p) {
-          return global.DB.enregistrerImputation({
-            contrat_id: p.contrat.id,
-            date_debut: parcours.debut,
-            date_fin: parcours.fin,
-            jours_ouvrables: p.jours,
-            jours_sur_cp: p.choix.joursSurCp,
-            jours_sur_sup: p.choix.joursSurSup,
-            jours_sans_solde: p.choix.joursSansSolde
-          });
-        }));
+    function retirerImputations() {
+      return Promise.all(posees.filter(Boolean).map(function (i) {
+        return global.DB.supprimerImputation(i.id).catch(function () { return null; });
+      }));
+    }
+
+    /* Une par une, et non en parallèle : deux insertions simultanées sur des
+       périodes qui se chevauchent laisseraient la base arbitrer, et la liste
+       de ce qui a réellement été écrit deviendrait incertaine. */
+    var chaine = Promise.resolve();
+    plans.forEach(function (p) {
+      chaine = chaine.then(function () {
+        return global.DB.enregistrerImputation({
+          contrat_id: p.contrat.id,
+          /* A6 : les bornes de CE contrat, pas la plage saisie. */
+          date_debut: p.bornes.debut,
+          date_fin: p.bornes.fin,
+          jours_ouvrables: p.jours,
+          jours_sur_cp: p.choix.joursSurCp,
+          jours_sur_sup: p.choix.joursSurSup,
+          jours_sans_solde: p.choix.joursSansSolde
+        }).then(function (i) { posees.push(i); });
+      });
+    });
+
+    chaine
+      .catch(function (e) {
+        /* Rien n'a encore été posé côté journées : on retire ce qui l'a été
+           côté imputations et on s'arrête là. */
+        return retirerImputations().then(function () { throw e; });
       })
-      .then(function (imputations) {
+      .then(function () {
+        return global.DB.poserAbsenceMaria(affectations, 'conge_maria', null)
+          .catch(function (e) {
+            return retirerImputations().then(function () { throw e; });
+          });
+      })
+      .then(function () {
+        var imputations = posees;
         global.App.invalider();
         Kit.fermerFeuille();
         /* V8-21 — un « Annuler » de 5 secondes. Poser des congés touche
@@ -739,8 +898,11 @@
       })
       .catch(function (e) {
         bouton.disabled = false;
-        Kit.toast('Enregistrement impossible : ' + Kit.messageErreur(e) +
-          ' Vérifiez vos congés avant de recommencer.', true);
+        /* La phrase peut désormais dire ce qui est vrai : rien n'a été écrit.
+           Elle affirmait le contraire avant le correctif B3, alors que sept
+           journées par contrat étaient déjà posées. */
+        Kit.toast('Rien n’a été enregistré : ' + Kit.messageErreur(e) +
+          ' Vos congés sont restés comme ils étaient.', true);
         global.App.invalider();
       });
   }

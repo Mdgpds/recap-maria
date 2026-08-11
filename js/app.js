@@ -267,7 +267,21 @@
   function aller(ecran, params, racine) {
     if (!etat.pret) return Promise.resolve();
     Kit.fermerFeuille();
-    if (racine || ONGLETS.indexOf(ecran) !== -1) etat.pile = [{ ecran: ecran, params: params || {} }];
+    /* CORRECTIF A4 (lot 8) DE LA RELECTURE PR9 — L'ONGLET HISTORIQUE PERDAIT
+       SON FIL.
+
+       Un écran d'ONGLET repart d'une pile neuve : c'est ce qu'on attend en
+       touchant un onglet. Mais `ui-historique.js` navigue vers CE MÊME écran
+       pour ouvrir un enfant. La pile était donc remise à zéro à l'ouverture
+       d'un enfant, et « ‹ » ramenait à l'Accueil au lieu de la liste — le
+       geste de retour du téléphone sortait même de l'application.
+
+       La règle exacte : un onglet ne repart de zéro que lorsqu'on y arrive
+       SANS paramètre. Avec un paramètre, c'est une descente dans l'écran, pas
+       un retour à sa racine. */
+    var aParametres = !!(params && Object.keys(params).length);
+    var racineEffective = racine || (ONGLETS.indexOf(ecran) !== -1 && !aParametres);
+    if (racineEffective) etat.pile = [{ ecran: ecran, params: params || {} }];
     else etat.pile.push({ ecran: ecran, params: params || {} });
     if (global.history && global.history.pushState) {
       global.history.pushState({ recap: etat.pile.length }, '');

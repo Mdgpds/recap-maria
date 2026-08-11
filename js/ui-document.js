@@ -90,8 +90,14 @@
   function joursConge() {
     var r = vue.entree.resultat;
     if (vue.entree.fige) return r.joursConge || null;
-    return Object.keys(vue.journees).filter(function (d) {
-      return vue.journees[d].type === 'conge_maria';
+    return joursCongeDe(vue.journees);
+  }
+
+  /* Forme PURE, sans `vue` : c'est elle que partagent les deux chemins de
+     clôture (correctif B4). */
+  function joursCongeDe(journees) {
+    return Object.keys(journees || {}).filter(function (d) {
+      return journees[d].type === 'conge_maria';
     }).sort();
   }
 
@@ -238,20 +244,28 @@
        journées saisies, qui n'ont pas bougé puisque le mois est verrouillé. */
     var source = (vue.entree.fige && r.journeesParticulieres) || null;
     if (source) return source;
+    return journeesParticulieresDe(prenom, vue.contrat, vue.journees, vue.annee, vue.mois);
+  }
 
+  /* Forme PURE. Correctif A15 de la relecture PR9 : cette liste n'était écrite
+     dans AUCUN instantané, si bien que la branche « figé » ci-dessus était
+     morte et qu'un document clôturé reconstruisait toujours ses journées
+     particulières depuis le planning ACTUEL. Changer les jours de garde après
+     la clôture changeait donc le contenu d'un document déjà remis. */
+  function journeesParticulieresDe(prenom, contrat, journees, annee, mois) {
     var out = [];
-    Object.keys(vue.journees || {}).sort().forEach(function (d) {
-      var t = vue.journees[d].type;
+    Object.keys(journees || {}).sort().forEach(function (d) {
+      var t = journees[d].type;
       if (t === 'presence') return;
       var f = LIBELLE_ECART[t];
       if (!f) return;
-      out.push({ date: d, quoi: f(prenom, vue.contrat) });
+      out.push({ date: d, quoi: f(prenom, contrat) });
     });
     /* Les fériés ne sont pas saisis : ils viennent du calendrier. Ils comptent
        pourtant parmi les journées où l'enfant n'était pas là, et un parent qui
        compte ses jours doit les retrouver. */
-    Kit.joursPlanning(vue.contrat, vue.annee, vue.mois).forEach(function (d) {
-      if ((vue.journees || {})[d]) return;
+    Kit.joursPlanning(contrat, annee, mois).forEach(function (d) {
+      if ((journees || {})[d]) return;
       if (!Feries.estJourFerie(d)) return;
       out.push({ date: d, quoi: 'férié' });
     });
@@ -709,8 +723,11 @@
            Le mois d'août clôturé le 20, ce sont sept journées travaillées qui
            disparaissent d'un document remis à une famille — et le mois ne se
            recalcule jamais après coup (RG-15). */
+        /* A3 : les journées, pour que les congés déjà posés ne soient pas
+           comptés comme des jours encore à travailler. C'est ici que le
+           chiffre compte le plus — il mesure ce qu'on s'apprête à perdre. */
         var restants = Kit.joursTravaillesRestants(
-          vue.contrat, vue.annee, vue.mois, global.App.aujourdhui());
+          vue.contrat, vue.annee, vue.mois, global.App.aujourdhui(), vue.journees);
         if (restants > 0) {
           corps.appendChild(Kit.warnbox(
             restants + (restants > 1 ? ' jours travaillés sont encore à venir'
@@ -769,13 +786,42 @@
      des jours de congé du mois (lot 6, pour que le document affiche les mêmes
      dates avant et après la clôture). Le moteur n'est pas touché. */
   function instantane() {
-    var r = vue.entree.resultat;
+    return construireInstantane({
+      entree: vue.entree, contrat: vue.contrat, journees: vue.journees,
+      annee: vue.annee, mois: vue.mois
+    });
+  }
+
+  /* CORRECTIF B4 DE LA RELECTURE PR9 — UN SEUL CONSTRUCTEUR D'INSTANTANÉ.
+
+     Il y avait deux chemins de clôture et deux instantanés différents. Celui-ci
+     enrichissait le résultat du moteur ; la fin de mois guidée du lot 7
+     envoyait `entree.resultat` brut. Un mois clôturé par le parcours guidé
+     perdait donc son prénom figé, son nom de famille, la date d'effet de son
+     barème et la liste datée de ses jours de congé.
+
+     Conséquence concrète : Maria clôture juillet par le parcours guidé, corrige
+     plus tard le prénom de l'enfant ou le nom du foyer, rouvre le document de
+     juillet et le renvoie aux parents — il porte le nom d'AUJOURD'HUI, et la
+     liste des jours de congé a disparu. Un document déjà remis se réécrivait
+     tout seul. C'est très exactement ce que la fin de mois guidée devait
+     supprimer.
+
+     La fonction est PURE et EXPORTÉE : les deux chemins l'appellent, et il
+     devient impossible qu'ils divergent de nouveau sans que ce soit visible. */
+  function construireInstantane(ctx) {
+    var r = ctx.entree.resultat;
     var snap = {};
     Object.keys(r).forEach(function (k) { snap[k] = r[k]; });
-    snap.prenomEnfant = vue.contrat.prenom_enfant;
-    snap.nomFamille = (vue.contrat.famille && vue.contrat.famille.nom) || null;
-    snap.salaireDateEffet = vue.entree.salaire ? vue.entree.salaire.date_effet : null;
-    snap.joursConge = joursConge() || [];
+    snap.prenomEnfant = ctx.contrat.prenom_enfant;
+    snap.nomFamille = (ctx.contrat.famille && ctx.contrat.famille.nom) || null;
+    snap.salaireDateEffet = ctx.entree.salaire ? ctx.entree.salaire.date_effet : null;
+    snap.joursConge = joursCongeDe(ctx.journees) || [];
+    /* A15 : la liste des journées particulières entre enfin dans l'instantané.
+       Sans elle, un changement de planning après la clôture réécrivait le
+       contenu d'un document déjà remis. */
+    snap.journeesParticulieres = journeesParticulieresDe(
+      ctx.contrat.prenom_enfant, ctx.contrat, ctx.journees, ctx.annee, ctx.mois);
     return snap;
   }
 
@@ -808,5 +854,11 @@
       });
   }
 
-  global.UiDocument = { afficher: afficher, ENCART_RG06: ENCART_RG06 };
+  global.UiDocument = {
+    afficher: afficher,
+    ENCART_RG06: ENCART_RG06,
+    /* Exporté pour la fin de mois guidée (correctif B4). Un seul constructeur
+       d'instantané dans tout le projet, quel que soit le chemin de clôture. */
+    construireInstantane: construireInstantane
+  };
 })(window);

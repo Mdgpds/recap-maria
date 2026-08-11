@@ -663,8 +663,17 @@ function cliquer(libelle, signe, fois) {
   await pause(350);
 
   assert(appels.imputations.length === 0, 'P10 : aucune imputation écrite');
-  assert(txt(toast).indexOf('Enregistrement impossible') !== -1,
+  /* CORRECTIF B3 — le contrôle le plus important de ce cas, et il manquait :
+     l'ancienne version posait les JOURNÉES d'abord et n'écoutait que les
+     imputations. Sept journées par contrat pouvaient donc être écrites, sans
+     ventilation, pendant que l'écran affichait « Enregistrement impossible ».
+     On vérifie désormais les deux côtés de l'écriture. */
+  assert(appels.poser.length === 0,
+    'B3 : AUCUNE journée écrite non plus — l’écriture partielle est impossible');
+  assert(txt(toast).indexOf('Rien n’a été enregistré') !== -1,
     'P10 : l’échec est dit (obtenu « ' + txt(toast).slice(0, 80) + ' »)');
+  assert(txt(toast).indexOf('restés comme ils étaient') !== -1,
+    'B3 : et le message dit ce qui reste vrai, au lieu de l’affirmer à tort');
   assert(document.getElementById('sheetwrap').hidden === false,
     'P10 : la feuille reste ouverte, la saisie n’est pas perdue');
   var bRetry = boutonExact(sheet, 'Poser ces congés');

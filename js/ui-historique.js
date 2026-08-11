@@ -228,7 +228,14 @@
     });
     var row = Kit.ce('div', 'row');
     row.appendChild(Kit.ce('span', 'nm', Kit.moisCapitale(e.annee, e.mois)));
-    row.appendChild(Kit.ce('span', 'badge ' + (e.fige ? 'ar' : 'wa'), e.fige ? 'clôturé' : 'en cours'));
+    /* CORRECTIF A7 (lot 7) DE LA RELECTURE PR9 — DEUX ÉTATS AU LIEU DE TROIS.
+       `e.fige ? 'clôturé' : 'en cours'` étiquetait « en cours » un juillet
+       jamais clôturé, au mois d'août. L'écran où Maria vient VÉRIFIER son
+       passé était précisément celui qui lui disait que rien ne manquait.
+       V8-01 demande les trois états partout : on interroge la même fonction
+       que l'accueil et la fiche. */
+    var etat = Kit.etatDuMois(e.annee, e.mois, e.recap, global.App.aujourdhui());
+    row.appendChild(Kit.pastilleEtat(etat));
     b.appendChild(row);
     b.appendChild(Kit.ce('div', 'sb',
       Kit.jours(r.joursPresence) + ' · ' + Kit.eur(r.totalAVerserCentimes)));

@@ -506,8 +506,16 @@
 
   function blocModele(contrat, modele, salaires) {
     var bloc = Kit.ce('div', 'modele-bloc');
-    var dernier = (salaires || [])[salaires.length - 1] || null;
-    var ecarts = global.DB.ecartsContratModele(contrat, modele, dernier);
+    /* CORRECTIF A4 DE LA RELECTURE PR9 — l'écart se compare au barème EN
+       VIGUEUR, pas au DERNIER SAISI. `getSalaires` trie par date d'effet
+       croissante : prendre le dernier, c'était prendre un barème FUTUR s'il
+       existait. Saisir un relèvement du SMIC au 1ᵉʳ septembre faisait
+       apparaître, en août, un « écart » assorti d'un bouton invitant à défaire
+       ce qu'on venait de saisir. Quinze lignes plus bas, la section
+       Rémunération du même écran affichait, elle, le bon barème. */
+    var m = global.App.moisCourant();
+    var enVigueur = Engine.salaireApplicable(salaires || [], m.annee, m.mois);
+    var ecarts = global.DB.ecartsContratModele(contrat, modele, enVigueur);
 
     var ligne = Kit.ce('div', 'fld');
     ligne.appendChild(Kit.ce('span', 'lb', 'Contrat type'));
@@ -533,7 +541,7 @@
 
     var actions = Kit.ce('div', 'actions');
     var bAligner = Kit.bouton('btn nt', function () {
-      feuilleAlignerCeContrat(contrat, modele, ecarts, dernier);
+      feuilleAlignerCeContrat(contrat, modele, ecarts, enVigueur);
     });
     bAligner.textContent = 'Aligner sur la version';
     actions.appendChild(bAligner);
@@ -601,8 +609,12 @@
 
         var effet = null;
         if (touchRemuneration) {
+          /* A2 : le mois SUIVANT par défaut, comme la feuille de barème.
+             Le 1ᵉʳ du mois en cours appliquait la revalorisation au mois qu'on
+             est en train de vivre, sans le dire. */
+          var prochainMois = Chaine.moisSuivant(maintenant.annee, maintenant.mois);
           effet = Kit.champDate('Rémunération à partir du',
-            Kit.iso(maintenant.annee, maintenant.mois, 1),
+            Kit.iso(prochainMois.annee, prochainMois.mois, 1),
             { anneeMin: maintenant.annee - 1, anneeMax: maintenant.annee + 3 });
           corps.appendChild(effet.bloc);
         }
@@ -618,10 +630,21 @@
           ecarts.forEach(function (e) {
             if (e.champ !== 'remuneration') reglages[e.champ] = e.valeurModele;
           });
-          var p = Object.keys(reglages).length
-            ? global.DB.majContrat(contrat.id, reglages)
+          /* CORRECTIF B6 : le garde-fou des mois clôturés, absent ici comme
+             sur les deux autres chemins d'alignement. Et la rémunération part
+             AVANT les réglages (A6) : c'est elle qui porte le refus possible,
+             et un refus ne doit rien laisser derrière lui. */
+          var gardeFou = touchRemuneration
+            ? verifierDateEffet([contrat], effet.valeur())
             : Promise.resolve(null);
-          p.then(function () {
+
+          gardeFou.then(function (refus) {
+            if (refus) {
+              var eRefus = new Error('date d’effet sur un mois clôturé');
+              eRefus.messageFrancais = 'mois déjà clôturé(s) — ' + refus +
+                '. Choisissez une date postérieure : un mois clôturé ne se recalcule pas.';
+              throw eRefus;
+            }
             if (!touchRemuneration) return null;
             /* A4 — une ligne salaire_contrat DATÉE, jamais une écriture
                directe sur le contrat : sinon les mois passés changeraient. */
@@ -630,6 +653,10 @@
               brut_mensuel_centimes: modele.brut_mensuel_centimes,
               net_mensuel_centimes: modele.net_mensuel_centimes
             });
+          }).then(function () {
+            return Object.keys(reglages).length
+              ? global.DB.majContrat(contrat.id, reglages)
+              : null;
           }).then(function () {
             return global.App.rechargerContrats();
           }).then(function () {
@@ -970,6 +997,42 @@
     var tri = function (a, b) { return Chaine.cmpMois(a.annee, a.mois, b.annee, b.mois); };
     clos.sort(tri); brouillons.sort(tri);
     return { clos: clos, brouillons: brouillons };
+  }
+
+  /* CORRECTIF B6 DE LA RELECTURE PR9 — LE MÊME GARDE-FOU SUR TOUS LES CHEMINS.
+
+     `analyserDateEffet` existait, et `feuilleBareme` s'en servait pour refuser
+     une date d'effet tombant sur un mois clôturé. Les TROIS chemins
+     d'alignement sur un contrat type ne l'appelaient pas : aucun ne lisait les
+     récapitulatifs. Maria pouvait donc poser une rémunération au 1ᵉʳ juillet
+     alors que juillet était clôturé et le document parti chez les parents.
+
+     Le mois figé ne change pas de montant — l'instantané protège — mais le
+     barème que RG-15 retient POUR CE MOIS devient un barème qui n'a jamais été
+     validé pour lui. Deux conséquences : ce barème devient indéboulonnable
+     (un mois clôturé en dépend), et toute réouverture de juillet le
+     reclôturerait sur le nouveau montant, en silence.
+
+     Le garde-fou est donc PARTAGÉ, et il échoue FERMÉ : si les récapitulatifs
+     ne peuvent pas être lus, on refuse. Une lecture ratée ne doit jamais
+     ouvrir une porte que le réseau seul aurait laissée fermée — c'est la leçon
+     de B7, appliquée ici aussi. */
+  function verifierDateEffet(contrats, dateEffet) {
+    if (!contrats || !contrats.length) return Promise.resolve(null);
+    return Promise.all(contrats.map(function (c) {
+      return global.DB.listRecapsContrat(c.id).then(function (recaps) {
+        return { contrat: c, analyse: analyserDateEffet(dateEffet, recaps || []) };
+      });
+    })).then(function (res) {
+      var bloquants = res.filter(function (r) { return r.analyse.clos.length; });
+      if (!bloquants.length) return null;
+      return bloquants.map(function (r) {
+        return r.contrat.prenom_enfant + ' : ' + listeMois(r.analyse.clos);
+      }).join(' · ');
+    }).catch(function (e) {
+      return 'impossible de vérifier les mois clôturés (' + Kit.messageErreur(e) +
+        ')';
+    });
   }
 
   /* Un barème est « utilisé par un mois clôturé » si, pour au moins un mois
@@ -1346,5 +1409,12 @@
       });
   }
 
-  global.UiContrat = { afficher: afficher, COEFF_FIN_CONTRAT: COEFF_FIN_CONTRAT };
+  global.UiContrat = {
+    afficher: afficher,
+    COEFF_FIN_CONTRAT: COEFF_FIN_CONTRAT,
+    /* Exporté pour que les trois chemins d'alignement (correctif B6) posent
+       EXACTEMENT le même garde-fou que la feuille de barème. Un garde-fou
+       recopié est un garde-fou qui finit par diverger. */
+    verifierDateEffet: verifierDateEffet
+  };
 })(window);

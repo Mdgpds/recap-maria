@@ -19,6 +19,9 @@
   var Chaine = global.ChaineMois;
   var Format = global.Format;
   var Feries = global.Feries;
+  /* Le moteur, uniquement pour LIRE quel barème est en vigueur à une date
+     donnée (RG-15). Aucun montant n'est calculé dans cet écran. */
+  var Engine = global.Engine;
 
   function afficher(ctx) {
     if (ctx.vue === 'familles') return afficherFamilles(ctx);
@@ -543,6 +546,26 @@
     ]).then(function (r) {
       var modeles = r[0] || [];
       var contrats = (r[1] || []).filter(function (c) { return !c.archive; });
+      /* CORRECTIF A3 DE LA RELECTURE PR9 — cet écran appelait
+         `ecartsContratModele` avec DEUX arguments là où la fiche contrat en
+         passe trois. Sans le troisième, la rémunération n'est pas comparée :
+         un contrat en écart de salaire — le seul écart que la spécification
+         cite en exemple — s'affichait « aligné » ici et « 1 écart » là. Deux
+         écrans qui se contredisent sur le même contrat.
+         On charge donc les barèmes, et on retient celui EN VIGUEUR (A4), pas
+         le dernier saisi. */
+      return Promise.all(contrats.map(function (c) {
+        return global.DB.getSalaires(c.id).catch(function () { return []; });
+      })).then(function (parContrat) {
+        var m = global.App.moisCourant();
+        contrats.forEach(function (c, i) {
+          c.__salaireEnVigueur = Engine.salaireApplicable(parContrat[i] || [], m.annee, m.mois);
+        });
+        return { modeles: modeles, contrats: contrats };
+      });
+    }).then(function (charge) {
+      var modeles = charge.modeles;
+      var contrats = charge.contrats;
       Kit.vider(ctx.corps);
 
       if (!modeles.length) {
@@ -592,7 +615,7 @@
 
     var ecarts = 0;
     rattaches.forEach(function (c) {
-      if (global.DB.ecartsContratModele(c, m).length) ecarts++;
+      if (global.DB.ecartsContratModele(c, m, c.__salaireEnVigueur || null).length) ecarts++;
     });
     b.appendChild(Kit.ce('div', 'sb q',
       (rattaches.length ? rattaches.length + (rattaches.length > 1 ? ' contrats rattachés' : ' contrat rattaché')
@@ -621,7 +644,7 @@
           corps.appendChild(Kit.section('Contrats rattachés'));
           var l2 = Kit.lines(corps);
           rattaches.forEach(function (c) {
-            var e = global.DB.ecartsContratModele(c, m);
+            var e = global.DB.ecartsContratModele(c, m, c.__salaireEnVigueur || null);
             Kit.ligne(l2, c.prenom_enfant,
               e.length ? e.length + (e.length > 1 ? ' écarts' : ' écart') : 'aligné',
               { alerte: false, discret: !e.length });
@@ -776,8 +799,14 @@
             cases.push({ contrat: x.contrat, box: box });
           });
 
+          /* CORRECTIF A2 DE LA RELECTURE PR9 — la date d'effet proposée était
+             le 1ᵉʳ du mois EN COURS, donc la revalorisation s'appliquait au
+             mois qu'on est en train de vivre, sans que rien ne le dise. La
+             feuille de barème, elle, propose le mois SUIVANT depuis le lot 5.
+             Deux écrans, deux défauts opposés, pour le même geste. */
+          var prochain = Chaine.moisSuivant(maintenant.annee, maintenant.mois);
           var effet = Kit.champDate('À partir du',
-            Kit.iso(maintenant.annee, maintenant.mois, 1),
+            Kit.iso(prochain.annee, prochain.mois, 1),
             { anneeMin: maintenant.annee - 1, anneeMax: maintenant.annee + 3 });
           corps.appendChild(effet.bloc);
 
@@ -821,24 +850,62 @@
   function aligner(modele, contrats, dateEffet) {
     if (!contrats.length) return Promise.resolve();
     var ids = contrats.map(function (c) { return c.id; });
-    return Promise.all(ids.map(function (id) {
-      return global.DB.majContrat(id, {
-        modele_id: modele.id,
-        jours_planning: modele.jours_planning,
-        heure_arrivee: modele.heure_arrivee,
-        heure_depart: modele.heure_depart,
-        minutes_contractuelles: modele.minutes_contractuelles,
-        minutes_sup_jour: modele.minutes_sup_jour,
-        minutes_par_jour_conge: modele.minutes_par_jour_conge,
-        entretien_centimes_jour: modele.entretien_centimes_jour,
-        sup_dues_si_enfant_absent: modele.sup_dues_si_enfant_absent,
-        ordre_imputation: modele.ordre_imputation
+    /* CORRECTIF B6 : le même garde-fou que la feuille de barème, AVANT toute
+       écriture. Rien ne partait ici, et une date d'effet sur un mois clôturé
+       passait sans un mot. */
+    return global.UiContrat.verifierDateEffet(contrats, dateEffet).then(function (refus) {
+      if (refus) {
+        var e = new Error('date d’effet sur un mois clôturé');
+        /* La phrase est déjà écrite pour Maria : elle traverse messages.js
+           sans être remplacée par le message générique. */
+        e.messageFrancais = 'mois déjà clôturé(s) — ' + refus +
+          '. Choisissez une date postérieure : un mois clôturé ne se recalcule pas.';
+        throw e;
+      }
+      return null;
+    }).then(function () {
+      /* CORRECTIF A6 DE LA RELECTURE PR9 — L'ORDRE, ENCORE.
+
+         Les réglages partaient d'abord sur TOUS les contrats, la rémunération
+         ensuite et en parallèle. Une seule violation de `unique (contrat_id,
+         date_effet)` — Maria aligne deux fois le même jour — affichait
+         « L'alignement n'a pas abouti » alors que les horaires, l'entretien et
+         les règles des quatre contrats avaient bel et bien changé.
+
+         La rémunération part donc EN PREMIER : c'est elle qui porte le refus
+         possible. Si une insertion échoue, celles déjà passées sont retirées,
+         et aucun réglage n'a bougé. Même raisonnement que B3. */
+      var posees = [];
+      var chaine = Promise.resolve();
+      ids.forEach(function (id) {
+        chaine = chaine.then(function () {
+          return global.DB.ajouterSalaire(id, {
+            date_effet: dateEffet,
+            brut_mensuel_centimes: modele.brut_mensuel_centimes,
+            net_mensuel_centimes: modele.net_mensuel_centimes
+          }).then(function (s) { posees.push(s); });
+        });
       });
-    })).then(function () {
-      return global.DB.majContratsEnLot(ids, 'remuneration', {
-        brut_mensuel_centimes: modele.brut_mensuel_centimes,
-        net_mensuel_centimes: modele.net_mensuel_centimes
-      }, dateEffet);
+      return chaine.catch(function (e) {
+        return Promise.all(posees.filter(Boolean).map(function (s) {
+          return global.DB.supprimerSalaire(s.id).catch(function () { return null; });
+        })).then(function () { throw e; });
+      });
+    }).then(function () {
+      return Promise.all(ids.map(function (id) {
+        return global.DB.majContrat(id, {
+          modele_id: modele.id,
+          jours_planning: modele.jours_planning,
+          heure_arrivee: modele.heure_arrivee,
+          heure_depart: modele.heure_depart,
+          minutes_contractuelles: modele.minutes_contractuelles,
+          minutes_sup_jour: modele.minutes_sup_jour,
+          minutes_par_jour_conge: modele.minutes_par_jour_conge,
+          entretien_centimes_jour: modele.entretien_centimes_jour,
+          sup_dues_si_enfant_absent: modele.sup_dues_si_enfant_absent,
+          ordre_imputation: modele.ordre_imputation
+        });
+      }));
     }).then(function () {
       return global.App.rechargerContrats();
     });
@@ -973,8 +1040,10 @@
 
           var effet = null;
           if (chose.dateEffet) {
+            /* A2 : le mois SUIVANT par défaut, comme la feuille de barème. */
+            var suivant = Chaine.moisSuivant(maintenant.annee, maintenant.mois);
             effet = Kit.champDate('À partir du',
-              Kit.iso(maintenant.annee, maintenant.mois, 1),
+              Kit.iso(suivant.annee, suivant.mois, 1),
               { anneeMin: maintenant.annee - 1, anneeMax: maintenant.annee + 3 });
             corps.appendChild(effet.bloc);
           }
@@ -992,9 +1061,26 @@
             b.disabled = true;
             msg.className = 'msg';
             msg.textContent = 'Modification…';
-            global.DB.majContratsEnLot(
-              choisis.map(function (c) { return c.contrat.id; }),
-              chose.cle, valeur, effet ? effet.valeur() : null)
+            /* CORRECTIF B6 — troisième chemin, même garde-fou. Il ne vaut que
+               pour les modifications DATÉES : changer un horaire ne réécrit
+               aucun mois passé, changer une rémunération au 1ᵉʳ juillet quand
+               juillet est clôturé, si. */
+            var garde = (effet && chose.dateEffet)
+              ? global.UiContrat.verifierDateEffet(
+                  choisis.map(function (c) { return c.contrat; }), effet.valeur())
+              : Promise.resolve(null);
+            garde
+              .then(function (refus) {
+                if (refus) {
+                  var eRefus = new Error('date d’effet sur un mois clôturé');
+                  eRefus.messageFrancais = 'mois déjà clôturé(s) — ' + refus +
+                    '. Choisissez une date postérieure : un mois clôturé ne se recalcule pas.';
+                  throw eRefus;
+                }
+                return global.DB.majContratsEnLot(
+                  choisis.map(function (c) { return c.contrat.id; }),
+                  chose.cle, valeur, effet ? effet.valeur() : null);
+              })
               .then(function () { return global.App.rechargerContrats(); })
               .then(function () {
                 Kit.fermerFeuille();
@@ -1049,12 +1135,23 @@
     return Promise.all(contrats.map(function (c) {
       return Promise.all([
         global.DB.getCompteurInitial(c.id).catch(function () { return null; }),
-        global.DB.listRecapsContrat(c.id).catch(function () { return []; })
+        /* CORRECTIF B7 DE LA RELECTURE PR9 — CE GARDE-FOU ÉCHOUAIT OUVERT.
+           Un `catch` rendait une liste VIDE : une lecture ratée — tunnel,
+           réseau qui coupe — faisait croire qu'aucun mois n'était clôturé, et
+           le formulaire complet s'affichait sur un contrat dont les documents
+           sont partis chez une famille. Désormais l'échec de lecture est un
+           ÉTAT à part entière, et il ferme. La garantie, elle, est en base
+           (migration 012). */
+        global.DB.listRecapsContrat(c.id)
+          .then(function (l) { return { ok: true, liste: l || [] }; })
+          .catch(function (e) { return { ok: false, erreur: e }; })
       ]).then(function (r) {
         return {
           contrat: c,
           compteur: r[0],
-          cloturés: (r[1] || []).filter(function (x) { return x.statut === 'fige'; })
+          lectureRatee: !r[1].ok,
+          erreurLecture: r[1].erreur || null,
+          cloturés: (r[1].liste || []).filter(function (x) { return x.statut === 'fige'; })
         };
       });
     })).then(function (fiches) {
@@ -1084,6 +1181,19 @@
   function carteReprise(f) {
     var c = f.contrat;
     var p = Kit.pane(c.prenom_enfant);
+
+    /* B7 — échec FERMÉ. Tant qu'on ne sait pas si des mois sont clôturés, on
+       ne propose rien. Le refus dit pourquoi et ce qu'il faut faire ; il ne
+       laisse pas croire à une interdiction définitive. */
+    if (f.lectureRatee) {
+      p.appendChild(Kit.warnbox(
+        'Impossible de vérifier les mois de ' + c.prenom_enfant,
+        ' ' + Kit.messageErreur(f.erreurLecture) +
+        ' Tant que cette vérification n’aboutit pas, la saisie reste fermée : ' +
+        'modifier un point de départ après une clôture rendrait faux des mois ' +
+        'déjà remis. Réessayez une fois le réseau revenu.'));
+      return p;
+    }
 
     if (f.cloturés.length) {
       /* A1 — REFUS, avec l'explication. Pas un champ grisé sans raison : la
@@ -1216,6 +1326,12 @@
         bDoc.textContent = 'Document unique — lisible';
         corps.appendChild(bDoc);
 
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Le document contient TOUT : les mois, le détail des journées ' +
+          'particulières, les congés et leur répartition, vos rémunérations ' +
+          'successives et les réouvertures. Le tableau, lui, ne porte qu’une ' +
+          'ligne par mois — c’est ce qui s’ouvre dans un tableur.'));
+
         var bTab = Kit.bouton('btn nt', function () { exporter('tableau', bTab, msg); });
         bTab.textContent = 'Tableau — un mois par ligne';
         corps.appendChild(bTab);
@@ -1293,10 +1409,94 @@
       });
     });
 
+    /* CORRECTIF A3 (lot 14) DE LA RELECTURE PR9 — L'EXPORT ÉTAIT AMPUTÉ.
+
+       `exporterHistorique` remplit NEUF clés ; le document n'en lisait que
+       DEUX. Aucune journée, aucun congé imputé, aucun barème, aucune
+       réouverture — alors que l'écran le présente comme « la pièce qu'elle
+       sortira si un désaccord remonte à plusieurs années ». Or c'est
+       précisément le détail des journées et l'historique des réouvertures
+       qu'on vient chercher dans ce cas-là, pas le total du mois. */
+
+    var parId = {};
+    (d.contrats || []).forEach(function (c) { parId[c.id] = c; });
+
+    var barsParContrat = grouper(d.salaires, 'contrat_id');
+    var impParContrat = grouper(d.imputations, 'contrat_id');
+    var jrsParContrat = grouper(d.journees, 'contrat_id');
+
+    (d.contrats || []).forEach(function (c) {
+      var bar = barsParContrat[c.id] || [];
+      var imp = impParContrat[c.id] || [];
+      var jrs = (jrsParContrat[c.id] || []).filter(function (j) {
+        return j.type && j.type !== 'presence';
+      });
+      if (!bar.length && !imp.length && !jrs.length) return;
+
+      out.push('==============================================================');
+      out.push('DÉTAIL — ' + c.prenom_enfant + (c.nom ? ' ' + c.nom : ''));
+      out.push('');
+
+      if (bar.length) {
+        out.push('  Rémunérations successives');
+        bar.forEach(function (b) {
+          out.push('    à partir du ' + Kit.dateLongue(b.date_effet) +
+            ' : brut ' + Kit.eur(b.brut_mensuel_centimes) +
+            ', net ' + Kit.eur(b.net_mensuel_centimes));
+        });
+        out.push('');
+      }
+
+      if (imp.length) {
+        out.push('  Congés posés et leur répartition');
+        imp.forEach(function (i) {
+          out.push('    du ' + Kit.dateLongue(i.date_debut) + ' au ' +
+            Kit.dateLongue(i.date_fin) + ' — ' + i.jours_ouvrables + ' j ouvrables : ' +
+            (i.jours_sur_cp || 0) + ' sur congés payés, ' +
+            (i.jours_sur_sup || 0) + ' sur récupération, ' +
+            (i.jours_sans_solde || 0) + ' sans solde');
+        });
+        out.push('');
+      }
+
+      if (jrs.length) {
+        out.push('  Journées qui s’écartent de la normale');
+        jrs.sort(function (a, b) { return a.jour < b.jour ? -1 : 1; }).forEach(function (j) {
+          out.push('    ' + Kit.dateLongue(j.jour) + ' — ' + j.type +
+            (j.minutes_sup_exceptionnelles ? ' · +' + Kit.heures(j.minutes_sup_exceptionnelles) : '') +
+            (j.minutes_sup_renoncees ? ' · renoncé ' + Kit.heures(j.minutes_sup_renoncees) : ''));
+        });
+        out.push('');
+      }
+    });
+
+    if ((d.evenements || []).length) {
+      out.push('==============================================================');
+      out.push('RÉOUVERTURES ET CLÔTURES');
+      out.push('');
+      d.evenements.slice().sort(function (a, b) {
+        return String(a.survenu_le) < String(b.survenu_le) ? -1 : 1;
+      }).forEach(function (e) {
+        out.push('  ' + String(e.survenu_le).slice(0, 10) + ' — ' + e.type +
+          (e.motif ? ' : ' + e.motif : ''));
+      });
+      out.push('');
+    }
+
     out.push('==============================================================');
     out.push('Les congés payés d’une assistante maternelle se comptent en jours');
     out.push('ouvrables, du lundi au samedi. Une semaine complète compte 6 jours.');
     return out.join('\n');
+  }
+
+  function grouper(liste, cle) {
+    var out = {};
+    (liste || []).forEach(function (x) {
+      if (!x) return;
+      if (!out[x[cle]]) out[x[cle]] = [];
+      out[x[cle]].push(x);
+    });
+    return out;
   }
 
   /* Le TABLEAU : une ligne par mois et par contrat, ouvrable dans un tableur.
@@ -1452,10 +1652,19 @@
     corps.appendChild(p);
 
     /* A5 — LE FILET, dit explicitement. */
+    /* CORRECTIF A4 (lot 15) DE LA RELECTURE PR9 — CETTE PHRASE ÉTAIT FAUSSE.
+
+       « Elle fonctionne partout, sans permission et sans réseau » : la pastille
+       est calculée à partir des mois lus au chargement de l'accueil. Si TOUT
+       échoue, elle est retirée plutôt que laissée à une valeur périmée — un
+       chiffre faux vaut moins que pas de chiffre, et ce choix-là est le bon.
+       Mais il faut alors cesser de promettre le contraire. */
     corps.appendChild(Kit.note('Dans tous les cas, une pastille',
       'Que les notifications soient activées ou non, l’onglet Accueil porte une ' +
-      'pastille dès qu’un mois est à clôturer. Elle fonctionne partout, sans ' +
-      'permission et sans réseau.'));
+      'pastille dès qu’un mois est à clôturer. Elle ne demande ni autorisation ' +
+      'du téléphone, ni service extérieur : elle vient de vos propres chiffres. ' +
+      'Sans réseau au démarrage, l’application ne peut rien calculer et le dit ' +
+      '— la pastille n’apparaît pas plutôt que d’afficher un nombre périmé.'));
   }
 
   function joursPossibles() {
@@ -1463,12 +1672,18 @@
     for (var j = 20; j <= 31; j++) out.push([String(j), String(j)]);
     return out;
   }
+  /* CORRECTIF A5 DE LA RELECTURE PR9 — LES DEMI-HEURES SONT RETIRÉES.
+
+     L'écran proposait « 20 h 30 » ; la fonction serveur ne lit que les deux
+     premiers caractères de l'heure et la planification est de toute façon
+     HORAIRE. Le rappel arrivait donc à 20 h 00, et rien ne le disait. Plutôt
+     que de faire semblant d'accepter un réglage qu'on ne sait pas tenir, on ne
+     le propose plus : une liste plus courte vaut mieux qu'un choix qui ment. */
   function heuresPossibles() {
     var out = [];
     for (var h = 7; h <= 22; h++) {
       var hh = String(h).padStart(2, '0');
       out.push([hh + ':00', hh + ' h']);
-      out.push([hh + ':30', hh + ' h 30']);
     }
     return out;
   }
@@ -1482,7 +1697,7 @@
       msg.className = 'msg ko';
       msg.textContent = 'Ce téléphone ne sait pas afficher de notifications. ' +
         'La pastille dans l’application prendra le relais.';
-      boxActif.checked = false;
+      decocher(boxActif);
       return;
     }
     global.Notification.requestPermission().then(function (reponse) {
@@ -1490,20 +1705,43 @@
         msg.className = 'msg ok';
         msg.textContent = 'Notifications autorisées.';
         return abonner().catch(function (e) {
+          /* CORRECTIF B8 DE LA RELECTURE PR9 — LA CASE SE DÉCOCHE ICI AUSSI.
+
+             Les deux autres branches — permission refusée, téléphone incapable
+             — décochaient bien. Celle-ci, « permission accordée mais
+             abonnement raté », laissait la case COCHÉE : Maria appuyait sur
+             Enregistrer, lisait « Réglages enregistrés » en vert, et aucun
+             rappel n'arrivait jamais. Aucun abonnement n'existait côté
+             serveur, la boucle d'envoi ne la voyait pas.
+
+             Et c'était le chemin NOMINAL : `config.js` livre la clé publique
+             VIDE tant qu'Adrien n'a pas généré la paire VAPID, donc
+             `abonner()` rejetait systématiquement. L'écran affirmait donc
+             l'inverse de ce qui allait se passer — le pire des deux mondes. */
+          decocher(boxActif);
           msg.className = 'msg ko';
           msg.textContent = 'L’abonnement n’a pas abouti : ' + Kit.messageErreur(e) +
-            ' La pastille dans l’application prend le relais.';
+            ' Les rappels restent éteints ; la pastille de l’onglet Accueil ' +
+            'prend le relais.';
         });
       }
       msg.className = 'msg ko';
       msg.textContent = 'Les notifications sont bloquées sur ce téléphone. ' +
         'Vous les retrouverez dans les réglages de votre téléphone, à la ligne ' +
         'Récap. En attendant, un rappel s’affichera dans l’application.';
-      boxActif.checked = false;
-      var ev = document.createEvent('Event');
-      ev.initEvent('change', true, true);
-      boxActif.dispatchEvent(ev);
+      decocher(boxActif);
     });
+  }
+
+  /* Décocher ET prévenir l'écran : la case pilote la visibilité des réglages
+     fins. La changer en silence laisserait des réglages affichés pour des
+     rappels éteints. Un seul endroit, pour que les trois branches d'échec
+     fassent exactement la même chose (correctif B8). */
+  function decocher(boxActif) {
+    boxActif.checked = false;
+    var ev = document.createEvent('Event');
+    ev.initEvent('change', true, true);
+    boxActif.dispatchEvent(ev);
   }
 
   /* L'abonnement de CET appareil. La clé publique VAPID vient de config.js —
@@ -1513,8 +1751,14 @@
     var cfg = global.RECAP_MARIA_CONFIG || {};
     var clePublique = cfg.VAPID_PUBLIC_KEY;
     if (!clePublique) {
-      return Promise.reject(new Error(
-        'les notifications ne sont pas encore configurées sur ce compte'));
+      var e = new Error('VAPID_PUBLIC_KEY absente de config.js');
+      /* La phrase est écrite pour Maria et traverse messages.js intacte
+         (correctif B8) : sans ce marquage elle tombait sur « une erreur
+         inattendue s'est produite. Réessayez… », qui invitait à réessayer une
+         action structurellement impossible. */
+      e.messageFrancais = 'les notifications ne sont pas encore configurées sur ' +
+        'ce compte.';
+      return Promise.reject(e);
     }
     return global.navigator.serviceWorker.ready.then(function (reg) {
       return reg.pushManager.subscribe({
@@ -1545,5 +1789,15 @@
     global.App.deconnecter().catch(function () { bouton.disabled = false; });
   }
 
-  global.UiMenu = { afficher: afficher, texteDuRappel: texteDuRappel };
+  global.UiMenu = {
+    afficher: afficher,
+    texteDuRappel: texteDuRappel,
+    /* CORRECTIF B5 DE LA RELECTURE PR9 — la feuille de création était PRIVÉE.
+       L'écran vide proposait « Ajouter mon premier enfant » et envoyait vers
+       la fiche d'un contrat inexistant : « Écran indisponible », avec un
+       bouton « Réessayer » qui rejouait le même échec. V8-29 décrit un écran
+       vide ACTIONNABLE ; il était livré en cul-de-sac, sur le seul chemin
+       qu'il décrit. */
+    nouvelEnfant: feuilleNouvelEnfant
+  };
 })(window);

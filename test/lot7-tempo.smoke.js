@@ -492,6 +492,30 @@ async function ouvrirAccueil() {
   assert(!corps.querySelector('input[type="checkbox"]'),
     'P5 : aucune case « tout clôturer » — chaque mois est une décision');
 
+  /* CORRECTIF B4 DE LA RELECTURE PR9 — LE CONTRÔLE QUI MANQUAIT.
+
+     Ce parcours écrivait `entree.resultat` BRUT, là où l'écran document
+     enrichit l'instantané. Un mois clôturé ici perdait son prénom figé, son
+     nom de famille, la date d'effet de son barème et ses jours de congé
+     datés : renommer l'enfant plus tard réécrivait un document déjà remis aux
+     parents. Le test ne comptait que le NOMBRE de clôtures, jamais leur
+     contenu — c'est pour cela qu'il n'a rien vu. */
+  var snapGuide = appels.recloturer[appels.recloturer.length - 1].donnees;
+  ['prenomEnfant', 'nomFamille', 'salaireDateEffet', 'joursConge',
+   'journeesParticulieres'].forEach(function (cle) {
+    assert(Object.prototype.hasOwnProperty.call(snapGuide, cle),
+      'B4 : l’instantané du parcours guidé porte « ' + cle +' »');
+  });
+  assert(typeof snapGuide.prenomEnfant === 'string' && snapGuide.prenomEnfant.length > 0,
+    'B4 : le prénom est FIGÉ dans l’instantané, pas relu vivant plus tard');
+  assert(Array.isArray(snapGuide.joursConge),
+    'B4 : la liste datée des jours de congé y est');
+  assert(Array.isArray(snapGuide.journeesParticulieres),
+    'A15 : et la liste des journées particulières aussi — sinon un changement ' +
+    'de planning après clôture réécrit un document déjà remis');
+  assert(typeof snapGuide.totalAVerserCentimes === 'number',
+    'B4 : les chiffres du moteur sont toujours là — on ENRICHIT, on ne remplace pas');
+
   var bPasser = boutonExact(corps, 'Passer pour l’instant');
   assert(!!bPasser, 'P5 : « Passer pour l’instant » est offert');
   bPasser.click();

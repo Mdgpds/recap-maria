@@ -132,7 +132,7 @@
            comportement du 25 deviendrait invérifiable. */
         aujourdhui: auj,
         etat: Kit.etatDuMois(m.annee, m.mois, entree && entree.recap, auj),
-        restants: Kit.joursTravaillesRestants(contrat, m.annee, m.mois, auj),
+        restants: Kit.joursTravaillesRestants(contrat, m.annee, m.mois, auj, r[1]),
         /* Lot 10 — les périodes de congé ventilées qui touchent ce mois. */
         imputations: r[4] || [],
         note: r[5] || null
@@ -1116,7 +1116,13 @@
       journees: lignes,
       compteurEntree: vue.entree.compteurEntree,
       annee: vue.annee,
-      mois: vue.mois
+      mois: vue.mois,
+      /* Correctif B1 de la relecture PR9 — ce rejeu doit voir EXACTEMENT ce que
+         voit la chaîne, imputations comprises. Sans elles, l'aperçu « voilà ce
+         que ce geste change » comparait un mois ventilé selon le choix de Maria
+         à un mois ventilé selon l'ordre par défaut : l'écart affiché n'était pas
+         celui du geste, mais celui de l'oubli. */
+      imputations: vue.imputations || []
     });
   }
 

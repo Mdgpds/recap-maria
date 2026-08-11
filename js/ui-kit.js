@@ -572,11 +572,28 @@
      Ce nombre est ce qui rend la mention « provisoire » utile : « chiffres
      provisoires » tout seul n'aide personne, « il reste 6 jours travaillés »
      dit à Maria de combien son mois peut encore bouger. */
-  function joursTravaillesRestants(contrat, annee, mois, aujourdhuiIso) {
+  /* CORRECTIF A3 (lot 7) DE LA RELECTURE PR9 — LES CONGÉS DÉJÀ POSÉS COMPTAIENT
+     COMME DES JOURS À VENIR.
+
+     Ce décompte ne recevait pas les journées et ne filtrait que les fériés. Le
+     10 août, avec une semaine de congé déjà posée du 17 au 21, l'écran
+     annonçait « il reste 15 jours travaillés » là où il en restait 10. Le
+     chiffre sert à mesurer ce qu'on s'apprête à perdre en clôturant tôt
+     (V8-04) : il doit être juste, ou il fait exactement l'inverse de ce pour
+     quoi il existe.
+
+     `journees` est FACULTATIF : les appelants qui ne l'ont pas obtiennent le
+     décompte d'avant, jamais une exception. */
+  function joursTravaillesRestants(contrat, annee, mois, aujourdhuiIso, journees) {
     if (!contrat || !aujourdhuiIso) return 0;
     return joursPlanning(contrat, annee, mois).filter(function (d) {
       if (d <= aujourdhuiIso) return false;
-      return !Feries.estJourFerie(d);
+      if (Feries.estJourFerie(d)) return false;
+      /* Une journée DÉJÀ SAISIE qui n'est pas une présence — congé de Maria,
+         absence de l'enfant, sans solde — n'est plus un jour à travailler. */
+      var ligne = journees && journees[d];
+      if (ligne && ligne.type && ligne.type !== 'presence') return false;
+      return true;
     }).length;
   }
 
@@ -626,11 +643,23 @@
     { jeton: 'ocre',       libelle: 'Ocre',       fond: '#f3ead2', trait: '#87682a', texte: '#55411a' },
     { jeton: 'ardoise',    libelle: 'Ardoise',    fond: '#e4e8ea', trait: '#4d5a61', texte: '#30393e' }
   ];
+  /* Couleur NEUTRE, pour un enfant à qui aucune couleur n'a été donnée.
+     CORRECTIF A13 (lot 8) DE LA RELECTURE PR9 : le repli était
+     `COULEURS_IDENTITE[0]`, c'est-à-dire VERT. Deux enfants — l'un
+     explicitement vert, l'autre sans couleur — portaient donc la même
+     pastille, et le sélecteur CSS écrit pour teindre l'absence de couleur
+     (`.av:not([class*="id-"])`) ne pouvait jamais s'appliquer, puisque
+     `avatar` posait toujours une classe `id-*`. */
+  var COULEUR_NEUTRE = {
+    jeton: 'neutre', libelle: 'Sans couleur',
+    fond: '#e9edf0', trait: '#5a666e', texte: '#39434a'
+  };
+
   function couleurIdentite(jeton) {
     for (var i = 0; i < COULEURS_IDENTITE.length; i++) {
       if (COULEURS_IDENTITE[i].jeton === jeton) return COULEURS_IDENTITE[i];
     }
-    return COULEURS_IDENTITE[0];
+    return COULEUR_NEUTRE;
   }
 
   /* Pastille d'identité : la photo si elle existe, l'initiale sinon, dans la

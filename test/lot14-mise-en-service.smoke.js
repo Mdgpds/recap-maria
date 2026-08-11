@@ -261,10 +261,16 @@ var DB = {
       salaires: [{ id: 's1', contrat_id: 'c-lea', date_effet: '2026-01-01',
         brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }],
       compteurs_initiaux: [scene.compteurs['c-lea']].filter(Boolean),
-      journees: [scene.journees['c-lea']['2026-06-01']],
+      journees: [scene.journees['c-lea']['2026-06-01'],
+        { id: 'j2', contrat_id: 'c-lea', jour: '2026-06-15', type: 'conge_maria',
+          minutes_reelles: null, entretien_centimes: null, commentaire: null,
+          minutes_sup_exceptionnelles: 0, minutes_sup_renoncees: 0, sup_dues_override: null }],
       recapitulatifs: recapsDe('c-lea'),
-      imputations: [],
-      evenements: [],
+      imputations: [{ id: 'i1', contrat_id: 'c-lea', date_debut: '2026-06-15',
+        date_fin: '2026-06-19', jours_ouvrables: 6, jours_sur_cp: 6,
+        jours_sur_sup: 0, jours_sans_solde: 0 }],
+      evenements: [{ id: 'e1', recap_id: 'r-lea-6', type: 'reouverture',
+        survenu_le: '2026-07-05T10:00:00Z', motif: 'Correction d’une journée' }],
       modeles: []
     });
   }
@@ -536,6 +542,22 @@ async function lireDernierFichier() {
          doc.texte.indexOf('compte 6 jours') !== -1,
     'RG-06 : le document rappelle la règle qui fâche — c’est elle qu’on ' +
     'ressort des années après');
+
+  /* CORRECTIF A3 (lot 14) — L'EXPORT ANNONÇAIT « TOUS VOS COMPTES » ET NE
+     LIVRAIT QUE LES TOTAUX MENSUELS. `exporterHistorique` remplit neuf clés ;
+     le document n'en lisait que deux. Or c'est le détail des journées et
+     l'historique des réouvertures qu'on vient chercher des années après. */
+  assert(doc.texte.indexOf('Rémunérations successives') !== -1,
+    'A3 : les barèmes successifs figurent dans le document');
+  assert(doc.texte.indexOf('Congés posés et leur répartition') !== -1 &&
+         doc.texte.indexOf('sur congés payés') !== -1,
+    'A3 : les congés et leur ventilation aussi');
+  assert(doc.texte.indexOf('Journées qui s’écartent de la normale') !== -1,
+    'A3 : et les journées particulières, datées');
+  assert(doc.texte.indexOf('RÉOUVERTURES ET CLÔTURES') !== -1 &&
+         doc.texte.indexOf('Correction d’une journée') !== -1,
+    'A3 : l’historique des réouvertures y est, motif compris — c’est la pièce ' +
+    'qu’on sort quand un désaccord remonte à plusieurs années');
 
   /* A5 — LE CONTRÔLE LE PLUS IMPORTANT DE L'EXPORT. */
   assert(doc.texte.indexOf('PHOTO-FICTIVE') === -1 && doc.texte.indexOf('base64') === -1,

@@ -26,7 +26,11 @@
 
 /* À incrémenter à chaque livraison : c'est ce qui déclenche le remplacement
    des fichiers en cache sur le téléphone de Maria. */
-var CACHE = 'recap-lot15-v1';
+/* Correctifs de la relecture PR9 : tous les modules d'écran changent, plus le
+   moteur de chaîne. Sans incrément, l'ancien service worker continuerait à
+   servir la version d'avant — et les correctifs n'atteindraient Maria qu'à la
+   deuxième ouverture, ou jamais. */
+var CACHE = 'recap-pr9-correctifs-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

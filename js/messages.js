@@ -65,9 +65,18 @@
        les laisser tomber sur « une erreur inattendue » serait leur faire dire
        le contraire de ce qu'ils disent. */
     [/CONTRAT_NON_VIERGE|proteger_suppression_contrat/,
-      'ce contrat porte déjà des journées ou des mois enregistrés : il ne peut ' +
-      'plus être supprimé. Choisissez « Ce contrat est terminé » pour le ranger ' +
-      'en conservant son historique.'],
+      'ce contrat porte déjà quelque chose — des journées, des mois enregistrés, ' +
+      'des congés ou une note : il ne peut plus être supprimé. Choisissez ' +
+      '« Ce contrat est terminé » pour le ranger en conservant son historique.'],
+    /* CORRECTIF B7 (relecture PR9) — le refus posé par la migration 012. Sans
+       cette ligne, Maria lirait « une erreur inattendue s'est produite » là où
+       la cause est parfaitement explicable, et où il n'y a d'ailleurs rien à
+       corriger de son côté. */
+    [/COMPTEUR_INITIAL_VERROUILLE/,
+      'vous ne pouvez plus modifier votre point de départ : des mois sont déjà ' +
+      'clôturés pour cet enfant, et ces chiffres sont ce sur quoi ils reposent. ' +
+      'Si un chiffre de départ est faux, il faut d’abord rouvrir les mois ' +
+      'concernés.'],
     [/compteur_initial_coherent/,
       'ces chiffres de départ ne sont pas cohérents : vous ne pouvez pas avoir ' +
       'pris plus de congés payés que vous n’en avez acquis, et aucune valeur ne ' +
@@ -91,6 +100,23 @@
   /* Traduit une erreur en une phrase française, sans vocabulaire technique.
      `defaut` permet à un écran de proposer sa propre phrase de repli. */
   function lisible(e, defaut) {
+    /* CORRECTIF PR9 (B6, B8) — UNE PHRASE DÉJÀ ÉCRITE POUR MARIA PASSE INTACTE.
+
+       Cette table traduit ce qui vient de la BASE : codes Postgres, noms de
+       contraintes, messages du moteur. Une erreur que l'APPLICATION fabrique
+       elle-même porte parfois déjà la phrase exacte à afficher — « mois déjà
+       clôturé(s) : juillet 2026 », « les notifications ne sont pas encore
+       configurées sur ce compte ». Faute de la reconnaître, la table la
+       remplaçait par le message générique « une erreur inattendue s'est
+       produite. Réessayez… » : un message faux, qui invitait à réessayer une
+       action qui ne pouvait structurellement pas aboutir, et qui effaçait la
+       seule information utile.
+
+       Le marquage est EXPLICITE et porté par une propriété dédiée : rien ne
+       peut fuir par accident, seul ce que nous avons rédigé nous-mêmes passe. */
+    if (e && typeof e.messageFrancais === 'string' && e.messageFrancais) {
+      return e.messageFrancais;
+    }
     var brut = '';
     if (e) {
       brut = [e.message, e.details, e.hint, e.code, (typeof e === 'string' ? e : '')]

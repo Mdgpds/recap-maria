@@ -90,7 +90,8 @@
           enTete(ctx.barre, m, null);
           /* Rien n'a pu être lu : la pastille est retirée plutôt que laissée
              à une valeur périmée. Un chiffre faux vaut moins que pas de
-             chiffre. */
+             chiffre — et l'écran des rappels ne promet plus l'inverse
+             (correctif A4 de la relecture PR9). */
           global.App.majPastilleAccueil(0);
           etatDePanne(ctx.corps, enEchec[0].erreur, function () { global.App.rafraichir(); });
           return;
@@ -130,7 +131,7 @@
         journees: journees,
         travailles: Kit.joursTravailles(contrat, m.annee, m.mois, journees),
         etat: entree ? Kit.etatDuMois(m.annee, m.mois, entree.recap, auj) : null,
-        restants: Kit.joursTravaillesRestants(contrat, m.annee, m.mois, auj),
+        restants: Kit.joursTravaillesRestants(contrat, m.annee, m.mois, auj, journees),
         retards: moisEnRetard(chaine, m, auj),
         erreur: null
       };
@@ -378,8 +379,16 @@
     /* §2.1 : pas de montant d'entretien isolé sur l'accueil — le total seul.
        Lot 7 : sur un mois en cours, le total est SUIVI de « provisoire ». Un
        chiffre qui va encore bouger ne se présente pas comme un fait. */
+    /* CORRECTIF A6 (lot 7) DE LA RELECTURE PR9 — `restants` était calculé puis
+       JAMAIS AFFICHÉ. V8-02 demande « provisoire » ET le nombre de jours
+       travaillés restants : sans lui, Maria ne sait pas de combien le montant
+       peut encore bouger, sur l'écran qu'elle ouvre le plus souvent. */
     stat(stats, Kit.eurCourt(r.totalAVerserCentimes),
-      f.etat === 'en_cours' ? 'à verser · provisoire' : 'à verser');
+      f.etat === 'en_cours'
+        ? (f.restants > 0
+            ? 'à verser · provisoire, ' + f.restants + ' j restants'
+            : 'à verser · provisoire')
+        : 'à verser');
     stat(stats, Kit.joursCp(cpDisponible(f.entree)), 'congés payés');
     b.appendChild(stats);
 
@@ -425,7 +434,9 @@
     b.appendChild(Kit.ce('p', null,
       'À la fin de chaque mois, elle prépare le récapitulatif à remettre aux familles.'));
     b.appendChild(boutonTexte('btn pr plein', 'Ajouter mon premier enfant', function () {
-      global.App.aller('fiche', {});
+      /* B5 : la feuille de création, pas la fiche d'un contrat qui n'existe
+         pas encore. `aller('fiche', {})` menait à « contrat introuvable ». */
+      global.UiMenu.nouvelEnfant();
     }));
     corps.appendChild(b);
   }
@@ -484,9 +495,18 @@
     barreEtapes(ctx.corps);
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Calcul du mois…'));
 
-    return global.App.serie(cible.contrat, { annee: cible.annee, mois: cible.mois })
-      .then(function (chaine) {
+    return Promise.all([
+      global.App.serie(cible.contrat, { annee: cible.annee, mois: cible.mois }),
+      /* A3 : les journées du mois, pour que l'avertissement V8-04 ne compte pas
+         comme « encore à venir » des jours déjà posés en congé. */
+      global.App.journees(cible.contrat.id, cible.annee, cible.mois)
+        .catch(function () { return null; })
+    ])
+      .then(function (r) {
+        var chaine = r[0];
+        var journeesDuMois = r[1];
         var entree = global.App.moisDe(chaine, cible.annee, cible.mois);
+        if (entree) entree.journees = journeesDuMois;
         Kit.vider(ctx.corps);
         barreEtapes(ctx.corps);
         rendreRecapEnLecture(ctx, cible, entree);
@@ -553,7 +573,11 @@
     Kit.ligne(lignes, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
     ctx.corps.appendChild(p);
 
-    var restants = Kit.joursTravaillesRestants(c, cible.annee, cible.mois, global.App.aujourdhui());
+    /* A3 : les journées du mois, pour ne pas compter comme « à venir » des
+       jours déjà posés en congé. Le chiffre sert à mesurer ce qu'on perd en
+       clôturant tôt : faux, il dit le contraire de ce qu'il doit dire. */
+    var restants = Kit.joursTravaillesRestants(c, cible.annee, cible.mois,
+      global.App.aujourdhui(), (entree && entree.journees) || null);
     if (restants > 0) {
       ctx.corps.appendChild(Kit.warnbox(
         restants + (restants > 1 ? ' jours travaillés sont encore à venir' : ' jour travaillé est encore à venir') +
@@ -596,10 +620,30 @@
     ctx.corps.appendChild(actions);
   }
 
+  /* CORRECTIF B4 DE LA RELECTURE PR9.
+
+     Ce chemin envoyait `entree.resultat` BRUT — le résultat du moteur, sans
+     rien de ce que le moteur ne connaît pas. L'écran document, lui, enrichit :
+     prénom et nom de famille figés, date d'effet du barème, jours de congé
+     datés. Deux chemins de clôture, deux instantanés différents.
+
+     Un mois clôturé ici perdait donc son identité figée : renommer l'enfant ou
+     le foyer réécrivait un document déjà remis aux parents. Le constructeur
+     est désormais unique et partagé (`UiDocument.construireInstantane`), et il
+     lui faut les journées du mois — d'où la lecture ci-dessous, servie par le
+     cache de `App.journees`. */
   function cloturerEtape(ctx, cible, entree, bouton) {
     if (bouton) { bouton.disabled = true; bouton.textContent = 'Clôture…'; }
-    var donnees = entree.resultat;
-    return global.DB.recloturerRecap(cible.contrat.id, cible.annee, cible.mois, donnees)
+    return global.App.journees(cible.contrat.id, cible.annee, cible.mois)
+      .then(function (journees) {
+        return global.UiDocument.construireInstantane({
+          entree: entree, contrat: cible.contrat, journees: journees || {},
+          annee: cible.annee, mois: cible.mois
+        });
+      })
+      .then(function (donnees) {
+        return global.DB.recloturerRecap(cible.contrat.id, cible.annee, cible.mois, donnees);
+      })
       .then(function (r) {
         global.App.invalider();
         if (r === null) {

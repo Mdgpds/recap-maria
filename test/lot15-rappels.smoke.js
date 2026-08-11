@@ -321,14 +321,17 @@ var texteServeur = exprTexte
   ? new Function('nb', 'return ' + exprTexte + ';')
   : function () { return ''; };
 
-/* La règle d'envoi : les trois conditions qui décident si un réglage donne
-   lieu à un envoi à cette heure-ci. */
+/* La règle d'envoi, EXTRAITE du fichier serveur puis exécutée. Elle a changé
+   au correctif B9 : un mois EN RETARD ne doit plus attendre le jour réglé. */
 var blocGardes = extraire(
-  /(const heureReglee[\s\S]*?if \(now\.jour > pref\.jour_du_mois && !pref\.chaque_jour_ensuite\) continue;)/,
+  /(const jourReglé[\s\S]*?compte\.retards === 0\) \{\n      continue;\n    \})/,
   'les gardes d’envoi');
-var doitEnvoyer = blocGardes
-  ? new Function('pref', 'now',
-      blocGardes.replace(/continue;/g, 'return false;') + '\nreturn true;')
+var blocDernierJour = extraire(
+  /(function dernierJourDuMois[\s\S]*?\n\})/, 'dernierJourDuMois');
+var doitEnvoyer = (blocGardes && blocDernierJour)
+  ? new Function('pref', 'now', 'compte',
+      blocDernierJour.replace(/: number/g, '').replace(/\)\s*:\s*number/, ')') +
+      '\n' + blocGardes.replace(/continue;/g, 'return false;') + '\nreturn true;')
   : function () { return false; };
 
 /* Le mois précédent, utilisé par le comptage. */
@@ -401,8 +404,15 @@ var moisPrecedent = corpsMoisPrecedent
   /* A5 — le filet est dit AVANT même d'avoir activé quoi que ce soit. */
   var filet = parTexte(corps, '.note', 'Dans tous les cas, une pastille');
   assert(!!filet, 'A5 : l’écran dit que la pastille existe quoi qu’il arrive');
-  assert(txt(filet).indexOf('sans permission et sans réseau') !== -1,
-    'A5 : et qu’elle ne dépend de rien');
+  assert(txt(filet).indexOf('ni autorisation du téléphone, ni service extérieur') !== -1,
+    'A5 : et qu’elle ne dépend d’aucune permission ni d’aucun service');
+  /* CORRECTIF A4 — l'écran promettait « sans réseau », ce que la pastille ne
+     tient pas : elle vient des mois lus au chargement, et disparaît si tout
+     échoue. Le choix est bon ; la promesse était fausse. */
+  assert(txt(filet).indexOf('sans réseau au démarrage') === -1 &&
+         txt(filet).indexOf('Sans réseau au démarrage') !== -1,
+    'A4 : et l’écran DIT ce qui se passe sans réseau, au lieu de promettre ' +
+    'le contraire');
 
   /* A1 — l'aperçu du message. Maria voit ce qui arrivera sur son écran. */
   var apercu = corps.querySelector('.apercu-rappel');
@@ -480,11 +490,38 @@ var moisPrecedent = corpsMoisPrecedent
   /* L'abonnement qui échoue alors que la permission est donnée. */
   telephone.abonnementCasse = true;
   await ouvrir('rappels');
-  cocher(caseActif(), true);
+  var boxEchec = caseActif();
+  cocher(boxEchec, true);
   await pause(250);
-  assert(txt(corps.querySelector('.msg.ko')).indexOf('La pastille dans l’application prend le relais') !== -1,
+  assert(txt(corps.querySelector('.msg.ko')).indexOf('la pastille de l’onglet Accueil prend le relais') !== -1,
     'B.0-9 : l’échec d’abonnement est dit, et ce qui reste vrai aussi');
+  /* CORRECTIF B8 — LE CONTRÔLE QUI MANQUAIT ET QUI COMPTE LE PLUS.
+     La permission est ACCORDÉE, l'abonnement échoue : la case restait cochée,
+     l'écran affichait ensuite « Réglages enregistrés » en vert, et aucun rappel
+     n'arrivait jamais. C'était le chemin nominal tant que la clé VAPID n'est
+     pas posée. */
+  assert(boxEchec.checked === false,
+    'B8 : la case se DÉCOCHE aussi quand la permission est accordée mais que ' +
+    'l’abonnement échoue — sinon Maria croit qu’un rappel viendra');
+  assert(txt(corps.querySelector('.msg.ko')).indexOf('restent éteints') !== -1,
+    'B8 : et l’écran dit que les rappels sont éteints, au lieu de le taire');
   telephone.abonnementCasse = false;
+
+  /* B8 (suite) — la clé VAPID absente est le cas RÉEL d'aujourd'hui. */
+  var vraieCle = dom.window.RECAP_MARIA_CONFIG.VAPID_PUBLIC_KEY;
+  dom.window.RECAP_MARIA_CONFIG.VAPID_PUBLIC_KEY = '';
+  await ouvrir('rappels');
+  var boxSansCle = caseActif();
+  cocher(boxSansCle, true);
+  await pause(250);
+  var koCle = corps.querySelector('.msg.ko');
+  assert(!!koCle && txt(koCle).indexOf('pas encore configurées') !== -1,
+    'B8 : sans clé VAPID, la phrase française atteint enfin l’écran — elle ' +
+    'tombait sur « une erreur inattendue s’est produite. Réessayez… »');
+  assert(!!koCle && txt(koCle).indexOf('Réessayez') === -1,
+    'B8 : et on n’invite plus à réessayer une action qui ne peut pas aboutir');
+  assert(boxSansCle.checked === false, 'B8 : la case reste décochée');
+  dom.window.RECAP_MARIA_CONFIG.VAPID_PUBLIC_KEY = vraieCle;
 
   /* Panne de LECTURE des réglages : l'écran s'ouvre quand même, sur les
      valeurs par défaut, plutôt que de rester vide. */
@@ -499,23 +536,42 @@ var moisPrecedent = corpsMoisPrecedent
   /* P5 — Le rappel quotidien                                             */
   /* (règle d'envoi EXTRAITE du fichier serveur, puis exécutée)           */
   /* ==================================================================== */
-  console.log('\n--- P3/P4/P5 : la règle d’envoi du serveur ---');
+  console.log('\n--- P3/P4/P5/B9 : la règle d’envoi du serveur ---');
   var reglage = { jour_du_mois: 25, heure: '19:00', chaque_jour_ensuite: true };
+  var sansRetard = { total: 1, retards: 0 };
+  var avecRetard = { total: 1, retards: 1 };
 
-  assert(doitEnvoyer(reglage, { jour: 25, heure: 19 }) === true,
-    'P3 : le jour réglé, à l’heure réglée, l’envoi a lieu');
-  assert(doitEnvoyer(reglage, { jour: 25, heure: 18 }) === false,
-    'P3 : une heure trop tôt, rien ne part');
-  assert(doitEnvoyer(reglage, { jour: 24, heure: 19 }) === false,
-    'P3 : la veille du jour réglé non plus');
+  assert(doitEnvoyer(reglage, { jour: 25, mois: 8, annee: 2026 }, sansRetard) === true,
+    'P3 : le jour réglé, l’envoi a lieu');
+  assert(doitEnvoyer(reglage, { jour: 24, mois: 8, annee: 2026 }, sansRetard) === false,
+    'P3 : la veille du jour réglé, rien ne part si rien n’est en retard');
 
-  assert(doitEnvoyer(reglage, { jour: 28, heure: 19 }) === true,
+  assert(doitEnvoyer(reglage, { jour: 28, mois: 8, annee: 2026 }, sansRetard) === true,
     'P5 : « chaque jour ensuite » coché, le rappel se répète');
   var sansRepetition = { jour_du_mois: 25, heure: '19:00', chaque_jour_ensuite: false };
-  assert(doitEnvoyer(sansRepetition, { jour: 28, heure: 19 }) === false,
-    'P5 : décoché, il ne part QUE le jour réglé');
-  assert(doitEnvoyer(sansRepetition, { jour: 25, heure: 19 }) === true,
+  assert(doitEnvoyer(sansRepetition, { jour: 28, mois: 8, annee: 2026 }, avecRetard) === false,
+    'P5 : décoché, il ne part QUE le jour réglé — même avec un retard, Maria a ' +
+    'demandé un seul rappel et elle en aura un seul');
+  assert(doitEnvoyer(sansRepetition, { jour: 25, mois: 8, annee: 2026 }, sansRetard) === true,
     'P5 : … et il part bien ce jour-là');
+
+  /* CORRECTIF B9 — LES TRENTE ET UN JOURS DE SILENCE. */
+  assert(doitEnvoyer(reglage, { jour: 1, mois: 9, annee: 2026 }, avecRetard) === true,
+    'B9 : le 1ᵉʳ septembre, août est EN RETARD — le rappel part sans attendre ' +
+    'le 25 (V8-03 : les mois passés sont rappelés en permanence)');
+  assert(doitEnvoyer(reglage, { jour: 10, mois: 9, annee: 2026 }, avecRetard) === true,
+    'B9 : et il continue tant que le retard dure');
+  assert(doitEnvoyer(reglage, { jour: 10, mois: 9, annee: 2026 }, sansRetard) === false,
+    'B9 : mais pas un mot avant le 25 quand rien n’est en retard — on ' +
+    'n’apprend pas à Maria à ignorer les rappels');
+
+  /* CORRECTIF A9 — un réglage à 31 doit se déclencher les mois plus courts. */
+  var le31 = { jour_du_mois: 31, heure: '19:00', chaque_jour_ensuite: false };
+  assert(doitEnvoyer(le31, { jour: 28, mois: 2, annee: 2026 }, sansRetard) === true,
+    'A9 : réglé au 31, le rappel part le dernier jour de février — sinon cinq ' +
+    'mois sur douze étaient perdus en silence');
+  assert(doitEnvoyer(le31, { jour: 31, mois: 8, annee: 2026 }, sansRetard) === true,
+    'A9 : et le 31 des mois qui en ont un');
 
   /* P4 — le garde « rien à clôturer ». Il ne peut pas s'exécuter ici (il
      interroge la base), mais on vérifie qu'il est bien AVANT tout envoi :
@@ -534,8 +590,11 @@ var moisPrecedent = corpsMoisPrecedent
     'P3 : le passage d’année est correct — janvier renvoie à décembre précédent');
   assert(JSON.stringify(moisPrecedent(2026, 7)) === JSON.stringify({ annee: 2026, mois: 6 }),
     'P3 : et le cas ordinaire aussi');
-  assert(/i < 12/.test(SRC_FN),
-    'P3 : le comptage s’arrête à douze mois — au-delà, un retard n’est plus un oubli');
+  assert(/i < 13/.test(SRC_FN),
+    'P3 : le comptage couvre le mois courant plus les douze précédents — ' +
+    'au-delà, un retard n’est plus un oubli');
+  assert(/JOUR_BASCULE_CLOTURE = 25/.test(SRC_FN),
+    'B9 : le serveur connaît désormais la bascule du 25, comme l’accueil');
 
   /* ==================================================================== */
   /* A3 — LE MÊME TEXTE DES DEUX CÔTÉS, caractère par caractère           */

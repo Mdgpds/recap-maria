@@ -446,11 +446,24 @@
   /* Le contrat porte-t-il déjà quelque chose ? Sert à MONTRER ou non le bouton
      de suppression — on ne montre jamais une action impossible (V8-20). */
   function contratEstVierge(contratId) {
+    /* CORRECTIF A4 DE LA RELECTURE PR9 — cette liste doit être EXACTEMENT
+       celle du trigger (migration 012). Elle ne comptait que les journées et
+       les récapitulatifs : un contrat portant une note ou un congé imputé
+       affichait le bouton de suppression ET la phrase « il ne reste rien à
+       conserver », qui était fausse. La base refusait ensuite — donc rien
+       n'était perdu — mais Maria voyait une action proposée puis refusée, ce
+       qui est exactement ce que V8-20 interdit.
+
+       ATTENTION : toute table référençant `contrat` ajoutée plus tard doit
+       être ajoutée ICI ET DANS LE TRIGGER. Les deux listes divergent en
+       silence si on n'y prend pas garde. */
     return Promise.all([
       client.from('journee').select('id').eq('contrat_id', contratId).limit(1).then(deballer),
-      client.from('recap_mensuel').select('id').eq('contrat_id', contratId).limit(1).then(deballer)
+      client.from('recap_mensuel').select('id').eq('contrat_id', contratId).limit(1).then(deballer),
+      client.from('note_mensuelle').select('id').eq('contrat_id', contratId).limit(1).then(deballer),
+      client.from('imputation_conge').select('id').eq('contrat_id', contratId).limit(1).then(deballer)
     ]).then(function (r) {
-      return (r[0] || []).length === 0 && (r[1] || []).length === 0;
+      return r.every(function (liste) { return (liste || []).length === 0; });
     });
   }
 

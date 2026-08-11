@@ -211,4 +211,30 @@ cas.push({
   }
 });
 
+cas.push({
+  nom: 'PR9 — une phrase déjà écrite pour Maria n’est pas remplacée par le générique',
+  fn: function () {
+    /* Correctifs B6 et B8 de la relecture. Les refus que l'APPLICATION rédige
+       elle-même tombaient tous sur « une erreur inattendue s'est produite.
+       Réessayez… », parce que cette table ne traduit que ce qui vient de la
+       base. Un message faux, qui invitait à réessayer une action qui ne
+       pouvait structurellement pas aboutir. */
+    var e = new Error('date d’effet sur un mois clôturé');
+    e.messageFrancais = 'mois déjà clôturé(s) — Tom : juillet 2026.';
+    egal(Messages.lisible(e), 'mois déjà clôturé(s) — Tom : juillet 2026.',
+      'la phrase française traverse intacte');
+
+    /* Et le contraire, qui compte autant : un message technique NON marqué ne
+       doit jamais atteindre l'écran tel quel. */
+    egal(Messages.lisible(new Error('relation "x" does not exist')) ===
+         'relation "x" does not exist', false,
+      'un message non marqué reste traduit ou remplacé');
+
+    var g = new Error('x');
+    g.messageFrancais = '';
+    egal(Messages.lisible(g), Messages.DEFAUT,
+      'une marque vide retombe sur le repli, jamais sur du vide');
+  }
+});
+
 module.exports = { cas: cas };

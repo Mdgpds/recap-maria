@@ -289,7 +289,11 @@ table.cal td.futur { border-style: dashed; }
 table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) {
   background: #fff; border-color: var(--ln);
 }
-table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) .num { color: #9aa3ad; font-weight: 500; }
+/* CORRECTIF A9 (lot 7) DE LA RELECTURE PR9 — DEUX CONTRASTES SOUS LE SEUIL.
+   Le numéro des jours à venir était #9aa3ad sur blanc : 2,56:1, pour un seuil
+   de 4,5:1. Mesuré, pas estimé. #6b7580 rend 4,74:1 en gardant l'effet
+   « estompé » qui distingue un jour à venir d'un jour écoulé. */
+table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) .num { color: #6b7580; font-weight: 500; }
 table.cal td.futur { cursor: default; }
 table.cal td.futur:active { transform: none; }
 
@@ -299,7 +303,11 @@ table.cal td.futur:active { transform: none; }
 .g2 { background: var(--was); border-color: #b1833f; }
 .g3 { background: #eef1f4; border-color: #878b90; }
 .g5 { background: var(--bls); border-color: #838aa5; }
-.g6 { background: #fff; border-color: var(--ln); border-style: dashed; }
+/* CORRECTIF A9 (lot 7) — la pastille « À venir » de la légende était bordée en
+   `--ln` (#cfd6dd) sur blanc : 1,47:1 pour un seuil de 3:1. Elle était donc
+   INVISIBLE, et la légende censée expliquer le codage devenait illisible.
+   #8b959d rend 3,05:1 et garde l'aspect estompé du pointillé. */
+.g6 { background: #fff; border-color: #8b959d; border-style: dashed; }
 
 /* ------------------------------------------------------------------------ */
 /* Panneaux, lignes de chiffres, compteurs                                   */
@@ -609,6 +617,10 @@ button.coche:active { transform: scale(.99); }
 .av.id-terracotta { background: #f6e2da; color: #63321f; border-color: #9c4f33; }
 .av.id-ocre       { background: #f3ead2; color: #55411a; border-color: #87682a; }
 .av.id-ardoise    { background: #e4e8ea; color: #30393e; border-color: #4d5a61; }
+/* A13 : l'enfant à qui aucune couleur n'a été donnée. Neutre et assumé, plutôt
+   que « vert » par accident — deux enfants portaient sinon la même pastille,
+   l'un par choix, l'autre par défaut. */
+.av.id-neutre     { background: #e9edf0; color: #39434a; border-color: #5a666e; }
 
 /* La pastille existe en trois tailles, une seule logique. */
 .av { overflow: hidden; }
@@ -649,6 +661,7 @@ button.coche:active { transform: scale(.99); }
   border: 2px solid; padding: 0; font: inherit;
 }
 .teinte.on { box-shadow: 0 0 0 3px var(--ac); }
+.teinte.id-neutre     { background: #e9edf0; border-color: #5a666e; }
 .teinte.id-vert       { background: #dcefe8; border-color: #2f6b56; }
 .teinte.id-bleu       { background: #dee6f4; border-color: #3a5a8c; }
 .teinte.id-prune      { background: #eee0ec; border-color: #7a4370; }

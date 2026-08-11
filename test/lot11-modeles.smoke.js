@@ -111,6 +111,9 @@ var scene = {
     'c-tom': [{ id: 's2', contrat_id: 'c-tom', date_effet: '2025-09-01',
       brut_mensuel_centimes: 190000, net_mensuel_centimes: 140000 }]
   },
+  /* Les récapitulatifs sont désormais pilotables : le cas B6 a besoin d'un
+     mois CLÔTURÉ pour vérifier que l'alignement le refuse. */
+  recaps: { 'c-lea': [], 'c-tom': [] },
   moisCourant: { annee: 2026, mois: 8 },
   aujourdhui: '2026-08-11'
 };
@@ -189,8 +192,8 @@ var DB = {
     enregistrerNoteMensuelle: function (c, a, m, t) { return Promise.resolve({ texte: t }); },
   enregistrerImputation: function (i) { return Promise.resolve(i); },
   supprimerImputation: function () { return Promise.resolve(true); },
-  listRecapsPeriode: function () { return Promise.resolve([]); },
-  listRecapsContrat: function () { return Promise.resolve([]); },
+  listRecapsPeriode: function (id) { return Promise.resolve(scene.recaps[id] || []); },
+  listRecapsContrat: function (id) { return Promise.resolve(scene.recaps[id] || []); },
   getRecap: function () { return Promise.resolve(null); },
   enregistrerJournee: function (l) { return Promise.resolve(l); },
   supprimerJournee: function () { return Promise.resolve(true); },
@@ -561,6 +564,50 @@ function poserDate(bloc, iso) {
     'P7 : rattaché à la version en vigueur à sa date de début');
   assert(cree.entretien_centimes_jour === 500,
     'P7 : et ses réglages en sont repris (obtenu ' + cree.entretien_centimes_jour + ')');
+
+  /* ==================================================================== */
+  /* B6 — Aligner sur un mois CLÔTURÉ : refusé, et rien n'est écrit        */
+  /* ==================================================================== */
+  console.log('\n--- B6 : la date d’effet ne peut pas tomber sur un mois clôturé ---');
+
+  /* Le garde-fou existait depuis le lot 5 sur la feuille de barème, et les
+     TROIS chemins d'alignement du lot 11 le contournaient : aucun ne lisait les
+     récapitulatifs. Le mois figé ne changeait pas de montant, mais le barème
+     que RG-15 retient POUR CE MOIS devenait un barème jamais validé pour lui —
+     et toute réouverture l'aurait reclôturé dessus, en silence. */
+  scene.recaps['c-tom'] = [{ id: 'r-tom-7', contrat_id: 'c-tom', annee: 2026, mois: 7,
+    statut: 'fige', donnees: {}, fige_le: '2026-08-01T09:00:00Z', transmis_le: null }];
+
+  await ouvrir('fiche', { contratId: 'c-tom' });
+  var salAvantB6 = appels.ajouterSalaire.length;
+  var majAvantB6 = appels.majContrat.length;
+  var bAlign = boutonExact(corps, 'Aligner sur la version');
+  if (bAlign) {
+    bAlign.click();
+    await pause(250);
+    var dB6 = parTexte(sheet, '.fld', 'Rémunération à partir du');
+    if (dB6) {
+      poserDate(dB6, '2026-07-01');
+      boutonExact(sheet, 'Aligner').click();
+      await pause(350);
+      assert(appels.ajouterSalaire.length === salAvantB6,
+        'B6 : AUCUNE ligne de rémunération n’est posée sur un mois clôturé');
+      assert(appels.majContrat.length === majAvantB6,
+        'B6 : et aucun réglage n’a bougé non plus — le refus est total');
+      var koB6 = sheet.querySelector('.msg.ko');
+      assert(!!koB6 && txt(koB6).indexOf('clôturé') !== -1,
+        'B6 : le refus nomme ce qui bloque');
+      assert(!!koB6 && txt(koB6).indexOf('juillet 2026') !== -1,
+        'B6 : et DIT quel mois — pas « impossible » tout seul');
+    } else {
+      assert(false, 'B6 : la feuille d’alignement propose une date d’effet');
+    }
+  } else {
+    assert(false, 'B6 : le bouton d’alignement est présent');
+  }
+  window.Kit.fermerFeuille();
+  await pause(50);
+  scene.recaps['c-tom'] = [];
 
   /* ==================================================================== */
   /* A9 — les 10 cas de référence du moteur                               */
