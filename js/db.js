@@ -50,6 +50,35 @@
       });
   }
 
+  /* LOT 14 — « Mot de passe oublié ».
+
+     LE MESSAGE NE RÉVÈLE JAMAIS SI L'ADRESSE EXISTE (A6, risque n° 4). C'est
+     pourquoi cette fonction ne remonte PAS l'erreur « user not found » : elle
+     l'avale volontairement et rend toujours `true`. Un formulaire qui répond
+     « aucun compte ne correspond » est un outil pour savoir qui possède un
+     compte quelque part — et cette application-là contient les revenus d'une
+     personne et les noms de quatre enfants.
+
+     Les erreurs de RÉSEAU, elles, remontent : Maria doit savoir que rien n'est
+     parti. C'est la seule distinction qui compte ici. */
+  function demanderReinitialisation(email) {
+    return client.auth.resetPasswordForEmail(email, {
+      redirectTo: global.location ? global.location.origin + global.location.pathname : undefined
+    }).then(function (r) {
+      if (r && r.error) {
+        var m = String(r.error.message || '');
+        /* Réseau, limite de débit : on le dit. Tout le reste — y compris
+           « adresse inconnue » — est tu. */
+        if (/failed to fetch|network|timeout|rate limit|too many/i.test(m)) throw r.error;
+      }
+      return true;
+    }).catch(function (e) {
+      var m = String((e && e.message) || '');
+      if (/failed to fetch|network|timeout|rate limit|too many/i.test(m)) throw e;
+      return true;
+    });
+  }
+
   function signOut() {
     return client.auth.signOut().then(function (r) {
       if (r.error) throw r.error;
@@ -69,6 +98,12 @@
     'heure_arrivee, heure_depart, minutes_contractuelles, minutes_sup_jour, ' +
     'minutes_par_jour_conge, entretien_centimes_jour, statut, ' +
     'sup_dues_si_enfant_absent, ordre_imputation, archive, ' +
+    /* Lot 8 — l'identité de l'enfant. Ajoutée ICI et pas ailleurs : ce select
+       est la seule définition de « ce qu'est un contrat » pour toute
+       l'application. Une colonne ajoutée par une migration et oubliée ici
+       n'existerait pour aucun écran — c'est le défaut qui s'est produit deux
+       fois (lots 9 et 13) et que test/couche-donnees.test.js garde désormais. */
+    'nom, genre, couleur, photo, modele_id, ' +
     'famille:famille_id ( id, nom, canal, archive )';
 
   /* Familles non archivées. */
@@ -187,7 +222,9 @@
     'famille_id', 'prenom_enfant', 'date_debut', 'date_fin', 'jours_planning',
     'heure_arrivee', 'heure_depart', 'minutes_contractuelles', 'minutes_sup_jour',
     'minutes_par_jour_conge', 'entretien_centimes_jour', 'statut',
-    'sup_dues_si_enfant_absent', 'ordre_imputation', 'archive'
+    'sup_dues_si_enfant_absent', 'ordre_imputation', 'archive',
+    'nom', 'genre', 'couleur', 'photo',                      // lot 8
+    'modele_id'                                             // lot 11
   ];
 
   function creerContrat(champs) {
@@ -222,6 +259,466 @@
      et modifierait des calculs déjà produits. */
   function desarchiverContrat(id) {
     return majContrat(id, { archive: false });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Identité d'un contrat et gestion des foyers (lot 8)                 */
+  /*                                                                     */
+  /* CE QUE CES SIX FONCTIONS SÉPARENT, ET POURQUOI ÇA COMPTE.           */
+  /*                                                                     */
+  /* Jusqu'ici la fiche contrat portait un champ « Nom de la famille »   */
+  /* qui écrivait dans `famille.nom`. Trois gestes très différents        */
+  /* passaient par le même champ :                                       */
+  /*   - corriger le nom de l'ENFANT,                                    */
+  /*   - renommer le FOYER, pour tous ses enfants d'un coup,             */
+  /*   - rattacher ce contrat à un AUTRE foyer.                          */
+  /* Maria croyait faire le premier, elle faisait le deuxième, sur trois  */
+  /* contrats, sans le savoir. C'est une perte de données réelle, en      */
+  /* production. Chaque geste a désormais sa fonction, et le renommage    */
+  /* d'un foyer a en plus son écran dédié qui NOMME les enfants touchés.  */
+  /* ------------------------------------------------------------------ */
+
+  /* L'identité de l'enfant : ce qui le désigne, jamais ce qui désigne son
+     foyer. `famille_id` n'en fait volontairement PAS partie — changer de
+     famille est un autre geste, avec sa propre fonction. */
+  function majContratIdentite(contratId, champs) {
+    return majContrat(contratId,
+      nettoyer(champs, ['nom', 'prenom_enfant', 'genre', 'couleur', 'photo']));
+  }
+
+  /* Rattacher un contrat à un autre foyer. N'écrit QUE `famille_id` : aucun
+     nom n'est touché, ni celui de l'enfant, ni celui d'aucun foyer. */
+  function rattacherContratAFamille(contratId, familleId) {
+    return majContrat(contratId, { famille_id: familleId });
+  }
+
+  /* Renommer un FOYER. La fonction ne prévient personne : c'est l'écran qui
+     doit avoir listé les enfants concernés AVANT d'arriver ici. */
+  function renommerFamille(familleId, nouveauNom) {
+    return majFamille(familleId, { nom: nouveauNom });
+  }
+
+  /* Ranger un foyer. REFUSE tant qu'un de ses contrats est encore actif
+     (V8-20) : un foyer rangé disparaît des écrans courants, et avec lui un
+     enfant que Maria garde encore. Le contrôle est fait ici, pas seulement à
+     l'écran — l'écran peut être contourné, la couche données non.
+
+     L'erreur NOMME le contrat bloquant. « Impossible d'archiver » sans dire
+     lequel oblige Maria à ouvrir les contrats un par un pour deviner. */
+  function archiverFamille(familleId) {
+    return client.from('contrat')
+      .select('id, prenom_enfant, archive, statut')
+      .eq('famille_id', familleId)
+      .then(deballer)
+      .then(function (contrats) {
+        var actifs = contrats.filter(function (c) {
+          return !c.archive && c.statut !== 'termine';
+        });
+        if (actifs.length) {
+          var e = new Error('FAMILLE_ENCORE_ACTIVE');
+          e.code = 'FAMILLE_ENCORE_ACTIVE';
+          e.prenoms = actifs.map(function (c) { return c.prenom_enfant; });
+          throw e;
+        }
+        return majFamille(familleId, { archive: true });
+      });
+  }
+
+  function desarchiverFamille(familleId) {
+    return majFamille(familleId, { archive: false });
+  }
+
+  /* Les foyers avec leurs contrats imbriqués, ARCHIVÉS COMPRIS des deux côtés.
+     Oublier `archive` ferait disparaître les anciens contrats au lieu de les
+     ranger — et un contrat terminé reste consultable pour toujours : ses mois
+     peuvent être contestés des années après.
+
+     Un seul aller-retour : imbriquer coûte moins cher que N+1 appels depuis un
+     téléphone en 4G. */
+  function listFamillesAvecContrats() {
+    return client.from('famille')
+      .select('id, nom, canal, archive, ' +
+        'contrats:contrat ( id, prenom_enfant, nom, genre, photo, couleur, ' +
+        'statut, archive, date_debut, date_fin )')
+      .order('nom', { ascending: true })
+      .then(deballer)
+      .then(function (familles) {
+        /* PostgREST ne trie pas les lignes imbriquées : on le fait ici, une
+           fois, plutôt que dans chacun des écrans qui les affichent. */
+        familles.forEach(function (f) {
+          (f.contrats || []).sort(function (a, b) {
+            return String(a.prenom_enfant || '').localeCompare(String(b.prenom_enfant || ''), 'fr');
+          });
+        });
+        return familles;
+      });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Rappels par notification (lot 15)                                   */
+  /* ------------------------------------------------------------------ */
+
+  function getPreferenceRappel() {
+    return client.from('preference_rappel')
+      .select('owner, actif, jour_du_mois, heure, chaque_jour_ensuite, maj_le')
+      .maybeSingle()
+      .then(function (r) { if (r.error) throw r.error; return r.data; });
+  }
+
+  function enregistrerPreferenceRappel(champs) {
+    return client.from('preference_rappel')
+      .upsert({
+        actif: !!champs.actif,
+        jour_du_mois: champs.jour_du_mois,
+        heure: champs.heure,
+        chaque_jour_ensuite: !!champs.chaque_jour_ensuite
+      }, { onConflict: 'owner' })
+      .select('owner, actif, jour_du_mois, heure, chaque_jour_ensuite, maj_le')
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* L'abonnement d'un APPAREIL. `endpoint` est unique : réenregistrer le même
+     téléphone ne crée pas de doublon. */
+  function enregistrerAbonnementPush(abonnement) {
+    return client.from('abonnement_push')
+      .upsert({
+        endpoint: abonnement.endpoint,
+        cle_p256dh: abonnement.cle_p256dh,
+        cle_auth: abonnement.cle_auth
+      }, { onConflict: 'endpoint' })
+      .select('id, endpoint, cree_le')
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  function supprimerAbonnementPush(endpoint) {
+    return client.from('abonnement_push')
+      .delete()
+      .eq('endpoint', endpoint)
+      .then(function (r) { if (r.error) throw r.error; return true; });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Mise en service, export, suppression franche (lot 14)               */
+  /* ------------------------------------------------------------------ */
+
+  /* Les compteurs de reprise : « je tenais mes comptes sur papier, voilà où
+     j'en suis ». Écrits UNE FOIS, ils servent de point de départ à tout
+     l'historique — une erreur ici se retrouve dans tous les mois suivants.
+
+     `upsert` sur la clé primaire (contrat_id) : un contrat n'a qu'un point de
+     départ. Le refus de la contrainte `compteur_initial_coherent` (pris >
+     acquis, valeurs négatives) remonte tel quel et sera traduit en français
+     par messages.js — jamais affiché brut. */
+  function enregistrerCompteurInitial(contratId, champs) {
+    return client.from('compteur_initial')
+      .upsert({
+        contrat_id: contratId,
+        date_reference: champs.date_reference,
+        minutes_sup: champs.minutes_sup || 0,
+        dixiemes_cp_acquis: champs.dixiemes_cp_acquis || 0,
+        dixiemes_cp_pris: champs.dixiemes_cp_pris || 0
+      }, { onConflict: 'contrat_id' })
+      .select('contrat_id, date_reference, minutes_sup, dixiemes_cp_acquis, dixiemes_cp_pris')
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* LA SEULE SUPPRESSION FRANCHE DU PROJET, et elle est étroite : un contrat
+     qui ne porte AUCUNE journée et AUCUN récapitulatif. C'est le cas de la
+     faute de frappe — un enfant créé deux fois, un prénom mal saisi — pour
+     lequel l'archivage serait absurde : il n'y a rien à conserver.
+
+     LA VÉRIFICATION EST EN BASE (migration 010), pas ici. Les six clés
+     étrangères qui pointent vers `contrat` sont en `on delete cascade` : sans
+     le trigger, ce `delete` réussirait toujours et emporterait silencieusement
+     des mois clôturés. Le contrôle client ci-dessous n'est qu'une courtoisie —
+     il évite un aller-retour et donne un message immédiat. La garantie, elle,
+     est ailleurs (risque n° 2 de la spécification). */
+  function supprimerContrat(contratId) {
+    return client.from('contrat')
+      .delete()
+      .eq('id', contratId)
+      .then(function (r) { if (r.error) throw r.error; return true; });
+  }
+
+  /* Le contrat porte-t-il déjà quelque chose ? Sert à MONTRER ou non le bouton
+     de suppression — on ne montre jamais une action impossible (V8-20). */
+  function contratEstVierge(contratId) {
+    /* CORRECTIF A4 DE LA RELECTURE PR9 — cette liste doit être EXACTEMENT
+       celle du trigger (migration 012). Elle ne comptait que les journées et
+       les récapitulatifs : un contrat portant une note ou un congé imputé
+       affichait le bouton de suppression ET la phrase « il ne reste rien à
+       conserver », qui était fausse. La base refusait ensuite — donc rien
+       n'était perdu — mais Maria voyait une action proposée puis refusée, ce
+       qui est exactement ce que V8-20 interdit.
+
+       ATTENTION : toute table référençant `contrat` ajoutée plus tard doit
+       être ajoutée ICI ET DANS LE TRIGGER. Les deux listes divergent en
+       silence si on n'y prend pas garde. */
+    return Promise.all([
+      client.from('journee').select('id').eq('contrat_id', contratId).limit(1).then(deballer),
+      client.from('recap_mensuel').select('id').eq('contrat_id', contratId).limit(1).then(deballer),
+      client.from('note_mensuelle').select('id').eq('contrat_id', contratId).limit(1).then(deballer),
+      client.from('imputation_conge').select('id').eq('contrat_id', contratId).limit(1).then(deballer)
+    ]).then(function (r) {
+      return r.every(function (liste) { return (liste || []).length === 0; });
+    });
+  }
+
+  /* TOUT l'historique, en un objet. « À garder de côté » : c'est le filet de
+     Maria si un jour l'application disparaît, et la pièce qu'elle sortira si
+     un désaccord remonte à plusieurs années.
+
+     AUCUNE PHOTO (risque n° 3, A5). Quatre photos de 50 Ko dans un export qui
+     compte des dizaines de mois, ce sont des centaines de kilo-octets de
+     données parfaitement inutiles hors de l'application — et un fichier qu'on
+     n'ouvre plus. Les contrats ARCHIVÉS sont inclus : ce sont eux qu'on vient
+     chercher des années après. */
+  function exporterHistorique() {
+    return Promise.all([
+      listFamillesToutes(),
+      listContratsTous(),
+      client.from('salaire_contrat')
+        .select('id, contrat_id, date_effet, brut_mensuel_centimes, net_mensuel_centimes')
+        .order('date_effet', { ascending: true }).then(deballer),
+      client.from('compteur_initial')
+        .select('contrat_id, date_reference, minutes_sup, dixiemes_cp_acquis, dixiemes_cp_pris')
+        .then(deballer),
+      client.from('journee')
+        .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
+                'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override')
+        .order('jour', { ascending: true }).then(deballer),
+      client.from('recap_mensuel')
+        .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
+        .order('annee', { ascending: true }).then(deballer),
+      client.from('imputation_conge').select(CHAMPS_IMPUTATION).then(deballer),
+      client.from('evenement_recap').select('id, recap_id, type, survenu_le, motif')
+        .then(deballer).catch(function () { return []; }),
+      listModeles().catch(function () { return []; })
+    ]).then(function (r) {
+      return {
+        exporte_le: null,          // posé par l'appelant : la base n'a pas d'horloge ici
+        familles: r[0],
+        /* La photo est RETIRÉE ici, à la source. Un export qui la porterait
+           serait déjà écrit sur le disque de Maria avant qu'on s'en aperçoive. */
+        contrats: (r[1] || []).map(function (c) {
+          var copie = {};
+          Object.keys(c).forEach(function (k) { if (k !== 'photo') copie[k] = c[k]; });
+          return copie;
+        }),
+        salaires: r[2],
+        compteurs_initiaux: r[3],
+        journees: r[4],
+        recapitulatifs: r[5],
+        imputations: r[6],
+        evenements: r[7],
+        contrats_types: r[8]
+      };
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Notes mensuelles (lot 12)                                           */
+  /*                                                                     */
+  /* Un espace d'écriture POUR MARIA SEULE. Ces deux fonctions sont       */
+  /* volontairement les seules : il n'existe aucun chemin par lequel une  */
+  /* note pourrait rejoindre un instantané de récapitulatif, donc aucun   */
+  /* chemin par lequel elle pourrait atteindre une famille.               */
+  /* ------------------------------------------------------------------ */
+
+  var CHAMPS_NOTE = 'id, contrat_id, annee, mois, texte, maj_le';
+
+  function getNoteMensuelle(contratId, annee, mois) {
+    return client.from('note_mensuelle')
+      .select(CHAMPS_NOTE)
+      .eq('contrat_id', contratId)
+      .eq('annee', annee)
+      .eq('mois', mois)
+      .maybeSingle()
+      .then(function (r) { if (r.error) throw r.error; return r.data; });
+  }
+
+  /* `upsert` sur la clé unique (contrat, année, mois) : une note par mois et
+     par enfant, écrite ou réécrite d'un seul geste. `maj_le` est posé par la
+     BASE (trigger de la migration 009) — l'horloge d'un téléphone mal réglé ne
+     doit pas décider de l'ordre des choses. */
+  function enregistrerNoteMensuelle(contratId, annee, mois, texte) {
+    return client.from('note_mensuelle')
+      .upsert({ contrat_id: contratId, annee: annee, mois: mois, texte: texte || '' },
+              { onConflict: 'contrat_id,annee,mois' })
+      .select(CHAMPS_NOTE)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Contrats types (lot 11)                                             */
+  /*                                                                     */
+  /* Un contrat type n'est pas un gabarit qu'on applique : c'est l'état   */
+  /* des conditions habituelles de Maria à une date donnée. Les contrats  */
+  /* s'y RATTACHENT et peuvent s'en écarter — un écart est un fait        */
+  /* négocié avec une famille, jamais une erreur à corriger.              */
+  /*                                                                     */
+  /* AUCUNE FONCTION DE SUPPRESSION N'EST EXPOSÉE, et la base n'accorde   */
+  /* pas le droit : une ancienne version explique les montants d'un mois  */
+  /* déjà clôturé, que RG-15 interdit de recalculer.                      */
+  /* ------------------------------------------------------------------ */
+
+  var CHAMPS_MODELE =
+    'id, nom, date_effet, jours_planning, heure_arrivee, heure_depart, ' +
+    'minutes_contractuelles, minutes_sup_jour, minutes_par_jour_conge, ' +
+    'entretien_centimes_jour, brut_mensuel_centimes, net_mensuel_centimes, ' +
+    'sup_dues_si_enfant_absent, ordre_imputation, cree_le';
+
+  var CHAMPS_MODELE_ECRITS = [
+    'nom', 'date_effet', 'jours_planning', 'heure_arrivee', 'heure_depart',
+    'minutes_contractuelles', 'minutes_sup_jour', 'minutes_par_jour_conge',
+    'entretien_centimes_jour', 'brut_mensuel_centimes', 'net_mensuel_centimes',
+    'sup_dues_si_enfant_absent', 'ordre_imputation'
+  ];
+
+  /* Toutes les versions, la plus récente en tête. On les renvoie TOUTES,
+     périmées comprises : c'est leur raison d'être. */
+  function listModeles() {
+    return client.from('modele_contrat')
+      .select(CHAMPS_MODELE)
+      .order('date_effet', { ascending: false })
+      .then(deballer);
+  }
+
+  /* La version en vigueur à une date : la plus récente dont la date d'effet
+     est ANTÉRIEURE OU ÉGALE. Même règle que `salaireApplicable` du moteur
+     (RG-15) — et pour la même raison : ce qui vaut à une date ne dépend pas
+     de ce qui a été décidé après. */
+  function modeleEnVigueur(dateIso) {
+    return client.from('modele_contrat')
+      .select(CHAMPS_MODELE)
+      .lte('date_effet', dateIso)
+      .order('date_effet', { ascending: false })
+      .limit(1)
+      .then(deballer)
+      .then(function (r) { return r[0] || null; });
+  }
+
+  function creerModele(modele) {
+    return client.from('modele_contrat')
+      .insert(nettoyer(modele, CHAMPS_MODELE_ECRITS))
+      .select(CHAMPS_MODELE)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* Rattacher un contrat à une version. N'écrit QUE `modele_id` : le
+     rattachement est un confort d'affichage, il ne change aucun réglage et
+     n'entre dans aucun calcul. C'est l'ALIGNEMENT, geste distinct, qui
+     modifie réellement un contrat. */
+  function rattacherContratAModele(contratId, modeleId) {
+    return majContrat(contratId, { modele_id: modeleId });
+  }
+
+  /* Les CHAMPS COMPARÉS entre un contrat et son modèle, dans l'ordre où ils
+     se lisent. La rémunération est traitée à part : elle ne vit pas sur le
+     contrat mais dans son historique de barèmes. */
+  var CHAMPS_COMPARES_MODELE = [
+    { champ: 'jours_planning',            libelle: 'Jours de garde',            format: 'planning' },
+    { champ: 'heure_arrivee',             libelle: 'Heure d’arrivée',           format: 'heure' },
+    { champ: 'heure_depart',              libelle: 'Heure de départ',           format: 'heure' },
+    { champ: 'minutes_contractuelles',    libelle: 'Minutes contractuelles',    format: 'duree' },
+    { champ: 'minutes_sup_jour',          libelle: 'Heures sup par jour',       format: 'duree' },
+    { champ: 'minutes_par_jour_conge',    libelle: 'Minutes par jour de congé', format: 'duree' },
+    { champ: 'entretien_centimes_jour',   libelle: 'Entretien par jour',        format: 'euros' },
+    { champ: 'sup_dues_si_enfant_absent', libelle: 'Heures sup si l’enfant est absent', format: 'oui_non' },
+    { champ: 'ordre_imputation',          libelle: 'Congés déduits d’abord',    format: 'ordre' }
+  ];
+
+  /* Les écarts entre un contrat et le modèle auquel il est rattaché.
+
+     CALCULÉE CÔTÉ CLIENT, sans appel supplémentaire : les deux objets sont
+     déjà en mémoire. Et surtout — un écart N'EST PAS UNE ERREUR. C'est un fait
+     négocié avec une famille : Tom garde son ancienne rémunération parce que
+     ses parents ne l'ont pas revalorisée. L'application le CONSTATE, elle ne le
+     corrige jamais d'office (risque n° 3).
+
+     `salaireCourant` est facultatif : sans lui, la rémunération n'est pas
+     comparée plutôt que d'être comparée à zéro. */
+  function ecartsContratModele(contrat, modele, salaireCourant) {
+    if (!contrat || !modele) return [];
+    var out = [];
+    CHAMPS_COMPARES_MODELE.forEach(function (c) {
+      var a = contrat[c.champ];
+      var b = modele[c.champ];
+      if (!memeValeur(a, b)) {
+        out.push({ champ: c.champ, libelle: c.libelle, format: c.format,
+                   valeurContrat: a, valeurModele: b });
+      }
+    });
+    if (salaireCourant) {
+      if (salaireCourant.brut_mensuel_centimes !== modele.brut_mensuel_centimes ||
+          salaireCourant.net_mensuel_centimes !== modele.net_mensuel_centimes) {
+        out.push({
+          champ: 'remuneration', libelle: 'Rémunération', format: 'remuneration',
+          valeurContrat: {
+            brut_mensuel_centimes: salaireCourant.brut_mensuel_centimes,
+            net_mensuel_centimes: salaireCourant.net_mensuel_centimes
+          },
+          valeurModele: {
+            brut_mensuel_centimes: modele.brut_mensuel_centimes,
+            net_mensuel_centimes: modele.net_mensuel_centimes
+          }
+        });
+      }
+    }
+    return out;
+  }
+
+  /* Deux valeurs de réglage sont-elles les mêmes ? Les heures arrivent en
+     'HH:MM:SS' d'un côté et parfois 'HH:MM' de l'autre ; les plannings sont
+     des tableaux. Comparer avec === donnerait des écarts imaginaires, et un
+     écart imaginaire est pire qu'un écart manqué : il pousse Maria à
+     « corriger » un contrat qui n'a rien. */
+  function memeValeur(a, b) {
+    if (Array.isArray(a) || Array.isArray(b)) {
+      var la = (a || []).slice().sort().join(',');
+      var lb = (b || []).slice().sort().join(',');
+      return la === lb;
+    }
+    if (typeof a === 'string' && typeof b === 'string' &&
+        /^\d{2}:\d{2}/.test(a) && /^\d{2}:\d{2}/.test(b)) {
+      return a.slice(0, 5) === b.slice(0, 5);
+    }
+    return a === b;
+  }
+
+  /* Applique UN SEUL champ à plusieurs contrats (V8-25).
+
+     LA RÉMUNÉRATION EST TRAITÉE À PART, et ce n'est pas un détail : écrire un
+     montant directement sur `contrat` changerait les mois DÉJÀ CALCULÉS, y
+     compris ceux qui sont clôturés et dont le document est parti chez une
+     famille. Une rémunération se pose toujours par une ligne `salaire_contrat`
+     DATÉE, que le moteur choisit ensuite selon RG-15. C'est le risque n° 2 de
+     la spécification, et il ne se rattrape pas après coup.
+
+     `champ` vaut soit 'remuneration' — et `valeur` porte alors
+     { brut_mensuel_centimes, net_mensuel_centimes } —, soit n'importe quel
+     champ modifiable d'un contrat. */
+  function majContratsEnLot(contratIds, champ, valeur, dateEffet) {
+    if (champ === 'remuneration') {
+      if (!dateEffet) return Promise.reject(new Error('DATE_EFFET_REQUISE'));
+      return Promise.all((contratIds || []).map(function (id) {
+        return ajouterSalaire(id, {
+          date_effet: dateEffet,
+          brut_mensuel_centimes: valeur.brut_mensuel_centimes,
+          net_mensuel_centimes: valeur.net_mensuel_centimes
+        });
+      }));
+    }
+    var champs = {};
+    champs[champ] = valeur;
+    return Promise.all((contratIds || []).map(function (id) {
+      return majContrat(id, champs);
+    }));
   }
 
   /* ------------------------------------------------------------------ */
@@ -694,6 +1191,7 @@
     onAuthChange: onAuthChange,
     signIn: signIn,
     signOut: signOut,
+    demanderReinitialisation: demanderReinitialisation,
     listFamilles: listFamilles,
     listFamillesToutes: listFamillesToutes,
     listContratsActifs: listContratsActifs,
@@ -724,6 +1222,29 @@
     getRecap: getRecap,
     listRecapsContrat: listRecapsContrat,
     listRecapsPeriode: listRecapsPeriode,
+    getPreferenceRappel: getPreferenceRappel,
+    enregistrerPreferenceRappel: enregistrerPreferenceRappel,
+    enregistrerAbonnementPush: enregistrerAbonnementPush,
+    supprimerAbonnementPush: supprimerAbonnementPush,
+    enregistrerCompteurInitial: enregistrerCompteurInitial,
+    supprimerContrat: supprimerContrat,
+    contratEstVierge: contratEstVierge,
+    exporterHistorique: exporterHistorique,
+    getNoteMensuelle: getNoteMensuelle,
+    enregistrerNoteMensuelle: enregistrerNoteMensuelle,
+    listModeles: listModeles,
+    modeleEnVigueur: modeleEnVigueur,
+    creerModele: creerModele,
+    rattacherContratAModele: rattacherContratAModele,
+    majContratsEnLot: majContratsEnLot,
+    ecartsContratModele: ecartsContratModele,
+    CHAMPS_COMPARES_MODELE: CHAMPS_COMPARES_MODELE,
+    majContratIdentite: majContratIdentite,
+    rattacherContratAFamille: rattacherContratAFamille,
+    renommerFamille: renommerFamille,
+    archiverFamille: archiverFamille,
+    desarchiverFamille: desarchiverFamille,
+    listFamillesAvecContrats: listFamillesAvecContrats,
     enregistrerRecapBrouillon: enregistrerRecapBrouillon,
     rouvrirRecap: rouvrirRecap,
     recloturerRecap: recloturerRecap,

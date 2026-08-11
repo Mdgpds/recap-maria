@@ -23,6 +23,7 @@
 
   var Kit = global.Kit;
   var Chaine = global.ChaineMois;
+  var Feries = global.Feries;
 
   var vue = null;
 
@@ -89,8 +90,14 @@
   function joursConge() {
     var r = vue.entree.resultat;
     if (vue.entree.fige) return r.joursConge || null;
-    return Object.keys(vue.journees).filter(function (d) {
-      return vue.journees[d].type === 'conge_maria';
+    return joursCongeDe(vue.journees);
+  }
+
+  /* Forme PURE, sans `vue` : c'est elle que partagent les deux chemins de
+     clôture (correctif B4). */
+  function joursCongeDe(journees) {
+    return Object.keys(journees || {}).filter(function (d) {
+      return journees[d].type === 'conge_maria';
     }).sort();
   }
 
@@ -104,7 +111,10 @@
 
     var principal = [
       ['Jours de présence', Kit.jours(r.joursPresence)],
-      ['Indemnité d’entretien', Kit.eur(r.entretienCentimes)],
+      /* LOT 7 — l'entretien est DÉTAILLÉ, jamais donné en bloc. « 70,00 € »
+         seul n'est pas vérifiable ; « 14 jours × 5,00 € » l'est, et c'est ce
+         qui éteint une contestation avant qu'elle ne naisse. */
+      [libelleEntretienDetaille(r), Kit.eur(r.entretienCentimes)],
       ['Salaire net', Kit.eur(r.salaireNetCentimes)],
       ['Salaire brut correspondant', Kit.eur(r.salaireBrutCentimes), { doux: true }]
     ];
@@ -127,6 +137,35 @@
     if (!lignesConge.length) lignesConge.push(['Aucun ce mois-ci', '—']);
     out.push({ titre: 'Congés de l’assistante maternelle', lignes: lignesConge });
 
+    /* Les journées qui s'écartent de la normale, datées en clair. */
+    var part = journeesParticulieres(identite().prenom);
+    if (part.length) {
+      out.push({
+        titre: 'Journées particulières',
+        lignes: part.map(function (j) { return [Kit.jourLong(j.date), j.quoi]; })
+      });
+    }
+
+    /* LOT 12 — LE RENONCEMENT FIGURE SUR LE DOCUMENT TRANSMIS.
+       Décision d'Adrien du 10 août 2026 : le parent voit que Maria a renoncé
+       à des heures qui lui étaient dues.
+
+       La formulation est reprise MOT POUR MOT de la spécification, et ce n'est
+       pas une coquetterie. « Dont 1 h 30 auxquelles j'ai choisi de renoncer ce
+       mois-ci » énonce un GESTE ASSUMÉ. « Non facturées », « offertes » ou
+       « dues » énonceraient une créance en attente — c'est-à-dire une dette
+       que le parent pourrait croire devoir régler un jour, ou pire, une
+       faveur à rappeler. Ce document sert à éteindre les désaccords, pas à en
+       créer un nouveau. (Risque n° 4.) */
+    if (r.minutesSupRenoncees > 0) {
+      out.push({
+        titre: null,
+        lignes: [['Heures supplémentaires du mois', Kit.heures(r.minutesSupAcquises)],
+                 ['Dont ' + Kit.heures(r.minutesSupRenoncees) +
+                  ' auxquelles j’ai choisi de renoncer ce mois-ci', '', { doux: true }]]
+      });
+    }
+
     out.push({
       titre: 'Compteurs de ce contrat à la fin du mois',
       lignes: [
@@ -136,6 +175,101 @@
       ]
     });
     return out;
+  }
+
+  /* Même mise en forme que l'historique du lot 13 : « 31 août 2026 à 18h42 ».
+     Deux écrans qui parlent du même horodatage ne doivent pas l'écrire
+     différemment. */
+  function dateHeure(iso) {
+    if (global.UiReouverture && global.UiReouverture.dateHeure) {
+      return global.UiReouverture.dateHeure(iso);
+    }
+    return Kit.dateLongue(iso);
+  }
+
+  /* Le détail n'est affichable que s'il RECONSTITUE le montant. Si les deux ne
+     tombent pas juste — un barème changé en cours de mois, une reprise de
+     compteurs — on ne fabrique pas une multiplication fausse : on donne le
+     montant seul. Mieux vaut moins de détail qu'un détail qui ment. */
+  function libelleEntretienDetaille(r) {
+    var parJour = vue.contrat.entretien_centimes_jour || 0;
+    if (parJour > 0 && r.joursPresence * parJour === r.entretienCentimes) {
+      return 'Indemnité d’entretien — ' + r.joursPresence + ' jours × ' + Kit.eur(parJour);
+    }
+    return 'Indemnité d’entretien';
+  }
+
+  /* L'auteur du document. Le nom vient du compte : c'est la seule identité que
+     l'application connaisse. Sans lui, un document retrouvé des mois plus tard
+     ne dit pas de qui il vient.
+     // TODO RÈGLE ABSENTE : ni le nom complet ni le numéro d'agrément de
+     // l'assistante maternelle n'existent en base. À reprendre au lot 14
+     // (mise en service), qui écrit les informations d'installation. */
+  function enTeteAuteur() {
+    var qui = global.App.email && global.App.email();
+    return 'Établi par ' + (qui ? qui : 'votre assistante maternelle') +
+      ', assistante maternelle';
+  }
+
+  function enTetePeriode(id) {
+    var dernier = Kit.nbJoursDansMois(vue.annee, vue.mois);
+    return 'Période du 1er au ' + dernier + ' ' +
+      Kit.libelleMois(vue.mois) + ' ' + vue.annee +
+      (id.famille ? ' · famille ' + id.famille : '');
+  }
+
+  /* Toutes les journées qui S'ÉCARTENT de la normale, avec leur date en clair.
+     Le document disait « 14 jours de présence » sans jamais dire lesquels
+     manquaient : un parent qui conteste une absence n'avait aucun moyen de
+     vérifier laquelle. La présence reste le cas par défaut, non listée — c'est
+     la même règle qu'à la saisie. */
+  /* Lot 8 — l'accord vient du genre du contrat. Ce document part chez une
+     famille : « Léa absent·e » y est plus visible qu'ailleurs. */
+  var LIBELLE_ECART = {
+    absence_enfant:  function (prenom, contrat) {
+      return prenom + ' ' + Kit.accordDe(contrat, 'absent');
+    },
+    ferie:           function () { return 'férié'; },
+    conge_maria:     function () { return 'congé de l’assistante maternelle'; },
+    sans_solde:      function () { return 'congé sans solde'; },
+    hors_planning:   function () { return 'je ne travaillais pas'; },
+    familiarisation: function () { return 'familiarisation'; }
+  };
+
+  function journeesParticulieres(prenom) {
+    var r = vue.entree.resultat;
+    /* Sur un mois clôturé, la liste vient de l'instantané si elle y figure :
+       un document remis aux parents ne se réécrit pas. Les instantanés
+       antérieurs au lot 7 n'en portent pas — on se rabat alors sur les
+       journées saisies, qui n'ont pas bougé puisque le mois est verrouillé. */
+    var source = (vue.entree.fige && r.journeesParticulieres) || null;
+    if (source) return source;
+    return journeesParticulieresDe(prenom, vue.contrat, vue.journees, vue.annee, vue.mois);
+  }
+
+  /* Forme PURE. Correctif A15 de la relecture PR9 : cette liste n'était écrite
+     dans AUCUN instantané, si bien que la branche « figé » ci-dessus était
+     morte et qu'un document clôturé reconstruisait toujours ses journées
+     particulières depuis le planning ACTUEL. Changer les jours de garde après
+     la clôture changeait donc le contenu d'un document déjà remis. */
+  function journeesParticulieresDe(prenom, contrat, journees, annee, mois) {
+    var out = [];
+    Object.keys(journees || {}).sort().forEach(function (d) {
+      var t = journees[d].type;
+      if (t === 'presence') return;
+      var f = LIBELLE_ECART[t];
+      if (!f) return;
+      out.push({ date: d, quoi: f(prenom, contrat) });
+    });
+    /* Les fériés ne sont pas saisis : ils viennent du calendrier. Ils comptent
+       pourtant parmi les journées où l'enfant n'était pas là, et un parent qui
+       compte ses jours doit les retrouver. */
+    Kit.joursPlanning(contrat, annee, mois).forEach(function (d) {
+      if ((journees || {})[d]) return;
+      if (!Feries.estJourFerie(d)) return;
+      out.push({ date: d, quoi: 'férié' });
+    });
+    return out.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
   }
 
   /* Encart permanent de RG-06 : c'est lui qui doit éteindre le désaccord
@@ -235,9 +369,23 @@
   function documentHtml(id) {
     var doc = Kit.ce('div', 'doc');
     var dh = Kit.ce('div', 'dh');
-    dh.appendChild(Kit.ce('div', 't1', id.prenom + ' — ' + Kit.libelleMoisAnnee(vue.annee, vue.mois)));
-    dh.appendChild(Kit.ce('div', 't2', 'Récapitulatif mensuel' + (id.famille ? ' · famille ' + id.famille : '')));
+    /* LOT 7 — Le document devient AUTO-PORTANT : lisible seul, hors contexte,
+       des mois plus tard. Un parent qui rouvre ce papier en février doit
+       pouvoir dire de qui il vient, pour quel enfant, sur quelle période, sans
+       rien d'autre sous les yeux. L'en-tête portait le prénom et le mois ; il
+       lui manquait l'auteur et les dates exactes. */
+    dh.appendChild(Kit.ce('div', 't1',
+      'Récapitulatif de ' + id.prenom + ' — ' + Kit.libelleMoisAnnee(vue.annee, vue.mois)));
+    dh.appendChild(Kit.ce('div', 't2', enTeteAuteur()));
+    dh.appendChild(Kit.ce('div', 't3', enTetePeriode(id)));
     doc.appendChild(dh);
+
+    /* Bandeau de statut : un document provisoire ne se présente jamais comme
+       définitif. C'est le défaut central que le lot 7 corrige. */
+    var fige = vue.entree.fige;
+    var st = Kit.ce('div', 'dstat ' + (fige ? 'def' : 'prov'),
+      fige ? 'Document définitif' : 'Document provisoire');
+    doc.appendChild(st);
 
     blocs().forEach(function (b) {
       if (b.titre) doc.appendChild(Kit.ce('div', 'ds', b.titre));
@@ -262,7 +410,17 @@
     var bloc = Kit.ce('div');
     bloc.appendChild(Kit.section('Partager — si vous le souhaitez'));
 
-    var bTexte = Kit.bouton('btn nt', function () { Kit.copierTexte(texte()); });
+    /* LOT 7 — APERÇU DU TEXTE À COLLER (§6.6). Le bouton « Copier » agissait à
+       l'aveugle : Maria collait dans son application de messages sans avoir
+       jamais vu ce qu'elle envoyait. Le texte est désormais affiché EN CLAIR
+       et sélectionnable — ce qui règle du même coup l'échec de copie, puisque
+       le texte reste sous les yeux et se sélectionne à la main. */
+    bloc.appendChild(Kit.section('Le message que vous allez coller'));
+    var apercu = Kit.ce('pre', 'apercu-texte', texte());
+    apercu.setAttribute('tabindex', '0');
+    bloc.appendChild(apercu);
+
+    var bTexte = Kit.bouton('btn nt', function () { copier(bTexte, apercu); });
     bTexte.textContent = 'Copier le texte';
     bloc.appendChild(bTexte);
 
@@ -272,7 +430,83 @@
 
     bloc.appendChild(Kit.ce('p', 'sb q',
       'L’envoi aux parents est facultatif : le document reste disponible ici à tout moment.'));
+
+    bloc.appendChild(caseTransmis());
     return bloc;
+  }
+
+  /* Le message d'échec est posé par Kit, une seule fois pour toute
+     l'application. Ce qui se joue ICI, c'est de ramener l'aperçu sous les yeux
+     de Maria : lui dire « le texte reste affiché » sans le lui montrer ne sert
+     à rien si elle a fait défiler l'écran. */
+  function copier(bouton, apercu) {
+    Kit.copierTexte(texte()).catch(function () {
+      if (apercu && apercu.scrollIntoView) apercu.scrollIntoView({ block: 'center' });
+    });
+  }
+
+  /* LOT 7 — « Transmis à la famille » (§6.6, V8-30).
+
+     COCHER NE CLÔTURE PAS, ET CLÔTURER NE COCHE PAS. Ce sont deux gestes
+     indépendants, et les coupler — même « logiquement », même « ça va de
+     soi » — casserait le cas réel : Maria clôture le 31 et transmet le 3 du
+     mois suivant. Piège n° 6 de la spécification.
+
+     La case ne se DÉCOCHE pas. Si Maria s'est trompée, c'est l'historique du
+     mois (lot 13) qui fait foi : un événement écrit ne s'efface pas, on lui en
+     ajoute un autre. */
+  function caseTransmis() {
+    var bloc = Kit.ce('div', 'transmis');
+    var recap = vue.entree.recap;
+    var id = identite();
+    var nomFamille = id.famille ? 'famille ' + id.famille : 'la famille';
+
+    if (!recap) {
+      /* Rien n'est encore enregistré pour ce mois : il n'y a pas de ligne à
+         horodater. On le dit plutôt que d'afficher une case sans effet. */
+      bloc.appendChild(Kit.ce('p', 'sb q',
+        'La transmission pourra être notée une fois le mois enregistré.'));
+      return bloc;
+    }
+
+    if (recap.transmis_le) {
+      bloc.appendChild(coche(true,
+        'Transmis à la ' + nomFamille, 'le ' + dateHeure(recap.transmis_le)));
+      return bloc;
+    }
+
+    var b = Kit.bouton('coche', function () { marquer(b, bloc, nomFamille); });
+    b.appendChild(Kit.ce('span', 'bx', '☐'));
+    b.appendChild(Kit.ce('span', 'tx', 'Transmis à la ' + nomFamille));
+    bloc.appendChild(b);
+    return bloc;
+  }
+
+  function coche(cochee, libelle, quand) {
+    var d = Kit.ce('div', 'coche' + (cochee ? ' on' : ''));
+    d.appendChild(Kit.ce('span', 'bx', cochee ? '☑' : '☐'));
+    var tx = Kit.ce('span', 'tx', libelle);
+    if (quand) tx.appendChild(Kit.ce('small', null, ' — ' + quand));
+    d.appendChild(tx);
+    return d;
+  }
+
+  function marquer(bouton, bloc, nomFamille) {
+    bouton.disabled = true;
+    global.DB.marquerTransmis(vue.contrat.id, vue.annee, vue.mois)
+      .then(function (r) {
+        global.App.invalider();
+        if (vue.entree.recap && r && r.transmis_le) vue.entree.recap.transmis_le = r.transmis_le;
+        Kit.vider(bloc);
+        bloc.appendChild(coche(true, 'Transmis à la ' + nomFamille,
+          r && r.transmis_le ? 'le ' + dateHeure(r.transmis_le) : 'à l’instant'));
+        Kit.toast('La transmission est notée. Le mois n’a pas été modifié.');
+      })
+      .catch(function (e) {
+        bouton.disabled = false;
+        Kit.toast('La transmission n’a pas été notée. ' + Kit.messageErreur(e) +
+          ' Vous pouvez réessayer.', true);
+      });
   }
 
   /* ------------------------------------------------------------------ */
@@ -482,13 +716,42 @@
           'Après clôture, les chiffres ne bougent plus. Vérifiez vos journées avant de continuer. ' +
           'Vous pourrez rouvrir ce mois si vous devez corriger : la réouverture sera inscrite ' +
           'dans son historique. Le partage aux parents, lui, reste possible à tout moment.'));
+        /* LOT 7 (V8-04) — CLÔTURE D'UN MOIS NON ÉCHU.
+           Elle reste possible : le dernier jour ouvré du mois est un cas
+           parfaitement légitime, et l'interdire ferait perdre à Maria le seul
+           moment où elle a le temps. Mais elle ne se fait plus en silence.
+           Le mois d'août clôturé le 20, ce sont sept journées travaillées qui
+           disparaissent d'un document remis à une famille — et le mois ne se
+           recalcule jamais après coup (RG-15). */
+        /* A3 : les journées, pour que les congés déjà posés ne soient pas
+           comptés comme des jours encore à travailler. C'est ici que le
+           chiffre compte le plus — il mesure ce qu'on s'apprête à perdre. */
+        var restants = Kit.joursTravaillesRestants(
+          vue.contrat, vue.annee, vue.mois, global.App.aujourdhui(), vue.journees);
+        if (restants > 0) {
+          corps.appendChild(Kit.warnbox(
+            restants + (restants > 1 ? ' jours travaillés sont encore à venir'
+                                     : ' jour travaillé est encore à venir') +
+              ' en ' + Kit.libelleMois(vue.mois) + '.',
+            ' Si vous clôturez maintenant, ' +
+            (restants > 1 ? 'ces journées ne seront pas comptées.'
+                          : 'cette journée ne sera pas comptée.')));
+        }
+
         var l = Kit.lines(corps);
         var r = vue.entree.resultat;
         Kit.ligne(l, 'Jours de présence', Kit.jours(r.joursPresence));
         Kit.ligne(l, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
+
         var b = Kit.bouton('btn', function () { verifierPuisCloturer(b); });
-        b.textContent = 'Oui, clôturer le mois';
+        /* Le libellé change avec la situation : « quand même » n'a de sens que
+           s'il y a un avertissement au-dessus. */
+        b.textContent = restants > 0 ? 'Clôturer quand même' : 'Oui, clôturer le mois';
         corps.appendChild(b);
+
+        var bAnnuler = Kit.bouton('btn nt', function () { Kit.fermerFeuille(); });
+        bAnnuler.textContent = 'Annuler';
+        corps.appendChild(bAnnuler);
       });
   }
 
@@ -523,13 +786,42 @@
      des jours de congé du mois (lot 6, pour que le document affiche les mêmes
      dates avant et après la clôture). Le moteur n'est pas touché. */
   function instantane() {
-    var r = vue.entree.resultat;
+    return construireInstantane({
+      entree: vue.entree, contrat: vue.contrat, journees: vue.journees,
+      annee: vue.annee, mois: vue.mois
+    });
+  }
+
+  /* CORRECTIF B4 DE LA RELECTURE PR9 — UN SEUL CONSTRUCTEUR D'INSTANTANÉ.
+
+     Il y avait deux chemins de clôture et deux instantanés différents. Celui-ci
+     enrichissait le résultat du moteur ; la fin de mois guidée du lot 7
+     envoyait `entree.resultat` brut. Un mois clôturé par le parcours guidé
+     perdait donc son prénom figé, son nom de famille, la date d'effet de son
+     barème et la liste datée de ses jours de congé.
+
+     Conséquence concrète : Maria clôture juillet par le parcours guidé, corrige
+     plus tard le prénom de l'enfant ou le nom du foyer, rouvre le document de
+     juillet et le renvoie aux parents — il porte le nom d'AUJOURD'HUI, et la
+     liste des jours de congé a disparu. Un document déjà remis se réécrivait
+     tout seul. C'est très exactement ce que la fin de mois guidée devait
+     supprimer.
+
+     La fonction est PURE et EXPORTÉE : les deux chemins l'appellent, et il
+     devient impossible qu'ils divergent de nouveau sans que ce soit visible. */
+  function construireInstantane(ctx) {
+    var r = ctx.entree.resultat;
     var snap = {};
     Object.keys(r).forEach(function (k) { snap[k] = r[k]; });
-    snap.prenomEnfant = vue.contrat.prenom_enfant;
-    snap.nomFamille = (vue.contrat.famille && vue.contrat.famille.nom) || null;
-    snap.salaireDateEffet = vue.entree.salaire ? vue.entree.salaire.date_effet : null;
-    snap.joursConge = joursConge() || [];
+    snap.prenomEnfant = ctx.contrat.prenom_enfant;
+    snap.nomFamille = (ctx.contrat.famille && ctx.contrat.famille.nom) || null;
+    snap.salaireDateEffet = ctx.entree.salaire ? ctx.entree.salaire.date_effet : null;
+    snap.joursConge = joursCongeDe(ctx.journees) || [];
+    /* A15 : la liste des journées particulières entre enfin dans l'instantané.
+       Sans elle, un changement de planning après la clôture réécrivait le
+       contenu d'un document déjà remis. */
+    snap.journeesParticulieres = journeesParticulieresDe(
+      ctx.contrat.prenom_enfant, ctx.contrat, ctx.journees, ctx.annee, ctx.mois);
     return snap;
   }
 
@@ -562,5 +854,11 @@
       });
   }
 
-  global.UiDocument = { afficher: afficher, ENCART_RG06: ENCART_RG06 };
+  global.UiDocument = {
+    afficher: afficher,
+    ENCART_RG06: ENCART_RG06,
+    /* Exporté pour la fin de mois guidée (correctif B4). Un seul constructeur
+       d'instantané dans tout le projet, quel que soit le chemin de clôture. */
+    construireInstantane: construireInstantane
+  };
 })(window);

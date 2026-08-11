@@ -436,17 +436,27 @@
 
   /* Un échec de copie doit se VOIR : sinon Maria colle le contenu précédent du
      presse-papiers en croyant avoir copié son récapitulatif. */
+  /* LOT 7 — rend désormais une PROMESSE, pour que l'appelant puisse réagir à
+     l'échec (ramener l'aperçu du texte sous les yeux, par exemple). Les
+     messages restent posés ici : ils doivent être les mêmes partout. */
   function copierTexte(txt) {
-    var ok = function () { toast('Texte copié — collez-le où vous voulez'); };
-    var ko = function (e) {
-      if (global.console) global.console.error('[Récap] copie impossible :', e);
-      toast('Copie impossible. Le texte reste affiché : vous pouvez le sélectionner à la main.', true);
-    };
-    if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
-      global.navigator.clipboard.writeText(txt).then(ok, function () { replierCopie(txt, ok, ko); });
-    } else {
-      replierCopie(txt, ok, ko);
-    }
+    return new Promise(function (resoudre, rejeter) {
+      var ok = function () {
+        toast('Texte copié — collez-le où vous voulez');
+        resoudre();
+      };
+      var ko = function (e) {
+        if (global.console) global.console.error('[Récap] copie impossible :', e);
+        toast('La copie n’a pas fonctionné. Le texte reste affiché, ' +
+          'vous pouvez le sélectionner à la main.', true);
+        rejeter(e);
+      };
+      if (global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
+        global.navigator.clipboard.writeText(txt).then(ok, function () { replierCopie(txt, ok, ko); });
+      } else {
+        replierCopie(txt, ok, ko);
+      }
+    });
   }
   function replierCopie(txt, ok, ko) {
     try {
@@ -503,11 +513,191 @@
     return Feries.estJourFerie(dateIso) ? 'ferie' : 'presence';
   }
 
-  /* Accord féminin du prénom de l'enfant. Impossible à deviner sûrement (« Tom »
-     ne finit pas par -a, « Noah » si) : on se rabat sur la forme inclusive
-     courte, qui est juste dans tous les cas et se lit bien.
-     // TODO RÈGLE ABSENTE : le genre de l'enfant n'existe pas en base. */
-  function accord(mot) { return mot + '·e'; }
+  /* ------------------------------------------------------------------ */
+  /* Lot 7 — L'état d'avancement d'un mois                               */
+  /*                                                                     */
+  /* Jusqu'ici l'application ne connaissait que deux états, clôturé ou    */
+  /* pas, et présentait une PROJECTION COMME UN FAIT : le 11 août elle    */
+  /* annonçait « 1 150,00 € à verser » alors qu'il restait dix jours      */
+  /* travaillés. Trois états explicites remplacent ce silence.           */
+  /*                                                                     */
+  /* Ces deux fonctions reçoivent la date du jour EN PARAMÈTRE et ne      */
+  /* lisent jamais l'horloge (piège n° 1 de la spécification). C'est ce   */
+  /* qui rend le comportement du 25 vérifiable par un test : une         */
+  /* fonction qui lit `new Date()` à l'intérieur est intestable, et le    */
+  /* jour de bascule ne se contrôlerait plus jamais.                      */
+  /* ------------------------------------------------------------------ */
+
+  /* À partir de ce jour du mois, le mois courant passe de « en cours » à
+     « à clôturer » : Maria connaît alors l'essentiel de son mois. */
+  var JOUR_BASCULE_CLOTURE = 25;
+
+  var ETAT_EN_COURS   = 'en_cours';
+  var ETAT_A_CLOTURER = 'a_cloturer';
+  var ETAT_CLOTURE    = 'cloture';
+
+  /* Les trois seuls mots autorisés à l'écran (V8-01). Ni « en attente », ni
+     « terminé », ni « validé », ni « figé », ni « envoyé ». */
+  var LIBELLE_ETAT = {
+    en_cours:   'en cours',
+    a_cloturer: 'à clôturer',
+    cloture:    'clôturé'
+  };
+
+  function etatDuMois(annee, mois, recap, aujourdhuiIso) {
+    if (recap && recap.statut === 'fige') return ETAT_CLOTURE;
+
+    var p = String(aujourdhuiIso || '').split('-');
+    var anAuj   = Number(p[0]);
+    var moisAuj = Number(p[1]);
+    var jourAuj = Number(p[2]);
+    /* Date du jour illisible : on ne devine pas. Le mois est dit à clôturer,
+       ce qui montre la tuile plutôt que de la cacher — un mois oublié coûte
+       plus cher qu'une tuile de trop. */
+    if (!anAuj || !moisAuj || !jourAuj) return ETAT_A_CLOTURER;
+
+    var rang    = annee * 12 + mois;
+    var rangAuj = anAuj * 12 + moisAuj;
+
+    if (rang > rangAuj) return ETAT_EN_COURS;          // mois futur
+    if (rang < rangAuj) return ETAT_A_CLOTURER;        // mois échu, non clôturé
+    return jourAuj < JOUR_BASCULE_CLOTURE ? ETAT_EN_COURS : ETAT_A_CLOTURER;
+  }
+
+  /* Nombre de jours du planning du contrat, non fériés, STRICTEMENT
+     postérieurs à la date du jour, dans le mois demandé. Zéro pour un mois
+     échu — la comparaison de chaînes « YYYY-MM-DD » suffit, elles se trient
+     dans l'ordre chronologique.
+
+     Ce nombre est ce qui rend la mention « provisoire » utile : « chiffres
+     provisoires » tout seul n'aide personne, « il reste 6 jours travaillés »
+     dit à Maria de combien son mois peut encore bouger. */
+  /* CORRECTIF A3 (lot 7) DE LA RELECTURE PR9 — LES CONGÉS DÉJÀ POSÉS COMPTAIENT
+     COMME DES JOURS À VENIR.
+
+     Ce décompte ne recevait pas les journées et ne filtrait que les fériés. Le
+     10 août, avec une semaine de congé déjà posée du 17 au 21, l'écran
+     annonçait « il reste 15 jours travaillés » là où il en restait 10. Le
+     chiffre sert à mesurer ce qu'on s'apprête à perdre en clôturant tôt
+     (V8-04) : il doit être juste, ou il fait exactement l'inverse de ce pour
+     quoi il existe.
+
+     `journees` est FACULTATIF : les appelants qui ne l'ont pas obtiennent le
+     décompte d'avant, jamais une exception. */
+  function joursTravaillesRestants(contrat, annee, mois, aujourdhuiIso, journees) {
+    if (!contrat || !aujourdhuiIso) return 0;
+    return joursPlanning(contrat, annee, mois).filter(function (d) {
+      if (d <= aujourdhuiIso) return false;
+      if (Feries.estJourFerie(d)) return false;
+      /* Une journée DÉJÀ SAISIE qui n'est pas une présence — congé de Maria,
+         absence de l'enfant, sans solde — n'est plus un jour à travailler. */
+      var ligne = journees && journees[d];
+      if (ligne && ligne.type && ligne.type !== 'presence') return false;
+      return true;
+    }).length;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Lot 8 — Identité d'un enfant : accord, couleur, photo               */
+  /* ------------------------------------------------------------------ */
+
+  /* Accord d'un adjectif ou d'un participe avec le genre de l'enfant.
+
+     AVANT LE LOT 8, le genre n'existait pas en base : l'application écrivait
+     « Léa est comptée présent·e » partout, faute de savoir. Le point médian
+     n'était pas un choix d'écriture, c'était un aveu d'ignorance — et il tombe
+     mal dans une application dont la règle est « français simple » (B.0-8),
+     lue par une personne qui n'est pas informaticienne.
+
+     Le genre est désormais une colonne. Renseigné, il donne « comptée
+     présente » ou « compté présent ». Absent — et c'est un état parfaitement
+     légitime, la colonne accepte `null` —, on garde la forme inclusive courte :
+     elle est juste dans tous les cas.
+
+     `accord(mot, genre)` : 'f' -> « présente », 'g' -> « présent »,
+     rien -> « présent·e ».
+     // DÉCISION EN ATTENTE : conserver le point médian quand le genre est vide,
+     // ou trouver une tournure qui l'évite ? Signalé à Adrien. */
+  function accord(mot, genre) {
+    if (genre === 'g') return mot;
+    if (genre === 'f') return mot + 'e';
+    return mot + '·e';
+  }
+
+  /* Raccourci quand on a le contrat sous la main plutôt que le seul genre. */
+  function accordDe(contrat, mot) { return accord(mot, contrat && contrat.genre); }
+
+  /* La palette d'identité. SIX jetons, jamais une valeur libre.
+
+     Ces six teintes sont choisies pour deux raisons à la fois : rester
+     distinctes entre elles, et ne JAMAIS entrer en collision avec les couleurs
+     d'ÉTAT du calendrier (V8-31). Le calendrier parle d'états — présent,
+     absent, congé, férié —, pas d'enfants. Si la couleur de Léa se mettait à
+     teinter ses cases, Maria ne lirait plus rien : deux systèmes de sens sur
+     le même pixel, et aucun des deux ne survit. */
+  var COULEURS_IDENTITE = [
+    { jeton: 'vert',       libelle: 'Vert',       fond: '#dcefe8', trait: '#2f6b56', texte: '#1d4436' },
+    { jeton: 'bleu',       libelle: 'Bleu',       fond: '#dee6f4', trait: '#3a5a8c', texte: '#24395a' },
+    { jeton: 'prune',      libelle: 'Prune',      fond: '#eee0ec', trait: '#7a4370', texte: '#4e2b48' },
+    { jeton: 'terracotta', libelle: 'Terracotta', fond: '#f6e2da', trait: '#9c4f33', texte: '#63321f' },
+    { jeton: 'ocre',       libelle: 'Ocre',       fond: '#f3ead2', trait: '#87682a', texte: '#55411a' },
+    { jeton: 'ardoise',    libelle: 'Ardoise',    fond: '#e4e8ea', trait: '#4d5a61', texte: '#30393e' }
+  ];
+  /* Couleur NEUTRE, pour un enfant à qui aucune couleur n'a été donnée.
+     CORRECTIF A13 (lot 8) DE LA RELECTURE PR9 : le repli était
+     `COULEURS_IDENTITE[0]`, c'est-à-dire VERT. Deux enfants — l'un
+     explicitement vert, l'autre sans couleur — portaient donc la même
+     pastille, et le sélecteur CSS écrit pour teindre l'absence de couleur
+     (`.av:not([class*="id-"])`) ne pouvait jamais s'appliquer, puisque
+     `avatar` posait toujours une classe `id-*`. */
+  var COULEUR_NEUTRE = {
+    jeton: 'neutre', libelle: 'Sans couleur',
+    fond: '#e9edf0', trait: '#5a666e', texte: '#39434a'
+  };
+
+  function couleurIdentite(jeton) {
+    for (var i = 0; i < COULEURS_IDENTITE.length; i++) {
+      if (COULEURS_IDENTITE[i].jeton === jeton) return COULEURS_IDENTITE[i];
+    }
+    return COULEUR_NEUTRE;
+  }
+
+  /* Pastille d'identité : la photo si elle existe, l'initiale sinon, dans la
+     couleur du contrat. `classe` permet d'en faire une petite ou une grande
+     (« av », « av gd », « av pt ») sans dupliquer la logique. */
+  function avatar(contrat, classe) {
+    var c = contrat || {};
+    var col = couleurIdentite(c.couleur);
+    var e = ce('div', 'av ' + (classe || '') + ' id-' + col.jeton);
+    if (c.photo) {
+      var img = ce('img');
+      img.src = c.photo;
+      img.alt = '';                       // décoratif : le prénom est écrit à côté
+      e.appendChild(img);
+      e.classList.add('avphoto');
+    } else {
+      e.textContent = (c.prenom_enfant || '?').charAt(0).toUpperCase();
+    }
+    return e;
+  }
+
+  /* Nom complet de l'enfant : « Léa Dupont » si le nom est connu, « Léa »
+     sinon. `contrat.nom` est le nom de l'ENFANT ; `contrat.famille.nom` est
+     celui du FOYER. Les confondre est exactement le défaut que le lot 8
+     corrige : ne jamais les substituer l'un à l'autre ici. */
+  function nomComplet(contrat) {
+    var c = contrat || {};
+    return c.nom ? (c.prenom_enfant + ' ' + c.nom) : (c.prenom_enfant || '');
+  }
+
+  /* Pastille ronde d'état, avec son mot. La couleur ne porte jamais le sens
+     toute seule (V8-05) : le mot est toujours là, à côté du rond. */
+  function pastilleEtat(etat) {
+    var s = ce('span', 'pastille ' + etat);
+    s.appendChild(ce('span', 'rond'));
+    s.appendChild(ce('span', 'mot', LIBELLE_ETAT[etat] || ''));
+    return s;
+  }
 
   /* ------------------------------------------------------------------ */
 
@@ -527,6 +717,10 @@
     choix: choix,
     toast: toast, messageErreur: messageErreur, copierTexte: copierTexte,
     joursPlanning: joursPlanning, joursTravailles: joursTravailles, typeDuJour: typeDuJour,
-    accord: accord
+    etatDuMois: etatDuMois, joursTravaillesRestants: joursTravaillesRestants,
+    pastilleEtat: pastilleEtat, LIBELLE_ETAT: LIBELLE_ETAT,
+    JOUR_BASCULE_CLOTURE: JOUR_BASCULE_CLOTURE,
+    accord: accord, accordDe: accordDe, avatar: avatar, nomComplet: nomComplet,
+    COULEURS_IDENTITE: COULEURS_IDENTITE, couleurIdentite: couleurIdentite
   };
 })(window);

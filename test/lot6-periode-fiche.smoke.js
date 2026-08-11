@@ -93,9 +93,23 @@ var DB = {
   listContratsPourMois: function () { return Promise.resolve([LEA]); },
   listContratsPourPeriode: function () { return Promise.resolve([LEA]); },
   listFamillesToutes: function () { return Promise.resolve([]); },
+    /* Lot 8 — identité et familles. */
+    majContratIdentite: function (id, champs) { return Promise.resolve(champs); },
+    rattacherContratAFamille: function () { return Promise.resolve(true); },
+    renommerFamille: function () { return Promise.resolve(true); },
+    archiverFamille: function () { return Promise.resolve(true); },
+    desarchiverFamille: function () { return Promise.resolve(true); },
+    listFamillesAvecContrats: function () { return Promise.resolve([]); },
+  /* Lot 14 — la fiche contrat demande si le contrat est vierge pour décider
+     d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
+     cette fonction, l'écran lève avant même de se rendre. */
+  contratEstVierge: function () { return Promise.resolve(false); },
   getSalaires: function () { return Promise.resolve([SALAIRE]); },
   getCompteurInitial: function () { return Promise.resolve(null); },
   getJourneesMois: function () { return Promise.resolve({}); },
+  listImputationsPourMois: function () { return Promise.resolve([]); },
+  getNoteMensuelle: function () { return Promise.resolve(null); },
+    enregistrerNoteMensuelle: function (c, a, m, t) { return Promise.resolve({ texte: t }); },
   getJourneesPeriode: function () { return Promise.resolve({}); },
   /* Le récap figé n'a pas d'instantané utilisable ici : la chaîne le
      recalcule donc comme un mois ordinaire. C'est volontaire — ce test porte

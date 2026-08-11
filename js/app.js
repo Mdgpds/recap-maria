@@ -30,7 +30,10 @@
   var Chaine = global.ChaineMois;
 
   /* Écrans -> module global. Les trois premiers portent la barre d'onglets. */
-  var ONGLETS = ['accueil', 'conges', 'menu'];
+  /* Lot 8 — quatre onglets. L'ordre de la barre est aussi celui du tableau :
+     c'est lui qui décide de ce qui est un écran RACINE (pile remise à zéro,
+     barre visible) et de ce qui est un sous-écran atteint par un retour. */
+  var ONGLETS = ['accueil', 'historique', 'conges', 'menu'];
   var ECRANS = {
     accueil: 'UiAccueil',
     conges: 'UiConges',
@@ -40,7 +43,17 @@
     historique: 'UiHistorique',
     bilan: 'UiHistorique',       // le bilan annuel est rendu par le même module
     fiche: 'UiContrat',
-    periode: 'UiPeriode'
+    periode: 'UiPeriode',
+    /* Lot 7 — la fin de mois guidée est rendue par le module d'accueil, qui
+       distingue les deux vues. La spécification réserve au lot une liste de
+       fichiers close : plutôt que d'y ajouter `ui-fin-de-mois.js` de ma propre
+       initiative, l'écran vit dans `ui-accueil.js`. Signalé en restitution. */
+    finDeMois: 'UiAccueil',
+    familles: 'UiMenu',         // lot 8 — rendu par le module du Menu
+    modeles: 'UiMenu',          // lot 11 — contrats types
+    modifGroupee: 'UiMenu',     // lot 11 — modification groupée
+    reprise: 'UiMenu',          // lot 14 — reprendre mes comptes
+    rappels: 'UiMenu'           // lot 15 — rappels par notification
   };
 
   var el = {};
@@ -119,6 +132,36 @@
           btn.disabled = false;
         });
     });
+
+    /* LOT 14 (A6) — « Mot de passe oublié ».
+       LE MESSAGE EST LE MÊME DANS TOUS LES CAS, y compris quand l'adresse est
+       inconnue : « Si un compte existe pour cette adresse… ». C'est le
+       conditionnel qui fait tout le travail. Un formulaire qui répondrait
+       « aucun compte ne correspond » permettrait à n'importe qui de savoir si
+       une adresse a un compte ici — et ce qu'il y a derrière, ce sont les
+       revenus d'une personne et les noms de quatre enfants.
+       Seul un échec de RÉSEAU est distingué : Maria doit savoir que rien
+       n'est parti. */
+    var bOubli = document.getElementById('btn-oubli');
+    if (bOubli) {
+      bOubli.addEventListener('click', function () {
+        var email = document.getElementById('login-email').value.trim();
+        if (!email) {
+          messageLogin('Renseignez votre adresse e-mail, puis touchez « Mot de passe oublié ».');
+          return;
+        }
+        bOubli.disabled = true;
+        messageLogin('Envoi…');
+        global.DB.demanderReinitialisation(email)
+          .then(function () {
+            messageLogin('Si un compte existe pour cette adresse, un message vient d’être envoyé.');
+          })
+          .catch(function (err) {
+            messageLogin('L’envoi n’a pas abouti : ' + Kit.messageErreur(err));
+          })
+          .then(function () { bOubli.disabled = false; });
+      });
+    }
   }
 
   function messageLogin(txt) {
@@ -224,7 +267,21 @@
   function aller(ecran, params, racine) {
     if (!etat.pret) return Promise.resolve();
     Kit.fermerFeuille();
-    if (racine || ONGLETS.indexOf(ecran) !== -1) etat.pile = [{ ecran: ecran, params: params || {} }];
+    /* CORRECTIF A4 (lot 8) DE LA RELECTURE PR9 — L'ONGLET HISTORIQUE PERDAIT
+       SON FIL.
+
+       Un écran d'ONGLET repart d'une pile neuve : c'est ce qu'on attend en
+       touchant un onglet. Mais `ui-historique.js` navigue vers CE MÊME écran
+       pour ouvrir un enfant. La pile était donc remise à zéro à l'ouverture
+       d'un enfant, et « ‹ » ramenait à l'Accueil au lieu de la liste — le
+       geste de retour du téléphone sortait même de l'application.
+
+       La règle exacte : un onglet ne repart de zéro que lorsqu'on y arrive
+       SANS paramètre. Avec un paramètre, c'est une descente dans l'écran, pas
+       un retour à sa racine. */
+    var aParametres = !!(params && Object.keys(params).length);
+    var racineEffective = racine || (ONGLETS.indexOf(ecran) !== -1 && !aParametres);
+    if (racineEffective) etat.pile = [{ ecran: ecran, params: params || {} }];
     else etat.pile.push({ ecran: ecran, params: params || {} });
     if (global.history && global.history.pushState) {
       global.history.pushState({ recap: etat.pile.length }, '');
@@ -255,6 +312,39 @@
     if (!etat.pile.length) return Promise.resolve();
     var cible = etat.pile[etat.pile.length - 1];
     return rendre(cible.ecran, cible.params);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 15 — LA PASTILLE DE L'ONGLET ACCUEIL (V8-26, A5)                */
+  /*                                                                     */
+  /* C'EST LE FILET. Les notifications dépendent d'un service qui envoie, */
+  /* d'une permission accordée et — sur iPhone — de l'application         */
+  /* installée sur l'écran d'accueil. Chacune de ces trois choses peut    */
+  /* manquer, et deux d'entre elles sont hors de notre portée.            */
+  /*                                                                     */
+  /* La pastille, elle, ne demande rien : ni permission, ni serveur, ni   */
+  /* réseau au moment de l'affichage. Elle est calculée avec les données  */
+  /* déjà en mémoire, et fonctionne même quand tout le reste échoue.      */
+  /* ------------------------------------------------------------------ */
+
+  function majPastilleAccueil(nb) {
+    var bouton = el.tabbar && el.tabbar.querySelector('button[data-onglet="accueil"]');
+    if (!bouton) return;
+    var existante = bouton.querySelector('.pastille-onglet');
+    if (!nb) {
+      if (existante) bouton.removeChild(existante);
+      bouton.removeAttribute('aria-description');
+      return;
+    }
+    if (!existante) {
+      existante = Kit.ce('span', 'pastille-onglet');
+      bouton.appendChild(existante);
+    }
+    existante.textContent = nb > 9 ? '9+' : String(nb);
+    /* Le nombre est écrit DANS la pastille et annoncé aux lecteurs d'écran :
+       une tache de couleur ne dit rien à qui ne la voit pas. */
+    bouton.setAttribute('aria-description',
+      nb === 1 ? '1 mois à clôturer' : nb + ' mois à clôturer');
   }
 
   function ecranCourant() {
@@ -474,6 +564,7 @@
     remplacer: remplacer,
     retour: retour,
     rafraichir: rafraichir,
+    majPastilleAccueil: majPastilleAccueil,
     ecranCourant: ecranCourant,
     barreRetour: barreRetour,
     moisCourant: moisCourant,

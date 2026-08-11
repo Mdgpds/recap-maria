@@ -29,6 +29,21 @@ var path = require('path');
 
 var SOURCE = fs.readFileSync(path.join(__dirname, '..', 'js', 'db.js'), 'utf8');
 
+/* Version SANS COMMENTAIRES, pour l'analyse des `select`.
+
+   Ce contrôle lit db.js comme un texte : il repère une constante, en extrait
+   les fragments entre apostrophes et les recolle. Or les commentaires de ce
+   dépôt sont écrits en français, donc pleins d'apostrophes — « l'application »,
+   « n'existerait », « c'est ». Un commentaire posé AU MILIEU d'une constante
+   concaténée injectait donc ses propres morceaux dans la valeur reconstituée,
+   et le contrôle déclarait manquante une colonne parfaitement présente.
+
+   Trouvé en ajoutant les colonnes du lot 8, qui sont précédées d'un tel
+   commentaire. Le défaut était dans le contrôle, pas dans db.js. */
+var SANS_COMMENTAIRES = SOURCE
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:'"])\/\/[^\n]*/g, '$1');
+
 function egal(obtenu, attendu, libelle) {
   if (obtenu !== attendu) {
     throw new Error(libelle + ' : attendu ' + JSON.stringify(attendu) +
@@ -40,6 +55,17 @@ function egal(obtenu, attendu, libelle) {
    ajoutée par une migration et consommée par un écran ou par le moteur doit
    être ajoutée ici EN MÊME TEMPS que dans le select. */
 var COLONNES_ATTENDUES = {
+  contrat: ['id', 'prenom_enfant', 'famille_id', 'date_debut', 'date_fin',
+            'jours_planning', 'statut', 'archive',
+            'nom', 'genre', 'couleur', 'photo',                 // lot 8
+            'modele_id'],                                       // lot 11
+  note_mensuelle: ['id', 'contrat_id', 'annee', 'mois', 'texte', 'maj_le'],
+  modele_contrat: ['id', 'nom', 'date_effet', 'jours_planning',
+                   'heure_arrivee', 'heure_depart', 'minutes_contractuelles',
+                   'minutes_sup_jour', 'minutes_par_jour_conge',
+                   'entretien_centimes_jour', 'brut_mensuel_centimes',
+                   'net_mensuel_centimes', 'sup_dues_si_enfant_absent',
+                   'ordre_imputation'],
   recap_mensuel: ['id', 'contrat_id', 'annee', 'mois', 'statut', 'donnees',
                   'fige_le', 'transmis_le'],
   journee: ['id', 'contrat_id', 'jour', 'type', 'minutes_reelles',
@@ -47,7 +73,12 @@ var COLONNES_ATTENDUES = {
             'minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override'],
   imputation_conge: ['id', 'contrat_id', 'date_debut', 'date_fin', 'jours_ouvrables',
                      'jours_sur_cp', 'jours_sur_sup', 'jours_sans_solde'],
-  evenement_recap: ['id', 'recap_id', 'type', 'survenu_le', 'motif']
+  evenement_recap: ['id', 'recap_id', 'type', 'survenu_le', 'motif'],
+  compteur_initial: ['contrat_id', 'date_reference', 'minutes_sup',           // lot 14
+                     'dixiemes_cp_acquis', 'dixiemes_cp_pris'],
+  preference_rappel: ['owner', 'actif', 'jour_du_mois', 'heure',              // lot 15
+                      'chaque_jour_ensuite', 'maj_le'],
+  abonnement_push: ['id', 'endpoint', 'cree_le']                              // lot 15
 };
 
 /* Toutes les lectures ne ramènent pas une ligne entière : `estMoisCloture` ne
@@ -56,17 +87,30 @@ var COLONNES_ATTENDUES = {
    sur les select qui ramènent la LIGNE, reconnus à une colonne pivot. Les
    deux défauts réels portaient tous deux sur des select de ce type. */
 var COLONNE_PIVOT = {
+  /* `ordre_imputation` désigne les select de ligne ENTIÈRE d'un contrat, et
+     laisse de côté les projections étroites volontaires — celle
+     d'`archiverFamille`, qui ne lit que de quoi refuser, ou celle des
+     contrats imbriqués de `listFamillesAvecContrats`. */
+  contrat: 'ordre_imputation',
+  modele_contrat: 'brut_mensuel_centimes',
+  note_mensuelle: 'texte',
   recap_mensuel: 'donnees',
   journee: 'type',
   imputation_conge: 'jours_ouvrables',
-  evenement_recap: 'type'
+  evenement_recap: 'type',
+  compteur_initial: 'dixiemes_cp_acquis',
+  preference_rappel: 'chaque_jour_ensuite',
+  /* `abonnement_push` ne se relit jamais en entier côté client : l'appareil
+     n'a rien à faire de ses propres clés, seul le serveur les utilise. Le
+     pivot est donc `endpoint`, la seule colonne que l'application consulte. */
+  abonnement_push: 'endpoint'
 };
 
 /* Une constante de la forme `var CHAMPS_X = 'a, b, ' + 'c';` — on récupère le
    texte concaténé, sans exécuter le fichier. */
 function valeurConstante(nom) {
   var re = new RegExp('var\\s+' + nom + '\\s*=\\s*([\\s\\S]*?);');
-  var m = re.exec(SOURCE);
+  var m = re.exec(SANS_COMMENTAIRES);
   if (!m) return null;
   var morceaux = m[1].match(/'([^']*)'/g) || [];
   return morceaux.map(function (s) { return s.slice(1, -1); }).join('');
@@ -78,7 +122,7 @@ function selectsDe(table) {
   var re = new RegExp("client\\.from\\('" + table + "'\\)([\\s\\S]{0,600}?)\\.then\\(", 'g');
   var trouves = [];
   var m;
-  while ((m = re.exec(SOURCE)) !== null) {
+  while ((m = re.exec(SANS_COMMENTAIRES)) !== null) {
     var bloc = m[1];
     var sel = /\.select\(\s*([^)]*?)\s*\)/.exec(bloc);
     if (!sel) continue;
@@ -122,6 +166,22 @@ Object.keys(COLONNES_ATTENDUES).forEach(function (table) {
 });
 
 cas.push({
+  nom: 'db.js — l’export ne contient AUCUNE photo (lot 14, A5)',
+  fn: function () {
+    /* Risque n° 3 du lot 14 : une photo dans l'export, ce sont des centaines
+       de kilo-octets de données inutiles hors de l'application — et un fichier
+       qu'on n'ouvre plus. Le retrait doit se faire À LA SOURCE : un export qui
+       la porterait serait déjà écrit sur le disque de Maria avant qu'on s'en
+       aperçoive. */
+    var i = SANS_COMMENTAIRES.indexOf('function exporterHistorique');
+    egal(i !== -1, true, 'exporterHistorique existe');
+    var corps = SANS_COMMENTAIRES.slice(i, i + 3000);
+    egal(/k !== 'photo'/.test(corps), true,
+      'la photo est explicitement retirée des contrats exportés');
+  }
+});
+
+cas.push({
   nom: 'db.js — aucun chemin ne clôture un mois sans passer par la base (C4)',
   fn: function () {
     /* Relecture lot 13, anomalie C4. `figerRecap` clôturait par un UPDATE
@@ -151,7 +211,7 @@ cas.push({
 });
 
 cas.push({
-  nom: 'db.js — aucune colonne du lot 13 n’est lue sans être demandée',
+  nom: 'db.js — aucune colonne des lots 9, 13 et 8 n’est lue sans être demandée',
   fn: function () {
     /* Contrôle croisé, dans l'autre sens : on part de ce que les écrans
        LISENT et on vérifie que db.js le DEMANDE. C'est ce sens-là qui a
@@ -163,7 +223,8 @@ cas.push({
     }).forEach(function (f) {
       var src = fs.readFileSync(path.join(racine, f), 'utf8');
       ['transmis_le', 'fige_le', 'sup_dues_override',
-       'minutes_sup_exceptionnelles', 'minutes_sup_renoncees'].forEach(function (col) {
+       'minutes_sup_exceptionnelles', 'minutes_sup_renoncees',
+       'couleur', 'photo', 'genre', 'modele_id'].forEach(function (col) {
         if (src.indexOf('.' + col) !== -1 || src.indexOf(col + ':') !== -1) lus[col] = true;
       });
     });

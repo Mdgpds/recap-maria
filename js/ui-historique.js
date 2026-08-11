@@ -29,6 +29,12 @@
   function libelleAnnee(a) { return a + '-' + (a + 1); }
 
   function afficher(ctx) {
+    /* LOT 8 — l'Historique est désormais un ONGLET RACINE. Ouvert sans
+       contrat, il liste les enfants ; ouvert avec un contrat, il montre ses
+       mois comme avant. C'est le même module parce que c'est le même sujet :
+       « ce qui s'est passé », par opposition à « ce qui se passe ». */
+    if (ctx.vue === 'historique' && !ctx.params.contratId) return rendreRacine(ctx);
+
     var contrat = global.App.contratParId(ctx.params.contratId);
     if (!contrat) {
       return global.App.tousLesContrats().then(function () {
@@ -36,6 +42,99 @@
       });
     }
     return charger(ctx, contrat);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Onglet racine : une carte par enfant                                */
+  /*                                                                     */
+  /* Ce que cet écran remplace : une rubrique « Consulter » enfouie dans  */
+  /* le Menu, où « Anciens contrats » était une LIGNE DE TEXTE dont le    */
+  /* sous-titre énumérait des prénoms. Les contrats terminés y étaient    */
+  /* rangés au sens de « cachés ». Or ce sont exactement ceux qu'on vient */
+  /* consulter : un mois de 2024 peut être contesté en 2027.             */
+  /* ------------------------------------------------------------------ */
+
+  function rendreRacine(ctx) {
+    ctx.barre.className = 'bar';
+    ctx.barre.appendChild(Kit.ce('span', 'ti', 'Historique'));
+    ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture de vos contrats…'));
+
+    return global.App.tousLesContrats().then(function (tous) {
+      Kit.vider(ctx.corps);
+      var liste = (tous || []).slice();
+
+      if (!liste.length) {
+        ctx.corps.appendChild(Kit.ce('p', 'vide',
+          'Aucun contrat pour l’instant. Ajoutez un enfant depuis le Menu.'));
+        ctx.corps.appendChild(boutonPeriode());
+        return;
+      }
+
+      var enCours = liste.filter(function (c) { return !c.archive; });
+      var termines = liste.filter(function (c) { return c.archive; });
+
+      if (enCours.length) {
+        ctx.corps.appendChild(Kit.section('Contrats en cours'));
+        enCours.forEach(function (c) { ctx.corps.appendChild(carteContrat(c)); });
+      }
+      if (termines.length) {
+        /* Séparés, jamais masqués. « Rangé » ne veut pas dire « perdu ». */
+        ctx.corps.appendChild(Kit.section('Contrats terminés'));
+        termines.forEach(function (c) { ctx.corps.appendChild(carteContrat(c)); });
+      }
+      ctx.corps.appendChild(boutonPeriode());
+    }).catch(function (e) {
+      Kit.vider(ctx.corps);
+      ctx.corps.appendChild(Kit.warnbox('Impossible de charger vos contrats.',
+        ' ' + Kit.messageErreur(e) + ' Vérifiez votre connexion, puis réessayez.'));
+      var b = Kit.bouton('btn pr', function () { global.App.rafraichir(); });
+      b.textContent = 'Réessayer';
+      ctx.corps.appendChild(b);
+    });
+  }
+
+  function carteContrat(c) {
+    var b = Kit.bouton('big' + (c.archive ? ' off' : ''), function () {
+      global.App.aller('historique', { contratId: c.id });
+    });
+    var top = Kit.ce('div', 'top');
+    top.appendChild(Kit.avatar(c));
+    var ident = Kit.ce('div');
+    ident.appendChild(Kit.ce('div', 'nm', Kit.nomComplet(c)));
+    ident.appendChild(Kit.ce('div', 'fm', 'Famille ' + ((c.famille && c.famille.nom) || '—')));
+    top.appendChild(ident);
+    top.appendChild(Kit.ce('div', 'ar', '›'));
+    b.appendChild(top);
+
+    /* Le NOMBRE DE MOIS d'historique se lit sur les dates du contrat, sans
+       rien charger : ouvrir l'onglet ne doit pas déclencher un calcul complet
+       par enfant. La chaîne des mois, elle, se construit à l'ouverture d'une
+       carte — au moment où Maria l'a demandée. */
+    b.appendChild(Kit.ce('div', 'sb q', phraseEtendue(c)));
+    return b;
+  }
+
+  function phraseEtendue(c) {
+    var debut = Chaine.moisDeDate(c.date_debut);
+    var fin = c.date_fin ? Chaine.moisDeDate(c.date_fin) : global.App.moisCourant();
+    var n = Chaine.nbMoisEntre(debut.annee, debut.mois, fin.annee, fin.mois);
+    if (n < 1) n = 1;
+    var etendue = Kit.libelleMoisAnnee(debut.annee, debut.mois) +
+      ' → ' + (c.date_fin ? Kit.libelleMoisAnnee(fin.annee, fin.mois) : 'aujourd’hui');
+    return n + ' mois d’historique · ' + etendue;
+  }
+
+  function boutonPeriode() {
+    var bloc = Kit.ce('div');
+    bloc.appendChild(Kit.section('Plusieurs enfants à la fois'));
+    var b = Kit.bouton('menu', function () { global.App.aller('periode', {}); });
+    var tx = Kit.ce('span');
+    tx.appendChild(document.createTextNode('Récapitulatif sur une période'));
+    tx.appendChild(Kit.ce('span', 'd', 'Deux dates, un ou plusieurs enfants'));
+    b.appendChild(tx);
+    b.appendChild(Kit.ce('span', 'ar', '›'));
+    bloc.appendChild(b);
+    return bloc;
   }
 
   function charger(ctx, contrat) {
@@ -129,7 +228,14 @@
     });
     var row = Kit.ce('div', 'row');
     row.appendChild(Kit.ce('span', 'nm', Kit.moisCapitale(e.annee, e.mois)));
-    row.appendChild(Kit.ce('span', 'badge ' + (e.fige ? 'ar' : 'wa'), e.fige ? 'clôturé' : 'en cours'));
+    /* CORRECTIF A7 (lot 7) DE LA RELECTURE PR9 — DEUX ÉTATS AU LIEU DE TROIS.
+       `e.fige ? 'clôturé' : 'en cours'` étiquetait « en cours » un juillet
+       jamais clôturé, au mois d'août. L'écran où Maria vient VÉRIFIER son
+       passé était précisément celui qui lui disait que rien ne manquait.
+       V8-01 demande les trois états partout : on interroge la même fonction
+       que l'accueil et la fiche. */
+    var etat = Kit.etatDuMois(e.annee, e.mois, e.recap, global.App.aujourdhui());
+    row.appendChild(Kit.pastilleEtat(etat));
     b.appendChild(row);
     b.appendChild(Kit.ce('div', 'sb',
       Kit.jours(r.joursPresence) + ' · ' + Kit.eur(r.totalAVerserCentimes)));

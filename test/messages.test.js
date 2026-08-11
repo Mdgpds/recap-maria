@@ -187,4 +187,54 @@ cas.push({
   }
 });
 
+cas.push({
+  nom: 'A2 — les deux refus du lot 14 sont expliqués, pas affichés bruts',
+  fn: function () {
+    /* Un contrat qui a déjà servi : le message doit dire QUOI FAIRE, pas
+       seulement que c'est refusé. */
+    var t1 = Messages.lisible(new Error(
+      'contrat 33 : suppression impossible, 1 journée(s) et 0 récapitulatif(s) existent (CONTRAT_NON_VIERGE)'));
+    egal(t1.indexOf('journées') !== -1 || t1.indexOf('journée') !== -1, true,
+      'le refus de suppression nomme la cause');
+    egal(t1.indexOf('Ce contrat est terminé') !== -1, true,
+      'et il dit quoi faire à la place');
+    egal(/CONTRAT_NON_VIERGE|contrat 33|récapitulatif\(s\)/.test(t1), false,
+      'aucun code ni message technique ne sort (obtenu « ' + t1 + ' »)');
+
+    /* Des compteurs de départ incohérents. */
+    var t2 = Messages.lisible(new Error(
+      'new row for relation "compteur_initial" violates check constraint "compteur_initial_coherent"'));
+    egal(t2.indexOf('plus de congés payés que vous n’en avez acquis') !== -1, true,
+      'la contrainte de cohérence est expliquée en français');
+    egal(/constraint|relation|check/.test(t2), false,
+      'sans vocabulaire de base de données (obtenu « ' + t2 + ' »)');
+  }
+});
+
+cas.push({
+  nom: 'PR9 — une phrase déjà écrite pour Maria n’est pas remplacée par le générique',
+  fn: function () {
+    /* Correctifs B6 et B8 de la relecture. Les refus que l'APPLICATION rédige
+       elle-même tombaient tous sur « une erreur inattendue s'est produite.
+       Réessayez… », parce que cette table ne traduit que ce qui vient de la
+       base. Un message faux, qui invitait à réessayer une action qui ne
+       pouvait structurellement pas aboutir. */
+    var e = new Error('date d’effet sur un mois clôturé');
+    e.messageFrancais = 'mois déjà clôturé(s) — Tom : juillet 2026.';
+    egal(Messages.lisible(e), 'mois déjà clôturé(s) — Tom : juillet 2026.',
+      'la phrase française traverse intacte');
+
+    /* Et le contraire, qui compte autant : un message technique NON marqué ne
+       doit jamais atteindre l'écran tel quel. */
+    egal(Messages.lisible(new Error('relation "x" does not exist')) ===
+         'relation "x" does not exist', false,
+      'un message non marqué reste traduit ou remplacé');
+
+    var g = new Error('x');
+    g.messageFrancais = '';
+    egal(Messages.lisible(g), Messages.DEFAUT,
+      'une marque vide retombe sur le repli, jamais sur du vide');
+  }
+});
+
 module.exports = { cas: cas };

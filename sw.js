@@ -26,7 +26,11 @@
 
 /* À incrémenter à chaque livraison : c'est ce qui déclenche le remplacement
    des fichiers en cache sur le téléphone de Maria. */
-var CACHE = 'recap-lot13-v2';
+/* Correctifs de la relecture PR9 : tous les modules d'écran changent, plus le
+   moteur de chaîne. Sans incrément, l'ancien service worker continuerait à
+   servir la version d'avant — et les correctifs n'atteindraient Maria qu'à la
+   deuxième ouverture, ou jamais. */
+var CACHE = 'recap-pr9-correctifs-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
@@ -118,6 +122,49 @@ self.addEventListener('fetch', function (e) {
         throw new Error('hors ligne');
       });
       return enCache || reseau;
+    })
+  );
+});
+
+/* ============================================================================
+   LOT 15 — Réception des notifications de rappel.
+
+   Ce bloc s'exécute même APPLICATION FERMÉE : c'est tout l'intérêt d'un
+   service worker, et c'est la raison pour laquelle un minuteur JavaScript
+   ordinaire ne pouvait pas faire le travail.
+
+   Le texte affiché vient du serveur : il n'est ni reconstruit ni traduit ici.
+   Deux formulations pour la même notification finiraient par diverger.
+   ========================================================================= */
+
+self.addEventListener('push', function (e) {
+  var contenu = { titre: 'Récap', corps: 'Un mois reste à clôturer.' };
+  try {
+    if (e.data) contenu = e.data.json();
+  } catch (err) {
+    /* Charge illisible : on affiche quand même quelque chose d'utile plutôt
+       que rien. Une notification muette serait pire qu'un texte générique. */
+  }
+  e.waitUntil(self.registration.showNotification(contenu.titre || 'Récap', {
+    body: contenu.corps || '',
+    icon: './icones/icone-192.png',
+    badge: './icones/icone-192.png',
+    tag: 'rappel-cloture',        // une seule notification à la fois, jamais une pile
+    renotify: false,
+    data: { url: './' }
+  }));
+});
+
+/* Toucher la notification ouvre l'application — sur l'onglet où le travail
+   attend, pas sur une page d'accueil vide. */
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (fenetres) {
+      for (var i = 0; i < fenetres.length; i++) {
+        if ('focus' in fenetres[i]) return fenetres[i].focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow('./');
     })
   );
 });
