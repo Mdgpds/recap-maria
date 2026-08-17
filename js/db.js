@@ -358,6 +358,29 @@
   /* Rappels par notification (lot 15)                                   */
   /* ------------------------------------------------------------------ */
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 16 §16.2 — L'identité qui signe les documents                   */
+  /* ------------------------------------------------------------------ */
+
+  var CHAMPS_EMETTRICE = 'owner, nom, updated_at';
+
+  /* Rend `null` quand rien n'a été saisi — ce n'est pas une erreur, c'est
+     l'état de départ, et le document sait quoi en faire. */
+  function getEmettrice() {
+    return client.from('emettrice')
+      .select(CHAMPS_EMETTRICE)
+      .maybeSingle()
+      .then(function (r) { if (r.error) throw r.error; return r.data; });
+  }
+
+  function enregistrerEmettrice(nom) {
+    return client.from('emettrice')
+      .upsert({ nom: nom, updated_at: new Date().toISOString() }, { onConflict: 'owner' })
+      .select(CHAMPS_EMETTRICE)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
   function getPreferenceRappel() {
     return client.from('preference_rappel')
       .select('owner, actif, jour_du_mois, heure, chaque_jour_ensuite, maj_le')
@@ -972,6 +995,30 @@
       .then(function (r) { return r[0]; });
   }
 
+  /* LOT 16 §16.1 b) — corriger la VENTILATION d'une période déjà posée, sans
+     toucher ni à ses bornes ni à son décompte.
+
+     C'est le geste que propose l'encart « une répartition de congé ne
+     correspond plus à vos réserves ». Il ne pouvait pas passer par
+     `enregistrerImputation` : celle-ci INSÈRE, et la contrainte d'exclusion de
+     `imputation_conge` refuse toute période chevauchant une période déjà
+     enregistrée — reposer les mêmes dates échouait donc à tous les coups.
+
+     Les bornes et `jours_ouvrables` ne bougent pas : la période est une
+     donnée, pas une déduction (§16.8). Seule sa répartition est en cause. */
+  function majVentilationImputation(id, ventilation) {
+    return client.from('imputation_conge')
+      .update({
+        jours_sur_cp: ventilation.jours_sur_cp,
+        jours_sur_sup: ventilation.jours_sur_sup,
+        jours_sans_solde: ventilation.jours_sans_solde
+      })
+      .eq('id', id)
+      .select(CHAMPS_IMPUTATION)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
   /* Supprime une imputation par son identifiant. Contrairement aux familles
      et aux contrats, une imputation n'est pas une donnée d'histoire : c'est
      la ventilation d'une période de congé, qui disparaît avec elle (lot 10). */
@@ -1218,10 +1265,14 @@
     listImputations: listImputations,
     listImputationsPourMois: listImputationsPourMois,
     enregistrerImputation: enregistrerImputation,
+    majVentilationImputation: majVentilationImputation,
     supprimerImputation: supprimerImputation,
     getRecap: getRecap,
     listRecapsContrat: listRecapsContrat,
     listRecapsPeriode: listRecapsPeriode,
+    /* LOT 16 §16.2 — l'identité qui signe les documents. */
+    getEmettrice: getEmettrice,
+    enregistrerEmettrice: enregistrerEmettrice,
     getPreferenceRappel: getPreferenceRappel,
     enregistrerPreferenceRappel: enregistrerPreferenceRappel,
     enregistrerAbonnementPush: enregistrerAbonnementPush,

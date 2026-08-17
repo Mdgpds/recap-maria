@@ -234,6 +234,12 @@
       corps.appendChild(bandeauEtat());
     }
 
+    /* LOT 16 §16.1 b) — EN TÊTE DE L'ÉCRAN. C'est le premier chose que Maria
+       doit lire quand une répartition ne tient plus : avant, l'écran entier
+       ne s'affichait pas. */
+    var reserves = panneauReservesInsuffisantes();
+    if (reserves) corps.appendChild(reserves);
+
     var ecartes = panneauChoixEcartes();
     if (ecartes) corps.appendChild(ecartes);
 
@@ -764,10 +770,79 @@
 
   /* Le moteur signale les périodes dont le choix de Maria a été écarté. Sans
      cet affichage, l'écart resterait invisible jusqu'au document du mois. */
+  /* LOT 16 §16.1 b) — L'ENCART QUI REMPLACE L'ÉCRAN VIDE.
+
+     Quand une répartition dépasse les réserves, la chaîne l'écarte, rejoue le
+     mois dans l'ordre par défaut du contrat et porte le détail sur le maillon.
+     L'encart nomme la période, ce que Maria avait choisi et ce dont elle
+     dispose — trois nombres qui viennent tous du moteur — puis ouvre la
+     ventilation DE CETTE PÉRIODE.
+
+     C'est distinct du panneau ci-dessous : là, le choix a été écarté parce que
+     les JOURNÉES ont changé ; ici, parce que les RÉSERVES ne suffisent pas.
+     Les deux causes appellent deux phrases et deux gestes différents. */
+  function panneauReservesInsuffisantes() {
+    var ecartees = (vue.entree && vue.entree.imputationsEcartees) || [];
+    if (!ecartees.length) return null;
+
+    var b = Kit.warnbox(
+      ecartees.length > 1
+        ? 'Des répartitions de congé ne correspondent plus à vos réserves'
+        : 'Une répartition de congé ne correspond plus à vos réserves',
+      ' ' + ecartees.map(phraseEcartee).join(' ') +
+      ' En attendant, ces congés sont décomptés dans l’ordre habituel de ce contrat.');
+
+    var bt = Kit.bouton('btn nt', function () {
+      global.App.aller('conges', {
+        annee: vue.annee, mois: vue.mois, corrigerImputation: ecartees[0].id
+      }, true);
+    });
+    bt.textContent = 'Corriger la répartition';
+    b.appendChild(bt);
+    return b;
+  }
+
+  /* « Du 3 au 21 août, vous aviez choisi 6 jours de récupération. Vous n'en
+     avez que 5. » Les trois codes du moteur ne disent pas la même chose : on
+     ne sert pas la phrase des réserves quand le problème est ailleurs. */
+  function phraseEcartee(e) {
+    var plage = 'Du ' + Kit.dateLongue(e.date_debut) + ' au ' + Kit.dateLongue(e.date_fin) + ', ';
+    if (e.code === 'IMPUTATION_DEPASSE_RESERVES') {
+      var manques = [];
+      if (e.choisi.joursSurSup > e.disponible.joursSup) {
+        manques.push('vous aviez choisi ' + Kit.jours(e.choisi.joursSurSup) +
+          ' de récupération. Vous n’en avez que ' + Kit.jours(e.disponible.joursSup) + '.');
+      }
+      if (e.choisi.joursSurCp > e.disponible.joursCp) {
+        manques.push('vous aviez choisi ' + Kit.jours(e.choisi.joursSurCp) +
+          ' de congés payés. Vous n’en avez que ' + Kit.jours(e.disponible.joursCp) + '.');
+      }
+      if (manques.length) return plage + manques.join(' Et ');
+      return plage + 'votre répartition dépasse ce que vos réserves couvrent.';
+    }
+    if (e.code === 'IMPUTATION_INCOMPLETE') {
+      return plage + 'votre répartition ne couvre pas les ' +
+        Kit.jours(e.choisi.joursSurCp + e.choisi.joursSurSup + e.choisi.joursSansSolde) +
+        ' répartis sur cette période.';
+    }
+    return plage + 'votre répartition n’est pas utilisable telle quelle.';
+  }
+
   function panneauChoixEcartes() {
     var appliquees = (vue.entree && vue.entree.resultat &&
                       vue.entree.resultat.imputationsAppliquees) || [];
-    var ecartees = appliquees.filter(function (i) { return i.source === 'defaut_choix_ecarte'; });
+    /* Les périodes déjà traitées par l'encart des réserves ne sont pas
+       redites ici : elles portent la même marque `defaut_choix_ecarte`, posée
+       par la chaîne, mais leur cause et leur remède sont différents. */
+    var vues = {};
+    ((vue.entree && vue.entree.imputationsEcartees) || []).forEach(function (e) {
+      vues[e.date_debut + '|' + e.date_fin] = true;
+    });
+    var ecartees = appliquees.filter(function (i) {
+      if (i.source !== 'defaut_choix_ecarte') return false;
+      var c = i.choixEcarte;
+      return !(c && vues[c.date_debut + '|' + c.date_fin]);
+    });
     if (!ecartees.length) return null;
 
     var b = Kit.warnbox(
@@ -1020,7 +1095,7 @@
     corps.appendChild(Kit.warnbox(
       'Mois déjà clôturé pour ' + clos.map(function (c) { return c.prenom_enfant; }).join(', '),
       'Ce ' + (clos.length > 1 ? 'ces contrats ne seront pas modifiés' : 'contrat ne sera pas modifié') +
-      ' : leur récapitulatif de ' + Kit.libelleMoisAnnee(vue.annee, vue.mois) + ' est verrouillé.'));
+      ' : leur récapitulatif ' + Kit.deMoisAnnee(vue.annee, vue.mois) + ' est verrouillé.'));
   }
 
   /* Correction A5 : la pose groupée passe par un upsert qui REMPLACE la ligne
@@ -1109,7 +1184,12 @@
       });
     }
     var salaire = vue.entree.salaire || { brut_mensuel_centimes: 0, net_mensuel_centimes: 0 };
-    return Engine.calculerMois({
+    /* LOT 16 §16.1 — MÊME REPLI QUE LA CHAÎNE. Sans lui, un mois dont la
+       ventilation ne tient plus s'affichait bien (la chaîne se replie) mais
+       toucher un jour faisait retomber cet aperçu sur l'exception : la feuille
+       du jour devenait inutilisable sur le mois précisément à corriger.
+       Une seule règle de repli, définie dans chaine-mois.js, appelée ici. */
+    return Chaine.calculerMoisAvecRepli({
       contrat: vue.contrat,
       salaire: { brut_mensuel_centimes: salaire.brut_mensuel_centimes,
                  net_mensuel_centimes: salaire.net_mensuel_centimes },
@@ -1123,7 +1203,7 @@
          à un mois ventilé selon l'ordre par défaut : l'écart affiché n'était pas
          celui du geste, mais celui de l'oubli. */
       imputations: vue.imputations || []
-    });
+    }).resultat;
   }
 
   function phraseEcart(apres, avant) {

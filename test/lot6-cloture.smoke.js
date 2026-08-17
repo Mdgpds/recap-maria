@@ -118,6 +118,13 @@ var DB = {
   },
   onAuthChange: function () {},
   signOut: function () { return Promise.resolve(true); },
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
+  /* LOT 16 §16.4 — la ligne des rappels affiche désormais son VRAI réglage.
+     Décor : rappels inactifs, la ligne dira « Vous ne recevez aucun rappel ». */
+  getPreferenceRappel: function () { return Promise.resolve(null); },
   listContratsActifs: function () { return Promise.resolve([LEA, TOM, ZOE]); },
   listContratsTous: function () { return Promise.resolve([LEA, TOM, ZOE]); },
   listContratsPourMois: function () { return Promise.resolve([LEA, TOM, ZOE]); },
@@ -333,7 +340,17 @@ var toast = document.getElementById('toast');
   window.App.aller('conges', { annee: 2026, mois: 5 }, true);
   await pause(300);
 
-  assert(txt(corps).indexOf('Lundi 18 mai') !== -1, 'le congé déjà posé est listé');
+  /* MISE À JOUR LOT 16 §16.8 — la liste ne va plus jour par jour mais PÉRIODE
+     par période : quinze lignes « 1 jour » et un total « 17 j » ne se
+     rejoignaient jamais, faute de pouvoir montrer les samedis. Un congé isolé
+     s'écrit donc « Le 18 mai », et non plus « Lundi 18 mai ».
+     Ce congé n'a AUCUNE imputation dans ce décor : il est listé quand même,
+     avec les bornes que le moteur a regroupées. Un congé posé sans
+     répartition enregistrée ne doit jamais disparaître de l'écran. */
+  assert(txt(corps).indexOf('Le 18 mai') !== -1,
+    '§16.8 : le congé déjà posé est listé, en une ligne pour la période');
+  assert(txt(corps).indexOf('répartis dans l’ordre habituel de ce contrat') !== -1,
+    '§16.8 : et sans répartition enregistrée, la ligne le dit au lieu de mentir');
 
   parTexte(corps, 'button', 'Poser des congés').click();
   await pause(200);

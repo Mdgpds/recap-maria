@@ -127,9 +127,20 @@
 
       corps.appendChild(Kit.section('Horaires'));
       corps.appendChild(Kit.fld('Jours de garde', libellePlanning(contrat.jours_planning)));
-      corps.appendChild(Kit.fld('Horaire contractuel',
+      /* LOT 16 §16.5 — « ACCUEIL », PAS « HORAIRE CONTRACTUEL ».
+         Le contrat enregistrait un départ à 18h00 ET une journée de 9 h, or
+         8h30 → 18h00 en fait 9h30 : les deux se contredisaient à l'écran.
+         C'est l'heure de fin qui était fausse. L'accueil s'arrête à 17h30 ;
+         les 30 minutes supplémentaires viennent APRÈS et sont portées par
+         `minutes_sup_jour`, sur leur propre ligne. L'enfant repart bien vers
+         18 h — mais ce n'est pas la fin de l'accueil. */
+      corps.appendChild(Kit.fld('Accueil',
         heureCourte(contrat.heure_arrivee) + ' → ' + heureCourte(contrat.heure_depart)));
-      corps.appendChild(Kit.fld('Heures sup par jour travaillé', Kit.duree(contrat.minutes_sup_jour)));
+      corps.appendChild(Kit.fld('Durée de la journée', Kit.duree(contrat.minutes_contractuelles)));
+      corps.appendChild(Kit.fld('Minutes supplémentaires', Kit.duree(contrat.minutes_sup_jour) + ' / jour'));
+      corps.appendChild(Kit.ce('p', 'sb q',
+        'L’enfant repart vers ' + finReelle(contrat) + ' : les ' +
+        Kit.duree(contrat.minutes_sup_jour) + ' s’ajoutent à l’accueil.'));
       corps.appendChild(Kit.fld('Entretien par jour de présence', Kit.eur(contrat.entretien_centimes_jour)));
 
       if (!contrat.archive) {
@@ -301,6 +312,21 @@
     return { familiarisation: 'familiarisation', actif: 'actif', termine: 'terminé' }[s] || s;
   }
   function heureCourte(h) { return String(h || '').slice(0, 5) || '—'; }
+
+  /* LOT 16 §16.5 — L'HEURE À LAQUELLE L'ENFANT REPART, PRODUITE À PARTIR DES
+     VALEURS APPLIQUÉES, jamais écrite en dur. C'est fin d'accueil + minutes
+     supplémentaires du contrat : un contrat qui en prévoit 45 le dira, et une
+     constante « 18 h » serait fausse ce jour-là sans que rien ne le signale.
+     Aucun calcul métier : une addition de minutes d'horloge, pas une règle. */
+  function finReelle(contrat) {
+    var h = String(contrat.heure_depart || '').slice(0, 5).split(':');
+    if (h.length !== 2) return '—';
+    var total = Number(h[0]) * 60 + Number(h[1]) + (contrat.minutes_sup_jour || 0);
+    if (!isFinite(total)) return '—';
+    total = ((total % 1440) + 1440) % 1440;
+    var mm = total % 60;
+    return Math.floor(total / 60) + ' h' + (mm ? ' ' + String(mm).padStart(2, '0') : '');
+  }
   var NOMS_JOURS = ['', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
   function libellePlanning(planning) {
     var p = (planning || [1, 2, 3, 4, 5]).slice().sort(function (a, b) { return a - b; });
@@ -394,9 +420,9 @@
         });
 
         corps.appendChild(Kit.section('Horaires et montants'));
-        var arrivee = Kit.champ('Heure d’arrivée', heureCourte(contrat.heure_arrivee), { type: 'time' });
+        var arrivee = Kit.champ('Début d’accueil', heureCourte(contrat.heure_arrivee), { type: 'time' });
         corps.appendChild(arrivee.bloc);
-        var depart = Kit.champ('Heure de départ', heureCourte(contrat.heure_depart), { type: 'time' });
+        var depart = Kit.champ('Fin d’accueil', heureCourte(contrat.heure_depart), { type: 'time' });
         corps.appendChild(depart.bloc);
         var supJour = Kit.champ('Minutes sup par jour travaillé',
           String(contrat.minutes_sup_jour), { inputmode: 'numeric' });
@@ -444,7 +470,8 @@
             date_debut: debut.valeur(),
             jours_planning: planning,
             heure_arrivee: arrivee.input.value || '08:30',
-            heure_depart: depart.input.value || '18:00',
+            /* §16.5 — le défaut suit celui du schéma : 17:30, fin d'accueil. */
+            heure_depart: depart.input.value || '17:30',
             minutes_sup_jour: msj,
             minutes_par_jour_conge: mpjc,
             entretien_centimes_jour: ent,
@@ -1362,7 +1389,7 @@
       function (corps) {
         if (closDuMois.length) {
           corps.appendChild(Kit.warnbox(
-            'Le récapitulatif de ' + Kit.libelleMoisAnnee(closDuMois[0].annee, closDuMois[0].mois) +
+            'Le récapitulatif ' + Kit.deMoisAnnee(closDuMois[0].annee, closDuMois[0].mois) +
             ' est déjà clôturé',
             'Il a été calculé sans cette date de fin et ne sera PAS recalculé : le document ' +
             'remis aux parents fait foi. Seuls les récapitulatifs de période tiendront compte ' +

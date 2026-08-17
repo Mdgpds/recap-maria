@@ -889,3 +889,24 @@ button.coche:active { transform: scale(.99); }
   padding: 12px 13px; margin: 4px 0 10px; font-size: 14px; color: var(--ink2);
 }
 .apercu-rappel b { color: var(--ink); }
+
+/* ---------------------------------------------------------------------
+   LOT 16 — congés posés par période (§16.8) et bornes de ventilation
+   (§16.1 d). Aucune règle de mise en page nouvelle : on réutilise les
+   sous-textes existants (.sb) et on ajoute deux détails.
+   ------------------------------------------------------------------ */
+
+/* Sous-titre d'un compteur de ventilation : « reste 10 j au compteur ».
+   Le « + » qui s'éteint doit dire pourquoi il s'éteint. */
+.compteur-jours .lb .sslb {
+  display: block; font-size: 12.5px; font-weight: 400;
+  color: var(--ink3); margin-top: 2px;
+}
+
+/* Répartition qui diffère d'un contrat à l'autre : le détail s'ouvre au
+   toucher plutôt que d'empiler quatre lignes. */
+.ventil-detail { margin: 2px 0 8px; }
+.ventil-detail > summary {
+  font-size: 13px; color: var(--ac); cursor: pointer; padding: 4px 0;
+}
+.ventil-detail .sb { margin-top: 2px; }

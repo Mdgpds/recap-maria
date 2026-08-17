@@ -53,7 +53,8 @@
     modeles: 'UiMenu',          // lot 11 — contrats types
     modifGroupee: 'UiMenu',     // lot 11 — modification groupée
     reprise: 'UiMenu',          // lot 14 — reprendre mes comptes
-    rappels: 'UiMenu'           // lot 15 — rappels par notification
+    rappels: 'UiMenu',          // lot 15 — rappels par notification
+    compte: 'UiMenu'            // lot 16 §16.2 — mon nom sur les documents
   };
 
   var el = {};
@@ -68,7 +69,13 @@
     recaps: {},          // cache : YYYY-MM -> Promise({ contratId: recap|null })
     pret: false,
     chargement: false,
-    utilisateur: null
+    utilisateur: null,
+    /* LOT 16 §16.2 — le nom qui signe les documents. `null` = pas encore lu ou
+       lecture en échec ; chaîne vide = lue, non renseignée. Les deux mènent au
+       même texte sur le document (« votre assistante maternelle »), mais seul
+       le second déclenche l'encart qui invite à la saisie. */
+    emettrice: null,
+    emettriceLue: false
   };
 
   /* ------------------------------------------------------------------ */
@@ -215,8 +222,20 @@
     viderCaches();
     attente('Chargement de vos contrats…');
 
-    global.DB.listContratsActifs()
-      .then(function (liste) {
+    /* Le nom de l'émettrice est lu en même temps que les contrats : il est
+       nécessaire à tout document, et un aller-retour de plus par document
+       serait payé sur chaque écran. Son échec n'empêche RIEN — le document
+       écrira « votre assistante maternelle », jamais une adresse e-mail. */
+    Promise.all([
+      global.DB.listContratsActifs(),
+      global.DB.getEmettrice().then(function (e) {
+        etat.emettriceLue = true;
+        return e && e.nom ? e.nom : '';
+      }).catch(function () { etat.emettriceLue = false; return null; })
+    ])
+      .then(function (r) {
+        var liste = r[0];
+        etat.emettrice = r[1];
         etat.contrats = liste || [];
         etat.pret = true;
         etat.pile = [];
@@ -430,6 +449,18 @@
   }
   function email() { return etat.email; }
 
+  /* LOT 16 §16.2 — le nom qui signe. Jamais l'adresse de connexion : c'est
+     tout l'objet du correctif. */
+  function nomEmettrice() { return etat.emettrice || null; }
+  /* Vrai seulement quand la lecture a abouti ET que rien n'est saisi : c'est
+     le seul cas où l'écran propose d'aller renseigner le nom. Sur un échec de
+     lecture, on n'invite pas Maria à ressaisir ce qu'elle a peut-être déjà. */
+  function emettriceAsaisir() { return etat.emettriceLue === true && !etat.emettrice; }
+  function poserNomEmettrice(nom) {
+    etat.emettrice = nom || '';
+    etat.emettriceLue = true;
+  }
+
   function tousLesContrats() {
     if (etat.contratsTous) return Promise.resolve(etat.contratsTous);
     return global.DB.listContratsTous().then(function (liste) {
@@ -573,6 +604,9 @@
     contratParId: contratParId,
     tousLesContrats: tousLesContrats,
     email: email,
+    nomEmettrice: nomEmettrice,
+    emettriceAsaisir: emettriceAsaisir,
+    poserNomEmettrice: poserNomEmettrice,
     serie: serie,
     moisDe: moisDe,
     journees: journees,

@@ -134,6 +134,192 @@
     });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 16 §16.8 — La part d'un mois dans une période à cheval          */
+  /* ------------------------------------------------------------------ */
+
+  /* « Du 29 juillet au 4 août — 6 jours ouvrables, dont 2 en août. »
+
+     Ce « dont 2 en août » est la tranche mensuelle que le moteur calcule déjà
+     en interne (`joursOuvrablesParMois`) pour répartir une imputation à
+     cheval. Cette fonction n'est PAS exportée, et le lot 16 n'a pas le droit
+     d'ouvrir `js/engine.js` (§A.2, critère A8). Découper la période à la main
+     serait pire : le décompte RG-06 ne se redécoupe pas mois par mois — une
+     semaine coupée par un changement de mois perdrait son samedi, ce qui est
+     mot pour mot le litige historique avec les familles.
+
+     On obtient donc la tranche par DIFFÉRENCE de deux décomptes du moteur,
+     sans réécrire une seule règle :
+
+         part(M) = decompter(max(début, 1er de M), fin)
+                 − decompter(1er du mois suivant M, fin)
+
+     Pourquoi c'est exact. `decompterJoursOuvrables(X, fin)` compte les jours
+     non-dimanche et non-fériés de [X, reprise) — et `reprise` ne dépend que
+     de `fin`, jamais de X. La différence ci-dessus vaut donc exactement le
+     nombre de ces jours tombant dans le mois M. C'est la définition de la
+     tranche, y compris pour le prolongement RG-06 au-delà du dernier jour
+     posé : ces jours-là sont tous postérieurs à `fin`, donc jamais comptés
+     dans un mois antérieur, et toujours inclus dans le dernier — exactement
+     ce que fait le moteur.
+
+     À DÉPLACER DANS LE MOTEUR AU LOT 17, seul autorisé à l'ouvrir : cette
+     identité dépend d'un détail d'implémentation d'`engine.js`, et sa place
+     est à côté de lui, pas ici. Signalé dans les points d'alerte. */
+  function partDuMois(Engine, imputation, planning, annee, mois) {
+    var debutMois = premierJour(annee, mois);
+    var suivant = moisSuivant(annee, mois);
+    var debutSuivant = premierJour(suivant.annee, suivant.mois);
+
+    if (imputation.date_fin < debutMois) return 0;
+    if (imputation.date_debut >= debutSuivant) return 0;
+
+    var depuis = imputation.date_debut > debutMois ? imputation.date_debut : debutMois;
+    var total = Engine.decompterJoursOuvrables(depuis, imputation.date_fin, planning);
+    if (imputation.date_fin < debutSuivant) return total;
+    return total - Engine.decompterJoursOuvrables(debutSuivant, imputation.date_fin, planning);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 16 §16.1 — Le repli d'imputation                                */
+  /* ------------------------------------------------------------------ */
+
+  /* Les trois codes que le moteur lève quand une ventilation de congé
+     enregistrée ne peut pas être honorée. Ils ont tous la même conséquence
+     pour Maria : sans repli, `serie` rejette, et l'écran qui lui permettrait
+     de corriger est précisément celui qui refuse de s'ouvrir. */
+  var CODES_IMPUTATION = {
+    IMPUTATION_DEPASSE_RESERVES: true,
+    IMPUTATION_INCOMPLETE: true,
+    IMPUTATION_NEGATIVE: true
+  };
+
+  function estErreurImputation(e) {
+    return !!(e && e.code && CODES_IMPUTATION[e.code] === true);
+  }
+
+  /* Un nombre de jours volontairement hors d'atteinte : `imputerConges` le
+     répartit dans l'ordre du contrat, épuise les DEUX réserves, et le
+     débordement part en sans solde. Ce qu'il a pu prendre sur chacune est
+     donc, en jours, ce que chaque réserve couvre — quel que soit RG-07.
+     C'est le moteur qui divise ; rien n'est recalculé ici. */
+  var SONDE_JOURS = 1000000;
+
+  function memeParams(params, imputations) {
+    return {
+      contrat: params.contrat, salaire: params.salaire, journees: params.journees,
+      compteurEntree: params.compteurEntree, annee: params.annee, mois: params.mois,
+      imputations: imputations
+    };
+  }
+
+  /* Ce que les réserves du mois couvrent réellement, en jours, demandé au
+     moteur. Sert à l'encart : « vous aviez choisi 6 jours de récupération,
+     vous n'en avez que 5 ». */
+  function reservesEnJours(Engine, contrat, compteurEntree) {
+    var c = compteurEntree || {};
+    var r = Engine.imputerConges(SONDE_JOURS, {
+      dixiemesCp: (c.dixiemesCpAcquis || 0) - (c.dixiemesCpPris || 0),
+      minutesSup: c.minutesSup || 0
+    }, contrat);
+    return { joursCp: r.joursSurCp, joursSup: r.joursSurSup };
+  }
+
+  /* Reprend la forme que le moteur produit déjà pour un choix écarté
+     (`source: 'defaut_choix_ecarte'` + `choixEcarte`), afin que les écrans
+     n'aient qu'UN seul cas à connaître. La période marquée est celle que le
+     moteur a décomptée par défaut et qui recouvre l'imputation refusée. */
+  function marquerEcartees(resultat, ecartees) {
+    var appliquees = (resultat && resultat.imputationsAppliquees) || [];
+    ecartees.forEach(function (x) {
+      for (var i = 0; i < appliquees.length; i++) {
+        var a = appliquees[i];
+        if (a.source !== 'defaut') continue;
+        if (a.date_debut > x.imputation.date_fin) continue;
+        if (a.date_fin < x.imputation.date_debut) continue;
+        a.source = 'defaut_choix_ecarte';
+        a.choixEcarte = { date_debut: x.imputation.date_debut, date_fin: x.imputation.date_fin };
+        return;
+      }
+    });
+  }
+
+  /* Calcule un mois. Si — et SEULEMENT si — le moteur refuse à cause d'une
+     ventilation devenue impossible, la ou les imputations en cause sont
+     écartées et le mois est rejoué avec l'ordre par défaut du contrat pour
+     ces périodes-là.
+
+     AUCUNE RÈGLE MÉTIER ICI, et le moteur n'est pas assoupli : il continue de
+     dire non. Ce module se contente de retirer une ligne de l'entrée et de
+     redemander — c'est de l'orchestration, sa seule raison d'être.
+
+     Pourquoi une par une et dans l'ordre chronologique : c'est exactement
+     l'ordre dans lequel le moteur décrémente les réserves au fil des périodes
+     (`js/engine.js`, boucle sur `plan`). Une imputation valable seule peut
+     devenir impossible après qu'une précédente a consommé la réserve ;
+     l'inverse ne se produit pas. Les ajouter une à une dans cet ordre isole
+     donc celles qui ne passent pas, sans jamais en écarter une qui tenait —
+     c'est le critère A6 (« seule l'imputation fautive est écartée »).
+
+     Sur un échec d'une autre nature, RIEN n'est rejoué et l'erreur remonte
+     telle quelle : l'écran affichera ce qu'il peut et dira ce qui manque.
+     Une erreur qu'on ne sait pas nommer ne doit pas être avalée. */
+  function calculerMoisAvecRepli(params) {
+    var Engine = resoudreEngine();
+    var premiere;
+    try {
+      return { resultat: Engine.calculerMois(params), ecartees: [] };
+    } catch (e) {
+      if (!estErreurImputation(e)) throw e;
+      premiere = e;
+    }
+
+    var candidates = (params.imputations || []).slice().sort(function (a, b) {
+      if (a.date_debut === b.date_debut) return 0;
+      return a.date_debut < b.date_debut ? -1 : 1;
+    });
+    var retenues = [];
+    var ecartees = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var essai = retenues.concat([candidates[i]]);
+      try {
+        Engine.calculerMois(memeParams(params, essai));
+        retenues = essai;
+      } catch (e2) {
+        if (!estErreurImputation(e2)) throw e2;
+        ecartees.push({ imputation: candidates[i], code: e2.code });
+      }
+    }
+
+    /* Aucune imputation n'a pu être désignée : le refus ne vient pas d'une
+       ligne identifiable. On ne masque pas ce qu'on ne comprend pas. */
+    if (!ecartees.length) throw premiere;
+
+    var resultat = Engine.calculerMois(memeParams(params, retenues));
+    marquerEcartees(resultat, ecartees);
+
+    var dispo = reservesEnJours(Engine, params.contrat, params.compteurEntree);
+    var detail = ecartees.map(function (x) {
+      var imp = x.imputation;
+      return {
+        /* L'identifiant, pour que le bouton « Corriger la répartition » ouvre
+           LA période concernée et pas le parcours de pose. */
+        id: imp.id,
+        date_debut: imp.date_debut,
+        date_fin: imp.date_fin,
+        code: x.code,
+        choisi: {
+          joursSurCp: imp.jours_sur_cp || 0,
+          joursSurSup: imp.jours_sur_sup || 0,
+          joursSansSolde: imp.jours_sans_solde || 0,
+          joursOuvrables: imp.jours_ouvrables == null ? null : imp.jours_ouvrables
+        },
+        disponible: { joursCp: dispo.joursCp, joursSup: dispo.joursSup }
+      };
+    });
+    return { resultat: resultat, ecartees: detail };
+  }
+
   function chargerRecaps(DB, contratId, anneeMin, anneeMax) {
     if (typeof DB.listRecapsPeriode === 'function') {
       return DB.listRecapsPeriode(contratId, anneeMin, anneeMax).then(function (lignes) {
@@ -333,6 +519,10 @@
                     salaire: salaire, salaireManquant: false,
                     avantInitialisation: avant,
                     horsContrat: hors,
+                    /* Un mois figé n'est jamais recalculé : rien ne peut y
+                       être écarté. La forme reste la même pour que les écrans
+                       n'aient pas à distinguer. */
+                    imputationsEcartees: [],
                     compteurEntree: compteurEntreeDe(d, compteurEntree),
                     compteurSortie: compteur
                   };
@@ -345,13 +535,19 @@
                   var salaireCalcul = salaire || { brut_mensuel_centimes: 0, net_mensuel_centimes: 0 };
                   var parJour = journeesParMois[cle] || {};
                   var journees = Object.keys(parJour).map(function (k) { return parJour[k]; });
-                  var r = Engine.calculerMois({
+                  /* LOT 16 §16.1 — le repli passe par ici, et par ici seul :
+                     un mois dont la ventilation ne tient plus se calcule
+                     quand même, sur l'ordre par défaut du contrat, et le
+                     maillon porte ce qui a été écarté. Sans ça, la chaîne
+                     entière rejette et tous les écrans tombent. */
+                  var rep = calculerMoisAvecRepli({
                     contrat: contrat, salaire: salaireCalcul, journees: journees,
                     compteurEntree: compteurEntree, annee: mm.annee, mois: mm.mois,
                     /* Correctif B1 : la ventilation choisie par Maria entre
                        ici, ou elle n'entre nulle part. */
                     imputations: imputationsDuMois(imputations, mm.annee, mm.mois)
                   });
+                  var r = rep.resultat;
                   compteur = r.compteurSortie;
                   entree = {
                     annee: mm.annee, mois: mm.mois, cle: cle,
@@ -359,6 +555,9 @@
                     salaire: salaire, salaireManquant: !salaire,
                     avantInitialisation: avant,
                     horsContrat: hors,
+                    /* Vide dans l'immense majorité des cas. Non vide, c'est
+                       l'encart du §16.1 et le blocage de la clôture. */
+                    imputationsEcartees: rep.ecartees,
                     compteurEntree: compteurEntree, compteurSortie: compteur
                   };
                 }
@@ -633,6 +832,13 @@
   var api = {
     serie: serie,
     mois1: mois1,
+    /* LOT 16 §16.1 — le même repli pour tous ceux qui rejouent un mois hors
+       de la chaîne (l'aperçu « voilà ce que ce geste change » de l'espace
+       enfant). Une seule règle de repli, un seul endroit. */
+    calculerMoisAvecRepli: calculerMoisAvecRepli,
+    CODES_IMPUTATION: CODES_IMPUTATION,
+    /* LOT 16 §16.8 — la part d'un mois dans une période à cheval. */
+    partDuMois: partDuMois,
     ecartsInstantanes: ecartsInstantanes,
     POSTES_COMPARES: POSTES_COMPARES,
     fenetre: fenetre,

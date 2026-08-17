@@ -46,7 +46,8 @@
     if (!contrat) throw new Error('contrat introuvable');
 
     global.App.barreRetour(ctx.barre,
-      'Récap de ' + Kit.libelleMois(m.mois), { droite: contrat.prenom_enfant });
+      /* LOT 16 §16.6 — « Récap de août ». L'élision vit dans ui-kit.js. */
+      'Récap ' + Kit.deMois(m.mois), { droite: contrat.prenom_enfant });
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Préparation du document…'));
 
     return Promise.all([
@@ -199,16 +200,31 @@
     return 'Indemnité d’entretien';
   }
 
-  /* L'auteur du document. Le nom vient du compte : c'est la seule identité que
-     l'application connaisse. Sans lui, un document retrouvé des mois plus tard
-     ne dit pas de qui il vient.
-     // TODO RÈGLE ABSENTE : ni le nom complet ni le numéro d'agrément de
-     // l'assistante maternelle n'existent en base. À reprendre au lot 14
-     // (mise en service), qui écrit les informations d'installation. */
+  /* LOT 16 §16.2 — L'AUTEUR DU DOCUMENT.
+
+     Cette fonction écrivait « Établi par <adresse de connexion>, assistante
+     maternelle » : la pièce dont le seul métier est d'éteindre un désaccord
+     avec une famille était signée par une adresse e-mail. Le `TODO RÈGLE
+     ABSENTE` qui tenait cette place renvoyait au lot 14, jamais fait.
+
+     La ligne est désormais exactement « Établi par <nom> » — sans mention de
+     la profession, sans numéro d'agrément.
+
+     UN MOIS CLÔTURÉ GARDE LE NOM DU MOMENT DE LA CLÔTURE : il vient de
+     l'instantané, jamais du compte. Renommer plus tard ne réécrit aucun
+     document déjà remis.
+
+     Tant que rien n'est saisi : « votre assistante maternelle ». JAMAIS
+     l'adresse, sur aucun écran, aperçu ou export. */
+  function nomAuteur() {
+    var r = vue.entree && vue.entree.resultat;
+    if (vue.entree && vue.entree.fige && r && r.nomEmettrice) return r.nomEmettrice;
+    if (vue.entree && vue.entree.fige) return null;
+    return (global.App.nomEmettrice && global.App.nomEmettrice()) || null;
+  }
+
   function enTeteAuteur() {
-    var qui = global.App.email && global.App.email();
-    return 'Établi par ' + (qui ? qui : 'votre assistante maternelle') +
-      ', assistante maternelle';
+    return 'Établi par ' + (nomAuteur() || 'votre assistante maternelle');
   }
 
   function enTetePeriode(id) {
@@ -306,6 +322,21 @@
         'Ce mois ne peut pas être clôturé tant qu’il manque.'));
     }
 
+    /* LOT 16 §16.2 — L'ENCART ACTIONNABLE. Tant que le nom n'est pas saisi, le
+       document se signe « votre assistante maternelle ». C'est correct, mais
+       ce n'est pas ce que Maria veut remettre à une famille : on le lui dit,
+       avec le chemin pour y remédier. Rien de bloquant.
+       Sur un mois déjà clôturé, on se tait : son document ne changera plus. */
+    if (!e.fige && global.App.emettriceAsaisir && global.App.emettriceAsaisir()) {
+      var enc = Kit.note('Ce document n’est pas encore signé à votre nom',
+        'Il indique « votre assistante maternelle ». Renseignez votre nom pour qu’il ' +
+        'dise qui l’a établi — c’est ce qui le rend opposable en cas de désaccord.');
+      var bNom = Kit.bouton('btn nt', function () { global.App.aller('compte', {}); });
+      bNom.textContent = 'Renseigner mon nom';
+      enc.appendChild(bNom);
+      corps.appendChild(enc);
+    }
+
     corps.appendChild(documentHtml(id));
 
     if (e.fige) {
@@ -348,14 +379,43 @@
       return;
     }
 
+    /* LOT 16 §16.1 c) — LA CLÔTURE EST BLOQUÉE tant qu'une répartition ne
+       tient pas. Le mois se calcule (il se replie sur l'ordre par défaut du
+       contrat), mais le figer reviendrait à remettre à la famille un document
+       qui ne reflète pas ce que Maria avait choisi — et un mois clôturé ne se
+       recalcule jamais. Le blocage vit ici, dans l'écran : il disparaît de
+       lui-même dès que les réserves suffisent, sans rien écrire en base. */
+    var ecartees = (e.imputationsEcartees || []);
+    if (ecartees.length) {
+      corps.appendChild(Kit.warnbox(
+        'Corrigez d’abord la répartition du congé ' +
+        minuscule(Kit.libellePeriode(ecartees[0].date_debut, ecartees[0].date_fin)),
+        ' Ce mois ne peut pas être clôturé tant que les jours ne sont pas répartis ' +
+        'sur des réserves suffisantes.'));
+      var bCorriger = Kit.bouton('btn', function () {
+        global.App.aller('conges', {
+          annee: vue.annee, mois: vue.mois, corrigerImputation: ecartees[0].id
+        }, true);
+      });
+      bCorriger.textContent = 'Corriger la répartition';
+      corps.appendChild(bCorriger);
+      corps.appendChild(sectionPartage());
+      return;
+    }
+
     if (!e.salaireManquant && !netManquant) {
       var b = Kit.bouton('btn', demanderCloture);
       b.textContent = 'Clôturer le mois';
       corps.appendChild(b);
-      corps.appendChild(Kit.warnbox('La clôture verrouille le mois',
-        'Après clôture, plus aucune modification n’est possible sur ' +
-        Kit.libelleMoisAnnee(vue.annee, vue.mois) + '. C’est ce qui protège vos comptes ' +
-        'en cas de désaccord.'));
+      /* LOT 16 §16.3 — L'ÉCRAN DISAIT LE CONTRAIRE DE LA FEUILLE DE
+         CONFIRMATION, deux clics plus loin, et c'est elle qui avait raison :
+         la réouverture existe depuis le lot 13. Une application qui fait
+         croire à Maria qu'elle joue son mois sur un clic lui fait redouter le
+         seul geste qu'elle doit faire chaque mois. */
+      corps.appendChild(Kit.warnbox('La clôture verrouille les chiffres du mois',
+        'Ils ne bougeront plus, même si un salaire change plus tard. C’est ce qui protège ' +
+        'vos comptes en cas de désaccord. Vous pourrez rouvrir ' +
+        Kit.libelleMoisAnnee(vue.annee, vue.mois) + ' si vous devez corriger.'));
     } else {
       var bFiche = Kit.bouton('btn', function () {
         global.App.aller('fiche', { contratId: vue.contrat.id });
@@ -365,6 +425,10 @@
     }
     corps.appendChild(sectionPartage());
   }
+
+  /* « Corrigez d'abord la répartition du congé du 3 au 21 août » : le libellé
+     de période commence par une majuscule, il est ici au milieu d'une phrase. */
+  function minuscule(t) { return t ? t.charAt(0).toLowerCase() + t.slice(1) : t; }
 
   function documentHtml(id) {
     var doc = Kit.ce('div', 'doc');
@@ -816,6 +880,11 @@
     snap.prenomEnfant = ctx.contrat.prenom_enfant;
     snap.nomFamille = (ctx.contrat.famille && ctx.contrat.famille.nom) || null;
     snap.salaireDateEffet = ctx.entree.salaire ? ctx.entree.salaire.date_effet : null;
+    /* LOT 16 §16.2 — le nom entre dans l'instantané. Un mois clôturé avant
+       toute saisie garde `null` et ne se met JAMAIS à jour tout seul quand le
+       nom est renseigné ensuite (critère A2) : il continue d'écrire « votre
+       assistante maternelle », comme le jour de sa clôture. */
+    snap.nomEmettrice = (global.App.nomEmettrice && global.App.nomEmettrice()) || null;
     snap.joursConge = joursCongeDe(ctx.journees) || [];
     /* A15 : la liste des journées particulières entre enfin dans l'instantané.
        Sans elle, un changement de planning après la clôture réécrivait le

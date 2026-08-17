@@ -144,6 +144,46 @@
   function libelleMoisAnnee(a, m) { return MOIS[m] + ' ' + a; }
   function moisCapitale(a, m) { return MOIS[m].charAt(0).toUpperCase() + MOIS[m].slice(1) + ' ' + a; }
 
+  /* LOT 16 §16.6 — L'ÉLISION.
+
+     « Récap de août » : la barre du haut concaténait « de » et le mois sans
+     jamais se demander par quelle lettre il commence. Trois mois sur douze
+     sont concernés — avril, août, octobre — soit un quart de l'année où
+     l'application écrit du français fautif sur l'écran le plus vu.
+
+     La fonction est générale : on lui donne le mot et l'article, elle rend
+     l'un ou l'autre. Elle vit ici parce que le cas se reproduira à chaque
+     phrase où un mois suit une préposition, et qu'une correction faite à un
+     seul endroit ne tiendrait pas.
+
+     `h` n'est pas traité : aucun mois français ne commence par un h. */
+  var VOYELLES = 'aàâeéèêiîïoôuûy';
+
+  function elider(article, mot) {
+    var premiere = String(mot || '').charAt(0).toLowerCase();
+    if (VOYELLES.indexOf(premiere) === -1) return article + ' ' + mot;
+    return article.slice(0, -1) + '’' + mot;
+  }
+
+  /* « de mars », « d'août ». */
+  function deMois(m) { return elider('de', MOIS[m]); }
+  /* « de mars 2026 », « d'août 2026 ». */
+  function deMoisAnnee(a, m) { return elider('de', MOIS[m] + ' ' + a); }
+
+  /* LOT 16 §16.8 — « Du 3 au 22 août », « Du 29 juillet au 4 août »,
+     « Le 14 août ». Sur une période, le jour de la semaine n'apporte rien et
+     allonge la ligne ; il reste sur les dates isolées. */
+  function libellePeriode(debut, fin) {
+    if (!debut || !fin) return '—';
+    if (debut === fin) return 'Le ' + jourEtMois(debut);
+    var memeMois = debut.slice(0, 7) === fin.slice(0, 7);
+    return 'Du ' + (memeMois ? String(Number(debut.slice(8, 10))) : jourEtMois(debut)) +
+      ' au ' + jourEtMois(fin);
+  }
+  function jourEtMois(d) {
+    return Number(d.slice(8, 10)) + ' ' + MOIS[Number(d.slice(5, 7))];
+  }
+
   /* '2026-05-19' -> 'Mardi 19 mai' */
   function jourLong(iso) {
     var p = String(iso).slice(0, 10).split('-');
@@ -708,6 +748,9 @@
     SEUIL_CP_BAS_DIXIEMES: SEUIL_CP_BAS_DIXIEMES,
     parseEuros: parseEuros, parseEntier: parseEntier,
     libelleMois: libelleMois, libelleMoisAnnee: libelleMoisAnnee, moisCapitale: moisCapitale,
+    /* LOT 16 §16.6 — élision ; §16.8 — libellé d'une période. */
+    elider: elider, deMois: deMois, deMoisAnnee: deMoisAnnee,
+    libellePeriode: libellePeriode,
     jourLong: jourLong, dateLongue: dateLongue,
     MOIS: MOIS, MOIS_COURT: MOIS_COURT, JOURS_SEMAINE: JOURS_SEMAINE, NBSP: NBSP,
     pane: pane, lines: lines, ligne: ligne, note: note, warnbox: warnbox, section: section,

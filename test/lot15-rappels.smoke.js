@@ -170,6 +170,10 @@ var DB = {
   signIn: function () { return Promise.resolve(true); },
   signOut: function () { return Promise.resolve(true); },
   demanderReinitialisation: function () { return Promise.resolve(true); },
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
 
   listContratsActifs: function () { return Promise.resolve(scene.contrats); },
   listContratsTous: function () { return Promise.resolve(scene.contrats); },

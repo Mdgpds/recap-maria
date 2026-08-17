@@ -30,7 +30,13 @@
    moteur de chaîne. Sans incrément, l'ancien service worker continuerait à
    servir la version d'avant — et les correctifs n'atteindraient Maria qu'à la
    deuxième ouverture, ou jamais. */
-var CACHE = 'recap-pr9-correctifs-v1';
+/* LOT 16 — NOM DE CACHE CHANGÉ. Aucun fichier n'est ajouté par ce lot, mais
+   `css/style.css` et huit fichiers `js/` changent de contenu. Sans nouveau
+   nom, le service worker continuerait de servir l'ancienne version depuis le
+   cache et ne récupérerait la nouvelle qu'en arrière-plan : le téléphone de
+   Maria ferait tourner un mélange de deux versions, dont l'écran d'un enfant
+   d'avant le correctif du §16.1. */
+var CACHE = 'recap-lot16-verite-et-conges-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

@@ -29,6 +29,7 @@
     if (ctx.vue === 'modifGroupee') return afficherModifGroupee(ctx);
     if (ctx.vue === 'reprise') return afficherReprise(ctx);
     if (ctx.vue === 'rappels') return afficherRappels(ctx);
+    if (ctx.vue === 'compte') return afficherCompte(ctx);
     return afficherMenu(ctx);
   }
 
@@ -45,8 +46,18 @@
        que ce qu'on y attend : gérer, et son compte. */
 
     corps.appendChild(Kit.section('Gérer'));
-    corps.appendChild(entree('Familles', 'Chargement…',
-      function () { global.App.aller('familles', {}); }));
+    /* LOT 16 §16.4 — LA LIGNE NE PART PLUS SUR « Chargement… ».
+
+       Deux lignes étaient créées avec ce sous-titre, et une seule était mise à
+       jour — repérée par sa POSITION dans la liste. La ligne des Rappels
+       affichait donc « Chargement… » pour toujours, et la moindre ligne
+       insérée avant les Familles aurait déplacé le correctif sur la mauvaise.
+
+       Chaque ligne est désormais tenue par sa propre référence, et un
+       sous-titre en attente n'est posé que là où quelqu'un sait le lever. */
+    var ligneFamilles = entree('Familles', 'Chargement…',
+      function () { global.App.aller('familles', {}); });
+    corps.appendChild(ligneFamilles);
     corps.appendChild(entree('Mes contrats types', 'Vos conditions habituelles, en versions datées',
       function () { global.App.aller('modeles', {}); }));
     corps.appendChild(entree('Modifier plusieurs contrats', 'Une chose à la fois, sur les contrats que vous choisissez',
@@ -55,9 +66,18 @@
       function () { feuilleNouvelEnfant(); }));
 
     corps.appendChild(Kit.section('Compte'));
-    corps.appendChild(entree('Me rappeler de clôturer mes mois',
-      'Chargement…',
-      function () { global.App.aller('rappels', {}); }));
+    /* LOT 16 §16.2 — la saisie du nom qui signe les documents, en tête de la
+       rubrique Compte : c'est la première chose à renseigner. */
+    corps.appendChild(entree('Mon nom sur les documents',
+      global.App.emettriceAsaisir && global.App.emettriceAsaisir()
+        ? 'Vos récapitulatifs ne sont pas encore signés'
+        : (global.App.nomEmettrice && global.App.nomEmettrice()) || null,
+      function () { global.App.aller('compte', {}); }));
+    /* §16.4 — la ligne des Rappels, tenue par sa référence et non par sa
+       position. Son vrai réglage est posé plus bas, ou rien du tout. */
+    var ligneRappels = entree('Me rappeler de clôturer mes mois', null,
+      function () { global.App.aller('rappels', {}); });
+    corps.appendChild(ligneRappels);
     corps.appendChild(entree('Reprendre mes comptes',
       'Si vous teniez déjà vos comptes sur papier',
       function () { global.App.aller('reprise', {}); }));
@@ -72,18 +92,51 @@
       'Vous restez connectée d’une fois sur l’autre : ce bouton est le seul moyen de fermer ' +
       'votre session.'));
 
-    var ligneFamilles = corps.querySelectorAll('.menu')[0];
-    return global.DB.listFamillesAvecContrats().then(function (familles) {
-      var sous = ligneFamilles && ligneFamilles.querySelector('.d');
-      if (!sous) return;
+    /* Les deux lectures sont indépendantes : l'échec de l'une ne doit pas
+       laisser l'autre ligne dans son état d'attente. */
+    var pFamilles = global.DB.listFamillesAvecContrats().then(function (familles) {
       var enCours = (familles || []).filter(function (f) { return !f.archive; });
-      sous.textContent = enCours.length
+      poserSousTitre(ligneFamilles, enCours.length
         ? enCours.map(function (f) { return f.nom; }).join(', ')
-        : 'Aucune famille pour l’instant';
+        : 'Aucune famille pour l’instant');
     }).catch(function () {
-      var sous = ligneFamilles && ligneFamilles.querySelector('.d');
-      if (sous) sous.textContent = 'Liste indisponible pour l’instant';
+      poserSousTitre(ligneFamilles, 'Liste indisponible pour l’instant');
     });
+
+    /* §16.4 — LE VRAI RÉGLAGE, ou RIEN. Une ligne qui n'a pas pu lire son
+       réglage n'affiche aucun sous-titre : mieux vaut une ligne muette qu'un
+       mot d'attente qu'elle ne saura jamais lever. */
+    var pRappels = global.DB.getPreferenceRappel().then(function (pref) {
+      poserSousTitre(ligneRappels, libelleReglageRappel(pref));
+    }).catch(function () {
+      poserSousTitre(ligneRappels, null);
+    });
+
+    return Promise.all([pFamilles, pRappels]);
+  }
+
+  function poserSousTitre(ligne, texte) {
+    if (!ligne) return;
+    var sous = ligne.querySelector('.d');
+    if (!texte) { if (sous) sous.parentNode.removeChild(sous); return; }
+    if (!sous) {
+      sous = Kit.ce('span', 'd');
+      var tx = ligne.querySelector('span');
+      if (tx) tx.appendChild(sous); else return;
+    }
+    sous.textContent = texte;
+  }
+
+  /* « Le 25, puis chaque jour tant qu'un mois n'est pas clôturé ». Le jour
+     vient du réglage, jamais écrit en dur : Maria peut l'avoir mis au 28. */
+  function libelleReglageRappel(pref) {
+    if (!pref || !pref.actif) return 'Vous ne recevez aucun rappel';
+    var jour = pref.jour_du_mois || 25;
+    var base = 'Le ' + (jour === 1 ? '1er' : jour);
+    if (pref.chaque_jour_ensuite !== false) {
+      return base + ', puis chaque jour tant qu’un mois n’est pas clôturé';
+    }
+    return base + ' de chaque mois';
   }
 
   /* La version en vigueur à une date : la plus récente dont la date d'effet
@@ -96,6 +149,58 @@
       if (m.date_effet <= dateIso && (!retenu || m.date_effet > retenu.date_effet)) retenu = m;
     });
     return retenu;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 16 §16.5 — LES RÉGLAGES PAR DÉFAUT D'UN NOUVEAU CONTRAT          */
+  /* ------------------------------------------------------------------ */
+
+  /* L'écran de création ANNONÇAIT « 8h30 → 17h30 » et n'envoyait rien : la
+     base appliquait ses propres valeurs par défaut, dont `heure_depart` à
+     18:00. L'écran disait donc une chose, la base en enregistrait une autre,
+     et le contrat se retrouvait avec un départ à 18h00 ET une journée de 9 h —
+     deux valeurs qui se contredisent, puisque 8h30 → 18h00 fait 9h30.
+
+     Les valeurs sont désormais ÉNONCÉES ICI et ENVOYÉES telles quelles, et la
+     phrase affichée est produite à partir de ce même objet. Elles ne peuvent
+     plus diverger : c'est le seul moyen d'empêcher le défaut de revenir.
+
+     La fin d'ACCUEIL est 17:30. Les 30 minutes supplémentaires viennent après
+     et vivent dans `minutes_sup_jour` : l'enfant repart vers 18 h, mais
+     l'accueil s'arrête à 17h30. Le schéma porte le même défaut depuis la
+     migration 013. */
+  var REGLAGES_PAR_DEFAUT = {
+    jours_planning: [1, 2, 3, 4, 5],
+    heure_arrivee: '08:30',
+    heure_depart: '17:30',
+    minutes_contractuelles: 540,
+    minutes_sup_jour: 30,
+    minutes_par_jour_conge: 540,
+    entretien_centimes_jour: 500,
+    sup_dues_si_enfant_absent: true,
+    ordre_imputation: 'cp_puis_sup'
+  };
+
+  /* La phrase de l'écran de création, produite à partir des valeurs qui seront
+     RÉELLEMENT appliquées. Aucun chiffre écrit en dur. */
+  function phraseReglages(r) {
+    return libellePlanningLong(r.jours_planning) + ', ' +
+      String(r.heure_arrivee).slice(0, 5).replace(':', 'h') + ' → ' +
+      String(r.heure_depart).slice(0, 5).replace(':', 'h') + ' d’accueil, ' +
+      Kit.duree(r.minutes_sup_jour) + ' supplémentaires par jour travaillé, ' +
+      Kit.eur(r.entretien_centimes_jour) + ' d’entretien par jour de présence. ' +
+      'Tout est modifiable ensuite dans la fiche du contrat.';
+  }
+
+  var NOMS_JOURS_LONGS = ['', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+  function libellePlanningLong(planning) {
+    var p = (planning || []).slice().sort(function (a, b) { return a - b; });
+    if (!p.length) return 'Aucun jour de garde';
+    var continu = p.every(function (j, i) { return i === 0 || j === p[i - 1] + 1; });
+    if (continu && p.length > 2) {
+      return 'Du ' + NOMS_JOURS_LONGS[p[0]] + ' au ' + NOMS_JOURS_LONGS[p[p.length - 1]];
+    }
+    return p.map(function (j) { return NOMS_JOURS_LONGS[j]; }).join(', ');
   }
 
   function entree(titre, sous, onclick) {
@@ -167,9 +272,7 @@
             'Vous pourrez le compléter plus tard depuis la fiche du contrat.'));
 
           var noteReglages = Kit.note('Les autres réglages prennent les valeurs habituelles',
-            'Lundi à vendredi, 8h30 → 17h30, 30 minutes supplémentaires par jour travaillé, ' +
-            '5,00 € d’entretien par jour de présence. Tout est modifiable ensuite dans la fiche ' +
-            'du contrat.');
+            phraseReglages(REGLAGES_PAR_DEFAUT));
           corps.appendChild(noteReglages);
 
           /* A7 — la provenance des valeurs pré-remplies, mise à jour chaque
@@ -183,9 +286,7 @@
               noteReglages.appendChild(Kit.ce('b', null,
                 'Les autres réglages prennent les valeurs habituelles'));
               noteReglages.appendChild(document.createTextNode(
-                'Lundi à vendredi, 8h30 → 17h30, 30 minutes supplémentaires par jour ' +
-                'travaillé, 5,00 € d’entretien par jour de présence. Tout est modifiable ' +
-                'ensuite dans la fiche du contrat.'));
+                phraseReglages(REGLAGES_PAR_DEFAUT)));
               return;
             }
             noteReglages.appendChild(Kit.ce('b', null,
@@ -244,6 +345,12 @@
                   date_debut: d,
                   statut: 'actif'
                 };
+                /* §16.5 — les réglages annoncés à l'écran sont ceux qui
+                   partent en base. Rien n'est laissé au défaut du schéma :
+                   c'est ce silence qui faisait mentir l'écran. */
+                Object.keys(REGLAGES_PAR_DEFAUT).forEach(function (k) {
+                  champsContrat[k] = REGLAGES_PAR_DEFAUT[k];
+                });
                 if (enVigueur) {
                   champsContrat.modele_id = enVigueur.id;
                   champsContrat.jours_planning = enVigueur.jours_planning;
@@ -1424,18 +1531,62 @@
     var barsParContrat = grouper(d.salaires, 'contrat_id');
     var impParContrat = grouper(d.imputations, 'contrat_id');
     var jrsParContrat = grouper(d.journees, 'contrat_id');
+    var departParContrat = {};
+    (d.compteurs_initiaux || []).forEach(function (x) { departParContrat[x.contrat_id] = x; });
 
     (d.contrats || []).forEach(function (c) {
       var bar = barsParContrat[c.id] || [];
       var imp = impParContrat[c.id] || [];
-      var jrs = (jrsParContrat[c.id] || []).filter(function (j) {
-        return j.type && j.type !== 'presence';
-      });
-      if (!bar.length && !imp.length && !jrs.length) return;
+      /* LOT 16 §16.7 — TOUTE JOURNÉE QUI PORTE UN AJUSTEMENT, QUEL QUE SOIT
+         SON TYPE. Le filtre excluait les journées de type `presence` : or ce
+         sont elles qui portent les ajustements d'heures du lot 12 (minutes
+         travaillées en plus, minutes auxquelles Maria a renoncé, décision au
+         cas par cas sur les minutes dues). Un export annoncé comme « TOUT »
+         perdait donc exactement ce qui explique un écart d'heures.
+         Une journée de présence SANS ajustement reste hors du document : elle
+         n'apprend rien et noierait le reste. */
+      var jrs = (jrsParContrat[c.id] || []).filter(estJourneeParlante);
+      var depart = departParContrat[c.id] || null;
+      if (!bar.length && !imp.length && !jrs.length && !depart) return;
 
       out.push('==============================================================');
       out.push('DÉTAIL — ' + c.prenom_enfant + (c.nom ? ' ' + c.nom : ''));
       out.push('');
+
+      /* §16.7 — LES CONDITIONS DU CONTRAT, écrites nulle part jusqu'ici. Sans
+         elles, aucun chiffre du document n'est vérifiable : on ne sait ni sur
+         quels jours il a été gardé, ni combien vaut son entretien, ni combien
+         de minutes fait un jour de congé. */
+      out.push('  Conditions du contrat');
+      out.push('    Jours de garde         : ' + libellePlanningLong(c.jours_planning));
+      out.push('    Accueil                : ' + String(c.heure_arrivee).slice(0, 5) +
+        ' → ' + String(c.heure_depart).slice(0, 5));
+      out.push('    Durée de la journée    : ' + Kit.duree(c.minutes_contractuelles));
+      out.push('    Minutes supplémentaires: ' + Kit.duree(c.minutes_sup_jour) + ' par jour travaillé');
+      out.push('    Un jour de congé vaut  : ' + Kit.duree(c.minutes_par_jour_conge));
+      out.push('    Entretien par présence : ' + Kit.eur(c.entretien_centimes_jour));
+      out.push('    Si l’enfant est absent : ' + (c.sup_dues_si_enfant_absent === false
+        ? 'les minutes supplémentaires ne sont pas dues'
+        : 'les minutes supplémentaires restent dues'));
+      out.push('    Congés déduits d’abord : ' + (c.ordre_imputation === 'sup_puis_cp'
+        ? 'sur la récupération' : 'sur les congés payés'));
+      out.push('');
+
+      /* §16.7 — LE POINT DE DÉPART. C'est de lui que dérivent TOUS les soldes :
+         sans lui, un compteur de congés payés lu dans l'export est un nombre
+         sans origine, donc invérifiable. */
+      if (depart) {
+        out.push('  Point de départ des compteurs');
+        out.push('    Repris au           : ' + Kit.dateLongue(depart.date_reference));
+        out.push('    Récupération        : ' + Kit.heures(depart.minutes_sup || 0));
+        out.push('    Congés payés acquis : ' + Kit.joursCp(depart.dixiemes_cp_acquis || 0));
+        out.push('    Congés payés pris   : ' + Kit.joursCp(depart.dixiemes_cp_pris || 0));
+        out.push('');
+      } else {
+        out.push('  Point de départ des compteurs : aucun — les compteurs partent de zéro');
+        out.push('  au premier mois du contrat.');
+        out.push('');
+      }
 
       if (bar.length) {
         out.push('  Rémunérations successives');
@@ -1462,13 +1613,39 @@
       if (jrs.length) {
         out.push('  Journées qui s’écartent de la normale');
         jrs.sort(function (a, b) { return a.jour < b.jour ? -1 : 1; }).forEach(function (j) {
-          out.push('    ' + Kit.dateLongue(j.jour) + ' — ' + j.type +
-            (j.minutes_sup_exceptionnelles ? ' · +' + Kit.heures(j.minutes_sup_exceptionnelles) : '') +
-            (j.minutes_sup_renoncees ? ' · renoncé ' + Kit.heures(j.minutes_sup_renoncees) : ''));
+          out.push('    ' + Kit.dateLongue(j.jour) + ' — ' + libelleTypeJournee(j.type) +
+            (j.minutes_sup_exceptionnelles ? ' · +' + Kit.heures(j.minutes_sup_exceptionnelles) + ' travaillées en plus' : '') +
+            (j.minutes_sup_renoncees ? ' · renoncé à ' + Kit.heures(j.minutes_sup_renoncees) : '') +
+            (j.sup_dues_override === true ? ' · minutes supplémentaires dues ce jour-là' : '') +
+            (j.sup_dues_override === false ? ' · minutes supplémentaires non dues ce jour-là' : '') +
+            (j.minutes_reelles != null ? ' · ' + Kit.heures(j.minutes_reelles) + ' réellement travaillées' : '') +
+            (j.entretien_centimes != null ? ' · entretien ' + Kit.eur(j.entretien_centimes) : ''));
         });
         out.push('');
       }
     });
+
+    /* §16.7 — LES CONTRATS TYPES, chargés par `exporterHistorique` et jamais
+       écrits. Le lot 17 retire leurs écrans mais CONSERVE la donnée en base
+       (§17.9) : un export qui se dit complet doit donc continuer de la porter,
+       même quand plus aucun écran ne la montre. C'est justement à ce
+       moment-là qu'un export devient le seul endroit où elle est lisible. */
+    if ((d.contrats_types || []).length) {
+      out.push('==============================================================');
+      out.push('CONTRATS TYPES — vos conditions habituelles, en versions datées');
+      out.push('');
+      d.contrats_types.slice().sort(function (a, b) {
+        return String(a.date_effet) < String(b.date_effet) ? -1 : 1;
+      }).forEach(function (m) {
+        out.push('  ' + m.nom + ' — à partir du ' + Kit.dateLongue(m.date_effet));
+        out.push('    Jours de garde : ' + libellePlanningLong(m.jours_planning) +
+          ' · accueil ' + String(m.heure_arrivee).slice(0, 5) + ' → ' +
+          String(m.heure_depart).slice(0, 5));
+        out.push('    Entretien ' + Kit.eur(m.entretien_centimes_jour) +
+          ' · ' + Kit.duree(m.minutes_sup_jour) + ' supplémentaires par jour');
+      });
+      out.push('');
+    }
 
     if ((d.evenements || []).length) {
       out.push('==============================================================');
@@ -1488,6 +1665,33 @@
     out.push('ouvrables, du lundi au samedi. Une semaine complète compte 6 jours.');
     return out.join('\n');
   }
+
+  /* LOT 16 §16.7 — Une journée entre dans le document si elle DIT quelque
+     chose : un type autre que la présence ordinaire, ou un ajustement porté
+     sur une journée de présence. Le filtre précédent ne regardait que le type
+     et perdait tous les ajustements du lot 12. */
+  function estJourneeParlante(j) {
+    if (!j) return false;
+    if (j.type && j.type !== 'presence') return true;
+    return (j.minutes_sup_exceptionnelles || 0) > 0 ||
+           (j.minutes_sup_renoncees || 0) > 0 ||
+           j.sup_dues_override !== null && j.sup_dues_override !== undefined ||
+           j.minutes_reelles != null ||
+           j.entretien_centimes != null;
+  }
+
+  /* Le document doit se comprendre par quelqu'un qui n'a jamais vu
+     l'application : aucun nom de colonne ne doit y apparaître tel quel. */
+  var TYPES_JOURNEE = {
+    presence: 'présence',
+    absence_enfant: 'enfant absent',
+    conge_maria: 'congé de l’assistante maternelle',
+    sans_solde: 'jour sans solde',
+    familiarisation: 'familiarisation',
+    ferie: 'jour férié',
+    hors_planning: 'hors planning'
+  };
+  function libelleTypeJournee(t) { return TYPES_JOURNEE[t] || t || 'journée'; }
 
   function grouper(liste, cle) {
     var out = {};
@@ -1555,6 +1759,85 @@
   function texteDuRappel(nb) {
     return nb === 1 ? 'Il vous reste 1 mois à clôturer.'
                     : 'Il vous reste ' + nb + ' mois à clôturer.';
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 16 §16.2 — Mon nom sur les documents                            */
+  /* ------------------------------------------------------------------ */
+
+  /* Le récapitulatif remis à une famille était signé par l'adresse e-mail du
+     compte. Cet écran est le seul endroit où ce nom se saisit, et la phrase
+     qui l'accompagne dit à quoi il sert — sans quoi Maria n'a aucune raison
+     de le renseigner.
+
+     Ce qui est déjà clôturé ne bouge pas : le nom entre dans l'instantané au
+     moment de la clôture. Il faut le dire ici, pas le découvrir après. */
+  function afficherCompte(ctx) {
+    global.App.barreRetour(ctx.barre, 'Mon nom sur les documents');
+    ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture de votre nom…'));
+
+    return global.DB.getEmettrice()
+      .then(function (e) {
+        global.App.poserNomEmettrice(e && e.nom ? e.nom : '');
+        Kit.vider(ctx.corps);
+        rendreCompte(ctx.corps, e && e.nom ? e.nom : '');
+      })
+      .catch(function (err) {
+        Kit.vider(ctx.corps);
+        /* L'échec est dit jusqu'au bout, et l'écran reste utilisable : Maria
+           peut saisir son nom, l'enregistrement dira ce qu'il en advient. */
+        ctx.corps.appendChild(Kit.warnbox('Votre nom n’a pas pu être lu',
+          ' ' + Kit.messageErreur(err) +
+          ' Vous pouvez le saisir ci-dessous : il remplacera ce qui est enregistré.'));
+        rendreCompte(ctx.corps, '');
+      });
+  }
+
+  function rendreCompte(corps, nomActuel) {
+    var p = Kit.pane('Votre nom');
+    var champNom = Kit.champ('Nom affiché sur les documents', nomActuel,
+      { placeholder: 'Par exemple : Maria' });
+    p.appendChild(champNom.bloc);
+    p.appendChild(Kit.ce('p', 'sb q',
+      'Chaque récapitulatif remis à une famille portera « Établi par ' +
+      (nomActuel || 'votre nom') + ' ». Tant que rien n’est renseigné, il indique ' +
+      '« votre assistante maternelle » — jamais votre adresse e-mail.'));
+    corps.appendChild(p);
+
+    corps.appendChild(Kit.note('Les mois déjà clôturés ne changent pas',
+      'Un récapitulatif clôturé garde le nom qu’il portait ce jour-là. C’est ce qui ' +
+      'fait qu’un document remis à une famille ne se réécrit jamais tout seul.'));
+
+    var msg = Kit.ce('div', 'msg');
+    var b = Kit.bouton('btn', function () {
+      var nom = (champNom.input.value || '').trim();
+      if (!nom) {
+        msg.className = 'msg ko';
+        msg.textContent = 'Écrivez le nom que vous voulez voir sur vos documents.';
+        return;
+      }
+      b.disabled = true;
+      msg.className = 'msg';
+      msg.textContent = 'Enregistrement…';
+      global.DB.enregistrerEmettrice(nom)
+        .then(function () {
+          b.disabled = false;
+          global.App.poserNomEmettrice(nom);
+          msg.className = 'msg ok';
+          msg.textContent = 'Vos prochains documents seront établis par ' + nom + '.';
+          global.App.invalider();
+        })
+        .catch(function (e) {
+          /* La saisie reste à l'écran : rien n'est perdu en silence. */
+          b.disabled = false;
+          msg.className = 'msg ko';
+          msg.textContent = 'Votre nom n’a pas pu être enregistré : ' +
+            Kit.messageErreur(e) + ' Il est toujours écrit ci-dessus.';
+        });
+    });
+    b.textContent = 'Enregistrer';
+    corps.appendChild(b);
+    corps.appendChild(msg);
   }
 
   function afficherRappels(ctx) {

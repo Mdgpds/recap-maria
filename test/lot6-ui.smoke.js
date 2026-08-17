@@ -99,6 +99,13 @@ var DB = {
   },
   onAuthChange: function () { /* pas de rejeu d'authentification dans ce test */ },
   signOut: function () { return Promise.resolve(true); },
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
+  /* LOT 16 §16.4 — la ligne des rappels affiche désormais son VRAI réglage.
+     Décor : rappels inactifs, la ligne dira « Vous ne recevez aucun rappel ». */
+  getPreferenceRappel: function () { return Promise.resolve(null); },
   listContratsActifs: function () { return Promise.resolve([LEA, TOM]); },
   listContratsTous: function () { return Promise.resolve([LEA, TOM, MANON]); },
   listContratsPourMois: function () { return Promise.resolve([LEA, TOM]); },

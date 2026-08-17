@@ -160,7 +160,8 @@
 
   function feuilleHistorique(opts) {
     var libelleMois = Kit.libelleMoisAnnee(opts.annee, opts.mois);
-    Kit.ouvrirFeuille('Historique de ' + libelleMois, opts.contrat.prenom_enfant,
+    Kit.ouvrirFeuille('Historique ' + Kit.deMoisAnnee(opts.annee, opts.mois),
+      opts.contrat.prenom_enfant,
       function (corps) {
         var attente = Kit.ce('div', 'attente', 'Lecture de l’historique…');
         corps.appendChild(attente);

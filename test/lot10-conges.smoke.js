@@ -123,6 +123,13 @@ var DB = {
   },
   onAuthChange: function () {},
   signOut: function () { return Promise.resolve(true); },
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
+  /* LOT 16 §16.4 — la ligne des rappels affiche désormais son VRAI réglage.
+     Décor : rappels inactifs, la ligne dira « Vous ne recevez aucun rappel ». */
+  getPreferenceRappel: function () { return Promise.resolve(null); },
   listContratsActifs: function () { return Promise.resolve(scene.contrats); },
   listContratsTous: function () { return Promise.resolve(scene.contrats); },
   listContratsPourMois: function () { return Promise.resolve(scene.contrats); },
@@ -397,8 +404,16 @@ function cliquer(libelle, signe, fois) {
   /* ==================================================================== */
   console.log('\n--- P6 : Tom, réserves insuffisantes ---');
   assert(txt(sheet).indexOf('Tom') !== -1, 'P6 : l’étape 2 passe au second contrat');
-  assert(txt(sheet).indexOf('ne suffisent pas') !== -1,
-    'P6 : l’écran DIT que les réserves de Tom ne suffisent pas');
+  /* MISE À JOUR LOT 16 §16.1 d) — la phrase change et se CHIFFRE. « Les
+     réserves ne suffisent pas » disait le problème ; l'écran annonce
+     désormais le basculement en sans solde ET son coût, avant validation.
+     Découvrir une retenue sur le document du mois, c'est trop tard. */
+  assert(txt(sheet).indexOf('Vos réserves ne couvrent pas toute la période') !== -1,
+    'P6 / §16.1 d) : l’écran DIT que les réserves de Tom ne couvrent pas la période');
+  assert(txt(sheet).indexOf('passent en sans solde') !== -1,
+    '§16.1 d) : et que le solde bascule en sans solde');
+  assert(txt(sheet).indexOf('Vous pouvez changer avant de valider') !== -1,
+    '§16.1 d) : rien n’est imposé — tout est annoncé');
   var cpTom = valeurDe('Congés payés');
   var supTom = valeurDe('Récupération');
   var ssTom = valeurDe('Sans solde');

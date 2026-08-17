@@ -598,7 +598,28 @@
   function boutonsEtape(ctx, cible, entree) {
     var actions = Kit.ce('div', 'actions');
 
-    if (entree && !entree.salaireManquant && entree.resultat.salaireNetCentimes) {
+    /* LOT 16 §16.1 c) — DANS LA FIN DE MOIS GUIDÉE AUSSI. Un mois dont une
+       répartition ne tient plus ne se clôture pas : son étape ne propose que
+       « Passer pour l'instant », et le chemin pour corriger. Sans ce garde, le
+       parcours guidé restait la porte par laquelle un document que Maria n'a
+       pas choisi pouvait être figé — et un mois figé ne se recalcule jamais. */
+    var bloque = !!(entree && (entree.imputationsEcartees || []).length);
+    if (bloque) {
+      var e0 = entree.imputationsEcartees[0];
+      ctx.corps.appendChild(Kit.warnbox(
+        'Corrigez d’abord la répartition du congé de ' + cible.contrat.prenom_enfant,
+        ' Du ' + Kit.dateLongue(e0.date_debut) + ' au ' + Kit.dateLongue(e0.date_fin) +
+        ', les jours ne sont pas répartis sur des réserves suffisantes. Ce mois ne ' +
+        'peut pas être clôturé tant que ce n’est pas corrigé.'));
+      actions.appendChild(boutonTexte('btn', 'Corriger la répartition', function () {
+        parcours = null;
+        global.App.aller('conges', {
+          annee: cible.annee, mois: cible.mois, corrigerImputation: e0.id
+        }, true);
+      }));
+    }
+
+    if (!bloque && entree && !entree.salaireManquant && entree.resultat.salaireNetCentimes) {
       actions.appendChild(boutonTexte('btn pr', 'Clôturer et continuer', function (ev) {
         cloturerEtape(ctx, cible, entree, ev && ev.currentTarget);
       }));
