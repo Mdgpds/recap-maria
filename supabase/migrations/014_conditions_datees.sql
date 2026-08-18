@@ -180,19 +180,38 @@ update public.avenant_contrat a
 -- l'avenant précédent : un avenant ne change QUE ce qu'il change, et le reste
 -- est repris tel quel. Sans cela, un avenant qui ne toucherait qu'à
 -- l'entretien effacerait la rémunération.
+-- ⚠️ PAS de `from lateral (…)` ici. PostgreSQL refuse qu'une sous-requête
+-- LATERAL de la clause FROM d'un UPDATE référence la table CIBLE : elle
+-- n'appartient pas à l'espace de noms du FROM (« invalid reference to
+-- FROM-clause entry », 42P10). Une sous-requête corrélée dans le SET, elle,
+-- voit parfaitement l'alias de la cible. Même résultat, même index utilisé.
 update public.avenant_contrat a
-   set brut_mensuel_centimes = p.brut_mensuel_centimes,
-       net_mensuel_centimes  = p.net_mensuel_centimes
-  from lateral (
-    select b.brut_mensuel_centimes, b.net_mensuel_centimes
-      from public.avenant_contrat b
-     where b.contrat_id = a.contrat_id
-       and b.date_effet < a.date_effet
-       and b.brut_mensuel_centimes is not null
-     order by b.date_effet desc
-     limit 1
-  ) p
- where a.brut_mensuel_centimes is null;
+   set brut_mensuel_centimes = (
+         select b.brut_mensuel_centimes
+           from public.avenant_contrat b
+          where b.contrat_id = a.contrat_id
+            and b.date_effet < a.date_effet
+            and b.brut_mensuel_centimes is not null
+          order by b.date_effet desc
+          limit 1),
+       net_mensuel_centimes = (
+         select b.net_mensuel_centimes
+           from public.avenant_contrat b
+          where b.contrat_id = a.contrat_id
+            and b.date_effet < a.date_effet
+            and b.brut_mensuel_centimes is not null
+          order by b.date_effet desc
+          limit 1)
+ where a.brut_mensuel_centimes is null
+   -- Sans cette garde, un avenant sans prédécesseur porteur de barème verrait
+   -- ses deux colonnes réécrites à `null` — c'est déjà leur valeur, mais la
+   -- ligne serait touchée pour rien, et le jour où l'on ajoutera un trigger
+   -- de mise à jour, elle le déclencherait sans raison.
+   and exists (
+     select 1 from public.avenant_contrat b
+      where b.contrat_id = a.contrat_id
+        and b.date_effet < a.date_effet
+        and b.brut_mensuel_centimes is not null);
 
 -- Numérotation, par contrat et par date d'effet croissante.
 update public.avenant_contrat a
@@ -303,17 +322,23 @@ alter table public.compteur_initial
 -- dixièmes × minutes_par_jour_conge / 10. La conversion prend les minutes du
 -- PREMIER avenant du contrat : c'est la valeur qui avait cours au moment où
 -- ces compteurs ont été saisis.
+-- Même correctif qu'à l'étape 3 : sous-requête CORRÉLÉE dans le SET, jamais
+-- `from lateral (…)` référençant la cible.
 update public.compteur_initial ci
-   set minutes_cp_acquis = (ci.dixiemes_cp_acquis * a.minutes_par_jour_conge) / 10,
-       minutes_cp_pris   = (ci.dixiemes_cp_pris   * a.minutes_par_jour_conge) / 10
-  from lateral (
-    select b.minutes_par_jour_conge
-      from public.avenant_contrat b
-     where b.contrat_id = ci.contrat_id
-     order by b.date_effet
-     limit 1
-  ) a
- where ci.minutes_cp_acquis is null;
+   set minutes_cp_acquis = (ci.dixiemes_cp_acquis * (
+         select b.minutes_par_jour_conge
+           from public.avenant_contrat b
+          where b.contrat_id = ci.contrat_id
+          order by b.date_effet
+          limit 1)) / 10,
+       minutes_cp_pris   = (ci.dixiemes_cp_pris * (
+         select b.minutes_par_jour_conge
+           from public.avenant_contrat b
+          where b.contrat_id = ci.contrat_id
+          order by b.date_effet
+          limit 1)) / 10
+ where ci.minutes_cp_acquis is null
+   and exists (select 1 from public.avenant_contrat b where b.contrat_id = ci.contrat_id);
 
 -- Un contrat sans aucun avenant ne devrait pas exister après l'étape 3 ; par
 -- sécurité, on ne laisse jamais une colonne à null sur une table lue par le
