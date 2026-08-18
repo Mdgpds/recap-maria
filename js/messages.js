@@ -56,6 +56,48 @@
       'vous n’avez pas assez de congés payés ou de récupération pour cette ' +
       'répartition. Placez une partie des jours en sans solde, ou choisissez ' +
       'des dates plus courtes.'],
+    /* --- LOT 17 : les refus du temps et des conditions datées ----------
+       Cinq codes nouveaux. Aucun ne doit tomber dans le repli « une erreur
+       inattendue s'est produite » : chacun a une cause connue, et chacun se
+       corrige par un geste précis. Une phrase qui ne dit pas quoi faire est
+       une phrase qui laisse Maria dehors. */
+    [/CONDITIONS_ABSENTES/,
+      'aucune condition n’est enregistrée pour ce mois : ni jours de garde, ni ' +
+      'horaires, ni rémunération. Ouvrez la fiche du contrat et posez ses ' +
+      'conditions — sans elles, ce mois ne peut pas être calculé.'],
+    [/ECART_EVENEMENT_INCONNU/,
+      'cet événement n’est pas reconnu. Choisissez ce qui s’est passé dans la ' +
+      'liste : un parent en retard, une libération anticipée, ou une arrivée ' +
+      'que vous avez décalée.'],
+    [/ECART_DESTINATION_INCONNUE/,
+      'ces minutes doivent se déduire de votre récupération, de vos congés ' +
+      'payés, ou passer en sans solde. Choisissez l’une des trois.'],
+    [/HEURE_INVALIDE/,
+      'cette heure n’est pas lisible. Choisissez-la dans la liste plutôt que ' +
+      'de la taper.'],
+    /* Le refus d'un écran retiré au lot 17 (§17.9). Il ne devrait jamais
+       s'afficher — plus rien n'y mène — mais un message technique sur un
+       chemin oublié serait pire que rien. */
+    [/ECRAN_RETIRE_LOT17/,
+      'cet écran a été retiré de l’application. Pour changer les conditions ' +
+      'd’un contrat, ouvrez sa fiche et faites un avenant : les mois d’avant ' +
+      'ne bougeront pas.'],
+    /* Les contraintes de la migration 014, dites en français. */
+    [/avenant_date_effet_premier_du_mois/,
+      'un avenant prend toujours effet un 1er de mois : un mois porte un seul ' +
+      'jeu de conditions.'],
+    [/avenant_contrat_contrat_id_date_effet_key|avenant_contrat_numero_unique/,
+      'un avenant prend déjà effet à cette date pour ce contrat. Corrigez-le ' +
+      'plutôt que d’en poser un second.'],
+    [/journee_ecart_signe_coherent|journee_ecart_coherent/,
+      'ce que vous avez déclaré et les minutes ne concordent pas. Reprenez ' +
+      'l’événement et l’heure réelle.'],
+    [/avenant_minutes_par_jour_conge_positif/,
+      'la durée d’un jour de congé doit être supérieure à zéro : c’est elle ' +
+      'qui convertit vos compteurs en jours.'],
+    [/compteur_initial_coherent/,
+      'vous ne pouvez pas avoir pris plus de congés payés que vous n’en avez ' +
+      'acquis. Vérifiez les deux chiffres de départ.'],
     [/MINUTES_INVALIDES/,
       'les minutes saisies ne sont pas un nombre de minutes valable : ' +
       'entrez un nombre entier, sans virgule.'],

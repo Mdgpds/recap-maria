@@ -29,6 +29,12 @@
    Lancement : node test/lot14-mise-en-service.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`, qui assemble l'avenant à partir du contrat et du
+   barème déjà écrits ici. Aucune valeur n'est inventée. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -106,8 +112,10 @@ var scene = {
     'c-tom': {}
   },
   compteurs: {
+    /* §17.6 — les congés payés sont en MINUTES : 200 dixièmes = 20 jours =
+       20 × 540 minutes. La quantité ne change pas, seule l'unité. */
     'c-lea': { contrat_id: 'c-lea', date_reference: '2026-01-01',
-      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 },
+      minutes_sup: 0, minutes_cp_acquis: 20 * 540, minutes_cp_pris: 0 },
     'c-tom': null
   },
   recaps: {
@@ -136,6 +144,13 @@ function recapsDe(id) {
     .map(function (k) { return scene.recaps[k]; });
 }
 
+
+/* LOT 17 §17.2 — le contrat par son identifiant. */
+function contratDe(id) {
+  var liste = scene.contrats || [];
+  return liste.filter(function (c) { return c && c.id === id; })[0] || liste[0] || {};
+}
+
 var DB = {
   getSession: function () {
     return Promise.resolve({ user: { id: 'u1', email: 'maria@exemple.test' } });
@@ -152,6 +167,13 @@ var DB = {
     if (scene.reinitReseauCasse) return Promise.reject(new Error('Failed to fetch'));
     return Promise.resolve(true);
   },
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
+  /* LOT 16 §16.4 — la ligne des rappels affiche désormais son VRAI réglage.
+     Décor : rappels inactifs, la ligne dira « Vous ne recevez aucun rappel ». */
+  getPreferenceRappel: function () { return Promise.resolve(null); },
 
   listContratsActifs: function () { return Promise.resolve(scene.contrats); },
   listContratsTous: function () { return Promise.resolve(scene.contrats); },
@@ -162,9 +184,10 @@ var DB = {
   listFamillesAvecContrats: function () { return Promise.resolve([]); },
   listModeles: function () { return Promise.resolve([]); },
   modeleEnVigueur: function () { return Promise.resolve(null); },
-  getSalaires: function (id) {
-    return Promise.resolve([{ id: 's-' + id, contrat_id: id, date_effet: '2026-01-01',
-      brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]);
+  getAvenants: function (id) {
+    return Promise.resolve(Decor.avenantsDe(contratDe(id),
+      [{ id: 's-' + id, contrat_id: id, date_effet: '2026-01-01',
+         brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]));
   },
   getCompteurInitial: function (id) {
     return Promise.resolve(scene.compteurs[id] || null);
@@ -219,8 +242,8 @@ var DB = {
     scene.compteurs[id] = {
       contrat_id: id, date_reference: champs.date_reference,
       minutes_sup: champs.minutes_sup,
-      dixiemes_cp_acquis: champs.dixiemes_cp_acquis,
-      dixiemes_cp_pris: champs.dixiemes_cp_pris
+      minutes_cp_acquis: champs.minutes_cp_acquis,
+      minutes_cp_pris: champs.minutes_cp_pris
     };
     return Promise.resolve(scene.compteurs[id]);
   },
@@ -258,8 +281,11 @@ var DB = {
         Object.keys(c).forEach(function (k) { if (k !== 'photo') copie[k] = c[k]; });
         return copie;
       }),
-      salaires: [{ id: 's1', contrat_id: 'c-lea', date_effet: '2026-01-01',
-        brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }],
+      /* LOT 17 §17.2 — l'export porte les AVENANTS : les onze réglages datés,
+         rémunération comprise. `salaires` n'existe plus. */
+      avenants: Decor.avenantsDe(contratDe('c-lea'),
+        [{ id: 's1', contrat_id: 'c-lea', date_effet: '2026-01-01',
+           brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]),
       compteurs_initiaux: [scene.compteurs['c-lea']].filter(Boolean),
       journees: [scene.journees['c-lea']['2026-06-01'],
         { id: 'j2', contrat_id: 'c-lea', jour: '2026-06-15', type: 'conge_maria',
@@ -384,9 +410,16 @@ async function lireDernierFichier() {
   var env = appels.compteur[0].champs;
   assert(env.minutes_sup === 12 * 60 + 30,
     'P1 : « 12 h 30 » devient 750 minutes — la conversion est faite par l’écran');
-  assert(env.dixiemes_cp_acquis === 125,
-    'P1 : « 12,5 jours » devient 125 dixièmes');
-  assert(env.dixiemes_cp_pris === 30, 'P1 : « 3 jours » devient 30 dixièmes');
+  /* §17.6 — LES CONGÉS PAYÉS SONT STOCKÉS EN MINUTES. La saisie ne change pas
+     d'un caractère — Maria tape toujours « 12,5 jours », c'est ce qui figure
+     sur un bulletin — mais ce qui part en base est 12,5 × 540 minutes.
+     L'écran fait la conversion, avec le facteur du contrat : rien n'est
+     arrondi, et un contrat à 480 minutes par jour de congé n'enverrait pas le
+     même nombre. */
+  assert(env.minutes_cp_acquis === Math.round(12.5 * 540),
+    'P1 : « 12,5 jours » devient ' + Math.round(12.5 * 540) + ' minutes (obtenu ' +
+    env.minutes_cp_acquis + ')');
+  assert(env.minutes_cp_pris === 3 * 540, 'P1 : « 3 jours » devient ' + (3 * 540) + ' minutes');
   assert(txt(cTom).indexOf('Point de départ enregistré pour Tom') !== -1,
     'P1 : la confirmation nomme l’enfant');
 
@@ -547,8 +580,17 @@ async function lireDernierFichier() {
      LIVRAIT QUE LES TOTAUX MENSUELS. `exporterHistorique` remplit neuf clés ;
      le document n'en lisait que deux. Or c'est le détail des journées et
      l'historique des réouvertures qu'on vient chercher des années après. */
-  assert(doc.texte.indexOf('Rémunérations successives') !== -1,
-    'A3 : les barèmes successifs figurent dans le document');
+  /* LOT 17 §17.2 — LES BARÈMES N'ONT PLUS DE SECTION À PART. Ils vivent sur
+     les avenants, avec les dix autres réglages. Les séparer redonnerait
+     l'impression qu'eux seuls sont datés — c'est exactement l'idée fausse que
+     ce lot corrige. Le document porte donc UNE section par période de
+     conditions, rémunération comprise. */
+  assert(doc.texte.indexOf('Conditions à partir du') !== -1,
+    'A3 : les conditions successives figurent dans le document');
+  assert(doc.texte.indexOf('Rémunération') !== -1,
+    'A3 : et la rémunération de chaque période avec elles');
+  assert(doc.texte.indexOf('Rémunérations successives') === -1,
+    '§17.2 : plus de section « Rémunérations successives » séparée');
   assert(doc.texte.indexOf('Congés posés et leur répartition') !== -1 &&
          doc.texte.indexOf('sur congés payés') !== -1,
     'A3 : les congés et leur ventilation aussi');

@@ -21,6 +21,12 @@
    Lancement : node test/lot7-tempo.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont datées : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`, qui assemble l'avenant à partir du contrat et du
+   barème déjà écrits ici. Aucune valeur n'est inventée. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -86,6 +92,13 @@ function salaire(id) {
     brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 };
 }
 
+/* Le contrat par son identifiant : `getAvenants` en a besoin pour reprendre
+   les réglages du décor dans l'avenant (§17.2). */
+function contratDe(id) {
+  var dans = (scene.contrats || []).filter(function (c) { return c.id === id; })[0];
+  return dans || [A, B, C, D].filter(function (c) { return c.id === id; })[0] || A;
+}
+
 /* --- Décor mutable ------------------------------------------------------ */
 var scene = {
   contrats: [A],
@@ -121,6 +134,13 @@ var DB = {
   },
   onAuthChange: function () {},
   signOut: function () { return Promise.resolve(true); },
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
+  /* LOT 16 §16.4 — la ligne des rappels affiche désormais son VRAI réglage.
+     Décor : rappels inactifs, la ligne dira « Vous ne recevez aucun rappel ». */
+  getPreferenceRappel: function () { return Promise.resolve(null); },
   listContratsActifs: function () {
     if (scene.contratsEnPanne) return Promise.reject(new Error('Failed to fetch'));
     return Promise.resolve(scene.contrats);
@@ -140,13 +160,14 @@ var DB = {
      d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
      cette fonction, l'écran lève avant même de se rendre. */
   contratEstVierge: function () { return Promise.resolve(false); },
-  getSalaires: function (id) {
+  getAvenants: function (id) {
     if (scene.contratsEnPanne) return Promise.reject(new Error('Failed to fetch'));
-    return Promise.resolve([salaire(id)]);
+    return Promise.resolve(Decor.avenantsDe(contratDe(id), [salaire(id)]));
   },
   getCompteurInitial: function (id) {
-    return Promise.resolve({ contrat_id: id, date_reference: '2026-01-01',
-      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 });
+    return Promise.resolve(Decor.compteurEnMinutes({ contrat_id: id,
+      date_reference: '2026-01-01',
+      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 }));
   },
   getJourneesMois: function () { return Promise.resolve({}); },
   getJourneesPeriode: function () { return Promise.resolve({}); },

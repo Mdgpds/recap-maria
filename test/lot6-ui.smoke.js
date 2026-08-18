@@ -21,6 +21,12 @@
    Lancement : NODE_PATH=... node test/lot6-ui.smoke.js   (nécessite jsdom).
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`, qui assemble l'avenant à partir du contrat et du
+   barème déjà écrits ici. Aucune valeur n'est inventée. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -93,12 +99,29 @@ var appels = { poser: [], retirer: [], journee: [], suppression: [], fige: [] };
 var SALAIRE = { id: 's1', date_effet: '2025-09-01',
   brut_mensuel_centimes: 137289, net_mensuel_centimes: 107250 };
 
+
+var TOUS_CONTRATS = [LEA, TOM, MANON];
+
+/* LOT 17 §17.2 — le contrat par son identifiant. `getAvenants` en a besoin
+   pour reprendre les réglages du décor dans l'avenant : le moteur ne les lit
+   plus sur `contrat`. */
+function contratDe(id) {
+  return TOUS_CONTRATS.filter(function (c) { return c.id === id; })[0] || TOUS_CONTRATS[0];
+}
+
 var DB = {
   getSession: function () {
     return Promise.resolve({ user: { id: 'u1', email: 'maria@exemple.test' } });
   },
   onAuthChange: function () { /* pas de rejeu d'authentification dans ce test */ },
   signOut: function () { return Promise.resolve(true); },
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
+  /* LOT 16 §16.4 — la ligne des rappels affiche désormais son VRAI réglage.
+     Décor : rappels inactifs, la ligne dira « Vous ne recevez aucun rappel ». */
+  getPreferenceRappel: function () { return Promise.resolve(null); },
   listContratsActifs: function () { return Promise.resolve([LEA, TOM]); },
   listContratsTous: function () { return Promise.resolve([LEA, TOM, MANON]); },
   listContratsPourMois: function () { return Promise.resolve([LEA, TOM]); },
@@ -115,10 +138,10 @@ var DB = {
      d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
      cette fonction, l'écran lève avant même de se rendre. */
   contratEstVierge: function () { return Promise.resolve(false); },
-  getSalaires: function (id) {
+  getAvenants: function (id) {
     var s = {}; Object.keys(SALAIRE).forEach(function (k) { s[k] = SALAIRE[k]; });
     s.contrat_id = id;
-    return Promise.resolve([s]);
+    return Promise.resolve(Decor.avenantsDe(contratDe(id), [s]));
   },
   getCompteurInitial: function () { return Promise.resolve(null); },
   getJourneesMois: function () { return Promise.resolve({}); },

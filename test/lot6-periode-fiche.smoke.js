@@ -22,6 +22,12 @@
    Lancement : NODE_PATH=... node test/lot6-periode-fiche.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`, qui assemble l'avenant à partir du contrat et du
+   barème déjà écrits ici. Aucune valeur n'est inventée. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -84,10 +90,27 @@ var SALAIRE = { id: 's1', contrat_id: 'c-lea', date_effet: '2025-09-01',
 var RECAPS = [{ id: 'r-avr', contrat_id: 'c-lea', annee: 2026, mois: 4, statut: 'fige',
   donnees: null, fige_le: '2026-05-02T08:00:00Z' }];
 
-var ecritures = { salaires: [] };
+var ecritures = { salaires: [], avenants: [] };
+
+var TOUS_CONTRATS = [LEA];
+
+/* LOT 17 §17.2 — le contrat par son identifiant. `getAvenants` en a besoin
+   pour reprendre les réglages du décor dans l'avenant : le moteur ne les lit
+   plus sur `contrat`. */
+function contratDe(id) {
+  return TOUS_CONTRATS.filter(function (c) { return c.id === id; })[0] || TOUS_CONTRATS[0];
+}
+
 var DB = {
   getSession: function () { return Promise.resolve({ user: { id: 'u1', email: 'maria@exemple.test' } }); },
   onAuthChange: function () {},
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
+  /* LOT 16 §16.4 — la ligne des rappels affiche désormais son VRAI réglage.
+     Décor : rappels inactifs, la ligne dira « Vous ne recevez aucun rappel ». */
+  getPreferenceRappel: function () { return Promise.resolve(null); },
   listContratsActifs: function () { return Promise.resolve([LEA]); },
   listContratsTous: function () { return Promise.resolve([LEA]); },
   listContratsPourMois: function () { return Promise.resolve([LEA]); },
@@ -104,7 +127,9 @@ var DB = {
      d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
      cette fonction, l'écran lève avant même de se rendre. */
   contratEstVierge: function () { return Promise.resolve(false); },
-  getSalaires: function () { return Promise.resolve([SALAIRE]); },
+  getAvenants: function (id) {
+    return Promise.resolve(Decor.avenantsDe(contratDe(id), [SALAIRE]));
+  },
   getCompteurInitial: function () { return Promise.resolve(null); },
   getJourneesMois: function () { return Promise.resolve({}); },
   listImputationsPourMois: function () { return Promise.resolve([]); },
@@ -118,7 +143,14 @@ var DB = {
   listRecapsPeriode: function () { return Promise.resolve([]); },
   listRecapsContrat: function () { return Promise.resolve(RECAPS); },
   getRecap: function () { return Promise.resolve(null); },
-  ajouterSalaire: function (id, champs) { ecritures.salaires.push({ id: id, champs: champs }); return Promise.resolve(champs); }
+  ajouterAvenant: function (id, champs) {
+    ecritures.avenants.push({ id: id, champs: champs });
+    return Promise.resolve(Decor.avenantDe(contratDe(id), champs));
+  },
+  majAvenant: function (idAvenant, champs) {
+    ecritures.avenants.push({ id: idAvenant, champs: champs });
+    return Promise.resolve(champs);
+  }
 };
 global.DB = DB; window.DB = DB;
 
@@ -222,25 +254,40 @@ var sheet = document.getElementById('sheet');
   assert(txt(corps).indexOf('Majoration fin de contrat') !== -1, 'majoration de fin de contrat affichée');
   assert(!!parTexte(corps, 'button', 'Ce contrat est terminé'), 'accès à l’écran de fin de contrat');
 
-  parTexte(corps, '.menu', 'Nouveau barème').click();
-  await pause(30);
-  assert(txt(sheet).indexOf('À partir du') !== -1, 'feuille « Nouveau barème »');
+  /* ---------- LOT 17 §17.4 : les conditions datées ---------- */
 
-  /* Date d'effet au 1er avril 2026 : elle toucherait un mois déjà clôturé. */
-  var dates = sheet.querySelector('.fld .dates').querySelectorAll('select');
-  dates[0].value = '4'; dates[0].dispatchEvent(new dom.window.Event('change'));
-  dates[1].value = '2026'; dates[1].dispatchEvent(new dom.window.Event('change'));
-  var saisies = sheet.querySelectorAll('input[type="text"]');
-  saisies[0].value = '1 401,20';
-  saisies[1].value = '1 094,60';
-  parTexte(sheet, 'button', 'Enregistrer').click();
-  await pause(80);
+  /* Le vocabulaire a changé, et c'est le sujet du lot : on ne modifie plus
+     des réglages, on fait un avenant. Les écrans « Nouveau barème » et
+     « Modifier ces règles » n'existent plus. */
+  assert(!parTexte(corps, '.menu', 'Nouveau barème') && !parTexte(corps, 'button', 'Nouveau barème'),
+    '§17.4 : plus aucun « Nouveau barème »');
+  assert(!parTexte(corps, 'button', 'Modifier ces règles'),
+    '§17.4 : modifier les conditions sans avenant n’existe plus');
+  assert(txt(corps).indexOf('En vigueur depuis le') !== -1,
+    '§17.4 : la fiche dit depuis quand les conditions s’appliquent');
+  assert(txt(corps).indexOf('avenant n°') !== -1, '§17.4 : et quel avenant les porte');
+  assert(!!parTexte(corps, 'button', 'Voir l’historique des conditions'),
+    '§17.4 : le lien vers la frise');
 
-  var message = txt(sheet.querySelector('.msg'));
-  assert(ecritures.salaires.length === 0, 'aucun barème écrit quand un mois clôturé serait touché');
-  assert(message.indexOf('refusé') !== -1 && message.indexOf('clôturé') !== -1,
-    'le refus est expliqué en français (obtenu « ' + message + ' »)');
-  assert(message.indexOf('avril 2026') !== -1, 'le mois en cause est nommé');
+  parTexte(corps, 'button', 'Faire un avenant').click();
+  await pause(60);
+  assert(txt(sheet).indexOf('À partir du 1er') !== -1, 'feuille « Faire un avenant »');
+
+  /* LE GARDE-FOU DU §17.4 : un avenant n'est JAMAIS rétroactif. Avril 2026
+     est clôturé — il doit apparaître dans la liste, BARRÉ, avec sa raison, et
+     ne doit pas pouvoir être choisi. */
+  var selMois = sheet.querySelector('select');
+  var optAvril = Array.prototype.filter.call(selMois.querySelectorAll('option'), function (o) {
+    return o.textContent.indexOf('avril 2026') !== -1;
+  })[0];
+  assert(!!optAvril, '§17.4 : le mois clôturé est MONTRÉ, pas caché');
+  assert(optAvril.disabled === true, '§17.4 : et il n’est pas choisissable');
+  assert(optAvril.textContent.indexOf('clôturé') !== -1,
+    '§17.4 : la raison est dite (obtenu « ' + optAvril.textContent + ' »)');
+  assert(selMois.value.slice(0, 7) !== '2026-04',
+    '§17.4 : un mois interdit n’est jamais présélectionné');
+  assert(txt(sheet).indexOf('ne changeront pas') !== -1,
+    '§17.4 : ce qui NE changera pas est dit sous le champ de date');
 
   console.log('\n' + (echecs === 0 ? 'Tout est conforme.' : echecs + ' échec(s).'));
   process.exit(echecs === 0 ? 0 : 1);

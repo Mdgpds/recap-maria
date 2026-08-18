@@ -46,7 +46,8 @@
     if (!contrat) throw new Error('contrat introuvable');
 
     global.App.barreRetour(ctx.barre,
-      'Récap de ' + Kit.libelleMois(m.mois), { droite: contrat.prenom_enfant });
+      /* LOT 16 §16.6 — « Récap de août ». L'élision vit dans ui-kit.js. */
+      'Récap ' + Kit.deMois(m.mois), { droite: contrat.prenom_enfant });
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Préparation du document…'));
 
     return Promise.all([
@@ -101,6 +102,20 @@
     }).sort();
   }
 
+  /* LOT 17 §17.3 — LES CONDITIONS DU MOIS. Un document est la pièce qui doit
+     éteindre un désaccord : il doit porter les conditions de SON époque, pas
+     celles d'aujourd'hui. La chaîne les a résolues et les transporte sur le
+     maillon ; sur un mois figé, ce sont celles de l'avenant en vigueur au
+     moment de la clôture. */
+  function cond() {
+    return (vue && vue.entree && vue.entree.conditions) || null;
+  }
+  function reg(champ, defaut) {
+    var c = cond();
+    return (c && c[champ] != null) ? c[champ] : defaut;
+  }
+  function planningDuMois() { return reg('jours_planning', null); }
+
   /* Le document, sous forme de blocs. Chaque bloc : { titre, lignes }. */
   function blocs() {
     var r = vue.entree.resultat;
@@ -115,9 +130,26 @@
          seul n'est pas vérifiable ; « 14 jours × 5,00 € » l'est, et c'est ce
          qui éteint une contestation avant qu'elle ne naisse. */
       [libelleEntretienDetaille(r), Kit.eur(r.entretienCentimes)],
-      ['Salaire net', Kit.eur(r.salaireNetCentimes)],
-      ['Salaire brut correspondant', Kit.eur(r.salaireBrutCentimes), { doux: true }]
+      /* LOT 17 §17.7 — LE SALAIRE DU MOIS, PRORATISÉ QUAND LE CONTRAT NE LE
+         COUVRE PAS EN ENTIER. Un contrat ouvert le 16 mars retenait jusqu'ici
+         le mois de mars complet ; le document partait chez la famille avec un
+         salaire qu'elle ne devait pas.
+
+         Les instantanés d'avant le lot 17 ne portent pas `salaireNetProrata` :
+         ils n'ont jamais connu le prorata, et leur net contractuel EST leur net
+         du mois. Le repli est donc exact, pas approximatif. */
+      ['Salaire net', Kit.eur(r.salaireNetProrataCentimes != null
+        ? r.salaireNetProrataCentimes : r.salaireNetCentimes)],
+      ['Salaire brut correspondant', Kit.eur(r.salaireBrutProrataCentimes != null
+        ? r.salaireBrutProrataCentimes : r.salaireBrutCentimes), { doux: true }]
     ];
+    if (r.prorata && r.prorata.applique) {
+      /* La phrase qui rend le chiffre vérifiable. Un montant proratisé sans son
+         quotient est indéfendable : la famille compte 22 jours et lit un
+         salaire qui n'en vaut que 12. */
+      principal.push(['Mois partiel — ' + r.prorata.joursCouverts + ' jours de garde ' +
+        'sur ' + r.prorata.joursDuMois + ' au contrat', '', { doux: true }]);
+    }
     if (r.retenueSansSoldeCentimes > 0) {
       principal.push(['Retenue pour jour(s) sans solde', '−' + Kit.eur(r.retenueSansSoldeCentimes)]);
     }
@@ -157,13 +189,31 @@
        que le parent pourrait croire devoir régler un jour, ou pire, une
        faveur à rappeler. Ce document sert à éteindre les désaccords, pas à en
        créer un nouveau. (Risque n° 4.) */
-    if (r.minutesSupRenoncees > 0) {
-      out.push({
-        titre: null,
-        lignes: [['Heures supplémentaires du mois', Kit.heures(r.minutesSupAcquises)],
-                 ['Dont ' + Kit.heures(r.minutesSupRenoncees) +
-                  ' auxquelles j’ai choisi de renoncer ce mois-ci', '', { doux: true }]]
+    /* LOT 17 §17.5 (A5) — LE TOTAL EST NET, ET LA LIGNE QUI L'EXPLIQUE EST LÀ.
+
+         Heures supplémentaires du mois — 8 h 30
+         dont 1 h 30 déduite — libération anticipée du 17 novembre
+
+       Un total amputé sans son détail est incontestable et inexplicable en
+       même temps : le parent voit un chiffre plus bas que le mois d'avant et
+       n'a aucun moyen de savoir pourquoi. C'est exactement le genre de
+       silence que ce document existe pour supprimer.
+
+       Les minutes RENDUES par Maria (écart négatif imputé à la récupération)
+       et les minutes de RETARD d'un parent (écart positif) sont dites
+       séparément : ce ne sont pas les mêmes faits, et les confondre dans un
+       solde ferait disparaître le retard du parent. */
+    var ecarts = r.ecartsDeclares || [];
+    if (r.minutesSupRenoncees > 0 || ecarts.length) {
+      var lignesSup = [['Heures supplémentaires du mois', Kit.heures(r.minutesSupAcquises)]];
+      if (r.minutesSupRenoncees > 0) {
+        lignesSup.push(['Dont ' + Kit.heures(r.minutesSupRenoncees) +
+          ' auxquelles j’ai choisi de renoncer ce mois-ci', '', { doux: true }]);
+      }
+      ecarts.forEach(function (e) {
+        lignesSup.push([libelleEcartHoraire(e), '', { doux: true }]);
       });
+      out.push({ titre: null, lignes: lignesSup });
     }
 
     out.push({
@@ -171,10 +221,38 @@
       lignes: [
         ['Heures supplémentaires acquises dans le mois', Kit.heures(r.minutesSupAcquises)],
         ['Récupération restante', Kit.heures(cs.minutesSup || 0)],
-        ['Congés payés restants', Kit.joursCp(Kit.cpDisponible(cs))]
+        ['Congés payés restants',
+         Kit.joursCp(Kit.cpDisponible(cs), reg('minutes_par_jour_conge', 0))]
       ]
     });
     return out;
+  }
+
+  /* LOT 17 §17.5 — la phrase d'un écart d'horaire, sur le document.
+
+     Elle dit TROIS choses, et il en faut trois : combien, dans quel sens, et
+     à quel titre. « − 1 h 30 » seul laisse le parent supposer une erreur ;
+     « libération anticipée du 17 novembre » lui dit que c'est Maria qui a
+     rendu ce temps, et que le mois d'après ne recommencera pas.
+
+     La destination n'est nommée que lorsqu'elle change quelque chose pour le
+     parent : une déduction sur les congés payés ou en sans solde ne se lit pas
+     comme une déduction sur la récupération, et le sans-solde apparaît en plus
+     dans la retenue. */
+  var LIBELLE_EVENEMENT_ECART = {
+    recuperation: 'déduite de ma récupération',
+    conges_payes: 'déduite de mes congés payés',
+    sans_solde: 'passée en sans solde'
+  };
+
+  function libelleEcartHoraire(e) {
+    var quand = ' du ' + Kit.jourLong(e.jour).toLowerCase();
+    if (e.minutes > 0) {
+      return 'Dont ' + Kit.heures(e.minutes) + ' de garde en plus' + quand;
+    }
+    var suffixe = LIBELLE_EVENEMENT_ECART[e.imputeSur] || '';
+    return 'Dont ' + Kit.heures(-e.minutes) + ' que je n’ai pas gardée' + quand +
+      (suffixe ? ' — ' + suffixe : '');
   }
 
   /* Même mise en forme que l'historique du lot 13 : « 31 août 2026 à 18h42 ».
@@ -192,23 +270,38 @@
      compteurs — on ne fabrique pas une multiplication fausse : on donne le
      montant seul. Mieux vaut moins de détail qu'un détail qui ment. */
   function libelleEntretienDetaille(r) {
-    var parJour = vue.contrat.entretien_centimes_jour || 0;
+    var parJour = reg('entretien_centimes_jour', 0);
     if (parJour > 0 && r.joursPresence * parJour === r.entretienCentimes) {
       return 'Indemnité d’entretien — ' + r.joursPresence + ' jours × ' + Kit.eur(parJour);
     }
     return 'Indemnité d’entretien';
   }
 
-  /* L'auteur du document. Le nom vient du compte : c'est la seule identité que
-     l'application connaisse. Sans lui, un document retrouvé des mois plus tard
-     ne dit pas de qui il vient.
-     // TODO RÈGLE ABSENTE : ni le nom complet ni le numéro d'agrément de
-     // l'assistante maternelle n'existent en base. À reprendre au lot 14
-     // (mise en service), qui écrit les informations d'installation. */
+  /* LOT 16 §16.2 — L'AUTEUR DU DOCUMENT.
+
+     Cette fonction écrivait « Établi par <adresse de connexion>, assistante
+     maternelle » : la pièce dont le seul métier est d'éteindre un désaccord
+     avec une famille était signée par une adresse e-mail. Le `TODO RÈGLE
+     ABSENTE` qui tenait cette place renvoyait au lot 14, jamais fait.
+
+     La ligne est désormais exactement « Établi par <nom> » — sans mention de
+     la profession, sans numéro d'agrément.
+
+     UN MOIS CLÔTURÉ GARDE LE NOM DU MOMENT DE LA CLÔTURE : il vient de
+     l'instantané, jamais du compte. Renommer plus tard ne réécrit aucun
+     document déjà remis.
+
+     Tant que rien n'est saisi : « votre assistante maternelle ». JAMAIS
+     l'adresse, sur aucun écran, aperçu ou export. */
+  function nomAuteur() {
+    var r = vue.entree && vue.entree.resultat;
+    if (vue.entree && vue.entree.fige && r && r.nomEmettrice) return r.nomEmettrice;
+    if (vue.entree && vue.entree.fige) return null;
+    return (global.App.nomEmettrice && global.App.nomEmettrice()) || null;
+  }
+
   function enTeteAuteur() {
-    var qui = global.App.email && global.App.email();
-    return 'Établi par ' + (qui ? qui : 'votre assistante maternelle') +
-      ', assistante maternelle';
+    return 'Établi par ' + (nomAuteur() || 'votre assistante maternelle');
   }
 
   function enTetePeriode(id) {
@@ -244,7 +337,8 @@
        journées saisies, qui n'ont pas bougé puisque le mois est verrouillé. */
     var source = (vue.entree.fige && r.journeesParticulieres) || null;
     if (source) return source;
-    return journeesParticulieresDe(prenom, vue.contrat, vue.journees, vue.annee, vue.mois);
+    return journeesParticulieresDe(prenom, vue.contrat, planningDuMois(),
+      vue.journees, vue.annee, vue.mois);
   }
 
   /* Forme PURE. Correctif A15 de la relecture PR9 : cette liste n'était écrite
@@ -252,7 +346,7 @@
      morte et qu'un document clôturé reconstruisait toujours ses journées
      particulières depuis le planning ACTUEL. Changer les jours de garde après
      la clôture changeait donc le contenu d'un document déjà remis. */
-  function journeesParticulieresDe(prenom, contrat, journees, annee, mois) {
+  function journeesParticulieresDe(prenom, contrat, planning, journees, annee, mois) {
     var out = [];
     Object.keys(journees || {}).sort().forEach(function (d) {
       var t = journees[d].type;
@@ -264,7 +358,7 @@
     /* Les fériés ne sont pas saisis : ils viennent du calendrier. Ils comptent
        pourtant parmi les journées où l'enfant n'était pas là, et un parent qui
        compte ses jours doit les retrouver. */
-    Kit.joursPlanning(contrat, annee, mois).forEach(function (d) {
+    Kit.joursPlanning(contrat, planning, annee, mois).forEach(function (d) {
       if ((journees || {})[d]) return;
       if (!Feries.estJourFerie(d)) return;
       out.push({ date: d, quoi: 'férié' });
@@ -304,6 +398,21 @@
         'Le total à verser ci-dessous ne contient que l’indemnité d’entretien, sans le salaire. ' +
         'Le net figure sur la fiche de paie du mois : renseignez-le dans la fiche contrat. ' +
         'Ce mois ne peut pas être clôturé tant qu’il manque.'));
+    }
+
+    /* LOT 16 §16.2 — L'ENCART ACTIONNABLE. Tant que le nom n'est pas saisi, le
+       document se signe « votre assistante maternelle ». C'est correct, mais
+       ce n'est pas ce que Maria veut remettre à une famille : on le lui dit,
+       avec le chemin pour y remédier. Rien de bloquant.
+       Sur un mois déjà clôturé, on se tait : son document ne changera plus. */
+    if (!e.fige && global.App.emettriceAsaisir && global.App.emettriceAsaisir()) {
+      var enc = Kit.note('Ce document n’est pas encore signé à votre nom',
+        'Il indique « votre assistante maternelle ». Renseignez votre nom pour qu’il ' +
+        'dise qui l’a établi — c’est ce qui le rend opposable en cas de désaccord.');
+      var bNom = Kit.bouton('btn nt', function () { global.App.aller('compte', {}); });
+      bNom.textContent = 'Renseigner mon nom';
+      enc.appendChild(bNom);
+      corps.appendChild(enc);
     }
 
     corps.appendChild(documentHtml(id));
@@ -348,14 +457,43 @@
       return;
     }
 
+    /* LOT 16 §16.1 c) — LA CLÔTURE EST BLOQUÉE tant qu'une répartition ne
+       tient pas. Le mois se calcule (il se replie sur l'ordre par défaut du
+       contrat), mais le figer reviendrait à remettre à la famille un document
+       qui ne reflète pas ce que Maria avait choisi — et un mois clôturé ne se
+       recalcule jamais. Le blocage vit ici, dans l'écran : il disparaît de
+       lui-même dès que les réserves suffisent, sans rien écrire en base. */
+    var ecartees = (e.imputationsEcartees || []);
+    if (ecartees.length) {
+      corps.appendChild(Kit.warnbox(
+        'Corrigez d’abord la répartition du congé ' +
+        minuscule(Kit.libellePeriode(ecartees[0].date_debut, ecartees[0].date_fin)),
+        ' Ce mois ne peut pas être clôturé tant que les jours ne sont pas répartis ' +
+        'sur des réserves suffisantes.'));
+      var bCorriger = Kit.bouton('btn', function () {
+        global.App.aller('conges', {
+          annee: vue.annee, mois: vue.mois, corrigerImputation: ecartees[0].id
+        }, true);
+      });
+      bCorriger.textContent = 'Corriger la répartition';
+      corps.appendChild(bCorriger);
+      corps.appendChild(sectionPartage());
+      return;
+    }
+
     if (!e.salaireManquant && !netManquant) {
       var b = Kit.bouton('btn', demanderCloture);
       b.textContent = 'Clôturer le mois';
       corps.appendChild(b);
-      corps.appendChild(Kit.warnbox('La clôture verrouille le mois',
-        'Après clôture, plus aucune modification n’est possible sur ' +
-        Kit.libelleMoisAnnee(vue.annee, vue.mois) + '. C’est ce qui protège vos comptes ' +
-        'en cas de désaccord.'));
+      /* LOT 16 §16.3 — L'ÉCRAN DISAIT LE CONTRAIRE DE LA FEUILLE DE
+         CONFIRMATION, deux clics plus loin, et c'est elle qui avait raison :
+         la réouverture existe depuis le lot 13. Une application qui fait
+         croire à Maria qu'elle joue son mois sur un clic lui fait redouter le
+         seul geste qu'elle doit faire chaque mois. */
+      corps.appendChild(Kit.warnbox('La clôture verrouille les chiffres du mois',
+        'Ils ne bougeront plus, même si un salaire change plus tard. C’est ce qui protège ' +
+        'vos comptes en cas de désaccord. Vous pourrez rouvrir ' +
+        Kit.libelleMoisAnnee(vue.annee, vue.mois) + ' si vous devez corriger.'));
     } else {
       var bFiche = Kit.bouton('btn', function () {
         global.App.aller('fiche', { contratId: vue.contrat.id });
@@ -366,6 +504,10 @@
     corps.appendChild(sectionPartage());
   }
 
+  /* « Corrigez d'abord la répartition du congé du 3 au 21 août » : le libellé
+     de période commence par une majuscule, il est ici au milieu d'une phrase. */
+  function minuscule(t) { return t ? t.charAt(0).toLowerCase() + t.slice(1) : t; }
+
   function documentHtml(id) {
     var doc = Kit.ce('div', 'doc');
     var dh = Kit.ce('div', 'dh');
@@ -375,7 +517,12 @@
        rien d'autre sous les yeux. L'en-tête portait le prénom et le mois ; il
        lui manquait l'auteur et les dates exactes. */
     dh.appendChild(Kit.ce('div', 't1',
-      'Récapitulatif de ' + id.prenom + ' — ' + Kit.libelleMoisAnnee(vue.annee, vue.mois)));
+      /* CORRECTION RELECTURE LOT 16 (C2) — le §16.6 demandait de chercher les
+         AUTRES occurrences. Celle-ci est sur le titre du document remis à la
+         famille : « Récapitulatif de Elliot ». La maquette écran 4 écrit bien
+         « Récapitulatif d'Elliot ». */
+      'Récapitulatif ' + Kit.elider('de', id.prenom) + ' — ' +
+      Kit.libelleMoisAnnee(vue.annee, vue.mois)));
     dh.appendChild(Kit.ce('div', 't2', enTeteAuteur()));
     dh.appendChild(Kit.ce('div', 't3', enTetePeriode(id)));
     doc.appendChild(dh);
@@ -727,7 +874,8 @@
            comptés comme des jours encore à travailler. C'est ici que le
            chiffre compte le plus — il mesure ce qu'on s'apprête à perdre. */
         var restants = Kit.joursTravaillesRestants(
-          vue.contrat, vue.annee, vue.mois, global.App.aujourdhui(), vue.journees);
+          vue.contrat, planningDuMois(), vue.annee, vue.mois,
+          global.App.aujourdhui(), vue.journees);
         if (restants > 0) {
           corps.appendChild(Kit.warnbox(
             restants + (restants > 1 ? ' jours travaillés sont encore à venir'
@@ -776,6 +924,10 @@
     global.UiReouverture.feuilleEcarts({
       contrat: vue.contrat, annee: vue.annee, mois: vue.mois,
       recap: vue.entree.recap, ecarts: ecarts,
+      /* LOT 17 §17.6 — le facteur d'affichage des congés payés, celui du mois
+         rouvert. L'écran des écarts compare deux instantanés du MÊME mois :
+         un seul facteur, celui de ses conditions. */
+      minutesParJourConge: reg('minutes_par_jour_conge', 0),
       confirmer: function (b) { cloturer(b, snap); }
     });
   }
@@ -816,12 +968,23 @@
     snap.prenomEnfant = ctx.contrat.prenom_enfant;
     snap.nomFamille = (ctx.contrat.famille && ctx.contrat.famille.nom) || null;
     snap.salaireDateEffet = ctx.entree.salaire ? ctx.entree.salaire.date_effet : null;
+    /* LOT 16 §16.2 — le nom entre dans l'instantané. Un mois clôturé avant
+       toute saisie garde `null` et ne se met JAMAIS à jour tout seul quand le
+       nom est renseigné ensuite (critère A2) : il continue d'écrire « votre
+       assistante maternelle », comme le jour de sa clôture. */
+    snap.nomEmettrice = (global.App.nomEmettrice && global.App.nomEmettrice()) || null;
     snap.joursConge = joursCongeDe(ctx.journees) || [];
     /* A15 : la liste des journées particulières entre enfin dans l'instantané.
        Sans elle, un changement de planning après la clôture réécrivait le
        contenu d'un document déjà remis. */
     snap.journeesParticulieres = journeesParticulieresDe(
-      ctx.contrat.prenom_enfant, ctx.contrat, ctx.journees, ctx.annee, ctx.mois);
+      ctx.contrat.prenom_enfant, ctx.contrat,
+      (ctx.entree.conditions && ctx.entree.conditions.jours_planning) || null,
+      ctx.journees, ctx.annee, ctx.mois);
+    /* LOT 17 §17.4 — quelles conditions ont servi à ce mois. Le document doit
+       pouvoir le dire des années plus tard, quand l'avenant aura été suivi de
+       trois autres. */
+    snap.avenantNumero = ctx.entree.conditions ? ctx.entree.conditions.numero : null;
     return snap;
   }
 

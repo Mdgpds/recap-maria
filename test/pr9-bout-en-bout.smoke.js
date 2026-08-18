@@ -26,6 +26,11 @@
    Lancement : node test/pr9-bout-en-bout.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`. */
+var Decor = require('./decor-avenants.js');
+
 
 var Engine = require('../js/engine.js');
 global.Engine = Engine;
@@ -57,15 +62,17 @@ function baseSimulee(opts) {
   var journees = opts.journees || {};
   var imputations = opts.imputations || [];
   return {
-    getSalaires: function () {
-      return Promise.resolve([{ id: 's1', contrat_id: 'c-test', date_effet: '2026-01-01',
-        brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]);
+    getAvenants: function () {
+      return Promise.resolve(Decor.avenantsDe(opts.contrat || contrat(),
+        [{ id: 's1', contrat_id: 'c-test', date_effet: '2026-01-01',
+           brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]));
     },
     getCompteurInitial: function () {
-      return Promise.resolve({ contrat_id: 'c-test', date_reference: '2026-06-01',
+      return Promise.resolve(Decor.compteurEnMinutes({
+        contrat_id: 'c-test', date_reference: '2026-06-01',
         minutes_sup: opts.minutesSup != null ? opts.minutesSup : 0,
         dixiemes_cp_acquis: opts.cpAcquis != null ? opts.cpAcquis : 20,
-        dixiemes_cp_pris: 0 });
+        dixiemes_cp_pris: 0 }));
     },
     getJourneesPeriode: function () {
       var parMois = {};
@@ -151,7 +158,7 @@ function chaine(opts, cible) {
   assert(m2.retenueSansSoldeCentimes > m1.retenueSansSoldeCentimes,
     'B1 : la retenue sur salaire est plus forte — le choix a un effet MONÉTAIRE, ' +
     'pas seulement un affichage');
-  egal(m2.compteurSortie.dixiemesCpPris, 0,
+  egal(m2.compteurSortie.minutesCpPris, 0,
     'B1 : et le compteur de congés payés de Maria est préservé');
 
   /* Cas 3 — le choix inverse : tout sur les congés payés. */
@@ -198,36 +205,100 @@ function chaine(opts, cible) {
   egal(mb.joursCongesDecomptes, 6, 'B2 : le mois décompte 6 jours');
   egal(mb.imputation.joursSansSolde, 6, 'B2 : et la ventilation choisie s’applique');
 
-  /* Une imputation portant le décompte de l'ANCIEN écran (4) : le moteur la
-     REFUSE. C'est la démonstration que B1 et B2 devaient être corrigés
-     ensemble — corriger B1 seul aurait rendu ce mois incalculable. */
-  var refus = null;
+  /* Une imputation portant le décompte de l'ANCIEN écran (4) : LE MOTEUR LA
+     REFUSE TOUJOURS. C'est la démonstration que B1 et B2 devaient être
+     corrigés ensemble — corriger B1 seul aurait branché les imputations sur le
+     moteur alors que l'écran écrivait encore 4.
+
+     MISE À JOUR LOT 16 §16.1. La question laissée ouverte ici — « faut-il que
+     le mois devienne incalculable, ou qu'il retombe sur l'ordre par défaut en
+     le disant ? » — est désormais tranchée par la spécification : il retombe.
+     Un refus qui remonte fait tomber la chaîne entière du contrat, donc tous
+     ses écrans, y compris celui qui permettrait de corriger. C'est arrivé en
+     production sur un contrat réel.
+
+     L'assertion vérifie donc les DEUX moitiés de la règle, et c'est important
+     qu'elle vérifie les deux :
+       - le MOTEUR reste strict et refuse (il n'a pas été assoupli) ;
+       - la CHAÎNE écarte la ligne fautive, calcule quand même, et le DIT. */
+  var refusMoteur = null;
   try {
-    await chaine({
+    Engine.calculerMois({
+      contrat: lundiJeudi,
+      /* §17.3 — le moteur reçoit les CONDITIONS du mois. Elles portent le
+         planning lundi-jeudi : c'est de lui que dépend le décompte RG-06, et
+         c'est tout l'objet de ce cas. */
+      conditions: Decor.avenantDe(lundiJeudi,
+        { brut_mensuel_centimes: 0, net_mensuel_centimes: 0 }),
+      journees: Object.keys(journeesConge(joursLJ)).map(function (k) {
+        return journeesConge(joursLJ)[k];
+      }),
+      compteurEntree: { minutesSup: 0, minutesCpAcquis: 10 * 540, minutesCpPris: 0 },
+      annee: 2026, mois: 6,
+      imputations: [{ id: 'i1', contrat_id: 'c-test',
+        date_debut: '2026-06-08', date_fin: '2026-06-11',
+        jours_ouvrables: 4, jours_sur_cp: 0, jours_sur_sup: 0, jours_sans_solde: 4 }]
+    });
+  } catch (e) { refusMoteur = e; }
+  assert(!!refusMoteur && refusMoteur.code === 'IMPUTATION_INCOMPLETE',
+    'B2 / §16.1 : le MOTEUR refuse toujours une imputation portant le décompte ' +
+    'de l’ancien écran (4 au lieu de 6) — il n’a pas été assoupli');
+
+  var repli = null;
+  var erreurRepli = null;
+  try {
+    repli = await chaine({
       contrat: lundiJeudi, journees: journeesConge(joursLJ), cpAcquis: 100,
       imputations: [{ id: 'i1', contrat_id: 'c-test',
         date_debut: '2026-06-08', date_fin: '2026-06-11',
         jours_ouvrables: 4, jours_sur_cp: 0, jours_sur_sup: 0, jours_sans_solde: 4 }]
     });
-  } catch (e) { refus = e; }
-  assert(!!refus && refus.code === 'IMPUTATION_INCOMPLETE',
-    'B2 : une imputation portant le décompte de l’ANCIEN écran (4 au lieu de 6) ' +
-    'est REFUSÉE — jamais appliquée en silence');
+  } catch (e) { erreurRepli = e; }
+  assert(!erreurRepli,
+    '§16.1 A1 : la CHAÎNE ne rejette plus — l’écran de Maria s’affiche au lieu ' +
+    'de tomber, y compris celui qui lui permet de corriger');
 
-  /* Ce refus est la démonstration que B1 et B2 devaient être corrigés
-     ENSEMBLE. Corriger B1 seul aurait branché les imputations sur le moteur
-     alors que l'écran écrivait encore 4 : chaque mois portant un congé serait
-     devenu incalculable, et l'écran de Maria illisible.
+  var mRepli = repli && moisDe(repli, 2026, 6);
+  egal(mRepli && mRepli.resultat.joursCongesDecomptes, 6,
+    '§16.1 A2 : le mois est calculé avec le décompte réel du moteur');
+  egal(mRepli && mRepli.resultat.imputation.joursSansSolde, 0,
+    '§16.1 A2 : et dans l’ordre par défaut du contrat — les congés payés ' +
+    'd’abord, pas le sans-solde qu’une ligne fautive demandait');
+  egal(mRepli && (mRepli.imputationsEcartees || []).length, 1,
+    '§16.1 A3 : le maillon PORTE la période écartée — l’écart n’est jamais avalé');
+  egal(mRepli && mRepli.imputationsEcartees[0].code, 'IMPUTATION_INCOMPLETE',
+    '§16.1 : avec le code du moteur, pour que l’écran dise la bonne phrase');
+  assert(mRepli && (mRepli.resultat.imputationsAppliquees || []).some(function (i) {
+    return i.source === 'defaut_choix_ecarte' && i.choixEcarte &&
+           i.choixEcarte.date_debut === '2026-06-08';
+  }), '§16.1 : et la période reprend la forme que le moteur produit déjà ' +
+      '(defaut_choix_ecarte + choixEcarte) — un seul cas à connaître pour les écrans');
 
-     À SIGNALER À ADRIEN : ce refus fait échouer TOUTE la chaîne du contrat,
-     donc l'écran entier, pas seulement le mois concerné. Depuis les écrans
-     corrigés, la situation est inatteignable — l'écran écrit désormais le
-     décompte du moteur lui-même, et une période qui ne correspond plus aux
-     journées est ÉCARTÉE, pas refusée. Reste la question : si une ligne
-     incohérente apparaissait un jour (écriture directe, correction
-     manuelle), faut-il que le mois devienne incalculable, ou qu'il retombe
-     sur l'ordre par défaut en le disant ? C'est une règle métier, elle n'est
-     écrite nulle part, et je ne la tranche pas. */
+  /* A6 — SEULE L'IMPUTATION FAUTIVE EST ÉCARTÉE. Deux périodes dans le même
+     mois, l'une valide et l'autre impossible : la valide doit survivre.
+     Sans cette garantie, une seule ligne abîmée effacerait tous les choix du
+     mois, en silence. */
+  var deuxPeriodes = ['2026-06-08', '2026-06-09', '2026-06-22', '2026-06-23'];
+  var mixte = await chaine({
+    contrat: lundiJeudi, journees: journeesConge(deuxPeriodes), cpAcquis: 100,
+    imputations: [
+      { id: 'bonne', contrat_id: 'c-test',
+        date_debut: '2026-06-08', date_fin: '2026-06-09',
+        jours_ouvrables: Engine.decompterJoursOuvrables('2026-06-08', '2026-06-09', [1, 2, 3, 4]),
+        jours_sur_cp: 0, jours_sur_sup: 0,
+        jours_sans_solde: Engine.decompterJoursOuvrables('2026-06-08', '2026-06-09', [1, 2, 3, 4]) },
+      { id: 'fautive', contrat_id: 'c-test',
+        date_debut: '2026-06-22', date_fin: '2026-06-23',
+        jours_ouvrables: 1, jours_sur_cp: 1, jours_sur_sup: 0, jours_sans_solde: 0 }
+    ]
+  });
+  var mMixte = moisDe(mixte, 2026, 6);
+  egal((mMixte.imputationsEcartees || []).length, 1,
+    '§16.1 A6 : une seule des deux périodes est écartée');
+  egal(mMixte.imputationsEcartees[0].date_debut, '2026-06-22',
+    '§16.1 A6 : et c’est bien la fautive, pas l’autre');
+  assert(mMixte.resultat.imputation.joursSansSolde > 0,
+    '§16.1 A6 : le choix « sans solde » de la période VALIDE est toujours appliqué');
 
   /* ==================================================================== */
   /* Période à cheval : la ventilation se conserve d'un mois sur l'autre   */

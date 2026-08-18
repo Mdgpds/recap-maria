@@ -74,6 +74,95 @@ var JOURNEES_AVRIL_CONGE = [
 ];
 
 /* ---------------------------------------------------------------- */
+/* LOT 17 — deux adaptateurs, et RIEN d'autre                        */
+/* ---------------------------------------------------------------- */
+
+/* Les cas T1 à T8 sont ceux du §7 du cahier des charges. Leurs valeurs
+   attendues sont écrites dans les unités du cahier : les congés payés en
+   DIXIÈMES DE JOUR. Le lot 17 les fait passer en minutes (§17.6) et déplace
+   les réglages du `contrat` vers les `conditions` du mois (§17.3).
+
+   ON NE RÉÉCRIT PAS LES VALEURS ATTENDUES. Ce sont elles, et elles seules,
+   qui garantissent qu'aucune règle métier n'a bougé ; les retoucher à la main
+   reviendrait à demander au moteur de valider sa propre réponse. Deux
+   adaptateurs traduisent donc la FORME dans les deux sens, sans jamais
+   toucher à une quantité :
+
+     - `entrees` assemble les conditions du mois à partir du contrat et du
+       barème, exactement comme la migration `014` l'a fait en base ;
+     - `calculer` retraduit les minutes en dixièmes pour la comparaison, et
+       REFUSE une conversion qui ne tombe pas juste — un reste non nul
+       signalerait que le moteur a arrondi quelque part, ce qu'il ne doit
+       jamais faire.
+
+   Le différentiel exhaustif de `test/lot17-differentiel.test.js` prouve de
+   son côté, sur 13 440 scénarios, que les deux moteurs produisent les mêmes
+   chiffres. Ici on vérifie les valeurs du cahier ; là-bas, l'équivalence. */
+
+/* 1 jour de congé = 540 minutes dans tous les cas de ce fichier. */
+var MINUTES_PAR_JOUR_REF = CONTRAT_REF.minutes_par_jour_conge;
+
+function enMinutes(dixiemes) {
+  return dixiemes * MINUTES_PAR_JOUR_REF / 10;
+}
+
+function enDixiemes(minutes, libelle) {
+  var d = minutes * 10 / MINUTES_PAR_JOUR_REF;
+  if (!Number.isInteger(d)) {
+    throw new Error(libelle + ' : ' + minutes +
+      ' minutes ne font pas un nombre entier de dixièmes — le moteur a arrondi');
+  }
+  return d;
+}
+
+/* Les conditions du mois : les réglages du contrat, plus le barème. */
+function conditionsDe(c, salaire) {
+  var out = { date_effet: '2000-01-01', numero: 1, reconstitue: true };
+  var k;
+  for (k in c) if (k !== 'id' && k !== 'date_debut' && k !== 'date_fin') out[k] = c[k];
+  for (k in (salaire || {})) out[k] = salaire[k];
+  return out;
+}
+
+/* Traduit une entrée écrite dans la forme d'avant le lot 17. */
+function entrees(o) {
+  var out = {};
+  var k;
+  for (k in o) if (k !== 'salaire' && k !== 'compteurEntree') out[k] = o[k];
+  out.conditions = conditionsDe(o.contrat, o.salaire);
+  var ce = o.compteurEntree || {};
+  out.compteurEntree = {
+    minutesSup: ce.minutesSup || 0,
+    minutesCpAcquis: enMinutes(ce.dixiemesCpAcquis || 0),
+    minutesCpPris: enMinutes(ce.dixiemesCpPris || 0)
+  };
+  return out;
+}
+
+/* Calcule, puis retraduit les congés payés en dixièmes pour la comparaison. */
+function calculer(o) {
+  var r = Engine.calculerMois(entrees(o));
+  r.dixiemesCpAcquis = enDixiemes(r.minutesCpAcquis, 'CP acquis du mois');
+  r.imputation.dixiemesCpConsommes =
+    enDixiemes(r.imputation.minutesCpConsommees, 'CP consommés');
+  r.compteurSortie.dixiemesCpAcquis =
+    enDixiemes(r.compteurSortie.minutesCpAcquis, 'compteur de sortie, CP acquis');
+  r.compteurSortie.dixiemesCpPris =
+    enDixiemes(r.compteurSortie.minutesCpPris, 'compteur de sortie, CP pris');
+  return r;
+}
+
+/* Même adaptation pour l'imputation seule. */
+function imputer(nbJours, compteur, c, imposee) {
+  var r = Engine.imputerConges(nbJours, {
+    minutesSup: compteur.minutesSup,
+    minutesCp: enMinutes(compteur.dixiemesCp)
+  }, c, imposee);
+  r.dixiemesCpConsommes = enDixiemes(r.minutesCpConsommees, 'CP consommés');
+  return r;
+}
+
+/* ---------------------------------------------------------------- */
 /* Les cas                                                          */
 /* ---------------------------------------------------------------- */
 
@@ -110,7 +199,7 @@ definir('Contrôles — fériés (valeurs du §4.1) et format', function () {
 });
 
 definir('T1 — Mois nominal (septembre 2025)', function () {
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: [],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 9
@@ -125,7 +214,7 @@ definir('T1 — Mois nominal (septembre 2025)', function () {
 });
 
 definir('T2 — Absences de l\'enfant (septembre 2025)', function () {
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: [
       { jour: '2025-09-03', type: 'absence_enfant' },
@@ -143,7 +232,7 @@ definir('T2 — Absences de l\'enfant (septembre 2025)', function () {
 });
 
 definir('T3 — Jour férié (avril 2025, lundi de Pâques le 21)', function () {
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: [],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 4
@@ -156,7 +245,7 @@ definir('T3 — Jour férié (avril 2025, lundi de Pâques le 21)', function () 
 });
 
 definir('T4 — Semaine de congé avec reliquat (avril 2025)', function () {
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: JOURNEES_AVRIL_CONGE,
     compteurEntree: { minutesSup: 2400, dixiemesCpAcquis: 20, dixiemesCpPris: 0 },
@@ -179,7 +268,7 @@ definir('T4 — Semaine de congé avec reliquat (avril 2025)', function () {
 });
 
 definir('T5 — Contrat en déficit (avril 2025)', function () {
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: JOURNEES_AVRIL_CONGE,
     compteurEntree: { minutesSup: 1080, dixiemesCpAcquis: 30, dixiemesCpPris: 0 },
@@ -195,7 +284,7 @@ definir('T5 — Contrat en déficit (avril 2025)', function () {
 });
 
 definir('T5bis — Ordre inverse sup_puis_cp (avril 2025)', function () {
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat({ ordre_imputation: 'sup_puis_cp' }), salaire: SALAIRE_REF,
     journees: JOURNEES_AVRIL_CONGE,
     compteurEntree: { minutesSup: 1080, dixiemesCpAcquis: 30, dixiemesCpPris: 0 },
@@ -210,11 +299,11 @@ definir('T5bis — Ordre inverse sup_puis_cp (avril 2025)', function () {
   /* Le résultat chiffré est identique à T5 ; on vérifie donc en plus que le
      paramètre est réellement lu, sur un cas où l'ordre change le résultat :
      1 jour à imputer, les deux compteurs largement disponibles. */
-  var cpDabord = Engine.imputerConges(1, { minutesSup: 5400, dixiemesCp: 100 },
+  var cpDabord = imputer(1, { minutesSup: 5400, dixiemesCp: 100 },
     contrat({ ordre_imputation: 'cp_puis_sup' }));
   egalObjet(cpDabord, { joursSurCp: 1, dixiemesCpConsommes: 10, joursSurSup: 0, minutesSupConsommees: 0, joursSansSolde: 0 },
     'T5bis.ordre cp_puis_sup');
-  var supDabord = Engine.imputerConges(1, { minutesSup: 5400, dixiemesCp: 100 },
+  var supDabord = imputer(1, { minutesSup: 5400, dixiemesCp: 100 },
     contrat({ ordre_imputation: 'sup_puis_cp' }));
   egalObjet(supDabord, { joursSurSup: 1, minutesSupConsommees: 540, joursSurCp: 0, dixiemesCpConsommes: 0, joursSansSolde: 0 },
     'T5bis.ordre sup_puis_cp');
@@ -232,12 +321,12 @@ definir('T7 — Immuabilité et RG-15 (changement de salaire au 1er avril)', fun
 
   /* RG-15 : le salaire de mars est celui dont la date d'effet est la plus
      récente antérieure ou égale au 1er mars. */
-  egal(Engine.salaireApplicable(historique, 2025, 3).brut_mensuel_centimes, 132745, 'T7.salaire mars');
-  egal(Engine.salaireApplicable(historique, 2025, 4).brut_mensuel_centimes, 137289, 'T7.salaire avril');
+  egal(Engine.conditionsApplicables(historique, 2025, 3).brut_mensuel_centimes, 132745, 'T7.salaire mars');
+  egal(Engine.conditionsApplicables(historique, 2025, 4).brut_mensuel_centimes, 137289, 'T7.salaire avril');
 
   /* Récap de mars calculé puis figé (instantané jsonb) AVANT le changement. */
-  var recapMarsFige = Engine.calculerMois({
-    contrat: contrat(), salaire: Engine.salaireApplicable(historique, 2025, 3),
+  var recapMarsFige = calculer({
+    contrat: contrat(), salaire: Engine.conditionsApplicables(historique, 2025, 3),
     journees: [], compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 3
   });
@@ -248,7 +337,7 @@ definir('T7 — Immuabilité et RG-15 (changement de salaire au 1er avril)', fun
   egal(instantane.salaireBrutCentimes, 132745, 'T7.recap figé inchangé');
   /* Et même un recalcul accidentel de mars retomberait sur l'ancien salaire
      grâce à RG-15 : */
-  egal(Engine.salaireApplicable(historique, 2025, 3).brut_mensuel_centimes, 132745, 'T7.RG-15 stable');
+  egal(Engine.conditionsApplicables(historique, 2025, 3).brut_mensuel_centimes, 132745, 'T7.RG-15 stable');
 });
 
 definir('T8 — Décompte des jours ouvrables (RG-06)', function () {
@@ -266,7 +355,7 @@ definir('T8 — Décompte des jours ouvrables (RG-06)', function () {
 definir('A1 — Bornes du contrat (correction relecture lot 1)', function () {
   /* Contrat démarrant le lundi 15/09/2025 : seuls les 12 jours du planning
      entre le 15 et le 30 comptent. Rien n'est présumé avant date_debut. */
-  var demarrage = Engine.calculerMois({
+  var demarrage = calculer({
     contrat: contrat({ date_debut: '2025-09-15' }), salaire: SALAIRE_REF, journees: [],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 9
@@ -280,7 +369,7 @@ definir('A1 — Bornes du contrat (correction relecture lot 1)', function () {
 
   /* Contrat finissant le vendredi 12/09/2025 : 10 jours (1er -> 12), et le
      compteur de sortie — base du solde majoré RG-13 — vaut bien 300. */
-  var fin = Engine.calculerMois({
+  var fin = calculer({
     contrat: contrat({ date_fin: '2025-09-12' }), salaire: SALAIRE_REF, journees: [],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 9
@@ -293,7 +382,7 @@ definir('A1 — Bornes du contrat (correction relecture lot 1)', function () {
   egal(fin.compteurSortie.minutesSup, 300, 'A1.fin.compteurSortie.minutesSup');
 
   /* Une ligne saisie hors bornes est neutre elle aussi. */
-  var horsBornes = Engine.calculerMois({
+  var horsBornes = calculer({
     contrat: contrat({ date_debut: '2025-09-15' }), salaire: SALAIRE_REF,
     journees: [{ jour: '2025-09-03', type: 'presence' }],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
@@ -305,14 +394,14 @@ definir('A1 — Bornes du contrat (correction relecture lot 1)', function () {
 definir('B1 — Disponible négatif borné à 0 (correction relecture lot 1)', function () {
   /* Compteur incohérent (pris > acquis) : rien n'est consommé en négatif,
      rien n'est « rendu », tout part en sans solde. */
-  var imp = Engine.imputerConges(3, { minutesSup: 0, dixiemesCp: -20 }, contrat());
+  var imp = imputer(3, { minutesSup: 0, dixiemesCp: -20 }, contrat());
   egalObjet(imp, {
     joursSurCp: 0, dixiemesCpConsommes: 0,
     joursSurSup: 0, minutesSupConsommees: 0,
     joursSansSolde: 3
   }, 'B1.cp négatif');
 
-  var imp2 = Engine.imputerConges(2, { minutesSup: -100, dixiemesCp: 0 }, contrat());
+  var imp2 = imputer(2, { minutesSup: -100, dixiemesCp: 0 }, contrat());
   egalObjet(imp2, {
     joursSurSup: 0, minutesSupConsommees: 0,
     joursSurCp: 0, dixiemesCpConsommes: 0,
@@ -321,7 +410,7 @@ definir('B1 — Disponible négatif borné à 0 (correction relecture lot 1)', f
 
   /* Et dans calculerMois : la retenue RG-08 reste calculée sur les vrais
      jours sans solde, le compteur de CP pris n'est jamais décrémenté. */
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: JOURNEES_AVRIL_CONGE,
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 20 },
@@ -360,7 +449,7 @@ var IMPUTATION_AVRIL = {
 
 definir('T11 — Imputation imposée appliquée telle quelle', function () {
   /* Appel direct : la répartition est appliquée sans être recalculée. */
-  var imp = Engine.imputerConges(6, { minutesSup: 5400, dixiemesCp: 100 }, contrat(),
+  var imp = imputer(6, { minutesSup: 5400, dixiemesCp: 100 }, contrat(),
     { joursSurCp: 2, joursSurSup: 3, joursSansSolde: 1 });
   egalObjet(imp, {
     joursSurCp: 2, dixiemesCpConsommes: 20,
@@ -371,7 +460,7 @@ definir('T11 — Imputation imposée appliquée telle quelle', function () {
   /* Et dans le mois : les compteurs sont décrémentés de 20 dixièmes et de
      3 × minutes_par_jour_conge, alors que l'ordre par défaut (cp_puis_sup)
      aurait pris 6 jours de congés payés — le choix de Maria prime. */
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: JOURNEES_AVRIL_CONGE,
     imputations: [IMPUTATION_AVRIL],
@@ -393,7 +482,7 @@ definir('T11 — Imputation imposée appliquée telle quelle', function () {
 definir('T12 — Imputation incomplète : erreur, aucun compteur modifié', function () {
   var compteur = { minutesSup: 5400, dixiemesCp: 100 };
   leveCode(function () {
-    Engine.imputerConges(6, compteur, contrat(),
+    imputer(6, compteur, contrat(),
       { joursSurCp: 2, joursSurSup: 2, joursSansSolde: 1 });   // 5 ≠ 6
   }, 'IMPUTATION_INCOMPLETE', 'T12');
   egal(compteur.minutesSup, 5400, 'T12.compteur.minutesSup intact');
@@ -401,7 +490,7 @@ definir('T12 — Imputation incomplète : erreur, aucun compteur modifié', func
 
   /* Une valeur négative est refusée séparément, même si la somme tombe juste. */
   leveCode(function () {
-    Engine.imputerConges(6, compteur, contrat(),
+    imputer(6, compteur, contrat(),
       { joursSurCp: 7, joursSurSup: -1, joursSansSolde: 0 });
   }, 'IMPUTATION_NEGATIVE', 'T12.negative');
 });
@@ -409,13 +498,13 @@ definir('T12 — Imputation incomplète : erreur, aucun compteur modifié', func
 definir('T13 — Imputation au-delà des réserves : erreur', function () {
   /* 5 jours sur les congés payés = 50 dixièmes, alors que 30 sont acquis. */
   leveCode(function () {
-    Engine.imputerConges(6, { minutesSup: 5400, dixiemesCp: 30 }, contrat(),
+    imputer(6, { minutesSup: 5400, dixiemesCp: 30 }, contrat(),
       { joursSurCp: 5, joursSurSup: 1, joursSansSolde: 0 });
   }, 'IMPUTATION_DEPASSE_RESERVES', 'T13.cp');
 
   /* Même refus côté récupération. */
   leveCode(function () {
-    Engine.imputerConges(3, { minutesSup: 540, dixiemesCp: 100 }, contrat(),
+    imputer(3, { minutesSup: 540, dixiemesCp: 100 }, contrat(),
       { joursSurCp: 0, joursSurSup: 3, joursSansSolde: 0 });
   }, 'IMPUTATION_DEPASSE_RESERVES', 'T13.sup');
 });
@@ -424,7 +513,7 @@ definir('T14 — Minutes exceptionnelles d\'une journée (V8-18)', function () {
   var journee = { jour: '2025-09-02', type: 'presence', minutes_sup_exceptionnelles: 45 };
   egal(Engine.minutesSupDuJour(journee, contrat()), 75, 'T14.minutesSupDuJour');
 
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: [journee],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 9
@@ -442,7 +531,7 @@ definir('T15 — Renoncement explicite (V8-18)', function () {
   var journee = { jour: '2025-09-02', type: 'presence', minutes_sup_renoncees: 30 };
   egal(Engine.minutesSupDuJour(journee, contrat()), 0, 'T15.minutesSupDuJour');
 
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: [journee],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 9
@@ -460,7 +549,7 @@ definir('T16 — Renoncement borné : jamais de minutes négatives', function ()
   var journee = { jour: '2025-09-02', type: 'presence', minutes_sup_renoncees: 60 };
   egal(Engine.minutesSupDuJour(journee, contrat()), 0, 'T16.minutesSupDuJour');
 
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: [journee],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 9
@@ -482,7 +571,7 @@ definir('T17 — RG-09 surchargé pour une seule journée (V8-19)', function () 
     { type: 'absence_enfant', sup_dues_override: true },
     contrat({ sup_dues_si_enfant_absent: false })), 30, 'T17.override true prime');
 
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: c, salaire: SALAIRE_REF,
     journees: [
       { jour: '2025-09-03', type: 'absence_enfant', sup_dues_override: false },
@@ -514,7 +603,7 @@ definir('T18 — Période à cheval sur deux mois (28 juillet -> 4 août 2026)',
   var c = contrat();
   var entree = { minutesSup: 5400, dixiemesCpAcquis: 100, dixiemesCpPris: 0 };
 
-  var juillet = Engine.calculerMois({
+  var juillet = calculer({
     contrat: c, salaire: SALAIRE_REF,
     journees: [
       { jour: '2026-07-28', type: 'conge_maria' },
@@ -526,7 +615,7 @@ definir('T18 — Période à cheval sur deux mois (28 juillet -> 4 août 2026)',
   });
 
   /* Le mois d'août enchaîne sur les compteurs de sortie de juillet. */
-  var aout = Engine.calculerMois({
+  var aout = calculer({
     contrat: c, salaire: SALAIRE_REF,
     journees: [
       { jour: '2026-08-03', type: 'conge_maria' },
@@ -581,7 +670,7 @@ definir('T18bis — Le 6e jour d\'une semaine à cheval n\'est jamais perdu', fu
     date_debut: '2026-07-27', date_fin: '2026-07-31',
     jours_ouvrables: 6, jours_sur_cp: 3, jours_sur_sup: 2, jours_sans_solde: 1
   };
-  var juillet = Engine.calculerMois({
+  var juillet = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: [
       { jour: '2026-07-27', type: 'conge_maria' },
@@ -602,7 +691,7 @@ definir('T18bis — Le 6e jour d\'une semaine à cheval n\'est jamais perdu', fu
   }, 'T18bis.juillet.imputation');
 
   /* Août, qui ne porte aucune journée de congé, ne consomme rien du tout. */
-  var aout = Engine.calculerMois({
+  var aout = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: [],
     imputations: [imputation],
     compteurEntree: {
@@ -623,7 +712,7 @@ definir('T19 — RG-04 prime sur toute flexibilité', function () {
   var ferie = { jour: '2025-04-21', type: 'ferie', minutes_sup_exceptionnelles: 60 };
   egal(Engine.minutesSupDuJour(ferie, contrat()), 0, 'T19.minutesSupDuJour');
 
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: [ferie],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 4
@@ -645,7 +734,7 @@ definir('T19 — RG-04 prime sur toute flexibilité', function () {
 definir('T20 — Non-régression : mois sans imputation ni flexibilité', function () {
   /* Sortie capturée sur le moteur d'AVANT le lot 9, pour le cas T4.
      Toute valeur différente est un défaut, jamais une amélioration. */
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: JOURNEES_AVRIL_CONGE,
     compteurEntree: { minutesSup: 2400, dixiemesCpAcquis: 20, dixiemesCpPris: 0 },
@@ -679,7 +768,7 @@ definir('T20 — Non-régression : mois sans imputation ni flexibilité', functi
   egal(r.imputationsAppliquees[0].source, 'defaut', 'T20.source par défaut');
 
   /* Une entrée `imputations` vide ne change rien non plus. */
-  var vide = Engine.calculerMois({
+  var vide = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: JOURNEES_AVRIL_CONGE, imputations: [],
     compteurEntree: { minutesSup: 2400, dixiemesCpAcquis: 20, dixiemesCpPris: 0 },
@@ -711,7 +800,7 @@ definir('T21 — A1 : le décompte RG-06 n\'est jamais écrasé par la ligne pos
   var compteurEntree = { minutesSup: 5400, dixiemesCpAcquis: 100, dixiemesCpPris: 0 };
 
   function calculerAvec(imputation) {
-    return Engine.calculerMois({
+    return calculer({
       contrat: contrat(), salaire: SALAIRE_REF, journees: journees,
       imputations: [imputation], compteurEntree: compteurEntree,
       annee: 2026, mois: 7
@@ -767,8 +856,8 @@ definir('T22 — A2 : un choix écarté ne se confond pas avec une absence de ch
   function journees(liste) {
     return liste.map(function (j) { return { jour: j, type: 'conge_maria' }; });
   }
-  function calculer(liste) {
-    return Engine.calculerMois({
+  function moisDe(liste) {
+    return calculer({
       contrat: contrat(), salaire: SALAIRE_REF, journees: journees(liste),
       imputations: [imputation],
       compteurEntree: { minutesSup: 5940, dixiemesCpAcquis: 300, dixiemesCpPris: 0 },
@@ -777,7 +866,7 @@ definir('T22 — A2 : un choix écarté ne se confond pas avec une absence de ch
   }
 
   /* Cas conforme : le choix s'applique. */
-  var conforme = calculer(joursConformes);
+  var conforme = moisDe(joursConformes);
   egal(conforme.imputationsAppliquees[0].source, 'imposee', 'T22.conforme.source');
   egal(conforme.imputation.joursSurSup, 11, 'T22.conforme.joursSurSup');
   egal(conforme.imputation.joursSurCp, 0, 'T22.conforme.joursSurCp');
@@ -785,14 +874,14 @@ definir('T22 — A2 : un choix écarté ne se confond pas avec une absence de ch
   /* Cas dégradé : une journée ajoutée le lundi 20, imputation non remise à
      jour. L'ordre du contrat reprend la main — mais le moteur DIT que le
      choix de Maria a été écarté, et quelle période était concernée. */
-  var degrade = calculer(joursConformes.concat(['2026-07-20']));
+  var degrade = moisDe(joursConformes.concat(['2026-07-20']));
   egal(degrade.imputationsAppliquees[0].source, 'defaut_choix_ecarte', 'T22.dégradé.source');
   egalObjet(degrade.imputationsAppliquees[0].choixEcarte, {
     date_debut: '2026-07-06', date_fin: '2026-07-17'
   }, 'T22.dégradé.choixEcarte');
 
   /* Sans aucune imputation posée, la source reste « defaut » tout court. */
-  var sansChoix = Engine.calculerMois({
+  var sansChoix = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: journees(joursConformes),
     compteurEntree: { minutesSup: 5940, dixiemesCpAcquis: 300, dixiemesCpPris: 0 },
     annee: 2026, mois: 7
@@ -827,7 +916,7 @@ definir('T23 — A3 : un renoncement exprimé n\'est jamais ignoré en silence',
   /* Et une journée fautive fait échouer le mois entier plutôt que de
      produire un compteur faux. */
   leveCode(function () {
-    Engine.calculerMois({
+    calculer({
       contrat: contrat(), salaire: SALAIRE_REF,
       journees: [{ jour: '2025-09-02', type: 'presence', minutes_sup_renoncees: '30' }],
       compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
@@ -849,7 +938,7 @@ definir('A9 — Invariant : acquises = base + ajoutées − renoncées', functio
     ] }
   ];
   mois.forEach(function (m, i) {
-    var r = Engine.calculerMois({
+    var r = calculer({
       contrat: contrat(), salaire: SALAIRE_REF, journees: m.journees,
       compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
       annee: m.annee, mois: m.mois
@@ -888,7 +977,7 @@ definir('T24 — B1 : une imputation plus large que les journées posées est é
   ];
   var entree = { minutesSup: 5400, dixiemesCpAcquis: 100, dixiemesCpPris: 0 };
 
-  var r = Engine.calculerMois({
+  var r = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: journees,
     imputations: [imputation], compteurEntree: entree, annee: 2026, mois: 7
   });
@@ -904,7 +993,7 @@ definir('T24 — B1 : une imputation plus large que les journées posées est é
 
   /* Le résultat est exactement celui du même mois sans imputation : l'ordre
      du contrat reprend la main, rien n'est inventé. */
-  var sansImputation = Engine.calculerMois({
+  var sansImputation = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: journees,
     compteurEntree: entree, annee: 2026, mois: 7
   });
@@ -913,7 +1002,7 @@ definir('T24 — B1 : une imputation plus large que les journées posées est é
     'T24.consommation identique');
 
   /* Et l'imputation qui correspond VRAIMENT aux journées s'applique toujours. */
-  var conforme = Engine.calculerMois({
+  var conforme = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: ['27', '28', '29', '30', '31'].map(function (j) {
       return { jour: '2026-07-' + j, type: 'conge_maria' };
@@ -925,7 +1014,7 @@ definir('T24 — B1 : une imputation plus large que les journées posées est é
 
   /* Un férié à l'intérieur de la période n'est jamais posé en congé : il ne
      doit pas faire écarter une imputation par ailleurs conforme. */
-  var avecFerie = Engine.calculerMois({
+  var avecFerie = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: ['13', '15', '16', '17'].map(function (j) {
       return { jour: '2026-07-' + j, type: 'conge_maria' };
@@ -956,7 +1045,7 @@ definir('T25 — C1 : les réserves sont vérifiées sur la période, pas sur la
   });
 
   leveCode(function () {
-    Engine.calculerMois({
+    calculer({
       contrat: contrat(), salaire: SALAIRE_REF, journees: juillet,
       imputations: [imputation],
       compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 50, dixiemesCpPris: 0 },
@@ -967,7 +1056,7 @@ definir('T25 — C1 : les réserves sont vérifiées sur la période, pas sur la
   /* Avec les réserves suffisantes, la même période passe — et le second mois
      n'est pas contrôlé une seconde fois sur la période entière, sans quoi il
      refuserait à tort ce que le premier a déjà consommé. */
-  var ok = Engine.calculerMois({
+  var ok = calculer({
     contrat: contrat(), salaire: SALAIRE_REF, journees: juillet,
     imputations: [imputation],
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 100, dixiemesCpPris: 0 },
@@ -976,7 +1065,7 @@ definir('T25 — C1 : les réserves sont vérifiées sur la période, pas sur la
   egal(ok.joursCongesDecomptes, 4, 'T25.juillet décompte sa part');
   egal(ok.imputation.dixiemesCpConsommes, 40, 'T25.juillet consomme sa part');
 
-  var aout = Engine.calculerMois({
+  var aout = calculer({
     contrat: contrat(), salaire: SALAIRE_REF,
     journees: [{ jour: '2026-08-03', type: 'conge_maria' },
                { jour: '2026-08-04', type: 'conge_maria' }],

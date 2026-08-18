@@ -22,6 +22,12 @@
    Lancement : node test/lot8-identite.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`, qui assemble l'avenant à partir du contrat et du
+   barème déjà écrits ici. Aucune valeur n'est inventée. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -116,12 +122,28 @@ function foyersAvecContrats() {
   });
 }
 
+
+/* LOT 17 §17.2 — le contrat par son identifiant. `getAvenants` en a besoin
+   pour reprendre les réglages du décor dans l'avenant : le moteur ne les lit
+   plus sur `contrat`. */
+function contratDe(id) {
+  var liste = contrats || [];
+  return liste.filter(function (c) { return c && c.id === id; })[0] || liste[0] || {};
+}
+
 var DB = {
   getSession: function () {
     return Promise.resolve({ user: { id: 'u1', email: 'maria@exemple.test' } });
   },
   onAuthChange: function () {},
   signOut: function () { return Promise.resolve(true); },
+  /* LOT 16 §16.2 — le nom qui signe les documents. Décor : non renseigné,
+     le document dira « votre assistante maternelle ». */
+  getEmettrice: function () { return Promise.resolve(null); },
+  enregistrerEmettrice: function (nom) { return Promise.resolve({ nom: nom }); },
+  /* LOT 16 §16.4 — la ligne des rappels affiche désormais son VRAI réglage.
+     Décor : rappels inactifs, la ligne dira « Vous ne recevez aucun rappel ». */
+  getPreferenceRappel: function () { return Promise.resolve(null); },
   listContratsActifs: function () {
     return Promise.resolve(contrats.filter(function (c) { return !c.archive; }));
   },
@@ -190,13 +212,15 @@ var DB = {
   creerContrat: function (champs) { return Promise.resolve(champs); },
   archiverContrat: function () { return Promise.resolve(true); },
   desarchiverContrat: function () { return Promise.resolve(true); },
-  getSalaires: function (id) {
-    return Promise.resolve([{ id: 's-' + id, contrat_id: id, date_effet: '2026-01-01',
-      brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]);
+  getAvenants: function (id) {
+    return Promise.resolve(Decor.avenantsDe(contratDe(id),
+      [{ id: 's-' + id, contrat_id: id, date_effet: '2026-01-01',
+         brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]));
   },
   getCompteurInitial: function (id) {
-    return Promise.resolve({ contrat_id: id, date_reference: '2026-01-01',
-      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 });
+    return Promise.resolve(Decor.compteurEnMinutes({ contrat_id: id,
+      date_reference: '2026-01-01',
+      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 }));
   },
   getJourneesMois: function () { return Promise.resolve({}); },
   getJourneesPeriode: function () { return Promise.resolve({}); },
@@ -294,7 +318,9 @@ async function ouvrirFiche(id) {
     'A2 : et se change par un geste dédié');
 
   var avantRenommage = appels.renommer.length;
-  boutonExact(corps, 'Modifier l’identité et les horaires').click();
+  /* LOT 17 §17.4 — le bouton s’appelle « Modifier l’identité » : les horaires
+     sont sortis de cette feuille, ils passent par un avenant. */
+  boutonExact(corps, 'Modifier l’identité').click();
   await pause(120);
   assert(txt(sheet).indexOf('Nom de l’enfant') !== -1,
     'A2 : la feuille de modification propose le nom de l’enfant');
@@ -438,7 +464,9 @@ async function ouvrirFiche(id) {
   /* ==================================================================== */
   console.log('\n--- P6/P7 : la photo ---');
   await ouvrirFiche('c-lea');
-  boutonExact(corps, 'Modifier l’identité et les horaires').click();
+  /* LOT 17 §17.4 — le bouton s’appelle « Modifier l’identité » : les horaires
+     sont sortis de cette feuille, ils passent par un avenant. */
+  boutonExact(corps, 'Modifier l’identité').click();
   await pause(150);
   assert(txt(sheet).indexOf('ne figure sur aucun document remis aux familles') !== -1,
     'P7 : la fiche dit où la photo n’apparaît PAS');

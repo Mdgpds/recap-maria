@@ -21,6 +21,10 @@
 (function (global) {
   'use strict';
 
+  function majusculeInitiale(t) {
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+  }
+
   var Kit = global.Kit;
   var Chaine = global.ChaineMois;
 
@@ -239,6 +243,25 @@
     b.appendChild(row);
     b.appendChild(Kit.ce('div', 'sb',
       Kit.jours(r.joursPresence) + ' · ' + Kit.eur(r.totalAVerserCentimes)));
+    /* CORRECTION RELECTURE LOT 16 (C1) — LA MARQUE SUIT LE MOIS JUSQU'ICI.
+
+       Le §16.1 a) demande « le même traitement partout où un mois se calcule »
+       et cite les cinq écrans. Le repli y remonte bien — la chaîne est commune
+       — mais la MARQUE ne s'affichait que sur trois. L'historique est justement
+       un écran qui agrège : un mois retombé sur l'ordre par défaut du contrat
+       y présentait des chiffres plausibles, et qui ne sont pas ceux que Maria
+       avait choisis.
+
+       Forme allégée, décision d'Adrien : une mention sur la ligne. L'encart
+       complet avec son bouton reste réservé à l'espace enfant, où la
+       correction se fait. */
+    if ((e.imputationsEcartees || []).length) {
+      b.appendChild(Kit.ce('div', 'sb alerte',
+        (e.imputationsEcartees.length > 1
+          ? 'Des répartitions de congé ont été écartées'
+          : 'Une répartition de congé a été écartée') +
+        ' — chiffres calculés dans l’ordre habituel du contrat'));
+    }
     if (e.avantInitialisation) {
       b.appendChild(Kit.ce('div', 'sb q', 'Avant la reprise de vos compteurs — soldes non significatifs'));
     }
@@ -262,7 +285,8 @@
     var dernier = duMois[duMois.length - 1];
 
     corps.appendChild(Kit.ce('div', 'sb q',
-      'Du ' + Kit.libelleMoisAnnee(premier.annee, premier.mois) + ' à ' +
+      /* C2 — « Du août 2026 » : l'élision manquait aussi sur le bilan annuel. */
+      majusculeInitiale(Kit.elider('du', Kit.libelleMoisAnnee(premier.annee, premier.mois))) + ' à ' +
       Kit.libelleMoisAnnee(dernier.annee, dernier.mois) + ' · ' + agr.nbMois + ' mois'));
 
     var p1 = Kit.pane('Totaux de l’année');
@@ -280,7 +304,10 @@
 
     /* Les compteurs ne s'additionnent pas : entrée au 1er septembre, sortie
        aujourd'hui. C'est l'ÉVOLUTION qui est lisible, pas une somme. */
-    var ce0 = agr.compteurEntree || { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 };
+    var ce0 = agr.compteurEntree || { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 };
+    /* LOT 17 §17.6 — le facteur d'affichage des congés payés, calculé par la
+       chaîne sur le DERNIER mois de la période. Voir `agregerPeriode`. */
+    var mpjc = agr.minutesParJourConge;
     var cs = agr.compteurSortie || ce0;
     var p2 = Kit.pane('Où en sont les compteurs');
     var l2 = Kit.lines(p2);
@@ -288,8 +315,9 @@
       Kit.heures(ce0.minutesSup || 0), { discret: true });
     Kit.ligne(l2, 'Récupération à la fin de la période', Kit.heures(cs.minutesSup || 0));
     Kit.ligne(l2, 'Congés payés au 1er ' + Kit.libelleMois(premier.mois),
-      Kit.joursCp(Kit.cpDisponible(ce0)), { discret: true });
-    Kit.ligne(l2, 'Congés payés à la fin de la période', Kit.joursCp(Kit.cpDisponible(cs)));
+      Kit.joursCp(Kit.cpDisponible(ce0), mpjc), { discret: true });
+    Kit.ligne(l2, 'Congés payés à la fin de la période',
+      Kit.joursCp(Kit.cpDisponible(cs), mpjc));
     corps.appendChild(p2);
 
     if (agr.moisProvisoires.length) {

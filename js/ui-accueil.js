@@ -61,6 +61,24 @@
     return afficherAccueil(ctx);
   }
 
+  /* LOT 17 §17.2 — LE PLANNING D'UN MOIS vient des conditions que la chaîne a
+     résolues pour ce mois-là, jamais de `contrat`. Les jours de garde sont
+     datés : un avenant peut les changer au 1er d'un mois, et compter les jours
+     travaillés d'un mois passé sur le planning d'aujourd'hui afficherait
+     « 20 j sur 22 » là où le contrat n'en prévoyait que 18.
+
+     `null` quand la chaîne n'a pas répondu : `Kit.joursPlanning` retombe alors
+     sur lundi-vendredi, ce qui est un défaut d'affichage sur un écran déjà en
+     erreur — jamais un chiffre transmis à une famille. */
+  function planningDe(entree) {
+    return (entree && entree.conditions && entree.conditions.jours_planning) || null;
+  }
+
+  /* §17.6 — le facteur d'affichage des congés payés, celui du mois montré. */
+  function mpjcDe(entree) {
+    return (entree && entree.conditions && entree.conditions.minutes_par_jour_conge) || 0;
+  }
+
   /* ------------------------------------------------------------------ */
   /* 1. Accueil                                                          */
   /* ------------------------------------------------------------------ */
@@ -129,9 +147,13 @@
         contrat: contrat,
         entree: entree,
         journees: journees,
-        travailles: Kit.joursTravailles(contrat, m.annee, m.mois, journees),
+        /* LOT 17 §17.2 — le planning vient des CONDITIONS du mois, résolues
+           par la chaîne. Un avenant peut le changer, et compter les jours
+           travaillés d'un mois passé sur le planning d'aujourd'hui donnerait
+           « 20 j sur 22 » là où le contrat n'en prévoyait que 18. */
+        travailles: Kit.joursTravailles(contrat, planningDe(entree), m.annee, m.mois, journees),
         etat: entree ? Kit.etatDuMois(m.annee, m.mois, entree.recap, auj) : null,
-        restants: Kit.joursTravaillesRestants(contrat, m.annee, m.mois, auj, journees),
+        restants: Kit.joursTravaillesRestants(contrat, planningDe(entree), m.annee, m.mois, auj, journees),
         retards: moisEnRetard(chaine, m, auj),
         erreur: null
       };
@@ -278,10 +300,12 @@
     fiches.forEach(function (f) {
       if (f.erreur || !f.entree) return;
       var cp = cpDisponible(f.entree);
-      if (cp >= Kit.SEUIL_CP_BAS_DIXIEMES) return;
+      var parJour = mpjcDe(f.entree);
+      if (!Kit.cpEstBas(cp, parJour)) return;
       nb++;
       tuile(corps, '⚠',
-        f.contrat.prenom_enfant + ' n’a plus que ' + Kit.joursCp(cp) + ' de congés payés',
+        f.contrat.prenom_enfant + ' n’a plus que ' + Kit.joursCp(cp, parJour) +
+          ' de congés payés',
         'Un congé passerait en partie sans solde sur ce contrat',
         function () { ouvrirEnfant(f.contrat, m); });
     });
@@ -389,7 +413,7 @@
             ? 'à verser · provisoire, ' + f.restants + ' j restants'
             : 'à verser · provisoire')
         : 'à verser');
-    stat(stats, Kit.joursCp(cpDisponible(f.entree)), 'congés payés');
+    stat(stats, Kit.joursCp(cpDisponible(f.entree), mpjcDe(f.entree)), 'congés payés');
     b.appendChild(stats);
 
     /* La pastille porte le mot, jamais la couleur seule (V8-01, V8-05). */
@@ -576,7 +600,8 @@
     /* A3 : les journées du mois, pour ne pas compter comme « à venir » des
        jours déjà posés en congé. Le chiffre sert à mesurer ce qu'on perd en
        clôturant tôt : faux, il dit le contraire de ce qu'il doit dire. */
-    var restants = Kit.joursTravaillesRestants(c, cible.annee, cible.mois,
+    var restants = Kit.joursTravaillesRestants(c, planningDe(entree && entree.entree),
+      cible.annee, cible.mois,
       global.App.aujourdhui(), (entree && entree.journees) || null);
     if (restants > 0) {
       ctx.corps.appendChild(Kit.warnbox(
@@ -598,7 +623,28 @@
   function boutonsEtape(ctx, cible, entree) {
     var actions = Kit.ce('div', 'actions');
 
-    if (entree && !entree.salaireManquant && entree.resultat.salaireNetCentimes) {
+    /* LOT 16 §16.1 c) — DANS LA FIN DE MOIS GUIDÉE AUSSI. Un mois dont une
+       répartition ne tient plus ne se clôture pas : son étape ne propose que
+       « Passer pour l'instant », et le chemin pour corriger. Sans ce garde, le
+       parcours guidé restait la porte par laquelle un document que Maria n'a
+       pas choisi pouvait être figé — et un mois figé ne se recalcule jamais. */
+    var bloque = !!(entree && (entree.imputationsEcartees || []).length);
+    if (bloque) {
+      var e0 = entree.imputationsEcartees[0];
+      ctx.corps.appendChild(Kit.warnbox(
+        'Corrigez d’abord la répartition du congé de ' + cible.contrat.prenom_enfant,
+        ' Du ' + Kit.dateLongue(e0.date_debut) + ' au ' + Kit.dateLongue(e0.date_fin) +
+        ', les jours ne sont pas répartis sur des réserves suffisantes. Ce mois ne ' +
+        'peut pas être clôturé tant que ce n’est pas corrigé.'));
+      actions.appendChild(boutonTexte('btn', 'Corriger la répartition', function () {
+        parcours = null;
+        global.App.aller('conges', {
+          annee: cible.annee, mois: cible.mois, corrigerImputation: e0.id
+        }, true);
+      }));
+    }
+
+    if (!bloque && entree && !entree.salaireManquant && entree.resultat.salaireNetCentimes) {
       actions.appendChild(boutonTexte('btn pr', 'Clôturer et continuer', function (ev) {
         cloturerEtape(ctx, cible, entree, ev && ev.currentTarget);
       }));

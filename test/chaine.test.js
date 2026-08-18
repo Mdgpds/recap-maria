@@ -24,7 +24,7 @@ function egal(obtenu, attendu, libelle) {
 /* Fabrique un mois de la chaîne. Valeurs FICTIVES (dépôt public). */
 function mois(annee, m, opts) {
   opts = opts || {};
-  var entree = opts.compteurEntree || { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 };
+  var entree = opts.compteurEntree || { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 };
   var sortie = opts.compteurSortie || entree;
   return {
     annee: annee, mois: m, cle: annee + '-' + String(m).padStart(2, '0'),
@@ -40,9 +40,9 @@ function mois(annee, m, opts) {
       minutesSupAcquises: opts.supAcquises || 0,
       joursCongesDecomptes: opts.conges || 0,
       imputation: opts.imputation ||
-        { joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0, minutesSupConsommees: 0, dixiemesCpConsommes: 0 },
+        { joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0, minutesSupConsommees: 0, minutesCpConsommees: 0 },
       retenueSansSoldeCentimes: opts.retenue || 0,
-      dixiemesCpAcquis: opts.cpAcquis || 0,
+      minutesCpAcquis: opts.cpAcquis || 0,
       salaireBrutCentimes: opts.brut || 0,
       salaireNetCentimes: opts.net || 0,
       salaireDateEffet: opts.dateEffet || '2026-01-01',
@@ -75,24 +75,24 @@ cas.push({
   fn: function () {
     var a = Chaine.agregerPeriode([
       mois(2026, 1, {
-        compteurEntree: { minutesSup: 600, dixiemesCpAcquis: 100, dixiemesCpPris: 0 },
-        compteurSortie: { minutesSup: 1200, dixiemesCpAcquis: 125, dixiemesCpPris: 0 }
+        compteurEntree: { minutesSup: 600, minutesCpAcquis: 100, minutesCpPris: 0 },
+        compteurSortie: { minutesSup: 1200, minutesCpAcquis: 125, minutesCpPris: 0 }
       }),
       mois(2026, 2, {
-        compteurEntree: { minutesSup: 1200, dixiemesCpAcquis: 125, dixiemesCpPris: 0 },
-        compteurSortie: { minutesSup: 1800, dixiemesCpAcquis: 150, dixiemesCpPris: 0 }
+        compteurEntree: { minutesSup: 1200, minutesCpAcquis: 125, minutesCpPris: 0 },
+        compteurSortie: { minutesSup: 1800, minutesCpAcquis: 150, minutesCpPris: 0 }
       }),
       mois(2026, 3, {
-        compteurEntree: { minutesSup: 1800, dixiemesCpAcquis: 150, dixiemesCpPris: 0 },
-        compteurSortie: { minutesSup: 2400, dixiemesCpAcquis: 175, dixiemesCpPris: 100 }
+        compteurEntree: { minutesSup: 1800, minutesCpAcquis: 150, minutesCpPris: 0 },
+        compteurSortie: { minutesSup: 2400, minutesCpAcquis: 175, minutesCpPris: 100 }
       })
     ]);
     // La somme naïve des soldes de sortie vaudrait 1200+1800+2400 = 5400 : c'est
     // exactement le nombre qu'il ne faut PAS produire.
     egal(a.compteurEntree.minutesSup, 600, 'solde sup à l’entrée de la période');
     egal(a.compteurSortie.minutesSup, 2400, 'solde sup à la sortie de la période');
-    egal(a.compteurSortie.dixiemesCpAcquis, 175, 'CP acquis cumulés (compteur du dernier mois)');
-    egal(a.compteurSortie.dixiemesCpPris, 100, 'CP pris cumulés (compteur du dernier mois)');
+    egal(a.compteurSortie.minutesCpAcquis, 175, 'CP acquis cumulés (compteur du dernier mois)');
+    egal(a.compteurSortie.minutesCpPris, 100, 'CP pris cumulés (compteur du dernier mois)');
   }
 });
 
@@ -191,9 +191,9 @@ cas.push({
   nom: 'C6 — totaliserAgregats : les flux se somment entre contrats, aucun compteur',
   fn: function () {
     var a1 = Chaine.agregerPeriode([mois(2026, 1, { presence: 20, entretien: 10000, net: 150000, total: 160000,
-      compteurSortie: { minutesSup: 600, dixiemesCpAcquis: 25, dixiemesCpPris: 0 } })]);
+      compteurSortie: { minutesSup: 600, minutesCpAcquis: 25, minutesCpPris: 0 } })]);
     var a2 = Chaine.agregerPeriode([mois(2026, 1, { presence: 18, entretien: 9000, net: 140000, total: 149000,
-      compteurSortie: { minutesSup: 540, dixiemesCpAcquis: 25, dixiemesCpPris: 0 } })]);
+      compteurSortie: { minutesSup: 540, minutesCpAcquis: 25, minutesCpPris: 0 } })]);
     var t = Chaine.totaliserAgregats([a1, a2]);
     egal(t.nbContrats, 2, 'nbContrats');
     egal(t.joursPresence, 38, 'joursPresence');
@@ -254,11 +254,11 @@ function instantane(opts) {
     minutesSupAcquises:   opts.sup       === undefined ? 600    : opts.sup,
     joursCongesDecomptes: opts.conges    === undefined ? 0      : opts.conges,
     imputation: {
-      dixiemesCpConsommes:  opts.cpMois === undefined ? 0 : opts.cpMois,
+      minutesCpConsommees:  opts.cpMois === undefined ? 0 : opts.cpMois,
       minutesSupConsommees: opts.supMois === undefined ? 0 : opts.supMois
     },
     compteurSortie: {
-      dixiemesCpPris: opts.cpPris     === undefined ? 50   : opts.cpPris,
+      minutesCpPris: opts.cpPris     === undefined ? 50   : opts.cpPris,
       minutesSup:     opts.supRestante === undefined ? 600 : opts.supRestante
     }
   };
@@ -326,8 +326,8 @@ cas.push({
     egal(Chaine.POSTES_COMPARES.map(function (p) { return p.cle; }).join(','),
       'joursPresence,entretienCentimes,salaireNetCentimes,totalAVerserCentimes,' +
       'minutesSupAcquises,joursCongesDecomptes,' +
-      'imputation.dixiemesCpConsommes,imputation.minutesSupConsommees,' +
-      'compteurSortie.dixiemesCpPris,compteurSortie.minutesSup',
+      'imputation.minutesCpConsommees,imputation.minutesSupConsommees,' +
+      'compteurSortie.minutesCpPris,compteurSortie.minutesSup',
       'ordre et contenu des postes');
 
     /* Les six premiers restent en tête, et dans l'ordre du document : l'écran
@@ -346,8 +346,8 @@ cas.push({
     });
 
     /* Un poste hors liste n'est pas comparé, même s'il diffère. */
-    var a = instantane(); a.dixiemesCpAcquis = 25;
-    var b = instantane(); b.dixiemesCpAcquis = 0;
+    var a = instantane(); a.minutesCpAcquis = 25;
+    var b = instantane(); b.minutesCpAcquis = 0;
     egal(Chaine.ecartsInstantanes(a, b).length, 0, 'un poste hors liste est ignoré');
   }
 });
@@ -369,7 +369,7 @@ cas.push({
     var e = Chaine.ecartsInstantanes(avant, apres);
     egal(e.length, 4, 'quatre compteurs touchés, aucun montant');
 
-    egal(e[0].cle, 'imputation.dixiemesCpConsommes', 'CP décomptés ce mois');
+    egal(e[0].cle, 'imputation.minutesCpConsommees', 'CP décomptés ce mois');
     egal(e[0].ancien, 0, 'ancien : rien sur les CP');
     egal(e[0].nouveau, 40, 'nouveau : 4 jours sur les CP');
     egal(e[0].format, 'cp', 'format en dixièmes de jour');
@@ -378,7 +378,7 @@ cas.push({
     egal(e[1].ancien, 1680, 'ancien : 28 h de récupération');
     egal(e[1].nouveau, 0, 'nouveau : plus rien');
 
-    egal(e[2].cle, 'compteurSortie.dixiemesCpPris', 'CP pris en tout');
+    egal(e[2].cle, 'compteurSortie.minutesCpPris', 'CP pris en tout');
     egal(e[2].ancien, 50, 'ancien cumul');
     egal(e[2].nouveau, 90, 'nouveau cumul');
 
@@ -403,8 +403,8 @@ cas.push({
       totalAVerserCentimes: 117200, minutesSupAcquises: 600, joursCongesDecomptes: 0
     };
     var nouveau = JSON.parse(JSON.stringify(ancien));
-    nouveau.imputation = { dixiemesCpConsommes: 0, minutesSupConsommees: 0 };
-    nouveau.compteurSortie = { dixiemesCpPris: 0, minutesSup: 0 };
+    nouveau.imputation = { minutesCpConsommees: 0, minutesSupConsommees: 0 };
+    nouveau.compteurSortie = { minutesCpPris: 0, minutesSup: 0 };
 
     egal(Chaine.ecartsInstantanes(ancien, nouveau).length, 0,
       'bloc absent d’un côté, valeurs nulles de l’autre : aucun écart');
@@ -412,10 +412,10 @@ cas.push({
     /* Bloc présent mais vide, valeur non nulle en face : l'écart est réel et
        doit être dit. */
     var avecValeur = JSON.parse(JSON.stringify(nouveau));
-    avecValeur.compteurSortie.dixiemesCpPris = 30;
+    avecValeur.compteurSortie.minutesCpPris = 30;
     var e = Chaine.ecartsInstantanes(ancien, avecValeur);
     egal(e.length, 1, 'un seul écart');
-    egal(e[0].cle, 'compteurSortie.dixiemesCpPris', 'le bon poste');
+    egal(e[0].cle, 'compteurSortie.minutesCpPris', 'le bon poste');
     egal(e[0].ancien, 0, 'bloc absent lu comme 0');
 
     /* Le bloc intermédiaire vaut explicitement null : ce cas existe, un

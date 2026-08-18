@@ -70,12 +70,29 @@ var COLONNES_ATTENDUES = {
                   'fige_le', 'transmis_le'],
   journee: ['id', 'contrat_id', 'jour', 'type', 'minutes_reelles',
             'entretien_centimes', 'commentaire',
-            'minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override'],
+            'minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',
+            /* Lot 17 — l'écart d'horaire déclaré (§17.5). Les quatre colonnes
+               vont ensemble : les minutes font le calcul, l'événement et
+               l'heure réelle font l'explication sur le document. */
+            'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur'],
   imputation_conge: ['id', 'contrat_id', 'date_debut', 'date_fin', 'jours_ouvrables',
                      'jours_sur_cp', 'jours_sur_sup', 'jours_sans_solde'],
   evenement_recap: ['id', 'recap_id', 'type', 'survenu_le', 'motif'],
+  /* Lot 17 — les congés payés passent en MINUTES (§17.6). Les colonnes en
+     dixièmes existent toujours en base mais ne sont plus lues : les demander
+     serait la meilleure façon de les réafficher un jour par mégarde. */
   compteur_initial: ['contrat_id', 'date_reference', 'minutes_sup',           // lot 14
-                     'dixiemes_cp_acquis', 'dixiemes_cp_pris'],
+                     'minutes_cp_acquis', 'minutes_cp_pris'],
+  /* Lot 17 — les conditions du contrat, datées (§17.2). C'est la table la
+     plus exposée au défaut que ce contrôle garde : onze réglages, dont
+     l'oubli d'un seul dans un select ferait calculer un mois avec un réglage
+     à `undefined`. */
+  avenant_contrat: ['id', 'contrat_id', 'date_effet', 'numero', 'reconstitue',
+                    'brut_mensuel_centimes', 'net_mensuel_centimes',
+                    'jours_planning', 'heure_arrivee', 'heure_depart',
+                    'minutes_contractuelles', 'minutes_sup_jour',
+                    'minutes_par_jour_conge', 'entretien_centimes_jour',
+                    'sup_dues_si_enfant_absent', 'ordre_imputation'],
   preference_rappel: ['owner', 'actif', 'jour_du_mois', 'heure',              // lot 15
                       'chaque_jour_ensuite', 'maj_le'],
   abonnement_push: ['id', 'endpoint', 'cree_le']                              // lot 15
@@ -98,7 +115,10 @@ var COLONNE_PIVOT = {
   journee: 'type',
   imputation_conge: 'jours_ouvrables',
   evenement_recap: 'type',
-  compteur_initial: 'dixiemes_cp_acquis',
+  compteur_initial: 'minutes_cp_acquis',
+  /* La projection étroite de `supprimerAvenant`, qui ne lit que `contrat_id`
+     pour savoir quel contrat renuméroter, n'est pas une lecture de ligne. */
+  avenant_contrat: 'ordre_imputation',
   preference_rappel: 'chaque_jour_ensuite',
   /* `abonnement_push` ne se relit jamais en entier côté client : l'appareil
      n'a rien à faire de ses propres clés, seul le serveur les utilise. Le

@@ -153,6 +153,16 @@ cas.push({
   }
 });
 
+/* LOT 17 §17.2 — LE PLANNING EST DÉSORMAIS UN PARAMÈTRE.
+
+   Les jours de garde sont datés : ils vivent sur l'avenant, pas sur `contrat`,
+   et `Kit.joursTravaillesRestants` ne va donc plus les chercher toute seule.
+   Ces cas continuent de vérifier exactement la même règle — le planning leur
+   arrive juste par la porte au lieu de la fenêtre. */
+function planningDe(contrat) {
+  return contrat ? contrat.jours_planning : null;
+}
+
 /* ====================================================================== */
 /* joursTravaillesRestants                                                */
 /* ====================================================================== */
@@ -164,12 +174,12 @@ cas.push({
        12, 13, 14, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28, 31 = 14 jours.
        Le 15 août est un samedi cette année-là, donc il ne retranche rien du
        planning lundi-vendredi : le férié tombe hors planning. */
-    var n = Kit.joursTravaillesRestants(contratLunVen(), 2026, 8, '2026-08-11');
+    var n = Kit.joursTravaillesRestants(contratLunVen(), planningDe(contratLunVen()), 2026, 8, '2026-08-11');
     egal(n, 14, 'U7');
 
     /* Le 11 lui-même est exclu : « strictement postérieurs ». La journée du
        jour est déjà connue, elle n'est pas « à venir ». */
-    var n12 = Kit.joursTravaillesRestants(contratLunVen(), 2026, 8, '2026-08-12');
+    var n12 = Kit.joursTravaillesRestants(contratLunVen(), planningDe(contratLunVen()), 2026, 8, '2026-08-12');
     egal(n12, 13, 'U7.le lendemain, un de moins');
   }
 });
@@ -179,12 +189,12 @@ cas.push({
   fn: function () {
     /* Le 11 novembre 2026 est un mercredi : férié ET dans le planning.
        Jours ouvrés du 2 au 30 novembre 2026 : 21. Moins le 11 = 20. */
-    var avecFerie = Kit.joursTravaillesRestants(contratLunVen(), 2026, 11, '2026-11-01');
+    var avecFerie = Kit.joursTravaillesRestants(contratLunVen(), planningDe(contratLunVen()), 2026, 11, '2026-11-01');
     egal(avecFerie, 20, 'U7bis.novembre, 11 novembre retranché');
 
     /* Preuve que le retranchement vient bien du férié : la veille du 11, le
        compte tombe de 6 (du 12 au 30) et non de 7. */
-    egal(Kit.joursTravaillesRestants(contratLunVen(), 2026, 11, '2026-11-11'), 13,
+    egal(Kit.joursTravaillesRestants(contratLunVen(), planningDe(contratLunVen()), 2026, 11, '2026-11-11'), 13,
       'U7bis.après le 11');
   }
 });
@@ -192,10 +202,10 @@ cas.push({
 cas.push({
   nom: 'U8 — mois échu : zéro jour restant',
   fn: function () {
-    egal(Kit.joursTravaillesRestants(contratLunVen(), 2026, 7, '2026-08-11'), 0, 'U8');
-    egal(Kit.joursTravaillesRestants(contratLunVen(), 2025, 12, '2026-08-11'), 0, 'U8.année passée');
+    egal(Kit.joursTravaillesRestants(contratLunVen(), planningDe(contratLunVen()), 2026, 7, '2026-08-11'), 0, 'U8');
+    egal(Kit.joursTravaillesRestants(contratLunVen(), planningDe(contratLunVen()), 2025, 12, '2026-08-11'), 0, 'U8.année passée');
     /* Le dernier jour du mois : plus rien après lui. */
-    egal(Kit.joursTravaillesRestants(contratLunVen(), 2026, 8, '2026-08-31'), 0, 'U8.le 31');
+    egal(Kit.joursTravaillesRestants(contratLunVen(), planningDe(contratLunVen()), 2026, 8, '2026-08-31'), 0, 'U8.le 31');
   }
 });
 
@@ -206,7 +216,7 @@ cas.push({
        par semaine. Une valeur en dur serait fausse ici, et invisible jusqu'au
        jour où Maria signe un contrat à temps partiel. */
     var troisJours = contratLunVen({ jours_planning: [1, 2, 4] });
-    var n = Kit.joursTravaillesRestants(troisJours, 2026, 8, '2026-08-11');
+    var n = Kit.joursTravaillesRestants(troisJours, planningDe(troisJours), 2026, 8, '2026-08-11');
     /* Du 12 au 31 août : les lundis 17, 24, 31 ; mardis 18, 25 ; jeudis 13,
        20, 27. Soit 8. */
     egal(n, 8, 'trois jours par semaine');
@@ -220,12 +230,12 @@ cas.push({
        20, même si le mois continue. Sans cela, l'application annoncerait des
        journées que Maria ne gardera jamais. */
     var borne = contratLunVen({ date_fin: '2026-08-20' });
-    egal(Kit.joursTravaillesRestants(borne, 2026, 8, '2026-08-11'), 7,
+    egal(Kit.joursTravaillesRestants(borne, planningDe(borne), 2026, 8, '2026-08-11'), 7,
       'du 12 au 20 : 12,13,14,17,18,19,20');
 
     /* Et un contrat qui commence plus tard ne compte pas les jours d'avant. */
     var tardif = contratLunVen({ date_debut: '2026-08-24' });
-    egal(Kit.joursTravaillesRestants(tardif, 2026, 8, '2026-08-11'), 6,
+    egal(Kit.joursTravaillesRestants(tardif, planningDe(tardif), 2026, 8, '2026-08-11'), 6,
       'du 24 au 31 : 24,25,26,27,28,31');
   }
 });
@@ -235,8 +245,8 @@ cas.push({
   fn: function () {
     /* Cet appel a lieu pendant le dessin de l'accueil, à chaque carte. Une
        exception ici viderait l'écran de Maria. */
-    egal(Kit.joursTravaillesRestants(null, 2026, 8, '2026-08-11'), 0, 'contrat absent');
-    egal(Kit.joursTravaillesRestants(contratLunVen(), 2026, 8, null), 0, 'date absente');
+    egal(Kit.joursTravaillesRestants(null, planningDe(null), 2026, 8, '2026-08-11'), 0, 'contrat absent');
+    egal(Kit.joursTravaillesRestants(contratLunVen(), planningDe(contratLunVen()), 2026, 8, null), 0, 'date absente');
   }
 });
 

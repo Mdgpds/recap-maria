@@ -54,7 +54,11 @@
      maximum est celui de RG-11 : 30 jours ouvrables acquis par exercice.
      Ces deux valeurs ne servent QU'À la longueur de la barre. */
   var BARRE_RECUP_EN_JOURS = 10;
-  var BARRE_CP_DIXIEMES = 300;
+  /* LOT 17 §17.6 — la barre des congés payés est graduée en JOURS, plus en
+     dixièmes : 30 jours ouvrables, c'est l'acquisition d'une année pleine
+     (RG-11). Sa conversion en minutes demande le facteur du contrat, qui vient
+     des conditions du mois. */
+  var BARRE_CP_EN_JOURS = 30;
 
   /* Jusqu'où la navigation du calendrier peut aller au-delà du mois courant.
      Correction A13 : « Mes congés » propose de poser jusqu'à vingt semaines en
@@ -67,6 +71,30 @@
   /* ------------------------------------------------------------------ */
   /* Affichage                                                           */
   /* ------------------------------------------------------------------ */
+
+  /* LOT 17 §17.3 — LES CONDITIONS DU MOIS AFFICHÉ.
+
+     Tous les réglages que cet écran montre — le planning du calendrier, les
+     minutes supplémentaires d'une journée, l'indemnité d'entretien — sont
+     ceux de l'AVENANT en vigueur ce mois-là, jamais ceux de `contrat`. Un
+     écran qui lirait `contrat` afficherait les conditions d'aujourd'hui sur un
+     mois d'il y a deux ans, et un document déjà remis à une famille changerait
+     sous les yeux de Maria. Un mois figé porte les conditions de son époque :
+     la chaîne les a résolues et les transporte sur le maillon. */
+  function cond() {
+    return (vue && vue.entree && vue.entree.conditions) || null;
+  }
+
+  /* Un réglage, avec un repli EXPLICITE quand les conditions manquent — un
+     mois antérieur au contrat, ou une chaîne en échec. Le repli ne prétend
+     jamais être une valeur du contrat. */
+  function reg(champ, defaut) {
+    var c = cond();
+    return (c && c[champ] != null) ? c[champ] : defaut;
+  }
+
+  function planningDuMois() { return reg('jours_planning', [1, 2, 3, 4, 5]); }
+  function mpjc() { return reg('minutes_par_jour_conge', 0); }
 
   function afficher(ctx) {
     var contrat = global.App.contratParId(ctx.params.contratId);
@@ -132,7 +160,9 @@
            comportement du 25 deviendrait invérifiable. */
         aujourdhui: auj,
         etat: Kit.etatDuMois(m.annee, m.mois, entree && entree.recap, auj),
-        restants: Kit.joursTravaillesRestants(contrat, m.annee, m.mois, auj, r[1]),
+        restants: Kit.joursTravaillesRestants(
+          contrat, (entree && entree.conditions && entree.conditions.jours_planning) || null,
+          m.annee, m.mois, auj, r[1]),
         /* Lot 10 — les périodes de congé ventilées qui touchent ce mois. */
         imputations: r[4] || [],
         note: r[5] || null
@@ -234,6 +264,12 @@
       corps.appendChild(bandeauEtat());
     }
 
+    /* LOT 16 §16.1 b) — EN TÊTE DE L'ÉCRAN. C'est le premier chose que Maria
+       doit lire quand une répartition ne tient plus : avant, l'écran entier
+       ne s'affichait pas. */
+    var reserves = panneauReservesInsuffisantes();
+    if (reserves) corps.appendChild(reserves);
+
     var ecartes = panneauChoixEcartes();
     if (ecartes) corps.appendChild(ecartes);
 
@@ -304,7 +340,7 @@
     table.appendChild(thead);
 
     var jours = Engine.joursDuMois(vue.annee, vue.mois);
-    var planning = c.jours_planning || [1, 2, 3, 4, 5];
+    var planning = planningDuMois();
     var tr = Kit.ce('tr');
     var col = Engine.jourSemaine(jours[0]);
     for (var v = 1; v < col; v++) tr.appendChild(cellVide());
@@ -356,7 +392,7 @@
 
   function phrasePermanente() {
     var c = vue.contrat;
-    var minutes = c.minutes_sup_jour || 0;
+    var minutes = reg('minutes_sup_jour', 0);
     var n = Kit.note('Rien à faire les jours normaux',
       'Tant que vous ne touchez pas un jour, ' + c.prenom_enfant + ' est ' +
       Kit.accordDe(c, 'compté') + ' ' + Kit.accordDe(c, 'présent') +
@@ -480,7 +516,8 @@
     if (vue.clos) {
       Kit.ligne(l, 'Jours de présence', Kit.jours(r.joursPresence));
     } else {
-      var travailles = Kit.joursTravailles(c, vue.annee, vue.mois, vue.journees).length;
+      var travailles = Kit.joursTravailles(c, planningDuMois(), vue.annee, vue.mois,
+        vue.journees).length;
       Kit.ligne(l, 'Jours de présence', r.joursPresence + ' j sur ' + travailles);
     }
     Kit.ligne(l, 'Salaire net', Kit.eur(r.salaireNetCentimes));
@@ -521,9 +558,10 @@
   }
 
   function libelleEntretien(r) {
-    var attendu = r.joursPresence * (vue.contrat.entretien_centimes_jour || 0);
+    var parJour = reg('entretien_centimes_jour', 0);
+    var attendu = r.joursPresence * parJour;
     if (attendu === r.entretienCentimes) {
-      return 'Entretien — ' + r.joursPresence + ' j × ' + Kit.eur(vue.contrat.entretien_centimes_jour);
+      return 'Entretien — ' + r.joursPresence + ' j × ' + Kit.eur(parJour);
     }
     return 'Indemnité d’entretien';
   }
@@ -594,8 +632,8 @@
     var p = Kit.pane('Compteurs de ' + c.prenom_enfant);
 
     var minutes = Kit.supDisponible(cs);
-    var parJour = c.minutes_par_jour_conge || 540;
-    var joursRecup = Math.floor(minutes / parJour);
+    var parJour = mpjc();
+    var joursRecup = parJour ? Math.floor(minutes / parJour) : 0;
     compteur(p, {
       titre: 'Récupération',
       valeur: Kit.heures(minutes),
@@ -606,11 +644,11 @@
     });
 
     var cp = Kit.cpDisponible(cs);
-    var bas = cp < Kit.SEUIL_CP_BAS_DIXIEMES;
+    var bas = Kit.cpEstBas(cp, parJour);
     compteur(p, {
       titre: 'Congés payés',
-      valeur: Kit.joursCp(cp),
-      pct: pourcent(cp, BARRE_CP_DIXIEMES),
+      valeur: Kit.joursCp(cp, parJour),
+      pct: pourcent(cp, BARRE_CP_EN_JOURS * parJour),
       note: bas
         ? 'Compteur bas — un congé d’été passerait en partie sans solde'
         : 'sur 30 jours ouvrables acquis par an',
@@ -720,6 +758,11 @@
         /* LOT 12 — l'ajustement des heures et la note de la journée. Repliés
            par défaut : ce sont des cas particuliers, et l'écran d'une journée
            ordinaire ne doit pas ressembler à un formulaire. */
+        /* LOT 17 §17.5 — ce que Maria DÉCLARE, avant l'ajustement manuel des
+           minutes : c'est le geste le plus fréquent, et celui qui porte le
+           sens. L'ajustement du lot 12 reste dessous, pour les cas que la
+           déclaration ne couvre pas. */
+        corps.appendChild(blocEcartHoraire(d));
         corps.appendChild(blocAjusterHeures(d));
         corps.appendChild(blocNoteJournee(d));
 
@@ -764,10 +807,89 @@
 
   /* Le moteur signale les périodes dont le choix de Maria a été écarté. Sans
      cet affichage, l'écart resterait invisible jusqu'au document du mois. */
+  /* LOT 16 §16.1 b) — L'ENCART QUI REMPLACE L'ÉCRAN VIDE.
+
+     Quand une répartition dépasse les réserves, la chaîne l'écarte, rejoue le
+     mois dans l'ordre par défaut du contrat et porte le détail sur le maillon.
+     L'encart nomme la période, ce que Maria avait choisi et ce dont elle
+     dispose — trois nombres qui viennent tous du moteur — puis ouvre la
+     ventilation DE CETTE PÉRIODE.
+
+     C'est distinct du panneau ci-dessous : là, le choix a été écarté parce que
+     les JOURNÉES ont changé ; ici, parce que les RÉSERVES ne suffisent pas.
+     Les deux causes appellent deux phrases et deux gestes différents. */
+  function panneauReservesInsuffisantes() {
+    var ecartees = (vue.entree && vue.entree.imputationsEcartees) || [];
+    if (!ecartees.length) return null;
+
+    var b = Kit.warnbox(
+      ecartees.length > 1
+        ? 'Des répartitions de congé ne correspondent plus à vos réserves'
+        : 'Une répartition de congé ne correspond plus à vos réserves',
+      ' ' + ecartees.map(phraseEcartee).join(' ') +
+      ' En attendant, ces congés sont décomptés dans l’ordre habituel de ce contrat.');
+
+    var bt = Kit.bouton('btn nt', function () {
+      global.App.aller('conges', {
+        annee: vue.annee, mois: vue.mois, corrigerImputation: ecartees[0].id
+      }, true);
+    });
+    bt.textContent = 'Corriger la répartition';
+    b.appendChild(bt);
+    return b;
+  }
+
+  /* « Du 3 au 21 août, vous aviez choisi 6 jours de récupération. Vous n'en
+     avez que 5. » Les trois codes du moteur ne disent pas la même chose : on
+     ne sert pas la phrase des réserves quand le problème est ailleurs. */
+  function phraseEcartee(e) {
+    var plage = 'Du ' + Kit.dateLongue(e.date_debut) + ' au ' + Kit.dateLongue(e.date_fin) + ', ';
+    if (e.code === 'IMPUTATION_DEPASSE_RESERVES') {
+      var manques = [];
+      if (e.choisi.joursSurSup > e.disponible.joursSup) {
+        manques.push('vous aviez choisi ' + Kit.jours(e.choisi.joursSurSup) +
+          ' de récupération. Vous n’en avez que ' + Kit.jours(e.disponible.joursSup) + '.');
+      }
+      if (e.choisi.joursSurCp > e.disponible.joursCp) {
+        manques.push('vous aviez choisi ' + Kit.jours(e.choisi.joursSurCp) +
+          ' de congés payés. Vous n’en avez que ' + Kit.jours(e.disponible.joursCp) + '.');
+      }
+      if (manques.length) return plage + manques.join(' Et ');
+      return plage + 'votre répartition dépasse ce que vos réserves couvrent.';
+    }
+    if (e.code === 'IMPUTATION_INCOMPLETE') {
+      /* CORRECTION RELECTURE LOT 16 (B1) — LA PHRASE DISAIT QUE 5 NE COUVRE
+         PAS 5. Elle affichait la SOMME de ce que Maria avait réparti, et le
+         nombre qui manque — le décompte RG-06 réel de la période — n'était
+         nulle part. Le moteur le pose pourtant sur l'erreur ; la chaîne le
+         reprend désormais dans `attendu`. */
+      var couvre = e.recu != null ? e.recu
+        : e.choisi.joursSurCp + e.choisi.joursSurSup + e.choisi.joursSansSolde;
+      if (e.attendu != null) {
+        return plage + 'votre répartition couvre ' + Kit.jours(couvre) +
+          ', alors que la période en compte ' + Kit.jours(e.attendu) +
+          ' — samedis inclus.';
+      }
+      return plage + 'votre répartition ne correspond pas au décompte de la période.';
+    }
+    return plage + 'votre répartition n’est pas utilisable telle quelle.';
+  }
+
   function panneauChoixEcartes() {
     var appliquees = (vue.entree && vue.entree.resultat &&
                       vue.entree.resultat.imputationsAppliquees) || [];
-    var ecartees = appliquees.filter(function (i) { return i.source === 'defaut_choix_ecarte'; });
+    /* Les périodes déjà traitées par l'encart des réserves ne sont pas
+       redites ici : elles portent la même marque `defaut_choix_ecarte`, posée
+       par la chaîne, mais leur cause et leur remède sont différents. */
+    var vues = {};
+    ((vue.entree && vue.entree.imputationsEcartees) || []).forEach(function (e) {
+      vues[e.date_debut + '|' + e.date_fin] = true;
+    });
+    var ecartees = appliquees.filter(function (i) {
+      if (i.source !== 'defaut_choix_ecarte') return false;
+      var c = i.choixEcarte;
+      return !(c && vues[c.date_debut + '|' + c.date_fin]);
+    });
     if (!ecartees.length) return null;
 
     var b = Kit.warnbox(
@@ -825,9 +947,7 @@
        journée de congé ne porte aucune minute) et RG-09. */
     function base() {
       var simule = { type: type, sup_dues_override: etat.override };
-      return Engine.detailSupDuJour
-        ? Engine.detailSupDuJour(simule, c).base
-        : (type === 'absence_enfant' && c.sup_dues_si_enfant_absent === false ? 0 : c.minutes_sup_jour);
+      return Engine.detailSupDuJour(simule, cond() || {}).base;
     }
 
     function majEffet() {
@@ -836,16 +956,16 @@
       var total = b + etat.ajoutees - renoncees;
       Kit.vider(effet);
       effet.appendChild(Kit.ce('b', null, 'Ce jour : ' + Kit.duree(total)));
-      if (total !== c.minutes_sup_jour) {
+      if (total !== reg('minutes_sup_jour', 0)) {
         effet.appendChild(document.createTextNode(
-          ' au lieu de ' + Kit.duree(c.minutes_sup_jour) + '.'));
+          ' au lieu de ' + Kit.duree(reg('minutes_sup_jour', 0)) + '.'));
       } else {
         effet.appendChild(document.createTextNode(' — comme prévu au contrat.'));
       }
     }
 
     corps.appendChild(compteurMinutes('Heures supplémentaires en plus',
-      'Au-delà des ' + Kit.duree(c.minutes_sup_jour) + ' prévues au contrat.',
+      'Au-delà des ' + Kit.duree(reg('minutes_sup_jour', 0)) + ' prévues au contrat.',
       etat, 'ajoutees', function () { majEffet(); }));
 
     var caseRenonce = Kit.ce('label', 'coche-ligne');
@@ -857,7 +977,7 @@
     var txR = Kit.ce('span', 'tx');
     txR.appendChild(Kit.ce('b', null, 'Je renonce à mes minutes'));
     txR.appendChild(Kit.ce('span', 'd',
-      Kit.duree(c.minutes_sup_jour) + ' non ' + Kit.accordDe(c, 'réclamé') +
+      Kit.duree(reg('minutes_sup_jour', 0)) + ' non ' + Kit.accordDe(c, 'réclamé') +
       ' ce jour-là. Vous pouvez revenir dessus à tout moment.'));
     caseRenonce.appendChild(txR);
     corps.appendChild(caseRenonce);
@@ -934,7 +1054,7 @@
        c'est laisser un chiffre faux visible dans les données. */
     var simule = { type: type, sup_dues_override: etat.override,
                    minutes_sup_exceptionnelles: etat.ajoutees };
-    var det = Engine.detailSupDuJour(simule, c);
+    var det = Engine.detailSupDuJour(simule, cond() || {});
     var renoncees = etat.renonce ? det.base + det.ajoutees : 0;
 
     ecrire(global.DB.enregistrerJournee({
@@ -947,6 +1067,284 @@
       minutes_sup_renoncees: renoncees,
       sup_dues_override: etat.override
     }), bouton, 'Heures ajustées pour cette journée',
+      { contrats: [c.id], jours: [d] });
+  }
+
+
+  /* --- LOT 17 §17.5 et §17.6 : ce qui s'est passé ce jour-là ----------
+
+     « MARIA DÉCLARE L'ÉVÉNEMENT. L'APPLICATION NE DEVINE RIEN. »
+
+     C'est la phrase qui tient tout cet écran. Il ne demande pas « à quelle
+     heure l'enfant est-il parti ? » — il demande CE QUI S'EST PASSÉ, et
+     chaque réponse dit déjà qui a décidé :
+
+       un parent est venu en retard        → du temps de travail en plus
+       j'ai libéré plus tôt                → du temps que Maria rend
+       j'ai demandé qu'on l'amène plus tard → idem, sur le matin
+
+     Un parent qui vient chercher son enfant plus tôt DE LUI-MÊME n'est aucun
+     de ces trois cas : Maria était disponible, ses minutes restent dues, et
+     elle ne déclare rien. C'est pour ça qu'il n'y a pas de quatrième choix —
+     l'absence de choix EST la règle (A3).
+
+     AUCUN CALCUL ICI. L'écran collecte un événement et une heure ; c'est
+     `Engine.ecartDepuisHeureReelle` qui en fait des minutes signées, et lui
+     seul qui connaît la référence d'une journée (fin d'accueil + minutes
+     supplémentaires du contrat). Un écran qui soustrairait deux heures
+     lui-même referait la règle une deuxième fois, sur des horaires qui
+     changent d'un avenant à l'autre. */
+
+  var EVENEMENTS_ECART = [
+    ['', 'Rien à signaler'],
+    ['retard_parent', 'Un parent est venu en retard'],
+    ['liberation_anticipee', 'J’ai libéré plus tôt'],
+    ['arrivee_decalee', 'J’ai demandé qu’on me l’amène plus tard']
+  ];
+
+  var DESTINATIONS_ECART = [
+    ['recuperation', 'Ma récupération'],
+    ['conges_payes', 'Mes congés payés'],
+    ['sans_solde', 'Sans solde']
+  ];
+
+  /* Les types de journée qui n'ont pas d'horaire de référence : RG-04 leur
+     retire toute minute, écart compris. Proposer la déclaration dessus
+     laisserait croire à un effet qui n'existe pas. */
+  var TYPES_SANS_ECART = ['ferie', 'conge_maria', 'sans_solde',
+                          'familiarisation', 'hors_planning'];
+
+  function blocEcartHoraire(d) {
+    var c = vue.contrat;
+    var ligne = (vue.journees || {})[d] || {};
+    var type = Kit.typeDuJour(vue.journees, d);
+    var conditions = cond();
+
+    if (TYPES_SANS_ECART.indexOf(type) !== -1) return Kit.ce('div');
+    if (!conditions) return Kit.ce('div');
+
+    var etat = {
+      evenement: ligne.ecart_evenement || '',
+      heure: String(ligne.ecart_heure_reelle || '').slice(0, 5) || null,
+      destination: ligne.ecart_impute_sur || 'recuperation'
+    };
+
+    var det = Kit.ce('details', 'ajuster');
+    det.appendChild(Kit.ce('summary', null, 'Que s’est-il passé ce jour-là ?'));
+    if (etat.evenement) det.open = true;
+
+    var corps = Kit.ce('div', 'ajuster-corps');
+    det.appendChild(corps);
+
+    var reference = Engine.heureDeReference(conditions);
+    corps.appendChild(Kit.ce('p', 'sb q',
+      'La journée de ' + c.prenom_enfant + ' va de ' +
+      heureLisible(Engine.heureEnMinutes(conditions.heure_arrivee)) + ' à ' +
+      heureLisible(reference) + ' — la fin d’accueil plus vos ' +
+      Kit.duree(conditions.minutes_sup_jour) + '.'));
+
+    var selEvt = Kit.champSelect('Ce qui s’est passé', EVENEMENTS_ECART, etat.evenement);
+    corps.appendChild(selEvt.bloc);
+
+    var blocHeure = Kit.ce('div');
+    corps.appendChild(blocHeure);
+    var blocDest = Kit.ce('div');
+    corps.appendChild(blocDest);
+    var effet = Kit.ce('div', 'effet-heures');
+    corps.appendChild(effet);
+
+    var champHeure = null;
+    var selDest = null;
+
+    function evenementChoisi() { return selEvt.select.value; }
+
+    function minutesDeclarees() {
+      var evt = evenementChoisi();
+      if (!evt || !champHeure) return null;
+      try {
+        return Engine.ecartDepuisHeureReelle(conditions, evt, champHeure.valeur());
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function redessiner() {
+      var evt = evenementChoisi();
+      Kit.vider(blocHeure);
+      Kit.vider(blocDest);
+      Kit.vider(effet);
+      champHeure = null;
+      selDest = null;
+      blocDest.hidden = true;
+
+      if (!evt) {
+        effet.appendChild(Kit.ce('div', 'sb q',
+          'Vos ' + Kit.duree(conditions.minutes_sup_jour) + ' restent dues. ' +
+          'Un parent qui vient chercher son enfant plus tôt de lui-même n’est pas ' +
+          'un événement : vous étiez disponible.'));
+        majBouton();
+        return;
+      }
+
+      /* L'heure demandée dépend de l'événement : celle du MATIN pour une
+         arrivée décalée, celle du SOIR pour les deux autres. Demander « heure
+         de départ » sur une arrivée décalée ferait saisir n'importe quoi. */
+      var matin = evt === 'arrivee_decalee';
+      var defaut = etat.heure ||
+        heureIso(matin ? Engine.heureEnMinutes(conditions.heure_arrivee) : reference);
+      champHeure = Kit.champHeure(matin ? 'Heure d’arrivée réelle' : 'Heure de départ réelle',
+        defaut);
+      blocHeure.appendChild(champHeure.bloc);
+      champHeure.select.addEventListener('change', function () { majEffet(); });
+
+      poserDestination();
+      majEffet();
+    }
+
+    /* LE SÉLECTEUR DE DESTINATION EST CONSTRUIT UNE SEULE FOIS, puis montré ou
+       caché. Le reconstruire à chaque changement d'heure ferait perdre le
+       choix de Maria — elle prend ses congés payés, elle change l'heure, et
+       l'écran est revenu à la récupération sans rien dire. C'est le genre de
+       remise à zéro silencieuse qu'on ne voit qu'en cliquant. */
+    function poserDestination() {
+      selDest = Kit.champSelect('Ces minutes se déduisent de',
+        DESTINATIONS_ECART, etat.destination);
+      selDest.select.addEventListener('change', function () {
+        etat.destination = selDest.select.value;
+        majEffet();
+      });
+      blocDest.appendChild(selDest.bloc);
+      blocDest.appendChild(Kit.ce('p', 'sb q',
+        'Votre récupération peut passer sous zéro : c’est du temps que vous rendrez.'));
+      blocDest.hidden = true;
+    }
+
+    function majEffet() {
+      var minutes = minutesDeclarees();
+      Kit.vider(effet);
+      blocDest.hidden = true;
+
+      if (minutes === null) {
+        effet.appendChild(Kit.ce('div', 'sb q', 'Heure illisible.'));
+        majBouton();
+        return;
+      }
+      if (minutes === 0) {
+        /* Une heure réelle égale à la référence n'est pas un événement. On le
+           dit plutôt que d'enregistrer une déclaration sans effet, que la
+           contrainte `journee_ecart_coherent` refuserait de toute façon. */
+        effet.appendChild(Kit.ce('div', 'sb q',
+          'Cette heure est exactement celle prévue : il n’y a rien à déclarer.'));
+        majBouton();
+        return;
+      }
+
+      /* §17.6 — LA DESTINATION, seulement pour un écart NÉGATIF. Un retard de
+         parent va toujours à la récupération : il n'y a rien à choisir. */
+      if (minutes < 0) {
+        blocDest.hidden = false;
+        var lb = selDest.bloc.querySelector('.lb');
+        if (lb) lb.textContent = 'Ces ' + Kit.duree(minutes) + ' se déduisent de';
+      }
+
+      /* L'effet CHIFFRÉ, rejoué par le moteur — jamais recomposé ici (B.0-5).
+         On lui donne la journée telle qu'elle sera enregistrée. */
+      var simule = {
+        type: type,
+        minutes_sup_exceptionnelles: ligne.minutes_sup_exceptionnelles || 0,
+        minutes_sup_renoncees: ligne.minutes_sup_renoncees || 0,
+        sup_dues_override: ligne.sup_dues_override === undefined ? null : ligne.sup_dues_override,
+        ecart_minutes: minutes,
+        ecart_impute_sur: etat.destination
+      };
+      var detail = Engine.detailSupDuJour(simule, conditions);
+      var totalJour = detail.base + detail.ajoutees - detail.renoncees + detail.ecartSurRecuperation;
+
+      var phrase = Kit.ce('div');
+      phrase.appendChild(Kit.ce('b', null, 'Ce jour : ' + Kit.heures(totalJour)));
+      phrase.appendChild(document.createTextNode(
+        ' au lieu de ' + Kit.duree(conditions.minutes_sup_jour) + '.'));
+      effet.appendChild(phrase);
+
+      if (detail.minutesSurCp > 0) {
+        effet.appendChild(Kit.ce('div', 'sb',
+          Kit.duree(detail.minutesSurCp) + ' seront retirées de vos congés payés.'));
+      }
+      if (detail.minutesSansSolde > 0) {
+        var retenue = (conditions.brut_mensuel_centimes != null)
+          ? Engine.montantCentimes(conditions.brut_mensuel_centimes, detail.minutesSansSolde)
+          : null;
+        effet.appendChild(Kit.ce('div', 'sb',
+          retenue != null
+            ? 'Retenue sur le salaire : ' + Kit.eur(retenue) + '.'
+            : 'La retenue ne peut pas être chiffrée, la rémunération de ce mois ' +
+              'n’est pas renseignée.'));
+      }
+      if (detail.ecartSurRecuperation < 0) {
+        var apres = Kit.supDisponible(vue.entree.resultat.compteurSortie) + detail.ecartSurRecuperation;
+        if (apres < 0) {
+          effet.appendChild(Kit.ce('div', 'sb',
+            'Votre récupération passera en négatif : vous devrez ' +
+            Kit.heures(-apres) + '.'));
+        }
+      }
+      majBouton();
+    }
+
+    var b = Kit.bouton('btn nt', function () {
+      enregistrerEcart(d, evenementChoisi(),
+        champHeure ? champHeure.valeur() : null,
+        minutesDeclarees(), etat.destination, b);
+    });
+    corps.appendChild(b);
+
+    function majBouton() {
+      var evt = evenementChoisi();
+      var minutes = minutesDeclarees();
+      if (!evt) {
+        b.textContent = etat.evenement ? 'Retirer ce que j’avais déclaré' : 'Rien à enregistrer';
+        b.disabled = !etat.evenement;
+        return;
+      }
+      b.textContent = 'Enregistrer';
+      b.disabled = (minutes === null || minutes === 0);
+    }
+
+    selEvt.select.addEventListener('change', redessiner);
+    redessiner();
+    return det;
+  }
+
+  function heureLisible(minutes) {
+    return Math.floor(minutes / 60) + 'h' + String(minutes % 60).padStart(2, '0');
+  }
+  function heureIso(minutes) {
+    return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' +
+           String(minutes % 60).padStart(2, '0');
+  }
+
+  function enregistrerEcart(d, evenement, heure, minutes, destination, bouton) {
+    var c = vue.contrat;
+    var ligne = (vue.journees || {})[d] || {};
+    var type = Kit.typeDuJour(vue.journees, d);
+
+    /* Retirer une déclaration : les quatre colonnes repartent à `null`
+       ENSEMBLE. Une ligne à demi effacée — un événement sans minutes — serait
+       refusée par la contrainte `journee_ecart_coherent`, et surtout elle se
+       relirait de travers. */
+    var champs = {
+      contrat_id: c.id, jour: d,
+      type: ligne.type || 'presence',
+      minutes_reelles: ligne.minutes_reelles == null ? null : ligne.minutes_reelles,
+      entretien_centimes: ligne.entretien_centimes == null ? null : ligne.entretien_centimes,
+      commentaire: ligne.commentaire == null ? null : ligne.commentaire,
+      ecart_minutes: evenement ? minutes : null,
+      ecart_evenement: evenement || null,
+      ecart_heure_reelle: evenement ? heure : null,
+      ecart_impute_sur: (evenement && minutes < 0) ? destination : null
+    };
+    ecrire(global.DB.enregistrerJournee(champs), bouton,
+      evenement ? 'Journée enregistrée' : 'Déclaration retirée',
       { contrats: [c.id], jours: [d] });
   }
 
@@ -992,7 +1390,7 @@
   function contratsServis(d) {
     if (Feries.estJourFerie(d)) return [];
     return global.App.contrats().filter(function (c) {
-      var planning = c.jours_planning || [1, 2, 3, 4, 5];
+      var planning = planningDuMois();
       if (planning.indexOf(Engine.jourSemaine(d)) === -1) return false;
       if (c.date_debut && d < c.date_debut) return false;
       if (c.date_fin && d > c.date_fin) return false;
@@ -1006,7 +1404,7 @@
   function contratsClos(d) {
     if (Feries.estJourFerie(d)) return [];
     return global.App.contrats().filter(function (c) {
-      var planning = c.jours_planning || [1, 2, 3, 4, 5];
+      var planning = planningDuMois();
       if (planning.indexOf(Engine.jourSemaine(d)) === -1) return false;
       if (c.date_debut && d < c.date_debut) return false;
       if (c.date_fin && d > c.date_fin) return false;
@@ -1020,7 +1418,7 @@
     corps.appendChild(Kit.warnbox(
       'Mois déjà clôturé pour ' + clos.map(function (c) { return c.prenom_enfant; }).join(', '),
       'Ce ' + (clos.length > 1 ? 'ces contrats ne seront pas modifiés' : 'contrat ne sera pas modifié') +
-      ' : leur récapitulatif de ' + Kit.libelleMoisAnnee(vue.annee, vue.mois) + ' est verrouillé.'));
+      ' : leur récapitulatif ' + Kit.deMoisAnnee(vue.annee, vue.mois) + ' est verrouillé.'));
   }
 
   /* Correction A5 : la pose groupée passe par un upsert qui REMPLACE la ligne
@@ -1082,7 +1480,7 @@
        contrat du lundi au vendredi n'en compte qu'un. On interroge le moteur
        pour chacun et on annonce l'étendue réelle plutôt qu'un chiffre unique. */
     var decomptes = servis.map(function (c) {
-      return Engine.decompterJoursOuvrables(d, d, c.jours_planning || [1, 2, 3, 4, 5]);
+      return Engine.decompterJoursOuvrables(d, d, planningDuMois());
     });
     var mini = decomptes.length ? Math.min.apply(null, decomptes) : 0;
     var maxi = decomptes.length ? Math.max.apply(null, decomptes) : 0;
@@ -1108,11 +1506,25 @@
         entretien_centimes: extra ? extra.entretien_centimes : null
       });
     }
-    var salaire = vue.entree.salaire || { brut_mensuel_centimes: 0, net_mensuel_centimes: 0 };
-    return Engine.calculerMois({
+    /* LOT 17 §17.3 — LES CONDITIONS DU MOIS, telles que la chaîne les a
+       résolues. Ce rejeu doit voir EXACTEMENT ce que voit la chaîne : lui
+       passer les réglages de `contrat` ferait diverger l'aperçu « voilà ce que
+       ce geste change » du chiffre réellement enregistré, sur un écran dont
+       c'est tout l'objet. Le brut et le net peuvent manquer (§17.2 point 3) ;
+       comme dans la chaîne, ils valent alors zéro et l'écran le signale. */
+    var condMois = cond() || {};
+    var conditions = {};
+    for (var kc in condMois) conditions[kc] = condMois[kc];
+    conditions.brut_mensuel_centimes = condMois.brut_mensuel_centimes || 0;
+    conditions.net_mensuel_centimes = condMois.net_mensuel_centimes || 0;
+    /* LOT 16 §16.1 — MÊME REPLI QUE LA CHAÎNE. Sans lui, un mois dont la
+       ventilation ne tient plus s'affichait bien (la chaîne se replie) mais
+       toucher un jour faisait retomber cet aperçu sur l'exception : la feuille
+       du jour devenait inutilisable sur le mois précisément à corriger.
+       Une seule règle de repli, définie dans chaine-mois.js, appelée ici. */
+    return Chaine.calculerMoisAvecRepli({
       contrat: vue.contrat,
-      salaire: { brut_mensuel_centimes: salaire.brut_mensuel_centimes,
-                 net_mensuel_centimes: salaire.net_mensuel_centimes },
+      conditions: conditions,
       journees: lignes,
       compteurEntree: vue.entree.compteurEntree,
       annee: vue.annee,
@@ -1123,7 +1535,7 @@
          à un mois ventilé selon l'ordre par défaut : l'écart affiché n'était pas
          celui du geste, mais celui de l'oubli. */
       imputations: vue.imputations || []
-    });
+    }).resultat;
   }
 
   function phraseEcart(apres, avant) {
@@ -1142,7 +1554,7 @@
     /* RG-09 : les minutes restent dues, sauf si le paramètre du contrat dit le
        contraire. La phrase suit le paramètre, elle ne le devine pas. */
     if (deltaSup === 0) {
-      phrase += ' Vos ' + Kit.duree(vue.contrat.minutes_sup_jour) + ' restent dues';
+      phrase += ' Vos ' + Kit.duree(reg('minutes_sup_jour', 0)) + ' restent dues';
     } else if (deltaSup < 0) {
       phrase += ' Vos ' + Kit.duree(deltaSup) + ' ne sont pas dues sur ce contrat';
     } else {

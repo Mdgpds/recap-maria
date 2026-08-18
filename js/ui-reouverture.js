@@ -160,7 +160,8 @@
 
   function feuilleHistorique(opts) {
     var libelleMois = Kit.libelleMoisAnnee(opts.annee, opts.mois);
-    Kit.ouvrirFeuille('Historique de ' + libelleMois, opts.contrat.prenom_enfant,
+    Kit.ouvrirFeuille('Historique ' + Kit.deMoisAnnee(opts.annee, opts.mois),
+      opts.contrat.prenom_enfant,
       function (corps) {
         var attente = Kit.ce('div', 'attente', 'Lecture de l’historique…');
         corps.appendChild(attente);
@@ -219,18 +220,20 @@
   /* 4. Reclôture : montrer les écarts avant d'écrire                   */
   /* ------------------------------------------------------------------ */
 
-  /* `cp` : les congés payés se comptent en DIXIÈMES de jour dans tout le
-     moteur. Sans ce cas, 25 dixièmes s'afficheraient « 25 j » au lieu de
-     « 2,5 j » — un écart de compteur lu dix fois trop grand, dans l'écran
-     dont le seul rôle est de dire la vérité sur ce qui change. */
-  function valeurFormatee(valeur, format) {
+  /* `cp` : les congés payés se comptent en MINUTES dans tout le moteur depuis
+     le lot 17 (§17.6), et s'affichent en jours. Sans ce cas, 1 350 minutes
+     s'afficheraient « 1 350 j » au lieu de « 2,5 j » — un écart de compteur
+     illisible, dans l'écran dont le seul rôle est de dire la vérité sur ce qui
+     change. Le facteur vient des conditions du mois rouvert. */
+  function valeurFormatee(valeur, format, minutesParJourConge) {
     if (format === 'euros') return Kit.eur(valeur);
     if (format === 'minutes') return Kit.heures(valeur);
-    if (format === 'cp') return Kit.joursCp(valeur);
+    if (format === 'cp') return Kit.joursCp(valeur, minutesParJourConge);
     return Kit.jours(valeur);
   }
 
-  /* opts = { contrat, annee, mois, recap, ecarts, confirmer(bouton) }
+  /* opts = { contrat, annee, mois, recap, ecarts, minutesParJourConge,
+              confirmer(bouton) }
      N'est appelée que s'il y a au moins un écart : sans écart, on reclôture
      directement, sans écran intermédiaire. */
   function feuilleEcarts(opts) {
@@ -241,7 +244,8 @@
         var lignes = Kit.ce('div', 'lines');
         opts.ecarts.forEach(function (ec) {
           Kit.ligne(lignes, ec.libelle,
-            valeurFormatee(ec.ancien, ec.format) + ' → ' + valeurFormatee(ec.nouveau, ec.format));
+            valeurFormatee(ec.ancien, ec.format, opts.minutesParJourConge) + ' → ' +
+            valeurFormatee(ec.nouveau, ec.format, opts.minutesParJourConge));
         });
         corps.appendChild(lignes);
 

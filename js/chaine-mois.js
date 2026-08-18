@@ -40,6 +40,11 @@
     if (global.DB) return global.DB;
     throw new Error('chaine-mois : DB (js/db.js) non chargé.');
   }
+  function resoudreFeries() {
+    if (global.Feries) return global.Feries;
+    if (typeof module !== 'undefined' && module.exports) return require('./feries.js');
+    throw new Error('chaine-mois : Feries (js/feries.js) non chargé.');
+  }
 
   /* ------------------------------------------------------------------ */
   /* Calendrier (pur, sans fuseau)                                       */
@@ -134,6 +139,222 @@
     });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 17 — DEUX DETTES DU LOT 16 RENDUES AU MOTEUR                    */
+  /* ------------------------------------------------------------------ */
+
+  /* Le lot 16 avait dû écrire ICI deux fonctions qui redisaient RG-06 :
+     `partDuMois`, qui déduisait la part d'une période à cheval par différence
+     de deux décomptes, et `feriesDecomptes`, qui recopiait la boucle de
+     reprise du moteur. Toutes deux étaient justes, et toutes deux étaient au
+     mauvais endroit : une règle métier écrite à deux endroits finit toujours
+     par diverger, et celle-ci est précisément celle qui fait litige avec les
+     familles.
+
+     Le lot 17 est le seul autorisé à rouvrir `js/engine.js` : la dette est
+     donc soldée. `Engine.joursOuvrablesParMois` existait déjà, non exposée ;
+     `Engine.feriesDeLaPeriode` est le déménagement littéral de
+     `feriesDecomptes`, boucle pour boucle. Il ne reste ici qu'une LECTURE de
+     ce que le moteur produit — plus aucune règle.
+
+     `feriesDecomptes` n'est plus exportée du tout : les écrans appellent
+     `Engine.feriesDeLaPeriode`. Laisser un alias aurait gardé deux noms pour
+     une seule règle, ce qui est la moitié du défaut d'origine. */
+
+  /* Part d'une période imputée tombant dans un mois donné (§16.8 : « Du 29
+     juillet au 4 août — 6 jours ouvrables, dont 2 en août »). Ce n'est plus
+     un calcul, c'est la lecture d'une tranche. */
+  function partDuMois(Engine, imputation, planning, annee, mois) {
+    if (!imputation || !imputation.date_debut || !imputation.date_fin) return 0;
+    if (imputation.date_fin < imputation.date_debut) return 0;
+    var cible = annee + '-' + String(mois).padStart(2, '0');
+    var tranches = Engine.joursOuvrablesParMois(
+      imputation.date_debut, imputation.date_fin, planning);
+    for (var i = 0; i < tranches.length; i++) {
+      if (tranches[i].cle === cible) return tranches[i].jours;
+    }
+    return 0;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 16 §16.1 — Le repli d'imputation                                */
+  /* ------------------------------------------------------------------ */
+
+  /* Les trois codes que le moteur lève quand une ventilation de congé
+     enregistrée ne peut pas être honorée. Ils ont tous la même conséquence
+     pour Maria : sans repli, `serie` rejette, et l'écran qui lui permettrait
+     de corriger est précisément celui qui refuse de s'ouvrir. */
+  var CODES_IMPUTATION = {
+    IMPUTATION_DEPASSE_RESERVES: true,
+    IMPUTATION_INCOMPLETE: true,
+    IMPUTATION_NEGATIVE: true
+  };
+
+  function estErreurImputation(e) {
+    return !!(e && e.code && CODES_IMPUTATION[e.code] === true);
+  }
+
+  /* Un nombre de jours volontairement hors d'atteinte : `imputerConges` le
+     répartit dans l'ordre du contrat, épuise les DEUX réserves, et le
+     débordement part en sans solde. Ce qu'il a pu prendre sur chacune est
+     donc, en jours, ce que chaque réserve couvre — quel que soit RG-07.
+     C'est le moteur qui divise ; rien n'est recalculé ici. */
+  var SONDE_JOURS = 1000000;
+
+  function memeParams(params, imputations) {
+    return {
+      contrat: params.contrat, conditions: params.conditions, journees: params.journees,
+      compteurEntree: params.compteurEntree, annee: params.annee, mois: params.mois,
+      imputations: imputations
+    };
+  }
+
+  /* Ce que les réserves du mois couvrent réellement, en jours, demandé au
+     moteur. Sert à l'encart : « vous aviez choisi 6 jours de récupération,
+     vous n'en avez que 5 ». */
+  function reservesEnJours(Engine, conditions, compteurEntree) {
+    var c = compteurEntree || {};
+    var r = Engine.imputerConges(SONDE_JOURS, {
+      minutesCp: (c.minutesCpAcquis || 0) - (c.minutesCpPris || 0),
+      minutesSup: c.minutesSup || 0
+    }, conditions);
+    return { joursCp: r.joursSurCp, joursSup: r.joursSurSup };
+  }
+
+  /* Reprend la forme que le moteur produit déjà pour un choix écarté
+     (`source: 'defaut_choix_ecarte'` + `choixEcarte`), afin que les écrans
+     n'aient qu'UN seul cas à connaître. La période marquée est celle que le
+     moteur a décomptée par défaut et qui recouvre l'imputation refusée. */
+  function marquerEcartees(resultat, ecartees) {
+    var appliquees = (resultat && resultat.imputationsAppliquees) || [];
+    ecartees.forEach(function (x) {
+      for (var i = 0; i < appliquees.length; i++) {
+        var a = appliquees[i];
+        if (a.date_debut > x.imputation.date_fin) continue;
+        if (a.date_fin < x.imputation.date_debut) continue;
+        /* CORRECTION RELECTURE LOT 16 (C5) — DEUX IMPUTATIONS ÉCARTÉES PEUVENT
+           TOMBER DANS LA MÊME PÉRIODE REGROUPÉE PAR LE MOTEUR.
+
+           La boucle sautait les maillons déjà marqués (`source !== 'defaut'`)
+           et sortait dès le premier trouvé : la seconde écartée n'était alors
+           jamais marquée, et le calendrier de l'espace enfant n'en montrait
+           qu'une. Les chiffres étaient justes, l'affichage incomplet.
+
+           On marque désormais la période — que ce soit la première fois ou la
+           seconde — et `choixEcarte` devient une LISTE quand plusieurs choix
+           tombent au même endroit. La forme reste compatible : le premier
+           écarté garde sa place, les écrans qui ne lisent que `choixEcarte`
+           continuent de fonctionner. */
+        if (a.source !== 'defaut' && a.source !== 'defaut_choix_ecarte') continue;
+        var choix = { date_debut: x.imputation.date_debut, date_fin: x.imputation.date_fin };
+        if (a.source === 'defaut_choix_ecarte') {
+          a.choixEcartes = (a.choixEcartes || [a.choixEcarte]).concat([choix]);
+        } else {
+          a.source = 'defaut_choix_ecarte';
+          a.choixEcarte = choix;
+          a.choixEcartes = [choix];
+        }
+        return;
+      }
+    });
+  }
+
+  /* Calcule un mois. Si — et SEULEMENT si — le moteur refuse à cause d'une
+     ventilation devenue impossible, la ou les imputations en cause sont
+     écartées et le mois est rejoué avec l'ordre par défaut du contrat pour
+     ces périodes-là.
+
+     AUCUNE RÈGLE MÉTIER ICI, et le moteur n'est pas assoupli : il continue de
+     dire non. Ce module se contente de retirer une ligne de l'entrée et de
+     redemander — c'est de l'orchestration, sa seule raison d'être.
+
+     Pourquoi une par une et dans l'ordre chronologique : c'est exactement
+     l'ordre dans lequel le moteur décrémente les réserves au fil des périodes
+     (`js/engine.js`, boucle sur `plan`). Une imputation valable seule peut
+     devenir impossible après qu'une précédente a consommé la réserve ;
+     l'inverse ne se produit pas. Les ajouter une à une dans cet ordre isole
+     donc celles qui ne passent pas, sans jamais en écarter une qui tenait —
+     c'est le critère A6 (« seule l'imputation fautive est écartée »).
+
+     Sur un échec d'une autre nature, RIEN n'est rejoué et l'erreur remonte
+     telle quelle : l'écran affichera ce qu'il peut et dira ce qui manque.
+     Une erreur qu'on ne sait pas nommer ne doit pas être avalée. */
+  function calculerMoisAvecRepli(params) {
+    var Engine = resoudreEngine();
+    var premiere;
+    try {
+      return { resultat: Engine.calculerMois(params), ecartees: [] };
+    } catch (e) {
+      if (!estErreurImputation(e)) throw e;
+      premiere = e;
+    }
+
+    var candidates = (params.imputations || []).slice().sort(function (a, b) {
+      if (a.date_debut === b.date_debut) return 0;
+      return a.date_debut < b.date_debut ? -1 : 1;
+    });
+    var retenues = [];
+    var ecartees = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var essai = retenues.concat([candidates[i]]);
+      try {
+        Engine.calculerMois(memeParams(params, essai));
+        retenues = essai;
+      } catch (e2) {
+        if (!estErreurImputation(e2)) throw e2;
+        /* CORRECTION RELECTURE LOT 16 (B1) — LE NOMBRE QUI MANQUE.
+
+           Sur `IMPUTATION_INCOMPLETE`, le moteur pose sur l'erreur le décompte
+           RG-06 qu'il a lui-même calculé (`attendu`) et la somme reçue
+           (`recu`). Ces deux nombres n'étaient pas repris : l'encart écrivait
+           donc « votre répartition ne couvre pas les 5 jours » là où 5 était
+           justement ce qu'elle avait réparti — la phrase disait que 5 ne
+           couvre pas 5, et le nombre manquant, 6, n'apparaissait nulle part.
+
+           Sans lui, l'écran de correction ne peut pas non plus annoncer le bon
+           nombre de jours à répartir, et Maria tourne en rond indéfiniment. */
+        ecartees.push({
+          imputation: candidates[i],
+          code: e2.code,
+          attendu: typeof e2.attendu === 'number' ? e2.attendu : null,
+          recu: typeof e2.recu === 'number' ? e2.recu : null
+        });
+      }
+    }
+
+    /* Aucune imputation n'a pu être désignée : le refus ne vient pas d'une
+       ligne identifiable. On ne masque pas ce qu'on ne comprend pas. */
+    if (!ecartees.length) throw premiere;
+
+    var resultat = Engine.calculerMois(memeParams(params, retenues));
+    marquerEcartees(resultat, ecartees);
+
+    var dispo = reservesEnJours(Engine, params.conditions, params.compteurEntree);
+    var detail = ecartees.map(function (x) {
+      var imp = x.imputation;
+      return {
+        /* L'identifiant, pour que le bouton « Corriger la répartition » ouvre
+           LA période concernée et pas le parcours de pose. */
+        id: imp.id,
+        date_debut: imp.date_debut,
+        date_fin: imp.date_fin,
+        code: x.code,
+        /* Le décompte RG-06 réel de la période, tel que le moteur le calcule
+           (B1). `null` quand le code d'erreur ne le porte pas. */
+        attendu: x.attendu,
+        recu: x.recu,
+        choisi: {
+          joursSurCp: imp.jours_sur_cp || 0,
+          joursSurSup: imp.jours_sur_sup || 0,
+          joursSansSolde: imp.jours_sans_solde || 0,
+          joursOuvrables: imp.jours_ouvrables == null ? null : imp.jours_ouvrables
+        },
+        disponible: { joursCp: dispo.joursCp, joursSup: dispo.joursSup }
+      };
+    });
+    return { resultat: resultat, ecartees: detail };
+  }
+
   function chargerRecaps(DB, contratId, anneeMin, anneeMax) {
     if (typeof DB.listRecapsPeriode === 'function') {
       return DB.listRecapsPeriode(contratId, anneeMin, anneeMax).then(function (lignes) {
@@ -207,9 +428,73 @@
     if (typeof s.minutesSup !== 'number') return defaut;
     return {
       minutesSup: s.minutesSup - (donnees.minutesSupAcquises || 0) + (imp.minutesSupConsommees || 0),
-      dixiemesCpAcquis: (s.dixiemesCpAcquis || 0) - (donnees.dixiemesCpAcquis || 0),
-      dixiemesCpPris: (s.dixiemesCpPris || 0) - (imp.dixiemesCpConsommes || 0)
+      minutesCpAcquis: (s.minutesCpAcquis || 0) - (donnees.minutesCpAcquis || 0),
+      minutesCpPris: (s.minutesCpPris || 0) - (imp.minutesCpConsommees || 0)
     };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 17 §17.6 — LES INSTANTANÉS D'AVANT LA BASCULE                   */
+  /* ------------------------------------------------------------------ */
+
+  /* UN MOIS CLÔTURÉ N'EST JAMAIS RÉÉCRIT. C'est la quatrième des six qualités
+     à ne pas casser, et le trigger d'immuabilité de la migration `002` le
+     refuserait de toute façon. Les instantanés figés avant le lot 17 portent
+     donc pour toujours des congés payés en DIXIÈMES DE JOUR, et ceux d'après
+     les portent en MINUTES.
+
+     La conversion se fait donc à la LECTURE, sur une COPIE, et jamais en base.
+     Un instantané ancien se reconnaît à l'absence du champ `uniteCp`, que le
+     moteur pose depuis le lot 17 — on ne devine pas l'unité d'un nombre.
+
+     POURQUOI ÇA COMPTE. Le `compteurSortie` d'un mois figé alimente le mois
+     suivant. Un solde de 300 dixièmes lu comme 300 minutes ferait passer
+     30 jours de congés payés pour une demi-heure, et l'écart se propagerait
+     sur toutes les années suivantes sans qu'aucun écran ne le signale — les
+     compteurs ne se remettent jamais à zéro (RG-12).
+
+     Le facteur est `minutes_par_jour_conge / 10`, pris dans les conditions du
+     mois concerné : c'est la valeur qui avait cours quand l'instantané a été
+     figé, et c'est la même que celle qu'a utilisée la migration `014`. */
+  function instantaneEnMinutes(donnees, conditions) {
+    if (!donnees) return donnees;
+    if (donnees.uniteCp === 'minutes') return donnees;      // déjà à la bonne unité
+    var mpjc = (conditions && conditions.minutes_par_jour_conge) || 540;
+    var f = mpjc / 10;
+
+    var copie = {};
+    var k;
+    for (k in donnees) copie[k] = donnees[k];
+
+    copie.minutesCpAcquis = (donnees.dixiemesCpAcquis || 0) * f;
+    if (donnees.imputation) {
+      var imp = {};
+      for (k in donnees.imputation) imp[k] = donnees.imputation[k];
+      imp.minutesCpConsommees = (donnees.imputation.dixiemesCpConsommes || 0) * f;
+      copie.imputation = imp;
+    }
+    if (donnees.compteurSortie) {
+      var cs = {};
+      for (k in donnees.compteurSortie) cs[k] = donnees.compteurSortie[k];
+      cs.minutesCpAcquis = (donnees.compteurSortie.dixiemesCpAcquis || 0) * f;
+      cs.minutesCpPris = (donnees.compteurSortie.dixiemesCpPris || 0) * f;
+      copie.compteurSortie = cs;
+    }
+    /* §17.8 — le brut RÉELLEMENT dû du mois. Les instantanés d'avant le lot 17
+       ne le portent pas ; il se reconstitue exactement, parce qu'aucun d'eux
+       n'a connu le prorata du §17.7 : brut contractuel moins la retenue de
+       sans solde, déjà exprimée en brut (RG-08). Sans cette reprise,
+       l'indemnité de rupture ignorerait tous les mois clôturés — c'est-à-dire
+       presque toute la vie du contrat. */
+    if (copie.brutDuCentimes == null) {
+      copie.brutDuCentimes = Math.max(0,
+        (donnees.salaireBrutCentimes || 0) - (donnees.retenueSansSoldeCentimes || 0));
+    }
+    /* On NE POSE PAS `uniteCp` sur la copie : elle resterait indiscernable
+       d'un instantané récent si elle était un jour réécrite en base. La copie
+       vit le temps d'un affichage, et c'est tout. */
+    copie.instantaneConverti = true;
+    return copie;
   }
 
   /* Rejoue tous les mois du contrat depuis son point de départ (compteur
@@ -231,8 +516,10 @@
        resultat,             // ResultatMois (instantané figé, ou calcul courant)
        fige,                 // true si le mois porte un récap figé
        recap,                // la ligne recap_mensuel s'il en existe une
-       salaire,              // barème RG-15 applicable au mois (ou null)
-       salaireManquant,      // aucun barème applicable et mois non figé
+       conditions,           // avenant en vigueur ce mois-là (§17.3), ou null
+       salaire,              // idem — nom conservé pour les écrans qui ne
+                             //   lisent que le brut et le net
+       salaireManquant,      // aucune rémunération connue et mois non figé
        avantInitialisation,  // mois antérieur à la reprise manuelle des compteurs
        compteurEntree, compteurSortie
      }
@@ -244,11 +531,17 @@
     var Engine = resoudreEngine();
     var DB = resoudreDb();
 
+    /* LOT 17 §17.4 — `opts.avenants` REMPLACE la lecture en base, pour rejouer
+       un mois « comme si » un avenant existait. C'est ce qui permet à l'écran
+       « Faire un avenant » d'annoncer l'effet chiffré AVANT d'écrire, sans
+       recomposer un seul montant à la main (B.0-5).
+
+       Rien n'est écrit : la liste passée ici ne sort jamais de ce calcul. */
     return Promise.all([
-      DB.getSalaires(contrat.id),
+      opts.avenants ? Promise.resolve(opts.avenants) : DB.getAvenants(contrat.id),
       DB.getCompteurInitial(contrat.id)
     ]).then(function (res) {
-      var salaires = res[0] || [];
+      var avenants = res[0] || [];
       var init = res[1];
 
       /* Point de départ « officiel » de la chaîne : la reprise manuelle des
@@ -256,9 +549,11 @@
          sinon le début du contrat. */
       var depart = init ? moisDeDate(init.date_reference) : moisDeDate(contrat.date_debut);
       var compteurInitial = init
-        ? { minutesSup: init.minutes_sup, dixiemesCpAcquis: init.dixiemes_cp_acquis, dixiemesCpPris: init.dixiemes_cp_pris }
-        : { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 };
-      var zero = { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 };
+        ? { minutesSup: init.minutes_sup,
+            minutesCpAcquis: init.minutes_cp_acquis,
+            minutesCpPris: init.minutes_cp_pris }
+        : { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 };
+      var zero = { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 };
 
       /* La chaîne peut devoir commencer AVANT ce point de départ : c'est le
          cas quand on remonte à une famille de l'année précédente (C4) ou
@@ -319,46 +614,99 @@
                    peut exister pour lui, et agregerPeriode l'écarte. */
                 var hors = !contratCouvreLeMois(contrat, mm.annee, mm.mois);
                 var compteurEntree = compteur;
-                var salaire = Engine.salaireApplicable(salaires, mm.annee, mm.mois);
+                /* §17.3 — LES CONDITIONS DU MOIS, et plus seulement son
+                   barème. Même règle de sélection qu'avant (le dernier avenant
+                   dont la date d'effet précède ou égale le 1er du mois),
+                   périmètre élargi aux onze réglages. */
+                var conditions = Engine.conditionsApplicables(avenants, mm.annee, mm.mois);
+                var salaire = conditions;
                 var entree;
 
                 if (recap && recap.statut === 'fige' && recap.donnees) {
                   /* Mois figé : instantané tel quel, aucun recalcul. Son
                      compteur d'entrée est celui du document lui-même. */
-                  var d = recap.donnees;
+                  /* §17.6 — un instantané figé avant le lot 17 porte des
+                     dixièmes de jour. Il n'est PAS réécrit : on en lit une
+                     copie convertie, le temps de l'affichage et du chaînage. */
+                  var d = instantaneEnMinutes(recap.donnees, conditions);
                   compteur = d.compteurSortie || compteur;
                   entree = {
                     annee: mm.annee, mois: mm.mois, cle: cle,
                     resultat: d, fige: true, recap: recap,
+                    conditions: conditions,
                     salaire: salaire, salaireManquant: false,
                     avantInitialisation: avant,
                     horsContrat: hors,
+                    /* Un mois figé n'est jamais recalculé : rien ne peut y
+                       être écarté. La forme reste la même pour que les écrans
+                       n'aient pas à distinguer. */
+                    imputationsEcartees: [],
                     compteurEntree: compteurEntreeDe(d, compteurEntree),
                     compteurSortie: compteur
+                  };
+                } else if (!conditions) {
+                  /* AUCUNE CONDITION APPLICABLE À CE MOIS. Depuis le lot 17,
+                     chaque contrat a reçu à la reprise un avenant daté du 1er
+                     du mois de sa `date_debut` (§17.2) : un mois sans
+                     condition est donc nécessairement ANTÉRIEUR au contrat, et
+                     il porte déjà `horsContrat`. Il n'y a rien à calculer, et
+                     surtout rien à deviner — un mois calculé sur des réglages
+                     supposés produirait un chiffre crédible et faux. Le
+                     maillon existe quand même, pour ne pas rompre la
+                     continuité des compteurs, et il DIT ce qui manque. */
+                  entree = {
+                    annee: mm.annee, mois: mm.mois, cle: cle,
+                    resultat: null, fige: false, recap: recap || null,
+                    conditions: null, salaire: null, salaireManquant: true,
+                    conditionsManquantes: true,
+                    avantInitialisation: avant, horsContrat: hors,
+                    imputationsEcartees: [],
+                    compteurEntree: compteurEntree, compteurSortie: compteur
                   };
                 } else {
                   /* Correction B1 du lot 4, conservée : un mois sans barème
                      connu n'est PAS sauté — les heures sup, les congés et les
                      CP s'y accumulent quand même. On calcule avec un barème
                      nul (seule la retenue monétaire en dépend) et on signale
-                     l'absence à l'écran. */
-                  var salaireCalcul = salaire || { brut_mensuel_centimes: 0, net_mensuel_centimes: 0 };
+                     l'absence à l'écran. Depuis le lot 17, ce sont le BRUT et
+                     le NET de l'avenant qui peuvent manquer (ils sont
+                     nullables, §17.2 point 3), pas l'avenant lui-même. */
+                  var conditionsCalcul = conditions;
+                  if (conditions.brut_mensuel_centimes == null ||
+                      conditions.net_mensuel_centimes == null) {
+                    conditionsCalcul = {};
+                    for (var kc in conditions) conditionsCalcul[kc] = conditions[kc];
+                    conditionsCalcul.brut_mensuel_centimes = conditions.brut_mensuel_centimes || 0;
+                    conditionsCalcul.net_mensuel_centimes = conditions.net_mensuel_centimes || 0;
+                  }
                   var parJour = journeesParMois[cle] || {};
                   var journees = Object.keys(parJour).map(function (k) { return parJour[k]; });
-                  var r = Engine.calculerMois({
-                    contrat: contrat, salaire: salaireCalcul, journees: journees,
+                  /* LOT 16 §16.1 — le repli passe par ici, et par ici seul :
+                     un mois dont la ventilation ne tient plus se calcule
+                     quand même, sur l'ordre par défaut du contrat, et le
+                     maillon porte ce qui a été écarté. Sans ça, la chaîne
+                     entière rejette et tous les écrans tombent. */
+                  var rep = calculerMoisAvecRepli({
+                    contrat: contrat, conditions: conditionsCalcul, journees: journees,
                     compteurEntree: compteurEntree, annee: mm.annee, mois: mm.mois,
                     /* Correctif B1 : la ventilation choisie par Maria entre
                        ici, ou elle n'entre nulle part. */
                     imputations: imputationsDuMois(imputations, mm.annee, mm.mois)
                   });
+                  var r = rep.resultat;
                   compteur = r.compteurSortie;
                   entree = {
                     annee: mm.annee, mois: mm.mois, cle: cle,
                     resultat: r, fige: false, recap: recap || null,
-                    salaire: salaire, salaireManquant: !salaire,
+                    conditions: conditions,
+                    salaire: salaire,
+                    salaireManquant: conditions.brut_mensuel_centimes == null ||
+                                     conditions.net_mensuel_centimes == null,
                     avantInitialisation: avant,
                     horsContrat: hors,
+                    /* Vide dans l'immense majorité des cas. Non vide, c'est
+                       l'encart du §16.1 et le blocage de la clôture. */
+                    imputationsEcartees: rep.ecartees,
                     compteurEntree: compteurEntree, compteurSortie: compteur
                   };
                 }
@@ -434,12 +782,16 @@
       joursCongesDecomptes: 0,
       imputation: {
         joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0,
-        minutesSupConsommees: 0, dixiemesCpConsommes: 0
+        minutesSupConsommees: 0, minutesCpConsommees: 0
       },
       retenueSansSoldeCentimes: 0,
-      dixiemesCpAcquis: 0,
+      minutesCpAcquis: 0,
       salaireBrutCentimes: 0,
       salaireNetCentimes: 0,
+      /* §17.8 — le total des bruts RÉELLEMENT dus, assiette du 1/80ᵉ de
+         l'indemnité de rupture. Ce n'est pas la somme des bruts contractuels :
+         le sans solde et le prorata en sont déjà déduits, mois par mois. */
+      brutDuCentimes: 0,
       totalAVerserCentimes: 0,
       compteurEntree: null,
       compteurSortie: null,
@@ -459,9 +811,30 @@
          document de période peut ainsi porter le nom des récapitulatifs
          qu'il agrège, et non un renommage postérieur. */
       nomsFiges: [],
-      baremes: []
+      baremes: [],
+      /* LOT 17 §17.6 — LE FACTEUR D'AFFICHAGE DES CONGÉS PAYÉS.
+
+         Les compteurs sont en minutes et s'affichent en jours. Sur une période
+         qui traverse un avenant, `minutes_par_jour_conge` a pu changer : le
+         solde affiché est celui de la FIN de la période, on l'exprime donc
+         avec le facteur de la fin. C'est le seul choix qui dise la vérité sur
+         ce que Maria peut poser demain — un solde de fin converti au facteur
+         d'il y a deux ans annoncerait un nombre de jours qu'elle n'a pas.
+
+         Il est calculé ICI, une fois, plutôt que dans chacun des quatre écrans
+         qui affichent un solde : c'est exactement le genre de conversion qui
+         se met à diverger d'un écran à l'autre. */
+      minutesParJourConge: null
     };
     if (!liste.length) return somme;
+
+    for (var d = liste.length - 1; d >= 0; d--) {
+      var cd = liste[d].conditions;
+      if (cd && cd.minutes_par_jour_conge) {
+        somme.minutesParJourConge = cd.minutes_par_jour_conge;
+        break;
+      }
+    }
 
     var baremesParCle = {};
 
@@ -476,10 +849,17 @@
       somme.imputation.joursSurSup += imp.joursSurSup || 0;
       somme.imputation.joursSansSolde += imp.joursSansSolde || 0;
       somme.imputation.minutesSupConsommees += imp.minutesSupConsommees || 0;
-      somme.imputation.dixiemesCpConsommes += imp.dixiemesCpConsommes || 0;
+      somme.imputation.minutesCpConsommees += imp.minutesCpConsommees || 0;
       somme.retenueSansSoldeCentimes += r.retenueSansSoldeCentimes || 0;
-      somme.dixiemesCpAcquis += r.dixiemesCpAcquis || 0;
+      somme.minutesCpAcquis += r.minutesCpAcquis || 0;
       somme.salaireBrutCentimes += r.salaireBrutCentimes || 0;
+      /* Repli pour les instantanés d'avant le lot 17, que
+         `instantaneEnMinutes` a déjà complétés — la double garde ne coûte
+         rien et évite qu'un chemin oublié fasse silencieusement compter zéro
+         dans l'assiette de l'indemnité. */
+      somme.brutDuCentimes += (r.brutDuCentimes == null)
+        ? Math.max(0, (r.salaireBrutCentimes || 0) - (r.retenueSansSoldeCentimes || 0))
+        : r.brutDuCentimes;
       somme.salaireNetCentimes += r.salaireNetCentimes || 0;
       somme.totalAVerserCentimes += r.totalAVerserCentimes || 0;
 
@@ -572,9 +952,9 @@
        du litige que cette application existe pour éteindre.
        Les quatre postes suivants sortent de la liste du §5.4 de la
        spécification : ajout délibéré, signalé dans la restitution. */
-    { cle: 'imputation.dixiemesCpConsommes', libelle: 'Congés payés décomptés ce mois', format: 'cp' },
+    { cle: 'imputation.minutesCpConsommees', libelle: 'Congés payés décomptés ce mois', format: 'cp' },
     { cle: 'imputation.minutesSupConsommees', libelle: 'Récupération utilisée ce mois', format: 'minutes' },
-    { cle: 'compteurSortie.dixiemesCpPris',  libelle: 'Congés payés pris, en tout',     format: 'cp' },
+    { cle: 'compteurSortie.minutesCpPris',   libelle: 'Congés payés pris, en tout',     format: 'cp' },
     { cle: 'compteurSortie.minutesSup',      libelle: 'Récupération restante',          format: 'minutes' }
   ];
 
@@ -633,6 +1013,28 @@
   var api = {
     serie: serie,
     mois1: mois1,
+    /* LOT 16 §16.1 — le même repli pour tous ceux qui rejouent un mois hors
+       de la chaîne (l'aperçu « voilà ce que ce geste change » de l'espace
+       enfant). Une seule règle de repli, un seul endroit. */
+    calculerMoisAvecRepli: calculerMoisAvecRepli,
+    CODES_IMPUTATION: CODES_IMPUTATION,
+    /* CORRECTION RELECTURE LOT 16 (C3) — ce que les réserves couvrent, EN
+       JOURS, demandé au moteur. Les écrans convertissaient eux-mêmes
+       (`Math.floor(cp / 10)`), c'est-à-dire RG-05 réécrite dans l'interface —
+       et le lot 17, qui fait passer les congés payés en minutes, l'aurait
+       rendue fausse sans lever la moindre erreur. */
+    reservesEnJours: function (conditions, compteurEntree) {
+      return reservesEnJours(resoudreEngine(), conditions, compteurEntree);
+    },
+    /* LOT 16 §16.8 — la part d'un mois dans une période à cheval. Depuis le
+       lot 17 ce n'est plus qu'une LECTURE de `Engine.joursOuvrablesParMois` ;
+       `feriesDecomptes` a disparu au profit de `Engine.feriesDeLaPeriode`. */
+    partDuMois: partDuMois,
+    /* §17.6 — conversion à la lecture d'un instantané figé avant le lot 17.
+       Exposée pour que les écrans qui relisent un instantané hors chaîne
+       (aperçu de document, comparaison avant clôture) n'aient pas à
+       reconnaître l'unité eux-mêmes. */
+    instantaneEnMinutes: instantaneEnMinutes,
     ecartsInstantanes: ecartsInstantanes,
     POSTES_COMPARES: POSTES_COMPARES,
     fenetre: fenetre,

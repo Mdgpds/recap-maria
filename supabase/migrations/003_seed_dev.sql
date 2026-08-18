@@ -2,9 +2,22 @@
 -- 003_seed_dev.sql — Jeu de données de développement.
 --
 -- DONNÉES 100 % FICTIVES : le dépôt est public, aucun prénom, salaire ou
--- montant réel de Maria n'apparaît ici (§8 des specs). Les montants
--- reprennent les valeurs d'exemple du §7 des specs (137289 / 132745), déjà
--- publiques dans le dépôt via les tests.
+-- montant réel de Maria n'apparaît ici (§8 des specs).
+--
+-- CORRECTION RELECTURE LOT 16 (contrôle 7). Ce commentaire affirmait le
+-- contraire de ce que le fichier contenait : les deux montants bruts qui s'y
+-- trouvaient n'étaient pas des « valeurs d'exemple », c'étaient LES SALAIRES
+-- RÉELS de Maria (référentiel A.4), dans un dépôt public. Ils sont remplacés
+-- par des montants manifestement fictifs et ronds — 1 500,00 € et 1 400,00 €
+-- brut, avec des nets arrondis — qui ne ressemblent à aucune paie réelle.
+--
+-- Un montant seul n'identifie personne, mais un jeu de développement n'a
+-- aucune raison de porter la rémunération de quelqu'un. Règle à tenir : dans
+-- ce fichier, tout nombre est rond et faux.
+--
+-- L'historique git n'est pas réécrit — décision d'Adrien : un force-push sur
+-- une branche qui porte plusieurs lots en cours est un risque réel pour un
+-- bénéfice faible, ces valeurs étant publiques depuis le lot 2.
 --
 -- Idempotent : UUID fixes + « on conflict do nothing » SANS colonne, ce qui
 -- couvre toutes les contraintes uniques, y compris les uniques métier
@@ -65,15 +78,15 @@ begin
     (id, owner, contrat_id, date_effet, brut_mensuel_centimes, net_mensuel_centimes)
   values
     ('cccccccc-0000-4000-8000-000000000001', v_owner, 'bbbbbbbb-0000-4000-8000-000000000001',
-     '2024-09-02', 132745, 103500),
+     '2024-09-02', 140000, 108000),
     ('cccccccc-0000-4000-8000-000000000002', v_owner, 'bbbbbbbb-0000-4000-8000-000000000001',
-     '2025-04-01', 137289, 107200),
+     '2025-04-01', 150000, 115000),
     ('cccccccc-0000-4000-8000-000000000003', v_owner, 'bbbbbbbb-0000-4000-8000-000000000002',
-     '2024-10-01', 137289, 107200),
+     '2024-10-01', 150000, 115000),
     ('cccccccc-0000-4000-8000-000000000004', v_owner, 'bbbbbbbb-0000-4000-8000-000000000003',
-     '2025-01-06', 132745, 103500),
+     '2025-01-06', 140000, 108000),
     ('cccccccc-0000-4000-8000-000000000005', v_owner, 'bbbbbbbb-0000-4000-8000-000000000004',
-     '2025-03-03', 137289, 107200)
+     '2025-03-03', 150000, 115000)
   on conflict do nothing;
 
   -- --- Journées d'exception (saisie par exception, §5 des specs) -----------
