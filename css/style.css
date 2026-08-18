@@ -910,3 +910,8 @@ button.coche:active { transform: scale(.99); }
   font-size: 13px; color: var(--ac); cursor: pointer; padding: 4px 0;
 }
 .ventil-detail .sb { margin-top: 2px; }
+
+/* CORRECTION RELECTURE LOT 16 (C1) — la marque « répartition écartée » sur
+   la ligne d'un mois, dans l'historique. Forme allégée : l'encart complet
+   avec son bouton reste sur l'espace enfant, où la correction se fait. */
+.sb.alerte { color: var(--wa); font-weight: 600; }

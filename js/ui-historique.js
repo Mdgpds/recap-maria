@@ -21,6 +21,10 @@
 (function (global) {
   'use strict';
 
+  function majusculeInitiale(t) {
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+  }
+
   var Kit = global.Kit;
   var Chaine = global.ChaineMois;
 
@@ -239,6 +243,25 @@
     b.appendChild(row);
     b.appendChild(Kit.ce('div', 'sb',
       Kit.jours(r.joursPresence) + ' · ' + Kit.eur(r.totalAVerserCentimes)));
+    /* CORRECTION RELECTURE LOT 16 (C1) — LA MARQUE SUIT LE MOIS JUSQU'ICI.
+
+       Le §16.1 a) demande « le même traitement partout où un mois se calcule »
+       et cite les cinq écrans. Le repli y remonte bien — la chaîne est commune
+       — mais la MARQUE ne s'affichait que sur trois. L'historique est justement
+       un écran qui agrège : un mois retombé sur l'ordre par défaut du contrat
+       y présentait des chiffres plausibles, et qui ne sont pas ceux que Maria
+       avait choisis.
+
+       Forme allégée, décision d'Adrien : une mention sur la ligne. L'encart
+       complet avec son bouton reste réservé à l'espace enfant, où la
+       correction se fait. */
+    if ((e.imputationsEcartees || []).length) {
+      b.appendChild(Kit.ce('div', 'sb alerte',
+        (e.imputationsEcartees.length > 1
+          ? 'Des répartitions de congé ont été écartées'
+          : 'Une répartition de congé a été écartée') +
+        ' — chiffres calculés dans l’ordre habituel du contrat'));
+    }
     if (e.avantInitialisation) {
       b.appendChild(Kit.ce('div', 'sb q', 'Avant la reprise de vos compteurs — soldes non significatifs'));
     }
@@ -262,7 +285,8 @@
     var dernier = duMois[duMois.length - 1];
 
     corps.appendChild(Kit.ce('div', 'sb q',
-      'Du ' + Kit.libelleMoisAnnee(premier.annee, premier.mois) + ' à ' +
+      /* C2 — « Du août 2026 » : l'élision manquait aussi sur le bilan annuel. */
+      majusculeInitiale(Kit.elider('du', Kit.libelleMoisAnnee(premier.annee, premier.mois))) + ' à ' +
       Kit.libelleMoisAnnee(dernier.annee, dernier.mois) + ' · ' + agr.nbMois + ' mois'));
 
     var p1 = Kit.pane('Totaux de l’année');

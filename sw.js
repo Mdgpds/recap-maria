@@ -36,7 +36,7 @@
    cache et ne récupérerait la nouvelle qu'en arrière-plan : le téléphone de
    Maria ferait tourner un mélange de deux versions, dont l'écran d'un enfant
    d'avant le correctif du §16.1. */
-var CACHE = 'recap-lot16-verite-et-conges-v1';
+var CACHE = 'recap-lot16-correctifs-relecture-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

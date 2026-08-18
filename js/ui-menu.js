@@ -1436,8 +1436,9 @@
         corps.appendChild(Kit.ce('p', 'sb q',
           'Le document contient TOUT : les mois, le détail des journées ' +
           'particulières, les congés et leur répartition, vos rémunérations ' +
-          'successives et les réouvertures. Le tableau, lui, ne porte qu’une ' +
-          'ligne par mois — c’est ce qui s’ouvre dans un tableur.'));
+          'successives et les réouvertures. Le tableau porte une ligne par mois, ' +
+          'avec les conditions du contrat et le point de départ de vos compteurs ' +
+          'sur chaque ligne — c’est ce qui s’ouvre dans un tableur.'));
 
         var bTab = Kit.bouton('btn nt', function () { exporter('tableau', bTab, msg); });
         bTab.textContent = 'Tableau — un mois par ligne';
@@ -1709,24 +1710,67 @@
      Les montants sont exportés en CENTIMES ENTIERS pour rester exacts — un
      tableur qui relit « 1 610,00 » selon ses propres réglages introduirait un
      arrondi dans un chiffre qui n'en a jamais eu. */
+  /* CORRECTION RELECTURE LOT 16 (C4) — LE TABLEAU AUSSI ANNONCE « TOUT ».
+
+     Le §16.7 tranche : « on complète les DEUX formats existants ». Le document
+     texte avait reçu les conditions du contrat et le point de départ des
+     compteurs ; le tableau non, au motif que la phrase suivante ne parle que
+     du « document ». Lecture trop étroite : c'est le format qui s'ouvre dans
+     un tableur, et c'est celui qu'on trie et qu'on recoupe.
+
+     LA FORME RESTE UN TABLEAU — une ligne = un mois. Pas de blocs en tête, qui
+     casseraient la lecture d'un tableur. Les conditions et le point de départ
+     deviennent donc des COLONNES, répétées sur chaque ligne du contrat.
+     Redondant aujourd'hui, et c'est le prix du format tabulaire ; mais au
+     lot 17 les conditions sont datées et changent d'un mois à l'autre — ces
+     colonnes cesseront alors d'être constantes, et c'est là qu'elles prendront
+     tout leur sens. */
   function enTableau(d) {
     var parContrat = {};
     (d.contrats || []).forEach(function (c) { parContrat[c.id] = c; });
+    var departParContrat = {};
+    (d.compteurs_initiaux || []).forEach(function (x) { departParContrat[x.contrat_id] = x; });
 
     var lignes = [['enfant', 'famille', 'annee', 'mois', 'statut',
       'jours_presence', 'entretien_centimes', 'salaire_net_centimes',
-      'total_a_verser_centimes', 'minutes_sup_acquises', 'jours_conges_decomptes'].join(';')];
+      'total_a_verser_centimes', 'minutes_sup_acquises', 'jours_conges_decomptes',
+      /* Conditions applicables — datées à partir du lot 17. */
+      'jours_de_garde', 'accueil_debut', 'accueil_fin', 'minutes_journee',
+      'minutes_sup_par_jour', 'minutes_par_jour_conge', 'entretien_centimes_jour',
+      'sup_dues_si_enfant_absent', 'ordre_imputation',
+      'brut_mensuel_centimes', 'net_mensuel_centimes',
+      /* Point de départ des compteurs — l'origine de tous les soldes. */
+      'depart_date_reference', 'depart_minutes_sup',
+      'depart_dixiemes_cp_acquis', 'depart_dixiemes_cp_pris'].join(';')];
 
     (d.recapitulatifs || []).slice().sort(function (a, b) {
       return (a.annee * 12 + a.mois) - (b.annee * 12 + b.mois);
     }).forEach(function (r) {
       var c = parContrat[r.contrat_id] || {};
       var v = r.donnees || {};
+      var dep = departParContrat[r.contrat_id] || {};
       lignes.push([
         csv(c.prenom_enfant), csv((c.famille && c.famille.nom) || ''),
         r.annee, r.mois, r.statut === 'fige' ? 'clôturé' : 'en cours',
         v.joursPresence || 0, v.entretienCentimes || 0, v.salaireNetCentimes || 0,
-        v.totalAVerserCentimes || 0, v.minutesSupAcquises || 0, v.joursCongesDecomptes || 0
+        v.totalAVerserCentimes || 0, v.minutesSupAcquises || 0, v.joursCongesDecomptes || 0,
+        csv((c.jours_planning || []).join(' ')),
+        csv(String(c.heure_arrivee || '').slice(0, 5)),
+        csv(String(c.heure_depart || '').slice(0, 5)),
+        c.minutes_contractuelles == null ? '' : c.minutes_contractuelles,
+        c.minutes_sup_jour == null ? '' : c.minutes_sup_jour,
+        c.minutes_par_jour_conge == null ? '' : c.minutes_par_jour_conge,
+        c.entretien_centimes_jour == null ? '' : c.entretien_centimes_jour,
+        c.sup_dues_si_enfant_absent === false ? 'non' : 'oui',
+        csv(c.ordre_imputation === 'sup_puis_cp' ? 'recuperation_puis_cp' : 'cp_puis_recuperation'),
+        /* Le brut et le net du MOIS, tels que l'instantané les porte : ce sont
+           eux qui ont servi au calcul de cette ligne, pas ceux d'aujourd'hui. */
+        v.salaireBrutCentimes == null ? '' : v.salaireBrutCentimes,
+        v.salaireNetCentimes == null ? '' : v.salaireNetCentimes,
+        csv(dep.date_reference || ''),
+        dep.minutes_sup == null ? '' : dep.minutes_sup,
+        dep.dixiemes_cp_acquis == null ? '' : dep.dixiemes_cp_acquis,
+        dep.dixiemes_cp_pris == null ? '' : dep.dixiemes_cp_pris
       ].join(';'));
     });
     return lignes.join('\n');

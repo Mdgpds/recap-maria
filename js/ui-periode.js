@@ -232,6 +232,15 @@
       var fenetre = Chaine.fenetre(r[0], mDebut, mFin);
       var agr = Chaine.agregerPeriode(fenetre);
 
+      /* CORRECTION RELECTURE LOT 16 (C1) — LE RÉCAPITULATIF DE PÉRIODE DOIT LE
+         DIRE AUSSI. C'est l'écran qui agrège le plus, donc celui où un mois
+         retombé sur l'ordre par défaut du contrat disparaît le mieux dans la
+         masse — et le seul qui n'ouvre aucun document où la marque figurerait.
+         Le §16.1 a) cite les cinq écrans ; la marque n'en couvrait que trois. */
+      var moisEcartes = fenetre.filter(function (e) {
+        return !e.horsContrat && (e.imputationsEcartees || []).length;
+      });
+
       /* Mois ENTIÈREMENT contenus dans la période demandée. */
       var entiers = fenetre.filter(function (e) {
         return Chaine.premierJour(e.annee, e.mois) >= p.debut &&
@@ -273,7 +282,9 @@
         partiels: partiels, partielsClos: partielsClos,
         moisDemandes: nbMoisEntre(p),
         tronquee: r[0].tronquee,
-        soldes: soldes
+        soldes: soldes,
+        /* C1 — les mois de la période dont une répartition a été écartée. */
+        moisEcartes: moisEcartes
       };
     });
   }
@@ -295,6 +306,21 @@
         'Contrat du ' + Kit.dateLongue(r.contrat.date_debut) +
         (r.contrat.date_fin ? ' au ' + Kit.dateLongue(r.contrat.date_fin) : ', toujours en cours') + '.'));
     });
+
+    /* C1 — UNE LIGNE, EN TÊTE DES RÉSULTATS. Elle ne propose pas de corriger :
+       la correction se fait depuis l'espace enfant, où la période est connue.
+       Elle dit seulement que certains chiffres de ce récapitulatif ne sont pas
+       ceux que Maria avait choisis — sans quoi ils passeraient pour tels. */
+    var ecartes = utiles.reduce(function (n, r) { return n + (r.moisEcartes || []).length; }, 0);
+    if (ecartes) {
+      cible.appendChild(Kit.warnbox(
+        ecartes > 1
+          ? 'Des répartitions de congé ont été écartées sur cette période'
+          : 'Une répartition de congé a été écartée sur cette période',
+        ' ' + (ecartes > 1 ? ecartes + ' mois sont calculés' : 'Un mois est calculé') +
+        ' dans l’ordre habituel du contrat, et non selon la répartition ' +
+        'enregistrée. Ouvrez l’espace de l’enfant concerné pour la corriger.'));
+    }
 
     if (!utiles.length) {
       cible.appendChild(Kit.ce('p', 'vide', 'Aucun mois calculable sur cette période.'));

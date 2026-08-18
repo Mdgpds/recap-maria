@@ -40,6 +40,11 @@
     if (global.DB) return global.DB;
     throw new Error('chaine-mois : DB (js/db.js) non chargé.');
   }
+  function resoudreFeries() {
+    if (global.Feries) return global.Feries;
+    if (typeof module !== 'undefined' && module.exports) return require('./feries.js');
+    throw new Error('chaine-mois : Feries (js/feries.js) non chargé.');
+  }
 
   /* ------------------------------------------------------------------ */
   /* Calendrier (pur, sans fuseau)                                       */
@@ -181,6 +186,55 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* CORRECTION RELECTURE LOT 16 (B2) — Les fériés RÉELLEMENT retirés    */
+  /* ------------------------------------------------------------------ */
+
+  /* « Les jours fériés ne sont pas décomptés : le samedi 15 août ne compte
+     pas. » C'est LA phrase du §16.8, celle qui éteint le litige — et elle
+     restait muette exactement dans le cas qu'elle existe pour expliquer.
+
+     LE DÉFAUT. L'écran cherchait les fériés entre `date_debut` et `date_fin`.
+     Or RG-06 ne s'arrête pas à `date_fin` : le décompte court jusqu'au dernier
+     jour ouvrable précédant la REPRISE. Une semaine posée du lundi 10 au
+     vendredi 14 août 2026 compte donc normalement 6 jours — mais le samedi 15
+     est férié, elle n'en compte que 5, et ce samedi-là n'était jamais examiné.
+     L'écran affichait « 5 j ouvrables » sous la phrase « une semaine complète
+     compte 6 jours », sans rien expliquer : le défaut d'origine reparu sous
+     une autre forme, sur le point précis qui fait litige avec les familles.
+
+     L'EFFET SYMÉTRIQUE. Un férié tombant un DIMANCHE était nommé alors qu'il
+     n'avait rien retiré — le 1er novembre 2026, par exemple. Un dimanche ne
+     compte jamais : le citer laisse croire à une retenue qui n'existe pas.
+     On ne liste donc que les fériés effectivement retirés du décompte.
+
+     À DÉPLACER DANS LE MOTEUR AU LOT 17, avec `partDuMois` : la règle de
+     reprise appartient à RG-06, donc à `engine.js`, que le lot 16 n'a pas le
+     droit d'ouvrir. Les deux fonctions forment la même dette. */
+  function feriesDecomptes(Engine, debut, fin, planning) {
+    var Feries = resoudreFeries();
+    var pl = (planning && planning.length) ? planning : [1, 2, 3, 4, 5];
+    if (!debut || !fin || fin < debut) return [];
+
+    /* Même règle que le moteur : la reprise est le premier jour postérieur au
+       dernier jour posé qui soit au planning et non férié. La borne évite
+       qu'un planning aberrant fasse tourner la boucle sans fin. */
+    var reprise = Feries.ajouterJours(fin, 1);
+    var garde = 0;
+    while ((pl.indexOf(Engine.jourSemaine(reprise)) === -1 || Engine.estJourFerie(reprise)) &&
+           garde < 400) {
+      reprise = Feries.ajouterJours(reprise, 1);
+      garde++;
+    }
+
+    var out = [];
+    for (var d = debut; d < reprise; d = Feries.ajouterJours(d, 1)) {
+      if (Engine.jourSemaine(d) === 7) continue;   /* un dimanche ne compte jamais */
+      if (Engine.estJourFerie(d)) out.push(d);
+    }
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* LOT 16 §16.1 — Le repli d'imputation                                */
   /* ------------------------------------------------------------------ */
 
@@ -234,11 +288,30 @@
     ecartees.forEach(function (x) {
       for (var i = 0; i < appliquees.length; i++) {
         var a = appliquees[i];
-        if (a.source !== 'defaut') continue;
         if (a.date_debut > x.imputation.date_fin) continue;
         if (a.date_fin < x.imputation.date_debut) continue;
-        a.source = 'defaut_choix_ecarte';
-        a.choixEcarte = { date_debut: x.imputation.date_debut, date_fin: x.imputation.date_fin };
+        /* CORRECTION RELECTURE LOT 16 (C5) — DEUX IMPUTATIONS ÉCARTÉES PEUVENT
+           TOMBER DANS LA MÊME PÉRIODE REGROUPÉE PAR LE MOTEUR.
+
+           La boucle sautait les maillons déjà marqués (`source !== 'defaut'`)
+           et sortait dès le premier trouvé : la seconde écartée n'était alors
+           jamais marquée, et le calendrier de l'espace enfant n'en montrait
+           qu'une. Les chiffres étaient justes, l'affichage incomplet.
+
+           On marque désormais la période — que ce soit la première fois ou la
+           seconde — et `choixEcarte` devient une LISTE quand plusieurs choix
+           tombent au même endroit. La forme reste compatible : le premier
+           écarté garde sa place, les écrans qui ne lisent que `choixEcarte`
+           continuent de fonctionner. */
+        if (a.source !== 'defaut' && a.source !== 'defaut_choix_ecarte') continue;
+        var choix = { date_debut: x.imputation.date_debut, date_fin: x.imputation.date_fin };
+        if (a.source === 'defaut_choix_ecarte') {
+          a.choixEcartes = (a.choixEcartes || [a.choixEcarte]).concat([choix]);
+        } else {
+          a.source = 'defaut_choix_ecarte';
+          a.choixEcarte = choix;
+          a.choixEcartes = [choix];
+        }
         return;
       }
     });
@@ -287,7 +360,23 @@
         retenues = essai;
       } catch (e2) {
         if (!estErreurImputation(e2)) throw e2;
-        ecartees.push({ imputation: candidates[i], code: e2.code });
+        /* CORRECTION RELECTURE LOT 16 (B1) — LE NOMBRE QUI MANQUE.
+
+           Sur `IMPUTATION_INCOMPLETE`, le moteur pose sur l'erreur le décompte
+           RG-06 qu'il a lui-même calculé (`attendu`) et la somme reçue
+           (`recu`). Ces deux nombres n'étaient pas repris : l'encart écrivait
+           donc « votre répartition ne couvre pas les 5 jours » là où 5 était
+           justement ce qu'elle avait réparti — la phrase disait que 5 ne
+           couvre pas 5, et le nombre manquant, 6, n'apparaissait nulle part.
+
+           Sans lui, l'écran de correction ne peut pas non plus annoncer le bon
+           nombre de jours à répartir, et Maria tourne en rond indéfiniment. */
+        ecartees.push({
+          imputation: candidates[i],
+          code: e2.code,
+          attendu: typeof e2.attendu === 'number' ? e2.attendu : null,
+          recu: typeof e2.recu === 'number' ? e2.recu : null
+        });
       }
     }
 
@@ -308,6 +397,10 @@
         date_debut: imp.date_debut,
         date_fin: imp.date_fin,
         code: x.code,
+        /* Le décompte RG-06 réel de la période, tel que le moteur le calcule
+           (B1). `null` quand le code d'erreur ne le porte pas. */
+        attendu: x.attendu,
+        recu: x.recu,
         choisi: {
           joursSurCp: imp.jours_sur_cp || 0,
           joursSurSup: imp.jours_sur_sup || 0,
@@ -837,8 +930,19 @@
        enfant). Une seule règle de repli, un seul endroit. */
     calculerMoisAvecRepli: calculerMoisAvecRepli,
     CODES_IMPUTATION: CODES_IMPUTATION,
-    /* LOT 16 §16.8 — la part d'un mois dans une période à cheval. */
+    /* CORRECTION RELECTURE LOT 16 (C3) — ce que les réserves couvrent, EN
+       JOURS, demandé au moteur. Les écrans convertissaient eux-mêmes
+       (`Math.floor(cp / 10)`), c'est-à-dire RG-05 réécrite dans l'interface —
+       et le lot 17, qui fait passer les congés payés en minutes, l'aurait
+       rendue fausse sans lever la moindre erreur. */
+    reservesEnJours: function (contrat, compteurEntree) {
+      return reservesEnJours(resoudreEngine(), contrat, compteurEntree);
+    },
+    /* LOT 16 §16.8 — la part d'un mois dans une période à cheval, et les
+       fériés réellement retirés du décompte (correction B2). Les deux
+       remontent dans le moteur au lot 17. */
     partDuMois: partDuMois,
+    feriesDecomptes: feriesDecomptes,
     ecartsInstantanes: ecartsInstantanes,
     POSTES_COMPARES: POSTES_COMPARES,
     fenetre: fenetre,

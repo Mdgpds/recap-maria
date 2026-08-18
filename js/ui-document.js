@@ -439,7 +439,12 @@
        rien d'autre sous les yeux. L'en-tête portait le prénom et le mois ; il
        lui manquait l'auteur et les dates exactes. */
     dh.appendChild(Kit.ce('div', 't1',
-      'Récapitulatif de ' + id.prenom + ' — ' + Kit.libelleMoisAnnee(vue.annee, vue.mois)));
+      /* CORRECTION RELECTURE LOT 16 (C2) — le §16.6 demandait de chercher les
+         AUTRES occurrences. Celle-ci est sur le titre du document remis à la
+         famille : « Récapitulatif de Elliot ». La maquette écran 4 écrit bien
+         « Récapitulatif d'Elliot ». */
+      'Récapitulatif ' + Kit.elider('de', id.prenom) + ' — ' +
+      Kit.libelleMoisAnnee(vue.annee, vue.mois)));
     dh.appendChild(Kit.ce('div', 't2', enTeteAuteur()));
     dh.appendChild(Kit.ce('div', 't3', enTetePeriode(id)));
     doc.appendChild(dh);

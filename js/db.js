@@ -1007,12 +1007,26 @@
      Les bornes et `jours_ouvrables` ne bougent pas : la période est une
      donnée, pas une déduction (§16.8). Seule sa répartition est en cause. */
   function majVentilationImputation(id, ventilation) {
+    var champs = {
+      jours_sur_cp: ventilation.jours_sur_cp,
+      jours_sur_sup: ventilation.jours_sur_sup,
+      jours_sans_solde: ventilation.jours_sans_solde
+    };
+    /* CORRECTION RELECTURE LOT 16 (B1) — `jours_ouvrables` PART AUSSI.
+
+       Cette fonction n'écrivait que la ventilation. Or une ligne peut porter
+       un décompte qui ne correspond pas à RG-06 — c'est exactement ce que
+       `IMPUTATION_INCOMPLETE` signale, et ce que l'écran de correction sert à
+       réparer. Sans réécrire `jours_ouvrables`, la correction reproduisait
+       l'état refusé et Maria tournait en rond.
+
+       Les BORNES, elles, ne bougent jamais : la période est une donnée, seul
+       son décompte et sa répartition sont en cause. */
+    if (ventilation.jours_ouvrables != null) {
+      champs.jours_ouvrables = ventilation.jours_ouvrables;
+    }
     return client.from('imputation_conge')
-      .update({
-        jours_sur_cp: ventilation.jours_sur_cp,
-        jours_sur_sup: ventilation.jours_sur_sup,
-        jours_sans_solde: ventilation.jours_sans_solde
-      })
+      .update(champs)
       .eq('id', id)
       .select(CHAMPS_IMPUTATION)
       .then(deballer)

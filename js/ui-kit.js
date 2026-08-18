@@ -177,11 +177,18 @@
     if (!debut || !fin) return '—';
     if (debut === fin) return 'Le ' + jourEtMois(debut);
     var memeMois = debut.slice(0, 7) === fin.slice(0, 7);
-    return 'Du ' + (memeMois ? String(Number(debut.slice(8, 10))) : jourEtMois(debut)) +
+    return 'Du ' + (memeMois ? quantieme(debut) : jourEtMois(debut)) +
       ' au ' + jourEtMois(fin);
   }
+  /* CORRECTION RELECTURE LOT 16 (remarque 3) — « Du 1 au 22 août » n'est pas
+     du français : le premier du mois se dit « 1er ». Les autres quantièmes
+     s'écrivent en chiffres nus. */
+  function quantieme(d) {
+    var n = Number(d.slice(8, 10));
+    return n === 1 ? '1er' : String(n);
+  }
   function jourEtMois(d) {
-    return Number(d.slice(8, 10)) + ' ' + MOIS[Number(d.slice(5, 7))];
+    return quantieme(d) + ' ' + MOIS[Number(d.slice(5, 7))];
   }
 
   /* '2026-05-19' -> 'Mardi 19 mai' */

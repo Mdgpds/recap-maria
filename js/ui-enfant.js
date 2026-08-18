@@ -821,9 +821,19 @@
       return plage + 'votre répartition dépasse ce que vos réserves couvrent.';
     }
     if (e.code === 'IMPUTATION_INCOMPLETE') {
-      return plage + 'votre répartition ne couvre pas les ' +
-        Kit.jours(e.choisi.joursSurCp + e.choisi.joursSurSup + e.choisi.joursSansSolde) +
-        ' répartis sur cette période.';
+      /* CORRECTION RELECTURE LOT 16 (B1) — LA PHRASE DISAIT QUE 5 NE COUVRE
+         PAS 5. Elle affichait la SOMME de ce que Maria avait réparti, et le
+         nombre qui manque — le décompte RG-06 réel de la période — n'était
+         nulle part. Le moteur le pose pourtant sur l'erreur ; la chaîne le
+         reprend désormais dans `attendu`. */
+      var couvre = e.recu != null ? e.recu
+        : e.choisi.joursSurCp + e.choisi.joursSurSup + e.choisi.joursSansSolde;
+      if (e.attendu != null) {
+        return plage + 'votre répartition couvre ' + Kit.jours(couvre) +
+          ', alors que la période en compte ' + Kit.jours(e.attendu) +
+          ' — samedis inclus.';
+      }
+      return plage + 'votre répartition ne correspond pas au décompte de la période.';
     }
     return plage + 'votre répartition n’est pas utilisable telle quelle.';
   }

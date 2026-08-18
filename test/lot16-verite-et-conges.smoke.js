@@ -53,6 +53,32 @@ function sansInsecable(t) { return String(t).replace(/ /g, ' '); }
 function sansCommentaires(src) {
   return String(src).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
+/* CORRECTION RELECTURE LOT 16 (C6, faiblesse 1) — EXTRAIRE UNE FONCTION
+   ENTIÈRE, pas ses vingt-deux premières lignes.
+
+   `corpsCloturer` découpait de `function cloturer(` au premier « \n  }\n »
+   rencontré : la fonction en fait trente-deux, la tranche examinée s'arrêtait
+   à vingt-deux. Un « Annuler » ajouté dans les dix dernières lignes passait le
+   contrôle — alors que l'assertion s'intitule « aucun Annuler n'est proposé
+   après une clôture ».
+
+   On compte les accolades, commentaires et chaînes retirés au préalable. */
+function corpsDeFonction(src, entete) {
+  var nu = sansCommentaires(src);
+  var debut = nu.indexOf(entete);
+  if (debut === -1) return '';
+  var i = nu.indexOf('{', debut);
+  if (i === -1) return '';
+  var profondeur = 0;
+  for (var j = i; j < nu.length; j++) {
+    if (nu[j] === '{') profondeur++;
+    else if (nu[j] === '}') {
+      profondeur--;
+      if (profondeur === 0) return nu.slice(debut, j + 1);
+    }
+  }
+  return nu.slice(debut);
+}
 
 var Feries = require('../js/feries.js');
 var Format = require('../js/format.js');
@@ -291,9 +317,17 @@ function moisDe(s, annee, mois) {
     'Le TODO qui renvoyait au lot 14 est levé, pas déplacé');
   assert(sourceDoc.indexOf('votre assistante maternelle') !== -1,
     'A1 : sans nom saisi, le document dit « votre assistante maternelle »');
-  assert(/'Établi par ' \+ \(nomAuteur\(\) \|\| 'votre assistante maternelle'\)/.test(sourceDoc),
-    '§16.2 : la ligne est exactement « Établi par <nom> » — sans profession, ' +
-    'sans numéro d’agrément');
+  /* C6, faiblesse 3 — même remarque : on vérifie la RÈGLE, pas la ligne.
+     La profession et le numéro d'agrément ne doivent plus figurer sur la
+     signature ; le rendu réel est contrôlé par `lot16-ecrans.smoke.js`. */
+  var corpsAuteur = corpsDeFonction(sourceDoc, 'function enTeteAuteur(');
+  assert(corpsAuteur.indexOf('Établi par') !== -1,
+    '§16.2 : la signature dit « Établi par »');
+  assert(corpsAuteur.indexOf('assistante maternelle,') === -1 &&
+         corpsAuteur.indexOf(', assistante maternelle') === -1,
+    '§16.2 : sans mention de la profession accolée au nom');
+  assert(corpsAuteur.indexOf('agrément') === -1,
+    '§16.2 : et sans numéro d’agrément');
   assert(sourceDoc.indexOf('snap.nomEmettrice') !== -1,
     'A2 : le nom entre dans l’instantané — un mois clôturé avant la saisie ne ' +
     'se met jamais à jour tout seul');
@@ -336,14 +370,19 @@ function moisDe(s, annee, mois) {
   /* A2 — aucun « Annuler » ne suit une clôture. La fonction `cloturer` ne
      passe aucune action d'annulation au toast, et c'est ce qu'on vérifie :
      un bouton qui défait aussitôt un geste réfléchi en affaiblit le sens. */
-  var corpsCloturer = sourceDoc.slice(sourceDoc.indexOf('function cloturer('));
-  corpsCloturer = corpsCloturer.slice(0, corpsCloturer.indexOf('\n  }\n'));
+  var corpsCloturer = corpsDeFonction(sourceDoc, 'function cloturer(');
+  assert(corpsCloturer.length > 400,
+    'C6 : la fonction `cloturer` est extraite ENTIÈREMENT (obtenu ' +
+    corpsCloturer.length + ' caractères) — l’ancien découpage n’en voyait que ' +
+    'les deux tiers');
   assert(corpsCloturer.indexOf('Annuler') === -1,
     'A2 : aucun « Annuler » n’est proposé après une clôture');
 
   var sourceAccueil = lire('js/ui-accueil.js');
-  var corpsEtape = sourceAccueil.slice(sourceAccueil.indexOf('function cloturerEtape('));
-  corpsEtape = corpsEtape.slice(0, corpsEtape.indexOf('\n  }\n'));
+  var corpsEtape = corpsDeFonction(sourceAccueil, 'function cloturerEtape(');
+  assert(corpsEtape.length > 400,
+    'C6 : la fonction `cloturerEtape` est extraite entièrement (obtenu ' +
+    corpsEtape.length + ' caractères)');
   assert(corpsEtape.indexOf('libelle: \'Annuler\'') === -1,
     'A2 : ni sur le second chemin de clôture, celui de la fin de mois guidée');
 
@@ -358,9 +397,19 @@ function moisDe(s, annee, mois) {
     'A4 : et refuse la clôture avec une phrase qui dit quoi corriger');
   assert(sourceAccueil.indexOf('Corrigez d’abord la répartition du congé') !== -1,
     'A4 : la fin de mois guidée aussi — c’est le second chemin de clôture');
-  assert(/var bloque = !!\(entree && \(entree\.imputationsEcartees \|\| \[\]\)\.length\);/
-    .test(sourceAccueil),
-    'A4 : et son étape ne propose plus « Clôturer et continuer »');
+  /* C6, faiblesse 3 — cette assertion figeait une ligne de code au caractère
+     près : elle cassait sur un simple renommage de variable, et ne vérifiait
+     RIEN de ce qu'elle annonçait. Le comportement lui-même est désormais
+     couvert par `lot16-ecrans.smoke.js`, qui rend l'écran et constate que le
+     bouton n'est pas offert. Ici on ne garde qu'un contrôle de structure :
+     l'étape guidée consulte bien les répartitions écartées avant de proposer
+     la clôture. */
+  var corpsBoutons = corpsDeFonction(sourceAccueil, 'function boutonsEtape(');
+  assert(corpsBoutons.indexOf('imputationsEcartees') !== -1,
+    'A4 : l’étape guidée consulte les répartitions écartées');
+  assert(corpsBoutons.indexOf('imputationsEcartees') <
+         corpsBoutons.indexOf('Clôturer et continuer'),
+    'A4 : et elle le fait AVANT de proposer « Clôturer et continuer »');
 
   /* ==================================================================== */
   /* §16.1 d) — LES BORNES DE LA VENTILATION                              */
@@ -393,13 +442,17 @@ function moisDe(s, annee, mois) {
   console.log('\n--- §16.4 : la ligne de menu figée ---');
 
   var sourceMenu = lire('js/ui-menu.js');
+  /* C6, faiblesse 2 — les contrôles du §16.7 portaient sur le source
+     COMMENTAIRES COMPRIS : `indexOf('Conditions du contrat')` aurait été
+     satisfait par un simple commentaire portant ces mots. */
+  var menuNu = sansCommentaires(sourceMenu);
   var nbChargement = (sourceMenu.match(/'Chargement…'/g) || []).length;
   egal(nbChargement, 1,
     '§16.4 : un seul sous-titre d’attente subsiste — celui des Familles, que ' +
     'quelqu’un sait lever');
-  assert(sourceMenu.indexOf("querySelectorAll('.menu')[0]") === -1,
+  assert(menuNu.indexOf("querySelectorAll('.menu')[0]") === -1,
     '§16.4 : la ligne n’est plus retrouvée par sa POSITION dans la liste');
-  assert(sourceMenu.indexOf('function libelleReglageRappel') !== -1,
+  assert(menuNu.indexOf('function libelleReglageRappel') !== -1,
     '§16.4 : la ligne des rappels affiche son vrai réglage');
   assert(/poserSousTitre\(ligneRappels, null\)/.test(sourceMenu),
     '§16.4 : et n’affiche RIEN si la lecture échoue, plutôt qu’un mot ' +
@@ -417,9 +470,9 @@ function moisDe(s, annee, mois) {
     '§16.5 : et AUCUN contrat existant n’est modifié en silence par la migration');
   assert(/heure_depart: '17:30'/.test(sourceMenu),
     '§16.5 : la création envoie 17:30, au lieu de laisser la base décider');
-  assert(sourceMenu.indexOf('function phraseReglages') !== -1,
+  assert(menuNu.indexOf('function phraseReglages') !== -1,
     '§16.5 : et la phrase affichée est PRODUITE à partir des valeurs envoyées');
-  assert(sourceMenu.indexOf("'Lundi à vendredi, 8h30 → 17h30") === -1,
+  assert(menuNu.indexOf("'Lundi à vendredi, 8h30 → 17h30") === -1,
     '§16.5 : plus aucun horaire écrit en dur dans l’écran de création');
 
   var sourceContrat = lire('js/ui-contrat.js');
@@ -430,20 +483,71 @@ function moisDe(s, annee, mois) {
     'valeurs appliquées, jamais écrite en dur');
 
   /* ==================================================================== */
+  /* REMARQUE 4 DE LA RELECTURE — L'ÉCRAN ET LE SCHÉMA NE PEUVENT PAS      */
+  /* DIVERGER EN SILENCE                                                   */
+  /* ==================================================================== */
+  console.log('\n--- remarque 4 : les défauts de création tenus au schéma ---');
+
+  /* Le §16.5 impose que l'écran de création ENVOIE les réglages qu'il annonce,
+     au lieu de laisser la base décider — c'est ce qui le faisait mentir. Mais
+     déplacer neuf valeurs métier dans l'interface crée un risque neuf : rien
+     n'empêche plus l'écran et le schéma de diverger, et personne ne le verrait.
+
+     Ce contrôle lit les DEUX sources et les compare. Il tombera le jour où
+     l'une bouge sans l'autre. */
+  var blocReglages = /var REGLAGES_PAR_DEFAUT = (\{[\s\S]*?\n  \});/.exec(sourceMenu);
+  assert(!!blocReglages, 'les réglages par défaut de la création sont lisibles');
+  /* eslint-disable-next-line no-eval */
+  var reglages = blocReglages ? eval('(' + blocReglages[1] + ')') : {};
+
+  var schema = lire('supabase/migrations/001_schema.sql');
+  function defautSchema(colonne) {
+    var re = new RegExp(colonne + "\\s+[a-z\\[\\]]+(?:\\(\\d+\\))?\\s+not null default ([^,\\n]+)", 'i');
+    var m = re.exec(schema);
+    return m ? m[1].trim().replace(/^'|'(::[a-z\[\]]+)?$/g, '') : null;
+  }
+
+  /* `heure_depart` est le seul défaut que le lot 16 change : la migration 013
+     le ramène de 18:00 à 17:30. C'est donc elle qui fait foi (§16.5). */
+  var defautDepart = /alter column heure_depart set default '([^']+)'/.exec(sqlNu);
+  egal(defautDepart && defautDepart[1], '17:30',
+    '§16.5 : la migration 013 pose bien 17:30 comme défaut de fin d’accueil');
+  egal(reglages.heure_depart, defautDepart && defautDepart[1],
+    'remarque 4 : l’écran de création envoie EXACTEMENT le défaut du schéma ' +
+    'pour la fin d’accueil');
+
+  [['heure_arrivee', 'heure_arrivee'],
+   ['minutes_contractuelles', 'minutes_contractuelles'],
+   ['minutes_sup_jour', 'minutes_sup_jour'],
+   ['minutes_par_jour_conge', 'minutes_par_jour_conge'],
+   ['entretien_centimes_jour', 'entretien_centimes_jour'],
+   ['ordre_imputation', 'ordre_imputation']].forEach(function (paire) {
+    var attendu = defautSchema(paire[0]);
+    if (attendu === null) { assert(false, 'défaut de ' + paire[0] + ' introuvable au schéma'); return; }
+    egal(String(reglages[paire[1]]), String(attendu),
+      'remarque 4 : ' + paire[0] + ' — écran et schéma disent la même chose');
+  });
+
+  egal(JSON.stringify(reglages.jours_planning), JSON.stringify([1, 2, 3, 4, 5]),
+    'remarque 4 : les jours de garde par défaut sont ceux du schéma');
+  egal(reglages.sup_dues_si_enfant_absent, true,
+    'remarque 4 : et RG-09 par défaut aussi');
+
+  /* ==================================================================== */
   /* §16.7 — L'EXPORT ANNONCE « TOUT »                                    */
   /* ==================================================================== */
   console.log('\n--- §16.7 : l’export ---');
 
-  assert(sourceMenu.indexOf('function estJourneeParlante') !== -1,
+  assert(menuNu.indexOf('function estJourneeParlante') !== -1,
     '§16.7 : une journée de PRÉSENCE portant un ajustement entre dans le document');
   assert(!/return j\.type && j\.type !== 'presence';/.test(sourceMenu),
     '§16.7 : le filtre qui les excluait a disparu');
-  assert(sourceMenu.indexOf('Conditions du contrat') !== -1,
+  assert(menuNu.indexOf('Conditions du contrat') !== -1,
     '§16.7 : les conditions du contrat y figurent — sans elles, aucun chiffre ' +
     'du document n’est vérifiable');
-  assert(sourceMenu.indexOf('Point de départ des compteurs') !== -1,
+  assert(menuNu.indexOf('Point de départ des compteurs') !== -1,
     '§16.7 : le point de départ aussi — c’est de lui que dérivent tous les soldes');
-  assert(sourceMenu.indexOf('CONTRATS TYPES') !== -1,
+  assert(menuNu.indexOf('CONTRATS TYPES') !== -1,
     '§16.7 : et les contrats types, chargés depuis toujours et jamais écrits');
 
   /* ==================================================================== */

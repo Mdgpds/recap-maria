@@ -126,26 +126,72 @@
       Kit.toast('Cette période de congé n’est plus enregistrée sur ce mois.', true);
       return;
     }
-    feuilleCorrection(trouve.fiche, trouve.imputation);
+
+    /* CORRECTION RELECTURE LOT 16 (remarque 2) — LES RÉSERVES SE LISENT AU
+       MOIS OÙ LA PÉRIODE COMMENCE, pas au mois affiché.
+
+       C'est ce mois-là que le moteur confronte à la ventilation d'une période
+       entière (`imposeeTotale`), et c'est ce que fait déjà le chemin de POSE
+       (`preparerVentilations`). La correction s'alignait sur le mois à
+       l'écran : sur une période à cheval ouverte depuis le second mois, elle
+       aurait proposé des bornes qui ne sont pas celles que le moteur applique. */
+    var moisDebut = Chaine.moisDeDate(trouve.imputation.date_debut);
+    if (moisDebut.annee === vue.annee && moisDebut.mois === vue.mois) {
+      feuilleCorrection(trouve.fiche, trouve.imputation);
+      return;
+    }
+    global.App.serie(trouve.fiche.contrat, moisDebut).then(function (chaine) {
+      var e = global.App.moisDe(chaine, moisDebut.annee, moisDebut.mois);
+      feuilleCorrection(e
+        ? { contrat: trouve.fiche.contrat, entree: e, journees: trouve.fiche.journees,
+            imputations: trouve.fiche.imputations, erreur: null }
+        : trouve.fiche, trouve.imputation);
+    }).catch(function (err) {
+      /* Rien n'est ouvert sur des chiffres dont on n'est pas sûr. */
+      Kit.toast('Impossible de lire vos compteurs au mois où cette période commence : ' +
+        Kit.messageErreur(err) + ' Rien n’a été modifié.', true);
+    });
   }
 
   function feuilleCorrection(fiche, imputation) {
     var c = fiche.contrat;
-    var jours = imputation.jours_ouvrables;
+    var planning = c.jours_planning || [1, 2, 3, 4, 5];
+
+    /* CORRECTION RELECTURE LOT 16 (B1) — LE NOMBRE DE JOURS VIENT DU MOTEUR,
+       JAMAIS DU CHAMP ENREGISTRÉ.
+
+       La feuille lisait `imputation.jours_ouvrables`. Or `IMPUTATION_INCOMPLETE`
+       est levée précisément quand cette valeur ne correspond PAS au décompte
+       RG-06 que le moteur calcule lui-même. Répartir sur la valeur enregistrée
+       reproduisait donc exactement l'état refusé : Maria corrigeait, la période
+       restait écartée, la clôture restait bloquée, indéfiniment.
+
+       Le décompte est une donnée CALCULÉE — le moteur le dit lui-même : « le
+       décompte RG-06 d'une période est une donnée calculée, jamais une donnée
+       d'entrée ». La réécrire n'écrase donc aucun choix de Maria, elle rétablit
+       la vérité. Mais on ne la réécrit pas en silence : l'écart lui est annoncé
+       AVANT qu'elle ne réparte, et le « reste à répartir » démarre au nombre de
+       jours qu'elle a en plus. Rien n'est écrit en base tant qu'elle n'a pas
+       validé. */
+    var jours = Engine.decompterJoursOuvrables(imputation.date_debut, imputation.date_fin, planning);
+    var enregistres = imputation.jours_ouvrables == null ? jours : imputation.jours_ouvrables;
+    var ecartDecompte = jours - enregistres;
+
     var cp = cpDe(fiche);
     var sup = supDe(fiche);
-    var maxCp = Math.floor(cp / 10);
-    var maxSup = c.minutes_par_jour_conge ? Math.floor(sup / c.minutes_par_jour_conge) : 0;
+    var plafonds = plafondsDe(fiche);
+    var maxCp = plafonds.maxCp;
+    var maxSup = plafonds.maxSup;
 
-    /* La proposition de départ est celle du MOTEUR, dans l'ordre du contrat —
-       exactement celle sur laquelle le mois est actuellement calculé depuis
-       que la ventilation enregistrée a été écartée. Maria voit donc d'abord
-       les chiffres qu'elle a sous les yeux, et corrige à partir de là. */
-    var choix = { joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0 };
-    if (jours > 0) {
-      var r = Engine.imputerConges(jours, { dixiemesCp: cp, minutesSup: sup }, c);
-      choix = { joursSurCp: r.joursSurCp, joursSurSup: r.joursSurSup, joursSansSolde: r.joursSansSolde };
-    }
+    /* On repart de CE QUE MARIA AVAIT CHOISI, borné à ce que les réserves
+       couvrent — et non d'une proposition qui déciderait à sa place. Ce qui
+       reste à placer se voit alors dans « reste à répartir », et c'est
+       exactement ce qu'elle doit trancher. */
+    var choix = {
+      joursSurCp: Math.min(imputation.jours_sur_cp || 0, maxCp),
+      joursSurSup: Math.min(imputation.jours_sur_sup || 0, maxSup),
+      joursSansSolde: Math.min(imputation.jours_sans_solde || 0, jours)
+    };
 
     var p = {
       fiche: fiche, contrat: c, jours: jours, cp: cp, sup: sup,
@@ -155,6 +201,18 @@
     Kit.ouvrirFeuille(c.prenom_enfant + ' — ' + Kit.jours(jours) + ' à répartir',
       libellePlage(imputation.date_debut, imputation.date_fin),
       function (corps) {
+        /* L'écart de décompte, dit avant tout le reste. Sans cette phrase,
+           Maria verrait un jour de plus à placer sans comprendre d'où il sort. */
+        if (ecartDecompte !== 0) {
+          corps.appendChild(Kit.note(
+            'Cette période compte ' + Kit.jours(jours) + ' ouvrables, pas ' +
+            Kit.jours(enregistres) + ' comme enregistré',
+            'Le décompte se fait en jours ouvrables, samedis inclus. Vous avez ' +
+            (ecartDecompte > 0
+              ? Kit.jours(ecartDecompte) + ' de plus à répartir.'
+              : Kit.jours(-ecartDecompte) + ' de moins à répartir.')));
+        }
+
         var res = Kit.pane('Vos réserves pour ce contrat');
         var lr = Kit.lines(res);
         Kit.ligne(lr, 'Congés payés', Kit.joursCp(cp));
@@ -165,7 +223,9 @@
 
         var reste = Kit.ce('div', 'reste');
         var effet = Kit.ce('div', 'effet-sans-solde');
-        var bValider = Kit.bouton('btn', function () { validerCorrection(bValider, imputation, p); });
+        var bValider = Kit.bouton('btn', function () {
+          validerCorrection(bValider, imputation, p);
+        });
         bValider.textContent = 'Enregistrer la répartition';
 
         function majAffichage() {
@@ -210,6 +270,10 @@
   function validerCorrection(bouton, imputation, p) {
     bouton.disabled = true;
     global.DB.majVentilationImputation(imputation.id, {
+      /* B1 — `jours_ouvrables` part AVEC la ventilation. La contrainte SQL
+         `imputation_complete` exige que les deux restent égaux ; ne pas
+         l'écrire laissait la ligne dans l'état même que le moteur refuse. */
+      jours_ouvrables: p.jours,
       jours_sur_cp: p.choix.joursSurCp,
       jours_sur_sup: p.choix.joursSurSup,
       jours_sans_solde: p.choix.joursSansSolde
@@ -496,12 +560,26 @@
     return Kit.ce('div', 'sb q', texte);
   }
 
+  /* CORRECTION RELECTURE LOT 16 (B2). Cette fonction parcourait `debut` →
+     `fin` et nommait tout férié trouvé. Deux erreurs, symétriques :
+
+     - elle MANQUAIT le férié tombant après le dernier jour posé — typiquement
+       le samedi qui prolonge une semaine jusqu'à la veille de la reprise. Le
+       15 août 2026 est un samedi férié : une semaine posée du 10 au 14 compte
+       5 jours et non 6, et l'écran ne le disait pas. C'est mot pour mot
+       l'exemple de la spécification, et le seul cas que la phrase existe pour
+       expliquer ;
+     - elle NOMMAIT un férié tombant un dimanche, qui n'a jamais rien retiré.
+
+     Les deux sont réglés dans `chaine-mois.js`, qui applique la règle de
+     reprise de RG-06 au lieu de s'arrêter à `date_fin`. */
   function feriesDesPeriodes(groupes) {
     var vus = {};
     groupes.forEach(function (g) {
-      for (var d = g.debut; d <= g.fin; d = Feries.ajouterJours(d, 1)) {
-        if (Engine.estJourFerie(d)) vus[d] = true;
-      }
+      var planning = g.lignes[0].contrat.jours_planning || [1, 2, 3, 4, 5];
+      Chaine.feriesDecomptes(Engine, g.debut, g.fin, planning).forEach(function (d) {
+        vus[d] = true;
+      });
     });
     return Object.keys(vus).sort();
   }
@@ -556,6 +634,25 @@
   }
   function supDe(fiche) {
     return Kit.supDisponible(fiche.entree && fiche.entree.compteurEntree);
+  }
+
+  /* CORRECTION RELECTURE LOT 16 (C3) — CE QUE LES RÉSERVES COUVRENT, EN JOURS,
+     VIENT DU MOTEUR.
+
+     L'écran écrivait `Math.floor(cp / 10)` et
+     `Math.floor(sup / minutes_par_jour_conge)` : c'est RG-05 réécrite dans
+     l'interface, aux deux endroits où l'on ventile. Le lot 16 avait corrigé la
+     SOURCE (compteur d'entrée au lieu de compteur de sortie) mais gardé la
+     conversion sur place.
+
+     Et elle ne serait pas restée juste : le §17.6 fait passer les congés payés
+     des dixièmes de jour aux MINUTES. Le jour où `cp` porte des minutes,
+     `Math.floor(cp / 10)` ne lève aucune erreur — il annonce simplement 54
+     jours disponibles au lieu de 10. Deux divisions par 10 dans un écran sont
+     exactement ce qu'on oublie. */
+  function plafondsDe(fiche) {
+    var r = Chaine.reservesEnJours(fiche.contrat, fiche.entree && fiche.entree.compteurEntree);
+    return { maxCp: r.joursCp, maxSup: r.joursSup };
   }
 
   /* ------------------------------------------------------------------ */
@@ -857,6 +954,7 @@
       var joursPoses = joursDuContrat(c, plage);
       var cp = cpDe(f);
       var sup = supDe(f);
+      var plafonds = plafondsDe(f);
 
       /* CORRECTIFS B2 ET A6 DE LA RELECTURE PR9 — deux erreurs au même
          endroit, sur la même ligne.
@@ -899,8 +997,8 @@
            couple qui part dans `imputation_conge`, pas la plage saisie. */
         bornes: bornes,
         cp: cp, sup: sup,
-        maxCp: Math.floor(cp / 10),
-        maxSup: c.minutes_par_jour_conge ? Math.floor(sup / c.minutes_par_jour_conge) : 0,
+        maxCp: plafonds.maxCp,
+        maxSup: plafonds.maxSup,
         choix: propose
       };
     }).filter(function (p) { return p.jours > 0 && p.joursPoses.length > 0; });
