@@ -29,6 +29,11 @@
    Lancement : node test/lot16-ecrans.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -120,6 +125,10 @@ var IMPUT_AOUT = {
 
 var ecritures = { ventilation: [] };
 
+/* LOT 17 §17.2 — le contrat par son identifiant, pour que `getAvenants`
+   reprenne ses réglages : le moteur ne les lit plus sur `contrat`. */
+function contratDe() { return ALPHA; }
+
 var DB = {
   getSession: function () {
     return Promise.resolve({ user: { id: 'u1', email: 'maria@exemple.test' } });
@@ -143,13 +152,15 @@ var DB = {
   },
   contratEstVierge: function () { return Promise.resolve(false); },
   majContratIdentite: function (id, champs) { return Promise.resolve(champs); },
-  getSalaires: function (id) {
-    return Promise.resolve([{ id: 's1', contrat_id: id, date_effet: '2026-01-01',
-      brut_mensuel_centimes: 150000, net_mensuel_centimes: 115000 }]);
+  getAvenants: function (id) {
+    return Promise.resolve(Decor.avenantsDe(contratDe(id),
+      [{ id: 's1', contrat_id: id, date_effet: '2026-01-01',
+         brut_mensuel_centimes: 150000, net_mensuel_centimes: 115000 }]));
   },
   getCompteurInitial: function (id) {
-    return Promise.resolve({ contrat_id: id, date_reference: '2026-06-01',
-      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 });
+    return Promise.resolve(Decor.compteurEnMinutes({ contrat_id: id,
+      date_reference: '2026-06-01',
+      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 }));
   },
   getJourneesMois: function (id, a, m) {
     if (a === 2026 && m === 6) return Promise.resolve(journees(JOURS_JUIN));

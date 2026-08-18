@@ -30,13 +30,21 @@
    moteur de chaîne. Sans incrément, l'ancien service worker continuerait à
    servir la version d'avant — et les correctifs n'atteindraient Maria qu'à la
    deuxième ouverture, ou jamais. */
-/* LOT 16 — NOM DE CACHE CHANGÉ. Aucun fichier n'est ajouté par ce lot, mais
-   `css/style.css` et huit fichiers `js/` changent de contenu. Sans nouveau
-   nom, le service worker continuerait de servir l'ancienne version depuis le
-   cache et ne récupérerait la nouvelle qu'en arrière-plan : le téléphone de
-   Maria ferait tourner un mélange de deux versions, dont l'écran d'un enfant
-   d'avant le correctif du §16.1. */
-var CACHE = 'recap-lot16-correctifs-relecture-v1';
+/* LOT 17 — NOM DE CACHE CHANGÉ. Aucun fichier n'est ajouté par ce lot, mais
+   TREIZE fichiers changent de contenu — `js/engine.js` compris, qui est le
+   plus lourd de conséquences : il change d'UNITÉ pour les congés payés et de
+   SOURCE pour les conditions.
+
+   Sans incrément, le téléphone de Maria garderait les anciens fichiers du
+   pré-cache et ferait tourner un mélange des deux versions : un moteur qui
+   lit des minutes contre une chaîne qui lui envoie des dixièmes. Les chiffres
+   seraient faux d'un facteur 54, et crédibles.
+
+   Rappel de la règle, à ne jamais desserrer : tout fichier `js/` ou `css/`
+   ajouté doit entrer dans `index.html` ET dans cette liste, et `CACHE` doit
+   changer de nom. Un fichier absent de la liste n'est rafraîchi qu'au hasard
+   des requêtes. */
+var CACHE = 'recap-lot17-temps-et-avenants-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

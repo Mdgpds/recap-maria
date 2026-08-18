@@ -106,6 +106,44 @@
     'nom, genre, couleur, photo, modele_id, ' +
     'famille:famille_id ( id, nom, canal, archive )';
 
+  /* LOT 17 — les conditions du contrat, datées (§17.2). `salaire_contrat` est
+     devenue `avenant_contrat` et porte les ONZE réglages, plus le brut et le
+     net. Une seule définition ici, comme pour `CHAMPS_CONTRAT` : une colonne
+     ajoutée par une migration et oubliée dans un select n'existerait pour
+     aucun écran — c'est le défaut qui s'est produit deux fois (lots 9 et 13),
+     et que test/couche-donnees.test.js garde désormais. */
+  var CHAMPS_AVENANT =
+    'id, contrat_id, date_effet, numero, reconstitue, ' +
+    'brut_mensuel_centimes, net_mensuel_centimes, ' +
+    'jours_planning, heure_arrivee, heure_depart, minutes_contractuelles, ' +
+    'minutes_sup_jour, minutes_par_jour_conge, entretien_centimes_jour, ' +
+    'sup_dues_si_enfant_absent, ordre_imputation';
+
+  /* Les onze réglages qu'un avenant peut porter, sans les colonnes d'identité.
+     Sert aux écritures : `numero` et `reconstitue` ne sont jamais transmis par
+     un écran — le premier est calculé, le second n'est vrai que pour les
+     lignes fabriquées par la migration `014`. */
+  var CHAMPS_AVENANT_MODIFIABLES = [
+    'date_effet', 'brut_mensuel_centimes', 'net_mensuel_centimes',
+    'jours_planning', 'heure_arrivee', 'heure_depart', 'minutes_contractuelles',
+    'minutes_sup_jour', 'minutes_par_jour_conge', 'entretien_centimes_jour',
+    'sup_dues_si_enfant_absent', 'ordre_imputation'
+  ];
+
+  /* LOT 17 — le point de départ des compteurs. Les congés payés passent en
+     MINUTES (§17.6) ; les colonnes en dixièmes existent encore en base mais
+     ne sont PLUS LUES, et ne doivent donc plus figurer dans aucun select :
+     une colonne demandée est une colonne qu'un écran finira par afficher. */
+  var CHAMPS_COMPTEUR_INITIAL =
+    'contrat_id, date_reference, minutes_sup, minutes_cp_acquis, minutes_cp_pris';
+
+  /* LOT 17 — les journées portent désormais l'écart d'horaire déclaré
+     (§17.5). Une seule définition, pour les trois selects qui les lisent. */
+  var CHAMPS_JOURNEE =
+    'id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
+    'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override, ' +
+    'ecart_minutes, ecart_evenement, ecart_heure_reelle, ecart_impute_sur';
+
   /* Familles non archivées. */
   function listFamilles() {
     return client.from('famille')
@@ -172,9 +210,12 @@
       .then(deballer);
   }
 
-  function getSalaires(contratId) {
-    return client.from('salaire_contrat')
-      .select('id, contrat_id, date_effet, brut_mensuel_centimes, net_mensuel_centimes')
+  /* Les avenants d'un contrat, du plus ancien au plus récent. C'est la SEULE
+     source des conditions de calcul depuis le lot 17 : plus aucun réglage
+     n'est lu sur `contrat` (§17.2). */
+  function getAvenants(contratId) {
+    return client.from('avenant_contrat')
+      .select(CHAMPS_AVENANT)
       .eq('contrat_id', contratId)
       .order('date_effet', { ascending: true })
       .then(deballer);
@@ -182,7 +223,7 @@
 
   function getCompteurInitial(contratId) {
     return client.from('compteur_initial')
-      .select('contrat_id, date_reference, minutes_sup, dixiemes_cp_acquis, dixiemes_cp_pris')
+      .select(CHAMPS_COMPTEUR_INITIAL)
       .eq('contrat_id', contratId)
       .maybeSingle()
       .then(function (r) { if (r.error) throw r.error; return r.data; });
@@ -439,11 +480,16 @@
       .upsert({
         contrat_id: contratId,
         date_reference: champs.date_reference,
-        minutes_sup: champs.minutes_sup || 0,
-        dixiemes_cp_acquis: champs.dixiemes_cp_acquis || 0,
-        dixiemes_cp_pris: champs.dixiemes_cp_pris || 0
+        /* `minutes_sup` peut être NÉGATIF depuis le lot 17 (§17.5) : une
+           reprise de comptes doit pouvoir dire « je dois 1 h 30 ». D'où le
+           test à `null` plutôt qu'un `|| 0`, qui écraserait un négatif
+           parfaitement légitime — non, il l'écraserait pas, mais il masquerait
+           un zéro voulu ; le test explicite dit ce qu'on veut dire. */
+        minutes_sup: champs.minutes_sup == null ? 0 : champs.minutes_sup,
+        minutes_cp_acquis: champs.minutes_cp_acquis || 0,
+        minutes_cp_pris: champs.minutes_cp_pris || 0
       }, { onConflict: 'contrat_id' })
-      .select('contrat_id, date_reference, minutes_sup, dixiemes_cp_acquis, dixiemes_cp_pris')
+      .select(CHAMPS_COMPTEUR_INITIAL)
       .then(deballer)
       .then(function (r) { return r[0]; });
   }
@@ -503,15 +549,14 @@
     return Promise.all([
       listFamillesToutes(),
       listContratsTous(),
-      client.from('salaire_contrat')
-        .select('id, contrat_id, date_effet, brut_mensuel_centimes, net_mensuel_centimes')
+      client.from('avenant_contrat')
+        .select(CHAMPS_AVENANT)
         .order('date_effet', { ascending: true }).then(deballer),
       client.from('compteur_initial')
-        .select('contrat_id, date_reference, minutes_sup, dixiemes_cp_acquis, dixiemes_cp_pris')
+        .select(CHAMPS_COMPTEUR_INITIAL)
         .then(deballer),
       client.from('journee')
-        .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
-                'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override')
+        .select(CHAMPS_JOURNEE)
         .order('jour', { ascending: true }).then(deballer),
       client.from('recap_mensuel')
         .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
@@ -531,7 +576,7 @@
           Object.keys(c).forEach(function (k) { if (k !== 'photo') copie[k] = c[k]; });
           return copie;
         }),
-        salaires: r[2],
+        avenants: r[2],
         compteurs_initiaux: r[3],
         journees: r[4],
         recapitulatifs: r[5],
@@ -714,73 +759,109 @@
     return a === b;
   }
 
-  /* Applique UN SEUL champ à plusieurs contrats (V8-25).
+  /* CODE MORT DEPUIS LE LOT 17 (§17.9), CONSERVÉ JUSQU'AU LOT 19 (§19.2).
 
-     LA RÉMUNÉRATION EST TRAITÉE À PART, et ce n'est pas un détail : écrire un
-     montant directement sur `contrat` changerait les mois DÉJÀ CALCULÉS, y
-     compris ceux qui sont clôturés et dont le document est parti chez une
-     famille. Une rémunération se pose toujours par une ligne `salaire_contrat`
-     DATÉE, que le moteur choisit ensuite selon RG-15. C'est le risque n° 2 de
-     la spécification, et il ne se rattrape pas après coup.
+     « Modifier plusieurs contrats » est RETIRÉ de l'application. Il écrivait
+     les réglages directement sur `contrat`, sans aucune date : avec les
+     avenants, il serait devenu le seul moyen d'effacer le passé sans s'en
+     apercevoir. L'écran a disparu du Menu ; cette fonction n'est plus appelée
+     par personne.
 
-     `champ` vaut soit 'remuneration' — et `valeur` porte alors
-     { brut_mensuel_centimes, net_mensuel_centimes } —, soit n'importe quel
-     champ modifiable d'un contrat. */
-  function majContratsEnLot(contratIds, champ, valeur, dateEffet) {
-    if (champ === 'remuneration') {
-      if (!dateEffet) return Promise.reject(new Error('DATE_EFFET_REQUISE'));
-      return Promise.all((contratIds || []).map(function (id) {
-        return ajouterSalaire(id, {
-          date_effet: dateEffet,
-          brut_mensuel_centimes: valeur.brut_mensuel_centimes,
-          net_mensuel_centimes: valeur.net_mensuel_centimes
-        });
-      }));
-    }
-    var champs = {};
-    champs[champ] = valeur;
-    return Promise.all((contratIds || []).map(function (id) {
-      return majContrat(id, champs);
-    }));
+     Elle n'est pas supprimée — c'est le §19.2 qui s'en chargera — mais elle
+     REFUSE désormais plutôt que d'écrire. Une fonction morte qui continuerait
+     d'écrire sur `contrat` des réglages que plus rien ne lit produirait
+     exactement le pire des cas : une modification qui paraît réussir et ne
+     change aucun calcul. */
+  function majContratsEnLot() {
+    return Promise.reject(new Error('ECRAN_RETIRE_LOT17'));
   }
 
   /* ------------------------------------------------------------------ */
-  /* Barèmes de rémunération (lot 5 C5)                                  */
+  /* Les avenants : les conditions du contrat, datées (lot 17, §17.2)     */
   /*                                                                     */
-  /* La mécanique RG-15 (salaireApplicable) est déjà en place et validée  */
-  /* dans le moteur : il ne manquait que la saisie. Aucun calcul ici.    */
+  /* La mécanique RG-15 (`conditionsApplicables`) est en place et validée */
+  /* dans le moteur depuis le lot 1 ; le lot 17 en élargit le périmètre à */
+  /* onze réglages. Aucun calcul ici : la couche données ne fait que lire */
+  /* et écrire.                                                          */
+  /*                                                                     */
+  /* `numero` n'est pas transmis par l'écran : il est déduit du rang de la */
+  /* date d'effet, ici, à l'écriture. Le laisser à la charge de l'écran   */
+  /* reviendrait à répartir sur quatre appelants une numérotation qui doit */
+  /* rester unique par contrat (index `avenant_contrat_numero_unique`).   */
   /* ------------------------------------------------------------------ */
 
-  function ajouterSalaire(contratId, champs) {
-    return client.from('salaire_contrat')
-      .insert({
-        contrat_id: contratId,
-        date_effet: champs.date_effet,
-        brut_mensuel_centimes: champs.brut_mensuel_centimes,
-        net_mensuel_centimes: champs.net_mensuel_centimes
+  /* Renumérote tous les avenants d'un contrat, par date d'effet croissante.
+     Appelée après chaque insertion, modification de date ou suppression :
+     un avenant n° 2 qui deviendrait le premier de la liste après une
+     suppression porterait un numéro que la frise afficherait tel quel. */
+  function renumeroterAvenants(contratId) {
+    return getAvenants(contratId).then(function (liste) {
+      var aCorriger = (liste || []).filter(function (a, i) {
+        return a.numero !== i + 1;
+      });
+      if (!aCorriger.length) return liste;
+      return Promise.all(liste.map(function (a, i) {
+        if (a.numero === i + 1) return null;
+        return client.from('avenant_contrat')
+          .update({ numero: i + 1 })
+          .eq('id', a.id)
+          .then(function (r) { if (r.error) throw r.error; return true; });
+      })).then(function () { return getAvenants(contratId); });
+    });
+  }
+
+  function ajouterAvenant(contratId, champs) {
+    return client.from('avenant_contrat')
+      .insert(nettoyer(Object.assign({ contrat_id: contratId }, champs),
+                       ['contrat_id'].concat(CHAMPS_AVENANT_MODIFIABLES)))
+      .select(CHAMPS_AVENANT)
+      .then(deballer)
+      .then(function (r) {
+        return renumeroterAvenants(contratId).then(function (liste) {
+          /* On rend la ligne RELUE après renumérotation : rendre celle de
+             l'insert ferait afficher un numéro périmé sur l'écran qui vient
+             de la créer. */
+          var id = r[0].id;
+          for (var i = 0; i < liste.length; i++) if (liste[i].id === id) return liste[i];
+          return r[0];
+        });
+      });
+  }
+
+  function majAvenant(id, champs) {
+    return client.from('avenant_contrat')
+      .update(nettoyer(champs, CHAMPS_AVENANT_MODIFIABLES))
+      .eq('id', id)
+      .select(CHAMPS_AVENANT)
+      .then(deballer)
+      .then(function (r) {
+        return renumeroterAvenants(r[0].contrat_id).then(function (liste) {
+          for (var i = 0; i < liste.length; i++) if (liste[i].id === id) return liste[i];
+          return r[0];
+        });
+      });
+  }
+
+  /* Suppression d'un avenant. L'appelant DOIT avoir vérifié qu'aucun mois
+     clôturé ne l'utilise (§17.4) : la base ne connaît pas le lien entre un
+     avenant et un récapitulatif figé, et un refus qui ne nomme pas les mois
+     concernés ne sert à rien. */
+  function supprimerAvenant(id) {
+    return client.from('avenant_contrat')
+      .select('contrat_id')
+      .eq('id', id)
+      .maybeSingle()
+      .then(function (r) { if (r.error) throw r.error; return r.data; })
+      .then(function (ligne) {
+        return client.from('avenant_contrat')
+          .delete()
+          .eq('id', id)
+          .then(function (r) { if (r.error) throw r.error; return ligne; });
       })
-      .select('id, contrat_id, date_effet, brut_mensuel_centimes, net_mensuel_centimes')
-      .then(deballer)
-      .then(function (r) { return r[0]; });
-  }
-
-  function majSalaire(id, champs) {
-    return client.from('salaire_contrat')
-      .update(nettoyer(champs, ['date_effet', 'brut_mensuel_centimes', 'net_mensuel_centimes']))
-      .eq('id', id)
-      .select('id, contrat_id, date_effet, brut_mensuel_centimes, net_mensuel_centimes')
-      .then(deballer)
-      .then(function (r) { return r[0]; });
-  }
-
-  /* Suppression d'un barème. L'appelant DOIT avoir vérifié qu'aucun récap
-     figé ne s'appuie dessus (garde-fou C5, porté par l'écran : la base ne
-     connaît pas le lien entre un barème et un récap figé). */
-  function supprimerSalaire(id) {
-    return client.from('salaire_contrat')
-      .delete()
-      .eq('id', id)
-      .then(function (r) { if (r.error) throw r.error; return true; });
+      .then(function (ligne) {
+        if (!ligne) return true;
+        return renumeroterAvenants(ligne.contrat_id).then(function () { return true; });
+      });
   }
 
   /* ------------------------------------------------------------------ */
@@ -792,8 +873,7 @@
   function getJourneesMois(contratId, annee, mois) {
     var bornes = bornesMois(annee, mois);
     return client.from('journee')
-      .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
-              'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override')
+      .select(CHAMPS_JOURNEE)
       .eq('contrat_id', contratId)
       .gte('jour', bornes.debut)
       .lte('jour', bornes.fin)
@@ -812,8 +892,7 @@
      directement consommable par le calcul mois par mois. */
   function getJourneesPeriode(contratId, dateDebut, dateFin) {
     return client.from('journee')
-      .select('id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
-              'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override')
+      .select(CHAMPS_JOURNEE)
       .eq('contrat_id', contratId)
       .gte('jour', dateDebut)
       .lte('jour', dateFin)
@@ -853,7 +932,13 @@
       entretien_centimes: (ligne.entretien_centimes == null ? null : ligne.entretien_centimes),
       commentaire: (ligne.commentaire == null ? null : ligne.commentaire)
     };
-    ['minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override']
+    /* LOT 17 §17.5 — les quatre colonnes de l'écart d'horaire suivent la même
+       règle de transmission : absentes, elles ne sont pas touchées ; présentes
+       à `null`, elles EFFACENT la déclaration. C'est ce qui permet à Maria de
+       revenir sur un événement déclaré par erreur — un écart qu'on ne pourrait
+       pas retirer serait pire que pas d'écart du tout. */
+    ['minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',
+     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur']
       .forEach(function (champ) {
         if (Object.prototype.hasOwnProperty.call(ligne, champ) && ligne[champ] !== undefined) {
           payload[champ] = ligne[champ];
@@ -1265,10 +1350,13 @@
     majContrat: majContrat,
     archiverContrat: archiverContrat,
     desarchiverContrat: desarchiverContrat,
-    getSalaires: getSalaires,
-    ajouterSalaire: ajouterSalaire,
-    majSalaire: majSalaire,
-    supprimerSalaire: supprimerSalaire,
+    /* LOT 17 — les avenants remplacent les barèmes (§17.2). Aucun alias
+       n'est laissé : `getSalaires` sur une table qui porte onze réglages
+       ferait croire qu'il n'y en a que deux. */
+    getAvenants: getAvenants,
+    ajouterAvenant: ajouterAvenant,
+    majAvenant: majAvenant,
+    supprimerAvenant: supprimerAvenant,
     getCompteurInitial: getCompteurInitial,
     getJourneesMois: getJourneesMois,
     getJourneesPeriode: getJourneesPeriode,

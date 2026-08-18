@@ -915,3 +915,50 @@ button.coche:active { transform: scale(.99); }
    la ligne d'un mois, dans l'historique. Forme allégée : l'encart complet
    avec son bouton reste sur l'espace enfant, où la correction se fait. */
 .sb.alerte { color: var(--wa); font-weight: 600; }
+
+/* ==========================================================================
+   LOT 17 — LES CONDITIONS DATÉES, LE TEMPS, LA FIN DE CONTRAT
+   ========================================================================== */
+
+/* Le formulaire des onze conditions, partagé par la création d'un contrat et
+   « Faire un avenant ». Onze champs, c'est long : l'espacement fait tout le
+   travail de lisibilité, sinon Maria perd sa ligne au troisième. */
+.conditions { margin-top: 4px; }
+.conditions .fld { margin-bottom: 12px; }
+
+/* Une durée en heures ET minutes. Deux champs étroits plutôt qu'un large :
+   « 9 h 30 » se saisit comme on le lit, pas comme « 9,5 ». */
+.fld.duree .row { display: flex; align-items: center; gap: 6px; }
+.fld.duree input {
+  width: 4.5em; text-align: right; font-size: 16px;
+  padding: 10px 8px; border: 1px solid var(--bd); border-radius: 10px;
+  background: var(--bg2); color: var(--ink);
+}
+.fld.duree .u { color: var(--ink3); font-size: 14px; }
+
+/* Les jours de garde. Cibles au doigt : 44 px de haut, pas moins — c'est la
+   taille minimale d'une case qu'on coche debout, un enfant dans les bras. */
+.fld.planning .jours { display: flex; flex-wrap: wrap; gap: 6px; }
+.fld.planning .jour {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px; padding: 0 10px;
+  border: 1px solid var(--bd); border-radius: 10px; background: var(--bg2);
+  font-size: 14px; cursor: pointer;
+}
+.fld.planning .jour input { width: 20px; height: 20px; }
+
+/* Un avenant À VENIR : visible sans être appliqué. Il ne crie pas — ce n'est
+   ni une alerte ni une erreur, c'est une décision déjà prise qui attend sa
+   date. La barre latérale suffit à le distinguer d'une note ordinaire. */
+.note.a-venir { border-left: 3px solid var(--ac); }
+
+/* La frise : l'état d'une période de conditions. Les trois mots sont dits en
+   toutes lettres, jamais par la couleur seule (V8-01). */
+.pastille.p-passe   { color: var(--ink3); font-weight: 600; }
+.pastille.p-vigueur { color: var(--ac); font-weight: 700; }
+.pastille.p-avenir  { color: var(--ac); font-weight: 600; }
+
+/* L'encart d'effet d'un avenant, rejoué par le moteur. Il s'insère entre les
+   champs et le bouton : c'est le dernier chose lue avant d'appuyer. */
+.apercu-avenant { margin: 10px 0; }
+.apercu-avenant .attente { padding: 8px 0; font-size: 13px; color: var(--ink3); }

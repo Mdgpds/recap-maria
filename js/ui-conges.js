@@ -79,10 +79,16 @@
              donnée qui porte les vraies bornes et le décompte RG-06. La
              fonction existait déjà et n'était appelée par aucun écran. */
           global.DB.listImputationsPourMois(c.id, m.annee, m.mois)
-            .catch(function () { return null; })
+            .catch(function () { return null; }),
+          /* LOT 17 §17.2 — les conditions du contrat, datées. L'écran des
+             congés lit trois réglages : le planning (quelles journées écrire),
+             les minutes d'un jour de congé (la retenue de sans solde) et le
+             barème (son montant). Aucun ne se lit plus sur `contrat`. */
+          global.App.avenants(c.id)
         ]).then(function (r) {
           return {
             contrat: c,
+            avenants: r[3],
             entree: global.App.moisDe(r[0], m.annee, m.mois),
             journees: r[1],
             /* `null` — et non `[]` — quand la lecture échoue : l'écran doit
@@ -92,7 +98,8 @@
             erreur: null
           };
         }).catch(function (e) {
-          return { contrat: c, entree: null, journees: {}, imputations: null, erreur: e };
+          return { contrat: c, avenants: [], entree: null, journees: {},
+                   imputations: null, erreur: e };
         });
       })),
       global.App.recapsDuMois(m.annee, m.mois).catch(function () { return null; })
@@ -155,7 +162,8 @@
 
   function feuilleCorrection(fiche, imputation) {
     var c = fiche.contrat;
-    var planning = c.jours_planning || [1, 2, 3, 4, 5];
+    var cond = condDe(fiche);
+    var planning = (cond && cond.jours_planning) || [1, 2, 3, 4, 5];
 
     /* CORRECTION RELECTURE LOT 16 (B1) — LE NOMBRE DE JOURS VIENT DU MOTEUR,
        JAMAIS DU CHAMP ENREGISTRÉ.
@@ -194,7 +202,7 @@
     };
 
     var p = {
-      fiche: fiche, contrat: c, jours: jours, cp: cp, sup: sup,
+      fiche: fiche, contrat: c, cond: cond, jours: jours, cp: cp, sup: sup,
       maxCp: maxCp, maxSup: maxSup, choix: choix
     };
 
@@ -215,8 +223,8 @@
 
         var res = Kit.pane('Vos réserves pour ce contrat');
         var lr = Kit.lines(res);
-        Kit.ligne(lr, 'Congés payés', Kit.joursCp(cp));
-        Kit.ligne(lr, 'Récupération', joursDeRecup(c, sup));
+        Kit.ligne(lr, 'Congés payés', Kit.joursCp(cp, mpjc(cond)));
+        Kit.ligne(lr, 'Récupération', joursDeRecup(cond, sup));
         corps.appendChild(res);
 
         corps.appendChild(Kit.section('Comment les prendre ?'));
@@ -240,7 +248,7 @@
           Kit.vider(effet);
           if (p.choix.joursSansSolde > 0) {
             var brut = brutDe(fiche);
-            var minutes = p.choix.joursSansSolde * (c.minutes_par_jour_conge || 0);
+            var minutes = p.choix.joursSansSolde * mpjc(cond);
             var retenue = brut ? Engine.montantCentimes(brut, minutes) : null;
             effet.appendChild(Kit.warnbox(
               Kit.jours(p.choix.joursSansSolde) + ' sans solde',
@@ -253,13 +261,13 @@
         }
 
         corps.appendChild(compteur('Congés payés', p.choix, 'joursSurCp', maxCp, majAffichage,
-          'reste ' + Kit.joursCp(cp) + ' au compteur'));
+          'reste ' + Kit.joursCp(cp, mpjc(cond)) + ' au compteur'));
         corps.appendChild(compteur('Récupération', p.choix, 'joursSurSup', maxSup, majAffichage,
-          'reste ' + joursDeRecup(c, sup) + ' convertibles'));
+          'reste ' + joursDeRecup(cond, sup) + ' convertibles'));
         corps.appendChild(compteur('Sans solde', p.choix, 'joursSansSolde', jours, majAffichage));
 
         corps.appendChild(reste);
-        corps.appendChild(bascule(p, c));
+        corps.appendChild(bascule(p));
         corps.appendChild(effet);
         corps.appendChild(bValider);
 
@@ -456,9 +464,9 @@
       appliquees.forEach(function (a) {
         if (a.source === 'imposee') return;
         if (couvertes[a.date_debut + '|' + a.date_fin]) return;
-        var planning = f.contrat.jours_planning || [1, 2, 3, 4, 5];
+        var planning = planningA(f, a.date_debut);
         groupe(a.date_debut, a.date_fin).lignes.push({
-          contrat: f.contrat,
+          contrat: f.contrat, fiche: f,
           /* Forme d'imputation reconstituée pour l'affichage seul : elle n'est
              jamais écrite, et son décompte est celui du moteur. */
           imputation: {
@@ -512,7 +520,7 @@
     /* Une période à cheval garde ses bornes RÉELLES et annonce sa part : la
        découper au 1er du mois donnerait un décompte faux. La part vient de la
        chaîne, qui la demande au moteur. */
-    var planning = groupe.lignes[0].contrat.jours_planning || [1, 2, 3, 4, 5];
+    var planning = planningA(groupe.lignes[0].fiche, groupe.debut);
     var part = Chaine.partDuMois(Engine, ref, planning, vue.annee, vue.mois);
 
     var textes = [];
@@ -576,8 +584,10 @@
   function feriesDesPeriodes(groupes) {
     var vus = {};
     groupes.forEach(function (g) {
-      var planning = g.lignes[0].contrat.jours_planning || [1, 2, 3, 4, 5];
-      Chaine.feriesDecomptes(Engine, g.debut, g.fin, planning).forEach(function (d) {
+      var planning = planningA(g.lignes[0].fiche, g.debut);
+      /* LOT 17 — la règle est rendue au moteur, seul autorisé à la porter :
+         `Chaine.feriesDecomptes` n'existe plus. */
+      Engine.feriesDeLaPeriode(g.debut, g.fin, planning).forEach(function (d) {
         vus[d] = true;
       });
     });
@@ -598,9 +608,11 @@
       }
       var cp = cpDe(f);
       var sup = supDe(f);
+      var cond = condDe(f);
       Kit.ligne(l, f.contrat.prenom_enfant,
-        Kit.joursCp(cp) + ' de congés payés · ' + joursDeRecup(f.contrat, sup) + ' de récupération',
-        { alerte: cp < Kit.SEUIL_CP_BAS_DIXIEMES });
+        Kit.joursCp(cp, mpjc(cond)) + ' de congés payés · ' +
+        joursDeRecup(cond, sup) + ' de récupération',
+        { alerte: Kit.cpEstBas(cp, mpjc(cond)) });
     });
     p.appendChild(Kit.ce('div', 'sb q',
       'Les compteurs diffèrent car les contrats n’ont pas commencé en même temps.'));
@@ -611,8 +623,16 @@
      congé. « 36 h » ne dit pas à Maria combien de jours elle peut prendre ;
      « 4 jours (36 h) » le dit. La conversion utilise les minutes d'une journée
      de congé DU CONTRAT — jamais 7 h, jamais 8 h en dur. */
-  function joursDeRecup(contrat, minutes) {
-    var parJour = contrat.minutes_par_jour_conge || 0;
+  /* Le facteur de conversion des congés payés, `minutes_par_jour_conge`, lu
+     UNE FOIS ici. Zéro plutôt qu'un défaut à 540 : un diviseur inventé
+     afficherait un nombre de jours faux et crédible, et les appelants savent
+     déjà dire « je ne peux pas convertir ». */
+  function mpjc(conditions) {
+    return (conditions && conditions.minutes_par_jour_conge) || 0;
+  }
+
+  function joursDeRecup(conditions, minutes) {
+    var parJour = mpjc(conditions);
     if (!parJour) return Kit.heures(minutes);
     var n = Math.floor(minutes / parJour);
     return Kit.jours(n) + ' (' + Kit.heures(minutes) + ')';
@@ -629,6 +649,34 @@
      récupération sur un contrat là où le moteur n'en accepte que 5, puis rendu
      tous ses mois incalculables. L'écran proposait plus que le moteur
      n'accepte ; il propose désormais exactement ce qu'il accepte. */
+  /* LOT 17 §17.3 — LES CONDITIONS DU MOIS OÙ LA PÉRIODE COMMENCE.
+
+     Un écran qui lit un réglage sur `contrat` lit la valeur d'AUJOURD'HUI et
+     l'applique à un mois d'hier. C'est précisément ce que les avenants
+     existent pour empêcher : passer l'entretien de 5,00 € à 5,50 € ne doit
+     pas changer un juillet qui traîne.
+
+     La chaîne a déjà résolu les conditions de chaque mois : on les lui
+     demande, on ne les recalcule pas. Le repli sur `avenants` sert au chemin
+     de POSE, qui travaille sur des mois futurs dont aucune chaîne n'existe
+     encore. */
+  function condDe(fiche, annee, mois) {
+    var e = fiche && fiche.entree;
+    if (e && e.conditions && annee == null) return e.conditions;
+    if (annee != null && fiche && fiche.avenants) {
+      return global.App.conditionsDuMois(fiche.avenants, annee, mois);
+    }
+    return (e && e.conditions) || null;
+  }
+
+  /* Le planning d'un contrat à une date donnée. Un avenant peut le changer :
+     une période à cheval sur un avenant n'a pas le même planning au début et à
+     la fin, et deviner l'un ou l'autre écrirait des journées les mauvais jours. */
+  function planningA(fiche, jour) {
+    var c = condDe(fiche, Number(jour.slice(0, 4)), Number(jour.slice(5, 7)));
+    return (c && c.jours_planning) || [1, 2, 3, 4, 5];
+  }
+
   function cpDe(fiche) {
     return Kit.cpDisponible(fiche.entree && fiche.entree.compteurEntree);
   }
@@ -651,7 +699,7 @@
      jours disponibles au lieu de 10. Deux divisions par 10 dans un écran sont
      exactement ce qu'on oublie. */
   function plafondsDe(fiche) {
-    var r = Chaine.reservesEnJours(fiche.contrat, fiche.entree && fiche.entree.compteurEntree);
+    var r = Chaine.reservesEnJours(condDe(fiche), fiche.entree && fiche.entree.compteurEntree);
     return { maxCp: r.joursCp, maxSup: r.joursSup };
   }
 
@@ -663,10 +711,17 @@
      contrat exclus. Ce sont les journées qui seront réellement ÉCRITES ;
      le DÉCOMPTE en jours ouvrables, lui, est tout autre chose (RG-06 compte le
      samedi, que Maria travaille ou non) et vient du moteur. */
-  function joursDuContrat(contrat, plage) {
-    var planning = contrat.jours_planning || [1, 2, 3, 4, 5];
+  /* LOT 17 — LE PLANNING EST RÉSOLU JOUR PAR JOUR. Un avenant peut le changer
+     au 1er d'un mois ; une période à cheval sur cet avenant n'a donc pas le
+     même planning au début et à la fin, et retenir l'un ou l'autre écrirait
+     des journées les mauvais jours — sur un mois qui sera peut-être clôturé
+     avant que quiconque ne s'en aperçoive. */
+  function joursDuContrat(fiche, plage) {
+    var contrat = fiche.contrat || fiche;
     var out = [];
     for (var d = plage.debut; d <= plage.fin; d = Feries.ajouterJours(d, 1)) {
+      var planning = fiche.contrat ? planningA(fiche, d)
+                                   : (fiche.jours_planning || [1, 2, 3, 4, 5]);
       if (planning.indexOf(Engine.jourSemaine(d)) === -1) continue;
       if (Feries.estJourFerie(d)) continue;
       if (contrat.date_debut && d < contrat.date_debut) continue;
@@ -758,11 +813,11 @@
              que de plannings. On interroge le moteur pour chacun et on annonce
              l'étendue réelle — exactement ce que fait déjà l'espace enfant. */
           var servis = (vue.fiches || []).filter(function (f) {
-            return !f.erreur && joursDuContrat(f.contrat, parcours).length > 0;
+            return !f.erreur && joursDuContrat(f, parcours).length > 0;
           });
           var decomptes = servis.map(function (f) {
             return Engine.decompterJoursOuvrables(parcours.debut, parcours.fin,
-              f.contrat.jours_planning || [1, 2, 3, 4, 5]);
+              planningA(f, parcours.debut));
           });
           var mini = decomptes.length ? Math.min.apply(null, decomptes) : 0;
           var maxi = decomptes.length ? Math.max.apply(null, decomptes) : 0;
@@ -812,7 +867,7 @@
       var clos = [];
       liste.forEach(function (x) {
         var contrats = vue.fiches.filter(function (f) {
-          return joursDuContrat(f.contrat, plage).some(function (d) {
+          return joursDuContrat(f, plage).some(function (d) {
             return d.slice(0, 7) === x.cle;
           }) && global.App.estClos(x.recaps, f.contrat.id);
         });
@@ -951,7 +1006,7 @@
   function preparerVentilationsAvec(fiches, plage) {
     parcours.plans = fiches.filter(function (f) { return !f.erreur; }).map(function (f) {
       var c = f.contrat;
-      var joursPoses = joursDuContrat(c, plage);
+      var joursPoses = joursDuContrat(f, plage);
       var cp = cpDe(f);
       var sup = supDe(f);
       var plafonds = plafondsDe(f);
@@ -976,14 +1031,20 @@
       var bornes = joursPoses.length
         ? { debut: joursPoses[0], fin: joursPoses[joursPoses.length - 1] }
         : null;
-      var planning = c.jours_planning || [1, 2, 3, 4, 5];
+      /* LOT 17 — les conditions du mois où la période COMMENCE. C'est celui
+         que le moteur confronte aux réserves (`imposeeTotale`), et c'est donc
+         le seul qui puisse servir de référence à la ventilation entière. */
+      var cond = bornes
+        ? condDe(f, Number(bornes.debut.slice(0, 4)), Number(bornes.debut.slice(5, 7)))
+        : condDe(f);
+      var planning = (cond && cond.jours_planning) || [1, 2, 3, 4, 5];
       var n = bornes ? Engine.decompterJoursOuvrables(bornes.debut, bornes.fin, planning) : 0;
 
       var propose = { joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0 };
       if (n > 0) {
         /* Répartition par défaut : celle du moteur, dans l'ordre du contrat.
            Aucune règle d'imputation n'est réécrite ici. */
-        var r = Engine.imputerConges(n, { dixiemesCp: cp, minutesSup: sup }, c);
+        var r = Engine.imputerConges(n, { minutesCp: cp, minutesSup: sup }, cond);
         propose = {
           joursSurCp: r.joursSurCp,
           joursSurSup: r.joursSurSup,
@@ -992,7 +1053,7 @@
       }
 
       return {
-        fiche: f, contrat: c, joursPoses: joursPoses, jours: n,
+        fiche: f, contrat: c, cond: cond, joursPoses: joursPoses, jours: n,
         /* Les bornes de CE contrat, portées jusqu'à l'écriture : c'est ce
            couple qui part dans `imputation_conge`, pas la plage saisie. */
         bornes: bornes,
@@ -1015,6 +1076,7 @@
   function etapeVentilation() {
     var p = parcours.plans[parcours.index];
     var c = p.contrat;
+    var cond = p.cond;
 
     Kit.ouvrirFeuille(c.prenom_enfant + ' — ' + Kit.jours(p.jours) + ' à répartir',
       etiquetteEtapes(), function (corps) {
@@ -1022,8 +1084,8 @@
 
         var res = Kit.pane('Vos réserves pour ce contrat');
         var lr = Kit.lines(res);
-        Kit.ligne(lr, 'Congés payés', Kit.joursCp(p.cp));
-        Kit.ligne(lr, 'Récupération', joursDeRecup(c, p.sup));
+        Kit.ligne(lr, 'Congés payés', Kit.joursCp(p.cp, mpjc(cond)));
+        Kit.ligne(lr, 'Récupération', joursDeRecup(cond, p.sup));
         corps.appendChild(res);
 
         corps.appendChild(Kit.section('Comment les prendre ?'));
@@ -1054,7 +1116,7 @@
                le découvrir sur le document du mois. Le montant vient du
                moteur (A4). */
             var brut = brutDe(p.fiche);
-            var minutes = p.choix.joursSansSolde * (c.minutes_par_jour_conge || 0);
+            var minutes = p.choix.joursSansSolde * mpjc(cond);
             var retenue = brut ? Engine.montantCentimes(brut, minutes) : null;
             effet.appendChild(Kit.warnbox(
               Kit.jours(p.choix.joursSansSolde) + ' sans solde',
@@ -1067,9 +1129,9 @@
         }
 
         corps.appendChild(compteur('Congés payés', p.choix, 'joursSurCp', p.maxCp, majAffichage,
-          'reste ' + Kit.joursCp(p.cp) + ' au compteur'));
+          'reste ' + Kit.joursCp(p.cp, mpjc(cond)) + ' au compteur'));
         corps.appendChild(compteur('Récupération', p.choix, 'joursSurSup', p.maxSup, majAffichage,
-          'reste ' + joursDeRecup(c, p.sup) + ' convertibles'));
+          'reste ' + joursDeRecup(cond, p.sup) + ' convertibles'));
         /* A3 — le sans-solde n'a pas de borne haute : c'est le seul moyen de
            poser un congé quand les réserves sont épuisées. Il est borné par le
            nombre de jours de la période, pas par une réserve. */
@@ -1082,7 +1144,7 @@
            moteur, qui fait déborder le solde en sans solde ; ce qui manquait,
            c'est la phrase qui le dit. Maria peut modifier ensuite : rien n'est
            imposé, tout est annoncé. */
-        corps.appendChild(bascule(p, c));
+        corps.appendChild(bascule(p));
         corps.appendChild(effet);
 
         corps.appendChild(bSuite);
@@ -1159,17 +1221,18 @@
 
      Rend un nœud vide quand les réserves couvrent la période : le cas normal
      ne doit rien afficher du tout. */
-  function bascule(p, c) {
+  function bascule(p) {
+    var c = p.contrat;
     var manquant = p.jours - p.maxCp - p.maxSup;
     if (manquant <= 0) return Kit.ce('div');
 
     var brut = brutDe(p.fiche);
-    var minutes = manquant * (c.minutes_par_jour_conge || 0);
+    var minutes = manquant * mpjc(p.cond);
     var retenue = brut ? Engine.montantCentimes(brut, minutes) : null;
 
     return Kit.note('Vos réserves ne couvrent pas toute la période',
-      c.prenom_enfant + ' a ' + Kit.joursCp(p.cp) + ' de congés payés et ' +
-      joursDeRecup(c, p.sup) + ' de récupération, pour ' + Kit.jours(p.jours) +
+      c.prenom_enfant + ' a ' + Kit.joursCp(p.cp, mpjc(p.cond)) + ' de congés payés et ' +
+      joursDeRecup(p.cond, p.sup) + ' de récupération, pour ' + Kit.jours(p.jours) +
       ' à couvrir. ' + Kit.jours(manquant) + ' passent en sans solde' +
       (retenue != null ? ' : − ' + Kit.eur(retenue) + '.' :
         ' ; la retenue ne peut pas être chiffrée, le barème de ce contrat n’est pas renseigné.') +
@@ -1224,7 +1287,7 @@
             var brut = brutDe(p.fiche);
             if (brut) {
               retenueTotale += Engine.montantCentimes(brut,
-                p.choix.joursSansSolde * (c.minutes_par_jour_conge || 0));
+                p.choix.joursSansSolde * mpjc(p.cond));
             } else {
               chiffrable = false;
             }
@@ -1475,7 +1538,7 @@
     var ids = p.entrees.map(function (e) { return e.fiche.contrat.id; });
     var jours = [];
     p.entrees.forEach(function (e) {
-      joursDuContrat(e.fiche.contrat, plage).forEach(function (d) {
+      joursDuContrat(e.fiche, plage).forEach(function (d) {
         if (jours.indexOf(d) === -1) jours.push(d);
       });
     });

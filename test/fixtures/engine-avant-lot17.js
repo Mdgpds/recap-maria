@@ -4,23 +4,10 @@
    Module PUR (§1 des specs) : aucun accès au DOM, aucun appel réseau,
    aucune lecture d'horloge système. Entrées -> sorties, exécutable sous Node.
 
-   Unités (§1) : temps en minutes entières, argent en centimes entiers.
-   LOT 17 — les congés payés passent des dixièmes de jour aux MINUTES (§17.6) :
-   Maria pose des congés de 15 min, 1 h 30, 1 h 45, et le dixième de jour
-   obligeait à arrondir à chaque fois. Le facteur de conversion est
-   `minutes_par_jour_conge`, et l'affichage continue de dire « 10 j ».
-   Aucun float dans les calculs — seule exception sanctionnée par les specs :
-   le paramètre `coefficient` de montantCentimes (majoration 1.5 de RG-13),
-   avec UN SEUL arrondi final.
-
-   LOT 17 — LES CONDITIONS SONT DATÉES (§17.0 à §17.3). Le moteur ne lit plus
-   aucun réglage sur `contrat` : il reçoit les `conditions` du mois, c'est-à-
-   dire l'avenant en vigueur, sélectionné par `conditionsApplicables`. De
-   `contrat` ne subsistent que `date_debut` et `date_fin`, qui bornent le
-   contrat et ne sont pas des réglages. À conditions constantes, le résultat
-   est rigoureusement identique à celui d'avant le lot 17 : c'est ce que
-   prouve `test/lot17-differentiel.test.js`, sur le moteur figé en
-   `test/fixtures/engine-avant-lot17.js`.
+   Unités (§1) : temps en minutes entières, argent en centimes entiers,
+   congés payés en dixièmes de jour entiers. Aucun float dans les calculs —
+   seule exception sanctionnée par les specs : le paramètre `coefficient`
+   de montantCentimes (majoration 1.5 de RG-13), avec UN SEUL arrondi final.
 
    Dates : chaînes 'YYYY-MM-DD' (date pure), arithmétique via Date.UTC
    uniquement, jamais de fuseau.
@@ -40,19 +27,9 @@
   /* Planning par défaut : lundi -> vendredi (1 = lundi … 7 = dimanche). */
   var PLANNING_DEFAUT = [1, 2, 3, 4, 5];
 
-  /* Acquisition de congés payés : 2,5 jours ouvrables par mois entièrement
-     travaillé (RG-11), soit 25 dixièmes avant le lot 17. */
+  /* Acquisition de congés payés : 2,5 jours ouvrables = 25 dixièmes par mois
+     entièrement travaillé (RG-11). */
   var DIXIEMES_CP_PAR_MOIS = 25;
-
-  /* §17.6 — la même acquisition, exprimée dans la nouvelle unité. Un jour de
-     congé vaut `minutes_par_jour_conge` minutes ; 2,5 jours en valent deux
-     fois et demie autant. L'arrondi n'existe que si `minutes_par_jour_conge`
-     est impair — 540 donne 1350 minutes exactement. Il est fait ICI, une
-     seule fois par mois, et jamais sur un cumul : c'est la même arithmétique
-     que la conversion de la migration `014` (dixièmes × minutes / 10). */
-  function minutesCpParMois(conditions) {
-    return Math.round(DIXIEMES_CP_PAR_MOIS * conditions.minutes_par_jour_conge / 10);
-  }
 
   /* ------------------------------------------------------------------ */
   /* Utilitaires de calendrier (purs, sans fuseau)                       */
@@ -153,16 +130,12 @@
   }
 
   /* RG-05 / RG-07 — Impute `nbJours` de congé sur les compteurs.
-     `compteur` : { minutesSup, minutesCp } — quantités DISPONIBLES.
-     Un jour de congé consomme `conditions.minutes_par_jour_conge` minutes
+     `compteur` : { minutesSup, dixiemesCp } — quantités DISPONIBLES.
+     Un jour de congé consomme `contrat.minutes_par_jour_conge` minutes
      entières ; un reliquat strictement inférieur RESTE au compteur, il ne
-     couvre jamais un jour partiel. LOT 17 (§17.6) : les congés payés suivent
-     désormais exactement la même règle et la même unité que la récupération
-     — un jour en consomme `minutes_par_jour_conge`, un reliquat inférieur
-     reste acquis. Avant le lot 17 ils étaient comptés en dixièmes, et un jour
-     en consommait 10 : le comportement est le même à un facteur près.
-     L'ordre suit conditions.ordre_imputation ('cp_puis_sup' par défaut,
-     RG-07).
+     couvre jamais un jour partiel. Même principe pour les congés payés :
+     un jour consomme 10 dixièmes, un reliquat < 10 dixièmes reste acquis.
+     L'ordre suit contrat.ordre_imputation ('cp_puis_sup' par défaut, RG-07).
      Le débordement final part en sans solde.
 
      LOT 9 — `imputationImposee` (4e paramètre, OPTIONNEL) :
@@ -171,8 +144,8 @@
        - présent : { joursSurCp, joursSurSup, joursSansSolde }. Le moteur
          APPLIQUE cette répartition sans la recalculer, après trois
          vérifications qui lèvent un CODE d'erreur et n'écrivent rien. */
-  function imputerConges(nbJours, compteur, conditions, imputationImposee) {
-    var minutesParJour = conditions.minutes_par_jour_conge;
+  function imputerConges(nbJours, compteur, contrat, imputationImposee) {
+    var minutesParJour = contrat.minutes_par_jour_conge;
     var restant = nbJours;
 
     if (imputationImposee != null) {
@@ -191,22 +164,22 @@
       /* 3. La répartition ne consomme pas plus que le disponible. Le
          disponible peut être négatif (compteur incohérent, reprise manuelle
          erronée) : dans ce cas toute consommation est refusée. */
-      var dispoCp = (compteur && compteur.minutesCp) || 0;
+      var dispoCp = (compteur && compteur.dixiemesCp) || 0;
       var dispoSup = (compteur && compteur.minutesSup) || 0;
-      if (impCp * minutesParJour > dispoCp || impSup * minutesParJour > dispoSup) {
+      if (impCp * 10 > dispoCp || impSup * minutesParJour > dispoSup) {
         throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
       }
 
       return {
         joursSurSup: impSup, minutesSupConsommees: impSup * minutesParJour,
-        joursSurCp: impCp, minutesCpConsommees: impCp * minutesParJour,
+        joursSurCp: impCp, dixiemesCpConsommes: impCp * 10,
         joursSansSolde: impSansSolde
       };
     }
 
     var resultat = {
       joursSurSup: 0, minutesSupConsommees: 0,
-      joursSurCp: 0, minutesCpConsommees: 0,
+      joursSurCp: 0, dixiemesCpConsommes: 0,
       joursSansSolde: 0
     };
 
@@ -215,10 +188,10 @@
          Un compteur incohérent (pris > acquis, saisie d'initialisation
          erronée) donne un disponible négatif : il est borné à 0 et ne
          « rend » jamais des jours. */
-      var joursDispo = Math.max(0, Math.floor(((compteur && compteur.minutesCp) || 0) / minutesParJour));
+      var joursDispo = Math.max(0, Math.floor(((compteur && compteur.dixiemesCp) || 0) / 10));
       var pris = Math.min(restant, joursDispo);
       resultat.joursSurCp = pris;
-      resultat.minutesCpConsommees = pris * minutesParJour;
+      resultat.dixiemesCpConsommes = pris * 10;
       restant -= pris;
     }
 
@@ -231,7 +204,7 @@
       restant -= pris;
     }
 
-    if (conditions.ordre_imputation === 'sup_puis_cp') {
+    if (contrat.ordre_imputation === 'sup_puis_cp') {
       prendreSurSup();
       prendreSurCp();
     } else {                       // 'cp_puis_sup' — défaut RG-07
@@ -275,54 +248,20 @@
     return valeur;
   }
 
-  /* LOT 17 (§17.5) — lecture de l'écart d'horaire DÉCLARÉ sur une journée.
-     Contrairement à `minutesSaisies`, il accepte le négatif : c'est tout
-     l'objet du champ. Un écart positif est un parent en retard, un écart
-     négatif est un temps que Maria a rendu de son propre fait — libération
-     anticipée ou arrivée décalée qu'elle a demandée.
-
-     `null` ou absent = « rien de déclaré », et vaut 0. C'est le cas de toutes
-     les journées d'avant le lot 17, et c'est aussi le cas d'un parent qui
-     vient chercher son enfant plus tôt SANS que Maria déclare quoi que ce
-     soit (§17.5, A3) : elle était disponible, ses minutes restent dues. */
-  function ecartSaisi(valeur) {
-    if (valeur == null) return 0;
-    if (typeof valeur !== 'number' || !isFinite(valeur) || !Number.isInteger(valeur)) {
-      var e = erreurCode('MINUTES_INVALIDES');
-      e.champ = 'ecart_minutes';
-      throw e;
-    }
-    return valeur;
-  }
-
-  /* Destinations possibles d'un écart NÉGATIF (§17.6). Un écart positif va
-     toujours à la récupération : un parent en retard fait du temps de travail
-     en plus, il n'y a rien à choisir. */
-  var DESTINATIONS_ECART = ['recuperation', 'conges_payes', 'sans_solde'];
-
   /* Détail des minutes supplémentaires d'UNE journée, dans l'ordre exact du
-     §5.1 de la spec du lot 9, étendu au lot 17 (§17.5).
-     Retourne les composantes séparément : c'est ce détail que le
-     récapitulatif du mois affiche, et c'est lui qui garantit l'invariant
-     acquises = base + ajoutées − renoncées + écart imputé à la récupération.
-
-     Le second paramètre est désormais les CONDITIONS du mois (l'avenant en
-     vigueur), plus le contrat : un avenant qui déplace les horaires déplace
-     la référence de la journée, sans toucher aux mois d'avant. */
-  function detailSupDuJour(journee, conditions) {
+     §5.1 de la spec du lot 9. Retourne les trois composantes séparément :
+     c'est ce détail que le récapitulatif du mois affiche, et c'est lui qui garantit
+     l'invariant acquises = base + ajoutées − renoncées. */
+  function detailSupDuJour(journee, contrat) {
     var type = journee && journee.type;
 
-    /* 1. RG-04 — rien, quoi qu'il ait été saisi. Y compris un écart
-       d'horaire : une journée sans travail n'a pas d'horaire de référence,
-       donc pas d'écart possible. */
+    /* 1. RG-04 — rien, quoi qu'il ait été saisi. */
     if (TYPES_SANS_MINUTES.indexOf(type) !== -1) {
-      return { base: 0, ajoutees: 0, renoncees: 0,
-               ecart: 0, ecartImputeSur: null,
-               ecartSurRecuperation: 0, minutesSurCp: 0, minutesSansSolde: 0 };
+      return { base: 0, ajoutees: 0, renoncees: 0 };
     }
 
     /* 2. Ce que le contrat prévoit. */
-    var base = conditions.minutes_sup_jour;
+    var base = contrat.minutes_sup_jour;
 
     /* 3. RG-09, surchargeable au jour le jour (V8-19). `sup_dues_override`
        vaut null quand la journée dit « suivre le réglage du contrat » : null
@@ -335,7 +274,7 @@
     if (type === 'absence_enfant') {
       var dues = (journee.sup_dues_override != null)
         ? journee.sup_dues_override
-        : conditions.sup_dues_si_enfant_absent;
+        : contrat.sup_dues_si_enfant_absent;
       if (dues === false) base = 0;
     }
 
@@ -352,56 +291,13 @@
       base + ajoutees
     );
 
-    /* 6. LOT 17 (§17.5) — l'écart d'horaire déclaré.
-
-         Minutes du jour = minutes supplémentaires du contrat
-                           + (heure réelle − heure de référence)
-
-       La référence est la fin d'accueil plus les minutes supplémentaires du
-       contrat — 17h30 + 30 min = 18h00 — et elle vient des CONDITIONS, donc
-       d'un avenant. Le moteur ne la recalcule pas ici : l'écart lui arrive
-       déjà en minutes signées, parce que c'est Maria qui DÉCLARE l'événement
-       et que l'application ne devine rien. La conversion « départ 18h01 →
-       + 1 min » appartient à l'écran de saisie, qui dispose des horaires.
-
-       Un écart négatif est du temps rendu, et Maria choisit où il se déduit :
-         - `recuperation` (défaut) — il entre dans le compteur signé, qui peut
-           passer sous zéro. C'est ça, « je le devrai ».
-         - `conges_payes`  — il se déduit des congés payés, en minutes, sans
-           aucun arrondi (§17.6, A1).
-         - `sans_solde`    — il ne touche aucun compteur et devient une retenue
-           en euros, calculée par le moteur.
-       Un écart POSITIF va toujours à la récupération : il n'y a rien à
-       choisir, c'est du temps travaillé en plus. */
-    var ecart = ecartSaisi(journee && journee.ecart_minutes);
-    var destination = 'recuperation';
-    if (ecart < 0 && journee && journee.ecart_impute_sur != null) {
-      if (DESTINATIONS_ECART.indexOf(journee.ecart_impute_sur) === -1) {
-        throw erreurCode('ECART_DESTINATION_INCONNUE');
-      }
-      destination = journee.ecart_impute_sur;
-    }
-
-    return {
-      base: base, ajoutees: ajoutees, renoncees: renoncees,
-      ecart: ecart,
-      ecartImputeSur: ecart === 0 ? null : (ecart > 0 ? 'recuperation' : destination),
-      /* Ce que l'écart fait au compteur de récupération : tout le positif,
-         et le négatif seulement s'il lui est imputé. */
-      ecartSurRecuperation: (ecart > 0 || destination === 'recuperation') ? ecart : 0,
-      /* Minutes de congés payés consommées par l'écart, toujours positives. */
-      minutesSurCp: (ecart < 0 && destination === 'conges_payes') ? -ecart : 0,
-      /* Minutes retenues sans solde, toujours positives. */
-      minutesSansSolde: (ecart < 0 && destination === 'sans_solde') ? -ecart : 0
-    };
+    return { base: base, ajoutees: ajoutees, renoncees: renoncees };
   }
 
-  /* Minutes supplémentaires nettes d'une journée (§5.1, §17.5). Peut être
-     NÉGATIVE depuis le lot 17 : une libération anticipée d'une heure sur une
-     journée à 30 minutes de base donne − 30 minutes. */
-  function minutesSupDuJour(journee, conditions) {
-    var d = detailSupDuJour(journee, conditions);
-    return d.base + d.ajoutees - d.renoncees + d.ecartSurRecuperation;
+  /* Minutes supplémentaires nettes d'une journée (§5.1). */
+  function minutesSupDuJour(journee, contrat) {
+    var d = detailSupDuJour(journee, contrat);
+    return d.base + d.ajoutees - d.renoncees;
   }
 
   /* Montant en centimes correspondant à `minutes` de travail au taux du
@@ -412,31 +308,18 @@
     return Math.round(brutMensuelCentimes * minutes * coefficient / MINUTES_BASE_MENSUELLE);
   }
 
-  /* RG-15 / §17.3 — CONDITIONS applicables à un mois : l'avenant dont la
-     date d'effet est la plus récente ANTÉRIEURE OU ÉGALE au premier jour du
-     mois. Retourne null si aucun n'est applicable.
-
-     LOT 17 : cette fonction s'appelait `salaireApplicable` et ne servait qu'au
-     brut et au net. La règle de sélection ne change pas d'un iota — c'est le
-     PÉRIMÈTRE qui s'élargit : l'avenant porte désormais les onze réglages, et
-     c'est lui, pas `contrat`, que `calculerMois` lit. Deux tables datées côte
-     à côte auraient été exactement le désordre qu'on voulait éviter.
-
-     Comme `date_effet` est toujours un 1er de mois (contrainte de la
-     migration `014`), un mois porte UN seul jeu de conditions : il n'existe
-     aucun mois à cheval sur deux avenants, et le moteur n'a jamais à
-     mélanger deux réglages dans un même calcul.
-
-     La sélection est faite par l'appelant (chaine-mois.js) avant
-     calculerMois ; un récap figé n'est jamais recalculé (protection assurée
-     en base par le trigger du lot 2). */
-  function conditionsApplicables(avenants, annee, mois) {
+  /* RG-15 — Salaire applicable à un mois : l'entrée d'historique dont la
+     date_effet est la plus récente ANTÉRIEURE OU ÉGALE au premier jour du
+     mois. Retourne null si aucune n'est applicable. NB : cette sélection est
+     faite par l'appelant (db.js) avant calculerMois ; un récap figé n'est
+     jamais recalculé (protection assurée en base par le trigger du lot 2). */
+  function salaireApplicable(historique, annee, mois) {
     var premierJour = annee + '-' + String(mois).padStart(2, '0') + '-01';
     var retenu = null;
-    for (var i = 0; i < (avenants || []).length; i++) {
-      var a = avenants[i];
-      if (a.date_effet <= premierJour && (retenu === null || a.date_effet > retenu.date_effet)) {
-        retenu = a;
+    for (var i = 0; i < (historique || []).length; i++) {
+      var s = historique[i];
+      if (s.date_effet <= premierJour && (retenu === null || s.date_effet > retenu.date_effet)) {
+        retenu = s;
       }
     }
     return retenu;
@@ -470,34 +353,6 @@
       if (planning.indexOf(jourSemaine(d)) !== -1 && !Feries.estJourFerie(d)) return true;
     }
     return false;
-  }
-
-  /* §17.7 — part du mois réellement couverte par le contrat, comptée en
-     JOURS DU PLANNING. C'est l'assiette du prorata du premier et du dernier
-     mois : le moteur borne déjà les journées aux dates du contrat
-     (`date_debut`, `date_fin`), mais le salaire mensualisé, lui, restait dû
-     en entier — un contrat ouvert le 16 mars retenait le mois de mars complet.
-
-     Les jours fériés du planning comptent comme couverts : ils sont chômés et
-     PAYÉS (RG-10), ils font partie du mois dû. Ce qui est proratisé, c'est la
-     part du mois pendant laquelle le contrat existait, pas le travail fourni.
-
-     Retourne { joursCouverts, joursDuMois }. Quand les deux sont égaux, le
-     prorata vaut 1 et aucun arrondi n'a lieu : c'est ce qui garantit qu'un
-     mois entier donne EXACTEMENT le montant d'avant le lot 17. */
-  function partCouverteDuMois(contrat, planning, annee, mois) {
-    var jours = joursDuMois(annee, mois);
-    var total = 0;
-    var couverts = 0;
-    for (var i = 0; i < jours.length; i++) {
-      var d = jours[i];
-      if (planning.indexOf(jourSemaine(d)) === -1) continue;
-      total++;
-      if (contrat.date_debut && d < contrat.date_debut) continue;
-      if (contrat.date_fin && d > contrat.date_fin) continue;
-      couverts++;
-    }
-    return { joursCouverts: couverts, joursDuMois: total };
   }
 
   /* Le contrat couvre-t-il le mois entier ? (utile pour RG-11) */
@@ -696,37 +551,28 @@
   /* Calcule le récapitulatif d'un mois pour un contrat.
 
      Entrées :
-       contrat        : ligne de la table contrat. LOT 17 : le moteur n'y lit
-                        plus que `date_debut` et `date_fin`, qui bornent le
-                        contrat et ne sont pas des réglages. Aucun autre champ.
-       conditions     : l'avenant en vigueur ce mois-là (§17.3), déjà
-                        sélectionné par `conditionsApplicables`. Il porte les
-                        onze réglages, brut et net compris.
+       contrat        : ligne de la table contrat (noms de colonnes SQL)
+       salaire        : { brut_mensuel_centimes, net_mensuel_centimes }
+                        — déjà sélectionné selon RG-15 (cf. salaireApplicable)
        journees       : lignes de la table journee du mois (les EXCEPTIONS ;
                         tout jour du planning sans ligne est présumé
                         'presence', ou 'ferie' si le calendrier le dit)
-       compteurEntree : { minutesSup, minutesCpAcquis, minutesCpPris }
-                        — LOT 17 : les congés payés sont en MINUTES (§17.6).
+       compteurEntree : { minutesSup, dixiemesCpAcquis, dixiemesCpPris }
        annee, mois    : mois calculé
 
      Sortie : ResultatMois (§4.3 des specs). */
   function calculerMois(entrees) {
     var contrat = entrees.contrat;
-    var conditions = entrees.conditions;
-    if (!conditions) throw erreurCode('CONDITIONS_ABSENTES');
-    /* Le brut et le net vivent sur l'avenant depuis le lot 17 : `conditions`
-       EST le barème du mois. On garde un nom court pour les lignes qui les
-       utilisent, mais il n'y a plus qu'une seule source. */
-    var salaire = conditions;
+    var salaire = entrees.salaire;
     var journees = entrees.journees || [];
     var annee = entrees.annee;
     var mois = entrees.mois;
-    var planning = conditions.jours_planning || PLANNING_DEFAUT;
+    var planning = contrat.jours_planning || PLANNING_DEFAUT;
 
     var compteurEntree = entrees.compteurEntree || {};
     var entreeMinutesSup = compteurEntree.minutesSup || 0;
-    var entreeCpAcquis = compteurEntree.minutesCpAcquis || 0;
-    var entreeCpPris = compteurEntree.minutesCpPris || 0;
+    var entreeCpAcquis = compteurEntree.dixiemesCpAcquis || 0;
+    var entreeCpPris = compteurEntree.dixiemesCpPris || 0;
 
     var parJour = {};
     for (var i = 0; i < journees.length; i++) parJour[journees[i].jour] = journees[i];
@@ -742,12 +588,6 @@
     var minutesSupBase = 0;
     var minutesSupAjoutees = 0;
     var minutesSupRenoncees = 0;
-    /* LOT 17 (§17.5) — les écarts d'horaire déclarés. Le total imputé à la
-       récupération est SIGNÉ ; les deux autres destinations sont positives. */
-    var minutesEcartRecuperation = 0;
-    var minutesEcartSurCp = 0;
-    var minutesEcartSansSolde = 0;
-    var ecartsDeclares = [];
     var joursConge = [];             // jours 'conge_maria' posés dans le mois
     var joursSansSoldeSaisis = 0;    // lignes 'sans_solde' saisies explicitement
     var joursFamiliarisation = 0;
@@ -768,11 +608,10 @@
          entretien, ni minutes sup, même si une ligne a été saisie (une
          saisie hors bornes est une erreur ; la couche de saisie du lot 3
          devra l'empêcher ou la signaler).
-         LOT 17 (§17.7) — LA RÈGLE MANQUANTE EST TRANCHÉE. Les journées
-         étaient déjà bornées ici ; c'est le SALAIRE qui ne l'était pas, et un
-         contrat ouvert le 16 mars retenait le mois de mars entier. Le prorata
-         est appliqué en fin de calcul, sur le brut et le net, à partir de
-         `partCouverteDuMois`. Un mois entier ne change pas d'un centime. */
+         TODO RÈGLE ABSENTE : le cahier ne dit pas si le salaire mensualisé
+         d'un premier ou dernier mois partiel est dû en entier ou au
+         prorata ; ici il reste dû en entier (question n° 2 de la
+         relecture, à trancher avec Maria). */
       if (contrat.date_debut && d < contrat.date_debut) continue;
       if (contrat.date_fin && d > contrat.date_fin) continue;
 
@@ -791,7 +630,7 @@
           joursPresence++;
           entretienCentimes += (ligne && Number.isInteger(ligne.entretien_centimes))
             ? ligne.entretien_centimes
-            : conditions.entretien_centimes_jour;
+            : contrat.entretien_centimes_jour;
           break;
 
         case 'absence_enfant':
@@ -846,32 +685,15 @@
          `minutes_sup_jour` est un paramètre du contrat (30 aujourd'hui,
          peut-être 0 demain) : aucun code à changer. Une journée sans ligne
          saisie ne porte aucune flexibilité — d'où le littéral { type }. */
-      var detailSup = detailSupDuJour(ligne || { type: type }, conditions);
+      var detailSup = detailSupDuJour(ligne || { type: type }, contrat);
       minutesSupBase += detailSup.base;
       minutesSupAjoutees += detailSup.ajoutees;
       minutesSupRenoncees += detailSup.renoncees;
-      minutesEcartRecuperation += detailSup.ecartSurRecuperation;
-      minutesEcartSurCp += detailSup.minutesSurCp;
-      minutesEcartSansSolde += detailSup.minutesSansSolde;
-      if (detailSup.ecart !== 0) {
-        /* Le détail que le document doit annoncer (§17.5, A5) : le total des
-           heures supplémentaires est NET, et la ligne qui l'explique nomme la
-           journée. Une somme sans son détail est incontestable et
-           inexplicable à la fois — c'est exactement ce qu'on refuse. */
-        ecartsDeclares.push({
-          jour: d,
-          minutes: detailSup.ecart,
-          imputeSur: detailSup.ecartImputeSur
-        });
-      }
     }
 
     /* Invariant testé (A9) : le net acquis est toujours la base, plus les
-       minutes exceptionnelles, moins les minutes auxquelles Maria a renoncé.
-       LOT 17 : plus l'écart d'horaire imputé à la récupération, qui est signé
-       — le total du mois peut donc être négatif, et l'écran le dit (§17.5). */
-    var minutesSupAcquises = minutesSupBase + minutesSupAjoutees
-                           - minutesSupRenoncees + minutesEcartRecuperation;
+       minutes exceptionnelles, moins les minutes auxquelles Maria a renoncé. */
+    var minutesSupAcquises = minutesSupBase + minutesSupAjoutees - minutesSupRenoncees;
 
     /* RG-06 : décompte des congés en jours ouvrables, période par période.
        Lot 9 : si une imputation posée COUVRE la période, c'est SA part du
@@ -969,8 +791,8 @@
       for (var s = 0; s < plan.length; s++) joursCongesDecomptes += plan[s].nbJours;
       imputation = imputerConges(joursCongesDecomptes, {
         minutesSup: entreeMinutesSup,
-        minutesCp: entreeCpAcquis - entreeCpPris
-      }, conditions);
+        dixiemesCp: entreeCpAcquis - entreeCpPris
+      }, contrat);
     } else {
       /* Au moins une période imposée : on impute période par période, dans
          l'ordre chronologique, en décrémentant le disponible au fur et à
@@ -980,7 +802,7 @@
       var dispoCp = entreeCpAcquis - entreeCpPris;
       imputation = {
         joursSurSup: 0, minutesSupConsommees: 0,
-        joursSurCp: 0, minutesCpConsommees: 0,
+        joursSurCp: 0, dixiemesCpConsommes: 0,
         joursSansSolde: 0
       };
       for (var v = 0; v < plan.length; v++) {
@@ -990,19 +812,19 @@
            mois. Un mois clôturable sur une ventilation impossible à honorer
            est pire qu'un refus franc. */
         var tot = plan[v].imposeeTotale;
-        if (tot && (tot.joursSurCp * conditions.minutes_par_jour_conge > dispoCp ||
-                    tot.joursSurSup * conditions.minutes_par_jour_conge > dispoSup)) {
+        if (tot && (tot.joursSurCp * 10 > dispoCp ||
+                    tot.joursSurSup * contrat.minutes_par_jour_conge > dispoSup)) {
           throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
         }
         var r = imputerConges(plan[v].nbJours,
-          { minutesSup: dispoSup, minutesCp: dispoCp }, conditions, plan[v].imposee);
+          { minutesSup: dispoSup, dixiemesCp: dispoCp }, contrat, plan[v].imposee);
         imputation.joursSurSup += r.joursSurSup;
         imputation.minutesSupConsommees += r.minutesSupConsommees;
         imputation.joursSurCp += r.joursSurCp;
-        imputation.minutesCpConsommees += r.minutesCpConsommees;
+        imputation.dixiemesCpConsommes += r.dixiemesCpConsommes;
         imputation.joursSansSolde += r.joursSansSolde;
         dispoSup -= r.minutesSupConsommees;
-        dispoCp -= r.minutesCpConsommees;
+        dispoCp -= r.dixiemesCpConsommes;
       }
     }
 
@@ -1013,15 +835,10 @@
     });
 
     /* RG-08 : retenue = minutes_par_jour_conge × taux horaire brut par jour
-       sans solde. Un seul arrondi sur le total (§4.2).
-       LOT 17 (§17.6) : les minutes d'un congé à l'heure passé en sans solde
-       s'ajoutent à cette assiette AVANT l'arrondi — deux arrondis séparés
-       feraient dériver le total d'un centime au hasard des mois. */
+       sans solde. Un seul arrondi sur le total (§4.2). */
     var joursSansSoldeTotal = imputation.joursSansSolde + joursSansSoldeSaisis;
-    var minutesSansSoldeTotal =
-      joursSansSoldeTotal * conditions.minutes_par_jour_conge + minutesEcartSansSolde;
-    var retenueSansSoldeCentimes = minutesSansSoldeTotal === 0 ? 0 :
-      montantCentimes(salaire.brut_mensuel_centimes, minutesSansSoldeTotal);
+    var retenueSansSoldeCentimes = joursSansSoldeTotal === 0 ? 0 :
+      montantCentimes(salaire.brut_mensuel_centimes, joursSansSoldeTotal * contrat.minutes_par_jour_conge);
 
     /* RG-11 : 25 dixièmes par mois ENTIÈREMENT travaillé. Lecture retenue,
        alignée sur les cas T4 et T5 du cahier des charges (compteur CP à 0
@@ -1039,28 +856,15 @@
       joursSansSoldeTotal === 0 &&
       joursFamiliarisation === 0 &&
       contratCouvreLeMois(contrat, annee, mois);
-    var minutesCpAcquises = moisEntierementTravaille ? minutesCpParMois(conditions) : 0;
+    var dixiemesCpAcquis = moisEntierementTravaille ? DIXIEMES_CP_PAR_MOIS : 0;
 
     /* RG-12 / RG-12bis : aucun compteur ne se remet à zéro — les compteurs
        de sortie sont de simples cumuls, sans aucune clôture au 31 août. */
     var compteurSortie = {
       minutesSup: entreeMinutesSup + minutesSupAcquises - imputation.minutesSupConsommees,
-      minutesCpAcquis: entreeCpAcquis + minutesCpAcquises,
-      /* Les congés payés pris comprennent les jours pleins imputés ET les
-         minutes d'un congé à l'heure déduit des congés payés (§17.6). */
-      minutesCpPris: entreeCpPris + imputation.minutesCpConsommees + minutesEcartSurCp
+      dixiemesCpAcquis: entreeCpAcquis + dixiemesCpAcquis,
+      dixiemesCpPris: entreeCpPris + imputation.dixiemesCpConsommes
     };
-
-    /* §17.7 — le prorata du premier et du dernier mois. UN SEUL arrondi, sur
-       le montant final, et aucun arrondi du tout quand le mois est entier. */
-    var part = partCouverteDuMois(contrat, planning, annee, mois);
-    var moisEntier = part.joursCouverts === part.joursDuMois;
-    var brutProrata = moisEntier || part.joursDuMois === 0
-      ? salaire.brut_mensuel_centimes
-      : Math.round(salaire.brut_mensuel_centimes * part.joursCouverts / part.joursDuMois);
-    var netProrata = moisEntier || part.joursDuMois === 0
-      ? salaire.net_mensuel_centimes
-      : Math.round(salaire.net_mensuel_centimes * part.joursCouverts / part.joursDuMois);
 
     return {
       joursPresence: joursPresence,
@@ -1072,15 +876,6 @@
       minutesSupBase: minutesSupBase,
       minutesSupAjoutees: minutesSupAjoutees,
       minutesSupRenoncees: minutesSupRenoncees,
-      /* LOT 17 (§17.5) — les écarts d'horaire déclarés. `minutesSupAcquises`
-         est déjà NET de `minutesEcartRecuperation` : le document annonce le
-         net, et `ecartsDeclares` porte la ligne qui l'explique, journée par
-         journée. Sans ce détail, un total amputé serait incontestable et
-         inexplicable en même temps. */
-      minutesEcartRecuperation: minutesEcartRecuperation,
-      minutesEcartSurCp: minutesEcartSurCp,
-      minutesEcartSansSolde: minutesEcartSansSolde,
-      ecartsDeclares: ecartsDeclares,
       joursCongesDecomptes: joursCongesDecomptes,
       imputation: imputation,
       /* Pour chaque période de congé du mois : la période retenue et
@@ -1093,203 +888,15 @@
                                    À signaler à l'écran (lot 10). */
       imputationsAppliquees: imputationsAppliquees,
       retenueSansSoldeCentimes: retenueSansSoldeCentimes,
-      minutesCpAcquis: minutesCpAcquises,
-      /* §17.6 — LE MARQUEUR D'UNITÉ. Un instantané de mois clôturé n'est
-         JAMAIS réécrit : ceux d'avant le lot 17 portent des dixièmes de jour
-         et continueront de les porter pour toujours. Ce champ est ce qui
-         permet à `js/chaine-mois.js` de reconnaître les uns des autres et de
-         convertir à la LECTURE, sans jamais toucher au document. Sans lui, il
-         faudrait deviner l'unité d'un nombre — et un compteur de congés payés
-         lu dans la mauvaise unité se propage sur toutes les années suivantes
-         sans que rien ne le signale. */
-      uniteCp: 'minutes',
+      dixiemesCpAcquis: dixiemesCpAcquis,
       compteurSortie: compteurSortie,
-      /* Le brut et le net CONTRACTUELS du mois, non proratisés. C'est d'eux
-         que dérive le taux horaire (`montantCentimes`) : un taux proratisé
-         ferait payer une heure supplémentaire moins cher au premier mois d'un
-         contrat qu'au deuxième. Ils restent donc bruts de tout prorata. */
       salaireBrutCentimes: salaire.brut_mensuel_centimes,
       salaireNetCentimes: salaire.net_mensuel_centimes,
-      /* §17.7 — le prorata du premier et du dernier mois. Sur un mois entier,
-         `joursCouverts === joursDuMois` et les montants sont identiques aux
-         contractuels, au centime près et sans aucun arrondi. */
-      prorata: {
-        joursCouverts: part.joursCouverts,
-        joursDuMois: part.joursDuMois,
-        applique: !moisEntier && part.joursDuMois > 0
-      },
-      salaireBrutProrataCentimes: brutProrata,
-      salaireNetProrataCentimes: netProrata,
-      /* §17.8 — LE BRUT RÉELLEMENT DÛ DU MOIS, celui qui entre dans l'assiette
-         du 1/80ᵉ de l'indemnité de rupture. C'est le brut du mois après
-         prorata, moins la retenue de sans solde (déjà exprimée en brut,
-         RG-08). L'instantané ne portait jusqu'ici que le brut CONTRACTUEL :
-         une indemnité calculée dessus aurait ignoré les mois sans solde et
-         les mois partiels, et surpayé la famille sur un chiffre invérifiable.
-         Jamais négatif : une retenue supérieure au brut du mois signale une
-         donnée incohérente, pas une dette de Maria envers la famille. */
-      brutDuCentimes: Math.max(0, brutProrata - retenueSansSoldeCentimes),
       /* §5.8 du cahier : net du mois + entretien − retenue. NB : la retenue
          RG-08 est exprimée en brut (« convention à valider » dans le cahier),
          soustraite ici d'un total à base nette — hétérogénéité signalée. */
-      totalAVerserCentimes: netProrata + entretienCentimes - retenueSansSoldeCentimes
+      totalAVerserCentimes: salaire.net_mensuel_centimes + entretienCentimes - retenueSansSoldeCentimes
     };
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* §17.5 — La référence d'une journée, et l'écart déclaré               */
-  /* ------------------------------------------------------------------ */
-
-  /* Une heure 'HH:MM' en minutes depuis minuit. Refuse tout le reste : une
-     heure illisible déplacerait la référence de toutes les journées du mois. */
-  function heureEnMinutes(hhmm) {
-    var t = String(hhmm == null ? '' : hhmm).slice(0, 5);
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw erreurCode('HEURE_INVALIDE');
-    return Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-  }
-
-  /* LA RÉFÉRENCE D'UNE JOURNÉE (§17.5) : la fin d'accueil PLUS les minutes
-     supplémentaires du contrat. 17h30 + 30 min = 18h00.
-
-     Elle vient des CONDITIONS, donc d'un avenant : un avenant qui déplace les
-     horaires déplace la référence, sans toucher aux mois d'avant. C'est
-     exactement pour ça qu'elle est calculée ici et nulle part ailleurs — un
-     écran qui la recomposerait à partir de `contrat` la figerait sur les
-     horaires d'aujourd'hui. */
-  function heureDeReference(conditions) {
-    return heureEnMinutes(conditions.heure_depart) + (conditions.minutes_sup_jour || 0);
-  }
-
-  /* L'écart en minutes SIGNÉES que produit un événement déclaré par Maria.
-
-       Minutes du jour = minutes supplémentaires du contrat
-                         + (heure réelle − heure de référence)
-
-     Trois événements, et trois seulement — parce que chacun dit QUI a décidé,
-     et que c'est ça qui décide si le temps est dû :
-
-       `retard_parent`        un parent est venu après la référence. Écart
-                              POSITIF : du travail en plus.
-       `liberation_anticipee` Maria a rendu l'enfant avant la référence, de son
-                              fait. Écart NÉGATIF : du temps qu'elle rend.
-       `arrivee_decalee`      Maria a demandé qu'on lui amène l'enfant plus
-                              tard. Écart NÉGATIF, compté sur le MATIN : la
-                              référence est alors le début d'accueil.
-
-     Un parent qui vient chercher son enfant plus tôt DE LUI-MÊME n'est aucun
-     de ces trois cas : Maria était disponible, ses minutes restent dues, et
-     elle ne déclare rien (§17.5, A3). L'application ne devine pas.
-
-     Le signe est CALCULÉ, jamais saisi : c'est lui qui décide si le compteur
-     de Maria monte ou descend, et une erreur de signe se propage sur toutes
-     les années suivantes (RG-12). */
-  function ecartDepuisHeureReelle(conditions, evenement, heureReelle) {
-    var reelle = heureEnMinutes(heureReelle);
-    if (evenement === 'arrivee_decalee') {
-      return heureEnMinutes(conditions.heure_arrivee) - reelle;
-    }
-    if (evenement === 'retard_parent' || evenement === 'liberation_anticipee') {
-      return reelle - heureDeReference(conditions);
-    }
-    throw erreurCode('ECART_EVENEMENT_INCONNU');
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* §17.8 — L'indemnité de rupture                                      */
-  /* ------------------------------------------------------------------ */
-
-  /* Ancienneté en mois entiers révolus entre deux dates pures. Un contrat
-     ouvert le 4 septembre et clos le 3 juin n'a pas neuf mois révolus ; clos
-     le 4 juin, il les a. Le seuil des neuf mois se joue au jour près. */
-  function ancienneteEnMois(debutStr, finStr) {
-    var d = debutStr.split('-');
-    var f = finStr.split('-');
-    var mois = (Number(f[0]) - Number(d[0])) * 12 + (Number(f[1]) - Number(d[1]));
-    if (Number(f[2]) < Number(d[2])) mois--;
-    return mois;
-  }
-
-  /* Indemnité de rupture (§17.8).
-
-       due à partir de NEUF MOIS d'ancienneté
-       = 1/80ᵉ du TOTAL DES SALAIRES BRUTS depuis le début du contrat
-       indemnités d'entretien EXCLUES
-
-     `moisBruts` : [{ cle: 'YYYY-MM', brutDuCentimes: n }, …] — le brut
-     RÉELLEMENT DÛ de chaque mois, produit par `calculerMois` (ou lu dans
-     l'instantané d'un mois clôturé). L'appelant les rassemble ; le moteur ne
-     va rien chercher.
-
-     Le moteur ne décide pas de l'assiette : il additionne ce qu'on lui donne.
-     Le point non tranché — les indemnités de congés payés versées entrent-
-     elles dans le total ? — se règle donc en amont, en les incluant ou non
-     dans `moisBruts`. Tant que Maria n'a pas répondu, elles n'y entrent pas,
-     et l'écran le mentionne (§17.8).
-
-     UN SEUL arrondi, sur la division finale (§4.2). */
-  function indemniteRupture(entrees) {
-    var debut = entrees.date_debut;
-    var fin = entrees.date_fin;
-    var moisBruts = entrees.moisBruts || [];
-
-    var totalBrutCentimes = 0;
-    for (var i = 0; i < moisBruts.length; i++) {
-      totalBrutCentimes += moisBruts[i].brutDuCentimes || 0;
-    }
-
-    if (!debut || !fin) {
-      return { due: false, motif: 'DATES_INCOMPLETES', ancienneteMois: null,
-               totalBrutCentimes: totalBrutCentimes, indemniteCentimes: 0,
-               moisRetenus: moisBruts.length };
-    }
-
-    var anciennete = ancienneteEnMois(debut, fin);
-    if (anciennete < 9) {
-      /* En dessous de neuf mois, l'écran doit dire qu'aucune indemnité n'est
-         due ET pourquoi : un zéro sans motif se lit comme une panne. */
-      return { due: false, motif: 'ANCIENNETE_INSUFFISANTE',
-               ancienneteMois: anciennete, totalBrutCentimes: totalBrutCentimes,
-               indemniteCentimes: 0, moisRetenus: moisBruts.length };
-    }
-
-    return {
-      due: true, motif: null, ancienneteMois: anciennete,
-      totalBrutCentimes: totalBrutCentimes,
-      indemniteCentimes: Math.round(totalBrutCentimes / 80),
-      moisRetenus: moisBruts.length
-    };
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Jours fériés décomptés dans une période de congé (§16.8)            */
-  /* ------------------------------------------------------------------ */
-
-  /* Les jours fériés qui tombent dans une période de congé et que RG-06 ne
-     décompte donc PAS. La phrase « le samedi 15 août ne compte pas » vient de
-     là, et de nulle part ailleurs.
-
-     La période court, comme le décompte lui-même, du premier jour d'absence
-     à la veille de la reprise — sans quoi un férié tombant sur le samedi de
-     prolongation serait manqué. Les dimanches sont ignorés : ils ne comptent
-     jamais, fériés ou non, et les annoncer comme une exception serait faux.
-
-     LOT 17 — cette fonction vivait dans `js/chaine-mois.js` depuis le lot 16
-     (`feriesDecomptes`), faute de pouvoir rouvrir le moteur. Elle redit la
-     règle RG-06 : sa place est ici, à côté de la boucle qu'elle imite. */
-  function feriesDeLaPeriode(debutStr, finStr, joursPlanning) {
-    var planning = joursPlanning || PLANNING_DEFAUT;
-    if (finStr < debutStr) throw new Error('feriesDeLaPeriode : fin < debut');
-
-    var reprise = Feries.ajouterJours(finStr, 1);
-    while (planning.indexOf(jourSemaine(reprise)) === -1 || Feries.estJourFerie(reprise)) {
-      reprise = Feries.ajouterJours(reprise, 1);
-    }
-    var feries = [];
-    for (var d = debutStr; d < reprise; d = Feries.ajouterJours(d, 1)) {
-      if (jourSemaine(d) === 7) continue;              // un dimanche ne compte jamais
-      if (Feries.estJourFerie(d)) feries.push(d);
-    }
-    return feries;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1301,33 +908,8 @@
     imputerConges: imputerConges,
     minutesSupDuJour: minutesSupDuJour,
     montantCentimes: montantCentimes,
-    /* LOT 17 — `salaireApplicable` s'appelle désormais `conditionsApplicables`
-       et retourne l'avenant entier (§17.3). Aucun alias n'est laissé derrière :
-       un nom qui dit « salaire » sur un objet qui porte onze réglages est une
-       invitation à ne lire que deux d'entre eux. */
-    conditionsApplicables: conditionsApplicables,
+    salaireApplicable: salaireApplicable,
     calculerMois: calculerMois,
-    /* §17.8 — l'indemnité de rupture, pure comme le reste du moteur. */
-    indemniteRupture: indemniteRupture,
-    ancienneteEnMois: ancienneteEnMois,
-    /* LOT 17 — retrait de deux dettes du lot 16, qui redisaient dans
-       `js/chaine-mois.js` une règle appartenant au moteur (RG-06) faute de
-       pouvoir l'ouvrir. `joursOuvrablesParMois` existait déjà et n'était pas
-       exposée ; `feriesDeLaPeriode` est le déménagement de `feriesDecomptes`. */
-    joursOuvrablesParMois: joursOuvrablesParMois,
-    feriesDeLaPeriode: feriesDeLaPeriode,
-    /* §17.6 — la conversion entre l'unité de stockage (les minutes) et
-       l'affichage (les jours) doit se faire au même facteur partout. */
-    minutesCpParMois: minutesCpParMois,
-    /* §17.5 — la référence d'une journée et la conversion d'une heure réelle
-       déclarée en minutes signées. C'est une RÈGLE, pas de l'affichage : elle
-       décide du signe, donc du sens du compteur. */
-    heureEnMinutes: heureEnMinutes,
-    heureDeReference: heureDeReference,
-    ecartDepuisHeureReelle: ecartDepuisHeureReelle,
-    /* §17.7 — l'assiette du prorata, exposée pour que l'écran puisse dire
-       « 12 jours de garde sur 22 » sans la recalculer. */
-    partCouverteDuMois: partCouverteDuMois,
     /* utilitaires exposés pour les tests et l'interface */
     jourSemaine: jourSemaine,
     joursDuMois: joursDuMois,

@@ -26,6 +26,11 @@
    Lancement : node test/pr9-bout-en-bout.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`. */
+var Decor = require('./decor-avenants.js');
+
 
 var Engine = require('../js/engine.js');
 global.Engine = Engine;
@@ -57,15 +62,17 @@ function baseSimulee(opts) {
   var journees = opts.journees || {};
   var imputations = opts.imputations || [];
   return {
-    getSalaires: function () {
-      return Promise.resolve([{ id: 's1', contrat_id: 'c-test', date_effet: '2026-01-01',
-        brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]);
+    getAvenants: function () {
+      return Promise.resolve(Decor.avenantsDe(opts.contrat || contrat(),
+        [{ id: 's1', contrat_id: 'c-test', date_effet: '2026-01-01',
+           brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]));
     },
     getCompteurInitial: function () {
-      return Promise.resolve({ contrat_id: 'c-test', date_reference: '2026-06-01',
+      return Promise.resolve(Decor.compteurEnMinutes({
+        contrat_id: 'c-test', date_reference: '2026-06-01',
         minutes_sup: opts.minutesSup != null ? opts.minutesSup : 0,
         dixiemes_cp_acquis: opts.cpAcquis != null ? opts.cpAcquis : 20,
-        dixiemes_cp_pris: 0 });
+        dixiemes_cp_pris: 0 }));
     },
     getJourneesPeriode: function () {
       var parMois = {};
@@ -151,7 +158,7 @@ function chaine(opts, cible) {
   assert(m2.retenueSansSoldeCentimes > m1.retenueSansSoldeCentimes,
     'B1 : la retenue sur salaire est plus forte — le choix a un effet MONÉTAIRE, ' +
     'pas seulement un affichage');
-  egal(m2.compteurSortie.dixiemesCpPris, 0,
+  egal(m2.compteurSortie.minutesCpPris, 0,
     'B1 : et le compteur de congés payés de Maria est préservé');
 
   /* Cas 3 — le choix inverse : tout sur les congés payés. */
@@ -218,11 +225,15 @@ function chaine(opts, cible) {
   try {
     Engine.calculerMois({
       contrat: lundiJeudi,
-      salaire: { brut_mensuel_centimes: 0, net_mensuel_centimes: 0 },
+      /* §17.3 — le moteur reçoit les CONDITIONS du mois. Elles portent le
+         planning lundi-jeudi : c'est de lui que dépend le décompte RG-06, et
+         c'est tout l'objet de ce cas. */
+      conditions: Decor.avenantDe(lundiJeudi,
+        { brut_mensuel_centimes: 0, net_mensuel_centimes: 0 }),
       journees: Object.keys(journeesConge(joursLJ)).map(function (k) {
         return journeesConge(joursLJ)[k];
       }),
-      compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 100, dixiemesCpPris: 0 },
+      compteurEntree: { minutesSup: 0, minutesCpAcquis: 10 * 540, minutesCpPris: 0 },
       annee: 2026, mois: 6,
       imputations: [{ id: 'i1', contrat_id: 'c-test',
         date_debut: '2026-06-08', date_fin: '2026-06-11',

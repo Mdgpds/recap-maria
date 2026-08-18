@@ -304,7 +304,10 @@
 
     /* Les compteurs ne s'additionnent pas : entrée au 1er septembre, sortie
        aujourd'hui. C'est l'ÉVOLUTION qui est lisible, pas une somme. */
-    var ce0 = agr.compteurEntree || { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 };
+    var ce0 = agr.compteurEntree || { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 };
+    /* LOT 17 §17.6 — le facteur d'affichage des congés payés, calculé par la
+       chaîne sur le DERNIER mois de la période. Voir `agregerPeriode`. */
+    var mpjc = agr.minutesParJourConge;
     var cs = agr.compteurSortie || ce0;
     var p2 = Kit.pane('Où en sont les compteurs');
     var l2 = Kit.lines(p2);
@@ -312,8 +315,9 @@
       Kit.heures(ce0.minutesSup || 0), { discret: true });
     Kit.ligne(l2, 'Récupération à la fin de la période', Kit.heures(cs.minutesSup || 0));
     Kit.ligne(l2, 'Congés payés au 1er ' + Kit.libelleMois(premier.mois),
-      Kit.joursCp(Kit.cpDisponible(ce0)), { discret: true });
-    Kit.ligne(l2, 'Congés payés à la fin de la période', Kit.joursCp(Kit.cpDisponible(cs)));
+      Kit.joursCp(Kit.cpDisponible(ce0), mpjc), { discret: true });
+    Kit.ligne(l2, 'Congés payés à la fin de la période',
+      Kit.joursCp(Kit.cpDisponible(cs), mpjc));
     corps.appendChild(p2);
 
     if (agr.moisProvisoires.length) {

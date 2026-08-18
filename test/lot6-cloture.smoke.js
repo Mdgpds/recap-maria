@@ -12,6 +12,12 @@
    Lancement : NODE_PATH=... node test/lot6-cloture.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`, qui assemble l'avenant à partir du contrat et du
+   barème déjà écrits ici. Aucune valeur n'est inventée. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -96,10 +102,14 @@ function journeesDeMai(contratId) {
 /* Instantané du mois clôturé de Léa : produit par le VRAI moteur, pour que le
    test n'invente aucun chiffre. */
 var SNAPSHOT_LEA_MAI = (function () {
+  /* LOT 17 §17.3 — le moteur reçoit les CONDITIONS du mois, pas le contrat.
+     Elles sont assemblées à partir des mêmes valeurs qu'avant : l'instantané
+     produit ici est donc rigoureusement le même chiffre. §17.6 — le compteur
+     d'entrée est en minutes (200 dixièmes × 54). */
   var r = Engine.calculerMois({
-    contrat: LEA, salaire: SALAIRE_PLEIN,
+    contrat: LEA, conditions: Decor.avenantDe(LEA, SALAIRE_PLEIN),
     journees: [journeesDeMai('c-lea')['2026-05-18']],
-    compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 200, dixiemesCpPris: 0 },
+    compteurEntree: { minutesSup: 0, minutesCpAcquis: 200 * 54, minutesCpPris: 0 },
     annee: 2026, mois: 5
   });
   r.prenomEnfant = 'Léa';
@@ -111,6 +121,16 @@ var SNAPSHOT_LEA_MAI = (function () {
 
 var appels = { poser: [], journee: [], fige: [] };
 var etatTest = { serieCassee: null, dejaClos: false };
+
+
+var TOUS_CONTRATS = [LEA, TOM, ZOE];
+
+/* LOT 17 §17.2 — le contrat par son identifiant. `getAvenants` en a besoin
+   pour reprendre les réglages du décor dans l'avenant : le moteur ne les lit
+   plus sur `contrat`. */
+function contratDe(id) {
+  return TOUS_CONTRATS.filter(function (c) { return c.id === id; })[0] || TOUS_CONTRATS[0];
+}
 
 var DB = {
   getSession: function () {
@@ -141,17 +161,17 @@ var DB = {
      d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
      cette fonction, l'écran lève avant même de se rendre. */
   contratEstVierge: function () { return Promise.resolve(false); },
-  getSalaires: function (id) {
+  getAvenants: function (id) {
     var s = (id === 'c-zoe') ? SALAIRE_SANS_NET : SALAIRE_PLEIN;
     var copie = {}; Object.keys(s).forEach(function (k) { copie[k] = s[k]; });
     copie.contrat_id = id;
-    return Promise.resolve([copie]);
+    return Promise.resolve(Decor.avenantsDe(contratDe(id), [copie]));
   },
   getCompteurInitial: function (id) {
-    return Promise.resolve({
+    return Promise.resolve(Decor.compteurEnMinutes({
       contrat_id: id, date_reference: '2026-05-01',
       minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0
-    });
+    }));
   },
   getJourneesMois: function (id) {
     if (etatTest.serieCassee === id) return Promise.reject(new Error('Failed to fetch'));

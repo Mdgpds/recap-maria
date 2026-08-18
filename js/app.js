@@ -50,8 +50,11 @@
        initiative, l'écran vit dans `ui-accueil.js`. Signalé en restitution. */
     finDeMois: 'UiAccueil',
     familles: 'UiMenu',         // lot 8 — rendu par le module du Menu
-    modeles: 'UiMenu',          // lot 11 — contrats types
-    modifGroupee: 'UiMenu',     // lot 11 — modification groupée
+    /* LOT 17 §17.9 — `modeles` et `modifGroupee` sortent du registre : plus
+       aucune entrée de Menu n'y mène, et une route encore branchée serait un
+       écran atteignable par un lien de retour ou une URL restée en cache.
+       Le code des deux écrans reste dans `js/ui-menu.js`, mort et signalé ;
+       son retrait appartient au §19.2. */
     reprise: 'UiMenu',          // lot 14 — reprendre mes comptes
     rappels: 'UiMenu',          // lot 15 — rappels par notification
     compte: 'UiMenu'            // lot 16 §16.2 — mon nom sur les documents
@@ -66,6 +69,11 @@
     pile: [],            // [{ ecran, params }] — le dernier est affiché
     series: {},          // cache : contratId|YYYY-MM -> Promise(chaîne)
     journees: {},        // cache : contratId|YYYY-MM -> Promise({ jour: ligne })
+    /* LOT 17 §17.2 — les conditions du contrat, datées. Elles sont lues par
+       tous les écrans qui ont besoin d'un réglage (le planning, les minutes
+       d'un jour de congé, l'entretien) et qui n'ont pas de chaîne sous la
+       main. Elles ne changent qu'à l'écriture d'un avenant, d'où le cache. */
+    avenants: {},        // cache : contratId -> Promise([avenant…])
     recaps: {},          // cache : YYYY-MM -> Promise({ contratId: recap|null })
     pret: false,
     chargement: false,
@@ -547,6 +555,7 @@
     etat.series = {};
     etat.journees = {};
     etat.recaps = {};
+    etat.avenants = {};
   }
 
   /* Après toute écriture : les chaînes et les journées en cache sont périmées.
@@ -554,6 +563,34 @@
      partielle qui se trompe laisse un chiffre faux à l'écran, et un chiffre
      faux crédible est le pire résultat possible pour cette application. */
   function invalider() { viderCaches(); }
+
+  /* LOT 17 §17.2 — les avenants d'un contrat, du plus ancien au plus récent.
+
+     Un écran qui a besoin d'un réglage passe par ici, JAMAIS par `contrat` :
+     les colonnes de `contrat` ne sont plus lues depuis le lot 17, et s'en
+     servir ferait calculer un écran avec des conditions d'aujourd'hui sur un
+     mois d'il y a deux ans. C'est exactement ce que les avenants existent pour
+     empêcher.
+
+     Un échec n'est pas mis en cache : sinon la première coupure réseau
+     figerait l'application sur une liste vide pour toute la session, et les
+     écrans afficheraient un planning par défaut sans que rien ne le dise. */
+  function avenants(contratId) {
+    if (!etat.avenants[contratId]) {
+      etat.avenants[contratId] = global.DB.getAvenants(contratId).catch(function (e) {
+        delete etat.avenants[contratId];
+        throw e;
+      });
+    }
+    return etat.avenants[contratId];
+  }
+
+  /* Les conditions applicables à un mois donné, résolues par le moteur.
+     Aucune règle ici : `conditionsApplicables` est la règle, et elle vit dans
+     `js/engine.js`. */
+  function conditionsDuMois(avenantsListe, annee, mois) {
+    return global.Engine.conditionsApplicables(avenantsListe || [], annee, mois);
+  }
 
   /* Recharge la liste des contrats (création, archivage, renommage). */
   function rechargerContrats() {
@@ -610,6 +647,8 @@
     serie: serie,
     moisDe: moisDe,
     journees: journees,
+    avenants: avenants,
+    conditionsDuMois: conditionsDuMois,
     recapsDuMois: recapsDuMois,
     estClos: estClos,
     invalider: invalider,

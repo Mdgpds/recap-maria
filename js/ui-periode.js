@@ -417,7 +417,8 @@
     } else {
       Kit.ligne(l2, 'Mois entiers', String(ae.nbMois));
       Kit.ligne(l2, 'Salaires nets', Kit.eur(ae.salaireNetCentimes));
-      Kit.ligne(l2, 'Congés payés acquis', Kit.joursCp(ae.dixiemesCpAcquis));
+      Kit.ligne(l2, 'Congés payés acquis',
+        Kit.joursCp(ae.minutesCpAcquis, ae.minutesParJourConge));
       Kit.ligne(l2, 'Total versé sur ces mois', Kit.eur(ae.totalAVerserCentimes), { total: true });
     }
     if (r.partiels.length) {
@@ -430,12 +431,14 @@
     if (r.soldes && r.soldes.sortie) {
       var p3 = Kit.pane('Compteurs (jamais additionnés)');
       var l3 = Kit.lines(p3);
-      var e0 = r.soldes.entree || { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 };
+      var e0 = r.soldes.entree || { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 };
       var s = r.soldes.sortie;
       Kit.ligne(l3, 'Récupération au début', Kit.heures(e0.minutesSup || 0), { discret: true });
       Kit.ligne(l3, 'Récupération à la fin', Kit.heures(s.minutesSup || 0));
-      Kit.ligne(l3, 'Congés payés au début', Kit.joursCp(Kit.cpDisponible(e0)), { discret: true });
-      Kit.ligne(l3, 'Congés payés à la fin', Kit.joursCp(Kit.cpDisponible(s)));
+      Kit.ligne(l3, 'Congés payés au début',
+        Kit.joursCp(Kit.cpDisponible(e0), ae.minutesParJourConge), { discret: true });
+      Kit.ligne(l3, 'Congés payés à la fin',
+        Kit.joursCp(Kit.cpDisponible(s), ae.minutesParJourConge));
       bloc.appendChild(p3);
     } else if (!p.entier) {
       bloc.appendChild(Kit.ce('p', 'sb q',

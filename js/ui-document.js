@@ -102,6 +102,20 @@
     }).sort();
   }
 
+  /* LOT 17 §17.3 — LES CONDITIONS DU MOIS. Un document est la pièce qui doit
+     éteindre un désaccord : il doit porter les conditions de SON époque, pas
+     celles d'aujourd'hui. La chaîne les a résolues et les transporte sur le
+     maillon ; sur un mois figé, ce sont celles de l'avenant en vigueur au
+     moment de la clôture. */
+  function cond() {
+    return (vue && vue.entree && vue.entree.conditions) || null;
+  }
+  function reg(champ, defaut) {
+    var c = cond();
+    return (c && c[champ] != null) ? c[champ] : defaut;
+  }
+  function planningDuMois() { return reg('jours_planning', null); }
+
   /* Le document, sous forme de blocs. Chaque bloc : { titre, lignes }. */
   function blocs() {
     var r = vue.entree.resultat;
@@ -116,9 +130,26 @@
          seul n'est pas vérifiable ; « 14 jours × 5,00 € » l'est, et c'est ce
          qui éteint une contestation avant qu'elle ne naisse. */
       [libelleEntretienDetaille(r), Kit.eur(r.entretienCentimes)],
-      ['Salaire net', Kit.eur(r.salaireNetCentimes)],
-      ['Salaire brut correspondant', Kit.eur(r.salaireBrutCentimes), { doux: true }]
+      /* LOT 17 §17.7 — LE SALAIRE DU MOIS, PRORATISÉ QUAND LE CONTRAT NE LE
+         COUVRE PAS EN ENTIER. Un contrat ouvert le 16 mars retenait jusqu'ici
+         le mois de mars complet ; le document partait chez la famille avec un
+         salaire qu'elle ne devait pas.
+
+         Les instantanés d'avant le lot 17 ne portent pas `salaireNetProrata` :
+         ils n'ont jamais connu le prorata, et leur net contractuel EST leur net
+         du mois. Le repli est donc exact, pas approximatif. */
+      ['Salaire net', Kit.eur(r.salaireNetProrataCentimes != null
+        ? r.salaireNetProrataCentimes : r.salaireNetCentimes)],
+      ['Salaire brut correspondant', Kit.eur(r.salaireBrutProrataCentimes != null
+        ? r.salaireBrutProrataCentimes : r.salaireBrutCentimes), { doux: true }]
     ];
+    if (r.prorata && r.prorata.applique) {
+      /* La phrase qui rend le chiffre vérifiable. Un montant proratisé sans son
+         quotient est indéfendable : la famille compte 22 jours et lit un
+         salaire qui n'en vaut que 12. */
+      principal.push(['Mois partiel — ' + r.prorata.joursCouverts + ' jours de garde ' +
+        'sur ' + r.prorata.joursDuMois + ' au contrat', '', { doux: true }]);
+    }
     if (r.retenueSansSoldeCentimes > 0) {
       principal.push(['Retenue pour jour(s) sans solde', '−' + Kit.eur(r.retenueSansSoldeCentimes)]);
     }
@@ -158,13 +189,31 @@
        que le parent pourrait croire devoir régler un jour, ou pire, une
        faveur à rappeler. Ce document sert à éteindre les désaccords, pas à en
        créer un nouveau. (Risque n° 4.) */
-    if (r.minutesSupRenoncees > 0) {
-      out.push({
-        titre: null,
-        lignes: [['Heures supplémentaires du mois', Kit.heures(r.minutesSupAcquises)],
-                 ['Dont ' + Kit.heures(r.minutesSupRenoncees) +
-                  ' auxquelles j’ai choisi de renoncer ce mois-ci', '', { doux: true }]]
+    /* LOT 17 §17.5 (A5) — LE TOTAL EST NET, ET LA LIGNE QUI L'EXPLIQUE EST LÀ.
+
+         Heures supplémentaires du mois — 8 h 30
+         dont 1 h 30 déduite — libération anticipée du 17 novembre
+
+       Un total amputé sans son détail est incontestable et inexplicable en
+       même temps : le parent voit un chiffre plus bas que le mois d'avant et
+       n'a aucun moyen de savoir pourquoi. C'est exactement le genre de
+       silence que ce document existe pour supprimer.
+
+       Les minutes RENDUES par Maria (écart négatif imputé à la récupération)
+       et les minutes de RETARD d'un parent (écart positif) sont dites
+       séparément : ce ne sont pas les mêmes faits, et les confondre dans un
+       solde ferait disparaître le retard du parent. */
+    var ecarts = r.ecartsDeclares || [];
+    if (r.minutesSupRenoncees > 0 || ecarts.length) {
+      var lignesSup = [['Heures supplémentaires du mois', Kit.heures(r.minutesSupAcquises)]];
+      if (r.minutesSupRenoncees > 0) {
+        lignesSup.push(['Dont ' + Kit.heures(r.minutesSupRenoncees) +
+          ' auxquelles j’ai choisi de renoncer ce mois-ci', '', { doux: true }]);
+      }
+      ecarts.forEach(function (e) {
+        lignesSup.push([libelleEcartHoraire(e), '', { doux: true }]);
       });
+      out.push({ titre: null, lignes: lignesSup });
     }
 
     out.push({
@@ -172,10 +221,38 @@
       lignes: [
         ['Heures supplémentaires acquises dans le mois', Kit.heures(r.minutesSupAcquises)],
         ['Récupération restante', Kit.heures(cs.minutesSup || 0)],
-        ['Congés payés restants', Kit.joursCp(Kit.cpDisponible(cs))]
+        ['Congés payés restants',
+         Kit.joursCp(Kit.cpDisponible(cs), reg('minutes_par_jour_conge', 0))]
       ]
     });
     return out;
+  }
+
+  /* LOT 17 §17.5 — la phrase d'un écart d'horaire, sur le document.
+
+     Elle dit TROIS choses, et il en faut trois : combien, dans quel sens, et
+     à quel titre. « − 1 h 30 » seul laisse le parent supposer une erreur ;
+     « libération anticipée du 17 novembre » lui dit que c'est Maria qui a
+     rendu ce temps, et que le mois d'après ne recommencera pas.
+
+     La destination n'est nommée que lorsqu'elle change quelque chose pour le
+     parent : une déduction sur les congés payés ou en sans solde ne se lit pas
+     comme une déduction sur la récupération, et le sans-solde apparaît en plus
+     dans la retenue. */
+  var LIBELLE_EVENEMENT_ECART = {
+    recuperation: 'déduite de ma récupération',
+    conges_payes: 'déduite de mes congés payés',
+    sans_solde: 'passée en sans solde'
+  };
+
+  function libelleEcartHoraire(e) {
+    var quand = ' du ' + Kit.jourLong(e.jour).toLowerCase();
+    if (e.minutes > 0) {
+      return 'Dont ' + Kit.heures(e.minutes) + ' de garde en plus' + quand;
+    }
+    var suffixe = LIBELLE_EVENEMENT_ECART[e.imputeSur] || '';
+    return 'Dont ' + Kit.heures(-e.minutes) + ' que je n’ai pas gardée' + quand +
+      (suffixe ? ' — ' + suffixe : '');
   }
 
   /* Même mise en forme que l'historique du lot 13 : « 31 août 2026 à 18h42 ».
@@ -193,7 +270,7 @@
      compteurs — on ne fabrique pas une multiplication fausse : on donne le
      montant seul. Mieux vaut moins de détail qu'un détail qui ment. */
   function libelleEntretienDetaille(r) {
-    var parJour = vue.contrat.entretien_centimes_jour || 0;
+    var parJour = reg('entretien_centimes_jour', 0);
     if (parJour > 0 && r.joursPresence * parJour === r.entretienCentimes) {
       return 'Indemnité d’entretien — ' + r.joursPresence + ' jours × ' + Kit.eur(parJour);
     }
@@ -260,7 +337,8 @@
        journées saisies, qui n'ont pas bougé puisque le mois est verrouillé. */
     var source = (vue.entree.fige && r.journeesParticulieres) || null;
     if (source) return source;
-    return journeesParticulieresDe(prenom, vue.contrat, vue.journees, vue.annee, vue.mois);
+    return journeesParticulieresDe(prenom, vue.contrat, planningDuMois(),
+      vue.journees, vue.annee, vue.mois);
   }
 
   /* Forme PURE. Correctif A15 de la relecture PR9 : cette liste n'était écrite
@@ -268,7 +346,7 @@
      morte et qu'un document clôturé reconstruisait toujours ses journées
      particulières depuis le planning ACTUEL. Changer les jours de garde après
      la clôture changeait donc le contenu d'un document déjà remis. */
-  function journeesParticulieresDe(prenom, contrat, journees, annee, mois) {
+  function journeesParticulieresDe(prenom, contrat, planning, journees, annee, mois) {
     var out = [];
     Object.keys(journees || {}).sort().forEach(function (d) {
       var t = journees[d].type;
@@ -280,7 +358,7 @@
     /* Les fériés ne sont pas saisis : ils viennent du calendrier. Ils comptent
        pourtant parmi les journées où l'enfant n'était pas là, et un parent qui
        compte ses jours doit les retrouver. */
-    Kit.joursPlanning(contrat, annee, mois).forEach(function (d) {
+    Kit.joursPlanning(contrat, planning, annee, mois).forEach(function (d) {
       if ((journees || {})[d]) return;
       if (!Feries.estJourFerie(d)) return;
       out.push({ date: d, quoi: 'férié' });
@@ -796,7 +874,8 @@
            comptés comme des jours encore à travailler. C'est ici que le
            chiffre compte le plus — il mesure ce qu'on s'apprête à perdre. */
         var restants = Kit.joursTravaillesRestants(
-          vue.contrat, vue.annee, vue.mois, global.App.aujourdhui(), vue.journees);
+          vue.contrat, planningDuMois(), vue.annee, vue.mois,
+          global.App.aujourdhui(), vue.journees);
         if (restants > 0) {
           corps.appendChild(Kit.warnbox(
             restants + (restants > 1 ? ' jours travaillés sont encore à venir'
@@ -845,6 +924,10 @@
     global.UiReouverture.feuilleEcarts({
       contrat: vue.contrat, annee: vue.annee, mois: vue.mois,
       recap: vue.entree.recap, ecarts: ecarts,
+      /* LOT 17 §17.6 — le facteur d'affichage des congés payés, celui du mois
+         rouvert. L'écran des écarts compare deux instantanés du MÊME mois :
+         un seul facteur, celui de ses conditions. */
+      minutesParJourConge: reg('minutes_par_jour_conge', 0),
       confirmer: function (b) { cloturer(b, snap); }
     });
   }
@@ -895,7 +978,13 @@
        Sans elle, un changement de planning après la clôture réécrivait le
        contenu d'un document déjà remis. */
     snap.journeesParticulieres = journeesParticulieresDe(
-      ctx.contrat.prenom_enfant, ctx.contrat, ctx.journees, ctx.annee, ctx.mois);
+      ctx.contrat.prenom_enfant, ctx.contrat,
+      (ctx.entree.conditions && ctx.entree.conditions.jours_planning) || null,
+      ctx.journees, ctx.annee, ctx.mois);
+    /* LOT 17 §17.4 — quelles conditions ont servi à ce mois. Le document doit
+       pouvoir le dire des années plus tard, quand l'avenant aura été suivi de
+       trois autres. */
+    snap.avenantNumero = ctx.entree.conditions ? ctx.entree.conditions.numero : null;
     return snap;
   }
 

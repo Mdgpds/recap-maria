@@ -74,19 +74,15 @@
     });
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture du contrat…'));
 
+    /* LOT 17 §17.9 — le rattachement à un contrat type ne se lit plus : les
+       contrats types sortent de l'application, et la notion d'« écart »
+       disparaît avec eux. La colonne `contrat.modele_id` reste en base. */
     return Promise.all([
-      global.DB.getSalaires(contrat.id),
-      global.DB.listRecapsContrat(contrat.id).catch(function () { return []; }),
-      /* Lot 11 — la version à laquelle ce contrat est rattaché. Un échec ici
-         ne doit pas vider la fiche : on perd la mention d'écart, pas le
-         contrat. */
-      contrat.modele_id
-        ? global.DB.listModeles().catch(function () { return []; })
-        : Promise.resolve([])
+      global.App.avenants(contrat.id),
+      global.DB.listRecapsContrat(contrat.id).catch(function () { return []; })
     ]).then(function (r) {
-      var salaires = r[0] || [];
+      var avenants = r[0] || [];
       var recaps = r[1] || [];
-      var modele = (r[2] || []).filter(function (m) { return m.id === contrat.modele_id; })[0] || null;
       Kit.vider(ctx.corps);
       var corps = ctx.corps;
 
@@ -123,74 +119,20 @@
       corps.appendChild(Kit.fld('Début du contrat', Kit.dateLongue(contrat.date_debut)));
       if (contrat.date_fin) corps.appendChild(Kit.fld('Fin du contrat', Kit.dateLongue(contrat.date_fin)));
 
-      if (modele) corps.appendChild(blocModele(contrat, modele, salaires));
-
-      corps.appendChild(Kit.section('Horaires'));
-      corps.appendChild(Kit.fld('Jours de garde', libellePlanning(contrat.jours_planning)));
-      /* LOT 16 §16.5 — « ACCUEIL », PAS « HORAIRE CONTRACTUEL ».
-         Le contrat enregistrait un départ à 18h00 ET une journée de 9 h, or
-         8h30 → 18h00 en fait 9h30 : les deux se contredisaient à l'écran.
-         C'est l'heure de fin qui était fausse. L'accueil s'arrête à 17h30 ;
-         les 30 minutes supplémentaires viennent APRÈS et sont portées par
-         `minutes_sup_jour`, sur leur propre ligne. L'enfant repart bien vers
-         18 h — mais ce n'est pas la fin de l'accueil. */
-      corps.appendChild(Kit.fld('Accueil',
-        heureCourte(contrat.heure_arrivee) + ' → ' + heureCourte(contrat.heure_depart)));
-      corps.appendChild(Kit.fld('Durée de la journée', Kit.duree(contrat.minutes_contractuelles)));
-      corps.appendChild(Kit.fld('Minutes supplémentaires', Kit.duree(contrat.minutes_sup_jour) + ' / jour'));
-      corps.appendChild(Kit.ce('p', 'sb q',
-        'L’enfant repart vers ' + finReelle(contrat) + ' : les ' +
-        Kit.duree(contrat.minutes_sup_jour) + ' s’ajoutent à l’accueil.'));
-      corps.appendChild(Kit.fld('Entretien par jour de présence', Kit.eur(contrat.entretien_centimes_jour)));
-
       if (!contrat.archive) {
         var bModif = Kit.bouton('btn nt', function () { feuilleContrat(contrat, recaps); });
-        bModif.textContent = 'Modifier l’identité et les horaires';
+        bModif.textContent = 'Modifier l’identité';
         corps.appendChild(bModif);
       }
 
-      corps.appendChild(Kit.section('Rémunération'));
-      var m = global.App.moisCourant();
-      var enVigueur = Engine.salaireApplicable(salaires, m.annee, m.mois);
-      if (!salaires.length) {
-        corps.appendChild(Kit.warnbox('Aucune rémunération connue',
-          'Tant qu’aucun barème n’est enregistré, les montants de ce contrat restent à zéro ' +
-          'et ses mois ne peuvent pas être clôturés.'));
-      }
-      salaires.slice().sort(function (a, b) { return a.date_effet < b.date_effet ? 1 : -1; })
-        .forEach(function (s) {
-          corps.appendChild(carteBareme(contrat, s, salaires, recaps, enVigueur));
-        });
+      /* LOT 17 §17.4 — LES CONDITIONS, EN VIGUEUR AUJOURD'HUI, ET DATÉES.
 
-      if (!contrat.archive) {
-        var bBareme = Kit.bouton('menu', function () {
-          feuilleBareme(contrat, null, salaires, recaps);
-        });
-        var tx = Kit.ce('span');
-        tx.appendChild(document.createTextNode('Nouveau barème'));
-        tx.appendChild(Kit.ce('span', 'd', 'Au prochain relèvement du SMIC'));
-        bBareme.appendChild(tx);
-        bBareme.appendChild(Kit.ce('span', 'ar', '›'));
-        corps.appendChild(bBareme);
-      }
-
-      corps.appendChild(Kit.section('Règles de ce contrat'));
-      corps.appendChild(Kit.fld('Congés déduits d’abord',
-        contrat.ordre_imputation === 'sup_puis_cp' ? 'récupération' : 'congés payés'));
-      corps.appendChild(Kit.fld('Quand ' + contrat.prenom_enfant + ' est ' +
-        Kit.accordDe(contrat, 'absent'),
-        contrat.sup_dues_si_enfant_absent === false
-          ? 'je ne compte pas mes ' + Kit.duree(contrat.minutes_sup_jour)
-          : 'mes ' + Kit.duree(contrat.minutes_sup_jour) + ' restent dues'));
-      corps.appendChild(Kit.fld('Majoration fin de contrat', libelleMajoration()));
-      if (!contrat.archive) {
-        var bRegles = Kit.bouton('btn nt', function () { feuilleRegles(contrat); });
-        bRegles.textContent = 'Modifier ces règles';
-        corps.appendChild(bRegles);
-      }
-      corps.appendChild(Kit.ce('p', 'sb q',
-        'Ces règles gouvernent vos calculs. Les modifier ne touche jamais un mois déjà clôturé. ' +
-        'La majoration de fin de contrat est une clause écrite au contrat : elle ne se règle pas ici.'));
+         Les trois sections « Horaires », « Rémunération » et « Règles de ce
+         contrat » n'en font plus qu'une. Elles présentaient les valeurs
+         COURANTES de `contrat` comme si elles avaient toujours valu ça, et
+         chacune avait son bouton pour les changer sans aucune date. C'est
+         précisément ce qui rendait faux un juillet qui traînait. */
+      corps.appendChild(blocConditions(contrat, avenants, recaps));
 
       if (contrat.archive) {
         corps.appendChild(Kit.note('Contrat rangé',
@@ -274,6 +216,37 @@
       });
   }
 
+  /* ================================================================== */
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2                       */
+  /*                                                                     */
+  /* Deux familles de fonctions, mortes pour deux raisons différentes.    */
+  /*                                                                     */
+  /* LES BARÈMES (`carteBareme`, `feuilleBareme`,                        */
+  /* `feuilleSuppressionBareme`, `moisClosDependants`) : la table         */
+  /* `salaire_contrat` est devenue `avenant_contrat` et porte les ONZE    */
+  /* réglages (§17.2). Un écran qui ne daterait QUE le brut et le net     */
+  /* redonnerait l'impression qu'eux seuls ont un historique — c'est      */
+  /* exactement l'idée fausse que ce lot corrige. Ils sont remplacés par  */
+  /* la frise et « Faire un avenant ».                                     */
+  /*                                                                     */
+  /* LES CONTRATS TYPES (`blocModele`, `ligneEcartReferme`, `phraseEcart`,*/
+  /* `valeurLisible`, `feuilleAlignerCeContrat`) : décision d'Adrien      */
+  /* (§17.9). Les données restent en base ; la notion d'« écart »         */
+  /* disparaît, puisque plus rien ne compare un contrat à une référence.   */
+  /*                                                                     */
+  /* `feuilleRegles` : « modifier les conditions sans passer par un       */
+  /* avenant n'existe plus » (§17.4).                                     */
+  /*                                                                     */
+  /* CE CODE NE FONCTIONNE PLUS — il appelle `DB.getSalaires`,           */
+  /* `DB.ajouterSalaire`, `DB.majSalaire`, `DB.supprimerSalaire` et      */
+  /* `Engine.salaireApplicable`, qui n'existent plus. C'est délibéré :    */
+  /* un écran qui écrirait encore un réglage sans date serait le seul     */
+  /* moyen d'effacer le passé sans s'en apercevoir. Plus aucun appelant   */
+  /* ne le touche ; la spécification demande de le SIGNALER, pas de le    */
+  /* supprimer dans ce lot.                                               */
+  /* ================================================================== */
+
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
   function carteBareme(contrat, s, salaires, recaps, enVigueur) {
     var carte = Kit.ce('div', 'card');
     var row = Kit.ce('div', 'row');
@@ -344,15 +317,20 @@
      clôturés sont protégés en base, mais tous les mois non clôturés seront
      recalculés — y compris des montants déjà annoncés aux parents. On demande
      confirmation en nommant ce qui change. */
+  /* LOT 17 §17.4 — LES RÉGLAGES SORTENT DE CETTE LISTE.
+
+     Les six réglages qu'elle contenait ne se modifient plus depuis une fiche :
+     ils sont datés, et passent par un avenant, qui a son propre garde-fou —
+     il ne peut pas prendre effet sur un mois clôturé.
+
+     Restent les deux DATES. Ce ne sont pas des réglages : elles bornent le
+     contrat, elles ne le tarifient pas. Mais les déplacer change bel et bien
+     tous les mois non clôturés — un début reculé fait apparaître des journées,
+     une fin avancée en fait disparaître, et le §17.7 proratise désormais le
+     salaire des mois partiels. L'avertissement les concernant reste donc. */
   var CHAMPS_SENSIBLES = [
-    ['date_debut', 'la date de début'],
-    ['date_fin', 'la date de fin'],
-    ['jours_planning', 'les jours de planning'],
-    ['minutes_sup_jour', 'les minutes supplémentaires par jour'],
-    ['minutes_par_jour_conge', 'la durée d’un jour de congé'],
-    ['entretien_centimes_jour', 'l’indemnité d’entretien'],
-    ['ordre_imputation', 'l’ordre d’imputation des congés'],
-    ['sup_dues_si_enfant_absent', 'les heures sup en cas d’absence de l’enfant']
+    ['date_debut', 'le premier jour de garde'],
+    ['date_fin', 'le dernier jour de garde']
   ];
 
   function changementsSensibles(contrat, saisis) {
@@ -369,9 +347,28 @@
     return out;
   }
 
+  /* LOT 17 §17.4 — CETTE FEUILLE NE TOUCHE PLUS AUX CONDITIONS.
+
+     Elle portait les jours de garde, les horaires, les minutes
+     supplémentaires, la durée d'un jour de congé et l'indemnité d'entretien,
+     et les écrivait sur `contrat` — sans aucune date. Tous les mois non
+     clôturés étaient alors recalculés, y compris ceux d'il y a deux ans, et
+     l'écran devait avertir « vous modifiez … touchez de nouveau pour
+     confirmer ». Cet avertissement était le symptôme : un geste dont on ne
+     peut pas dire l'effet ne devrait pas exister.
+
+     « Modifier les conditions sans passer par un avenant n'existe plus. »
+     Il ne reste ici que l'IDENTITÉ — le prénom, le nom, le genre, la couleur,
+     la photo — et deux champs qui ne sont pas des conditions de calcul : la
+     date de début et le statut.
+
+     La date de début reste ici parce qu'elle borne le contrat, elle ne le
+     règle pas : le moteur s'en sert pour ignorer les jours d'avant, jamais
+     pour choisir un tarif. Elle reste donc sensible, et l'avertissement la
+     concernant est conservé. */
   function feuilleContrat(contrat, recaps) {
     var maintenant = global.App.moisCourant();
-    Kit.ouvrirFeuille('Modifier le contrat', contrat.prenom_enfant,
+    Kit.ouvrirFeuille('Modifier l’identité', contrat.prenom_enfant,
       function (corps) {
         var prenom = Kit.champ('Prénom de l’enfant', contrat.prenom_enfant);
         corps.appendChild(prenom.bloc);
@@ -398,42 +395,9 @@
         var photoCourante = { valeur: contrat.photo || null };
         corps.appendChild(blocPhoto(photoCourante));
 
-        var debut = Kit.champDate('Début du contrat', contrat.date_debut,
+        var debut = Kit.champDate('Premier jour de garde', contrat.date_debut,
           { anneeMin: Number(String(contrat.date_debut).slice(0, 4)) - 3, anneeMax: maintenant.annee + 2 });
         corps.appendChild(debut.bloc);
-
-        corps.appendChild(Kit.section('Jours de garde'));
-        var cases = [];
-        JOURS.forEach(function (j) {
-          var f = Kit.ce('div', 'fld');
-          var lab = Kit.ce('label', 'lb', j[1]);
-          lab.style.flex = '1';
-          var cb = Kit.ce('input');
-          cb.type = 'checkbox';
-          cb.checked = (contrat.jours_planning || [1, 2, 3, 4, 5]).indexOf(j[0]) !== -1;
-          cb.style.width = '22px';
-          cb.style.height = '22px';
-          lab.appendChild(cb);
-          f.appendChild(lab);
-          corps.appendChild(f);
-          cases.push({ jour: j[0], cb: cb });
-        });
-
-        corps.appendChild(Kit.section('Horaires et montants'));
-        var arrivee = Kit.champ('Début d’accueil', heureCourte(contrat.heure_arrivee), { type: 'time' });
-        corps.appendChild(arrivee.bloc);
-        var depart = Kit.champ('Fin d’accueil', heureCourte(contrat.heure_depart), { type: 'time' });
-        corps.appendChild(depart.bloc);
-        var supJour = Kit.champ('Minutes sup par jour travaillé',
-          String(contrat.minutes_sup_jour), { inputmode: 'numeric' });
-        corps.appendChild(supJour.bloc);
-        var minConge = Kit.champ('Minutes pour un jour de congé',
-          String(contrat.minutes_par_jour_conge), { inputmode: 'numeric' });
-        corps.appendChild(minConge.bloc);
-        var entretien = Kit.champ('Entretien par jour de présence',
-          (contrat.entretien_centimes_jour / 100).toFixed(2).replace('.', ','),
-          { inputmode: 'decimal' });
-        corps.appendChild(entretien.bloc);
 
         var statut = Kit.champSelect('Statut du contrat', [
           ['familiarisation', 'Familiarisation'],
@@ -441,6 +405,11 @@
           ['termine', 'Terminé']
         ], contrat.statut || 'actif');
         corps.appendChild(statut.bloc);
+
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Les jours de garde, les horaires, l’entretien et la rémunération ne se ' +
+          'modifient plus ici : ils sont datés. Passez par « Faire un avenant » sur la ' +
+          'fiche du contrat — les mois d’avant ne bougeront pas.'));
 
         var msg = Kit.ce('div', 'msg');
         corps.appendChild(msg);
@@ -455,26 +424,10 @@
           msg.textContent = ''; msg.className = 'msg';
           var p = prenom.input.value.trim();
           if (!p) { erreur('Le prénom de l’enfant est obligatoire.'); return; }
-          var planning = cases.filter(function (x) { return x.cb.checked; })
-            .map(function (x) { return x.jour; });
-          if (!planning.length) { erreur('Cochez au moins un jour de garde.'); return; }
-          var msj = Kit.parseEntier(supJour.input.value, 0);
-          if (msj == null) { erreur('Les minutes sup par jour doivent être un nombre entier (0 accepté).'); return; }
-          var mpjc = Kit.parseEntier(minConge.input.value, 1);
-          if (mpjc == null) { erreur('La durée d’un jour de congé doit être un entier supérieur à zéro.'); return; }
-          var ent = Kit.parseEuros(entretien.input.value);
-          if (ent == null) { erreur('Indemnité d’entretien illisible (exemple : 5,00).'); return; }
 
           var saisis = {
             prenom_enfant: p,
             date_debut: debut.valeur(),
-            jours_planning: planning,
-            heure_arrivee: arrivee.input.value || '08:30',
-            /* §16.5 — le défaut suit celui du schéma : 17:30, fin d'accueil. */
-            heure_depart: depart.input.value || '17:30',
-            minutes_sup_jour: msj,
-            minutes_par_jour_conge: mpjc,
-            entretien_centimes_jour: ent,
             statut: statut.select.value
           };
 
@@ -505,6 +458,7 @@
             .then(function () { return global.DB.majContrat(contrat.id, saisis); })
             .then(function () { return global.App.rechargerContrats(); })
             .then(function () {
+              global.App.invalider();
               Kit.fermerFeuille();
               Kit.toast('Contrat enregistré');
               return global.App.rafraichir();
@@ -531,6 +485,7 @@
 
   var ecartsMasques = {};   // contratId -> true, le temps de la session
 
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
   function blocModele(contrat, modele, salaires) {
     var bloc = Kit.ce('div', 'modele-bloc');
     /* CORRECTIF A4 DE LA RELECTURE PR9 — l'écart se compare au barème EN
@@ -588,6 +543,7 @@
     return bloc;
   }
 
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
   function ligneEcartReferme(contrat, ecarts) {
     var rappel = Kit.ce('div', 'fld ecart-referme');
     rappel.appendChild(Kit.ce('span', 'lb',
@@ -620,6 +576,7 @@
     return String(v);
   }
 
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
   function feuilleAlignerCeContrat(contrat, modele, ecarts, dernierSalaire) {
     var maintenant = global.App.moisCourant();
     var touchRemuneration = ecarts.some(function (e) { return e.champ === 'remuneration'; });
@@ -949,6 +906,7 @@
   /* Les deux règles paramétrables (RG-07, RG-09)                        */
   /* ------------------------------------------------------------------ */
 
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
   function feuilleRegles(contrat) {
     Kit.ouvrirFeuille('Règles de ' + contrat.prenom_enfant,
       'Elles décident comment vos congés et vos heures sont comptés.',
@@ -1062,9 +1020,595 @@
     });
   }
 
+  /* ================================================================== */
+  /* LOT 17 §17.4 — LES AVENANTS                                        */
+  /*                                                                     */
+  /* « Une date n'appartient ni à un contrat ni à un papier. Elle        */
+  /*   appartient à la mise en vigueur de conditions avec une famille. » */
+  /*                                                                     */
+  /* Ce n'est pas de l'archive, c'est de la donnée de CALCUL. Un mois    */
+  /* n'affiche pas les conditions de son époque : il est CALCULÉ avec    */
+  /* elles. C'est pourquoi « modifier les conditions » n'existe plus :   */
+  /* le seul geste est « faire un avenant », et il ne touche jamais à ce */
+  /* qui précède.                                                        */
+  /* ================================================================== */
+
+  /* Les onze réglages, dans l'ordre où ils se lisent, avec de quoi les
+     écrire en français. Une seule table : la frise, l'encart « ce qui
+     change » et le refus de suppression s'en servent tous les trois, et
+     trois listes jumelles finiraient par diverger. */
+  var REGLAGES_LISIBLES = [
+    ['jours_planning', 'Jours de garde', function (v) { return libellePlanning(v); }],
+    ['heure_arrivee', 'Début d’accueil', function (v) { return heureCourte(v); }],
+    ['heure_depart', 'Fin d’accueil', function (v) { return heureCourte(v); }],
+    ['minutes_contractuelles', 'Journée d’accueil', function (v) { return Kit.duree(v); }],
+    ['minutes_sup_jour', 'Minutes supplémentaires par jour', function (v) { return Kit.duree(v); }],
+    ['minutes_par_jour_conge', 'Un jour de congé vaut', function (v) { return Kit.duree(v); }],
+    ['entretien_centimes_jour', 'Entretien par jour de présence', function (v) { return Kit.eur(v); }],
+    ['sup_dues_si_enfant_absent', 'Minutes dues si l’enfant est absent',
+      function (v) { return v === false ? 'non' : 'oui'; }],
+    ['ordre_imputation', 'Congés déduits d’abord',
+      function (v) { return v === 'sup_puis_cp' ? 'sur la récupération' : 'sur les congés payés'; }],
+    ['brut_mensuel_centimes', 'Salaire brut',
+      function (v) { return v == null ? 'inconnu' : Kit.eur(v); }],
+    ['net_mensuel_centimes', 'Salaire net',
+      function (v) { return v == null ? 'inconnu' : Kit.eur(v); }]
+  ];
+
+  function memeValeur(a, b) {
+    if (Array.isArray(a) || Array.isArray(b)) {
+      return String((a || []).slice().sort()) === String((b || []).slice().sort());
+    }
+    if (a == null || b == null) return a == null && b == null;
+    /* Les heures arrivent tantôt en '17:30', tantôt en '17:30:00'. */
+    return String(a).slice(0, 5) === String(b).slice(0, 5) || String(a) === String(b);
+  }
+
+  /* Ce qui change d'un jeu de conditions à l'autre, en clair. `precedent`
+     absent = premier avenant : rien à comparer, tout est nouveau. */
+  function differences(precedent, courant) {
+    if (!precedent) return [];
+    var out = [];
+    REGLAGES_LISIBLES.forEach(function (r) {
+      if (memeValeur(precedent[r[0]], courant[r[0]])) return;
+      out.push({ champ: r[0], libelle: r[1],
+                 avant: r[2](precedent[r[0]]), apres: r[2](courant[r[0]]) });
+    });
+    return out;
+  }
+
+  function trierAvenants(avenants) {
+    return (avenants || []).slice().sort(function (a, b) {
+      return a.date_effet < b.date_effet ? -1 : 1;
+    });
+  }
+
+  /* Un avenant est « utilisé par un mois clôturé » si, pour au moins un mois
+     figé, c'est LUI que `conditionsApplicables` retient. On ne recalcule
+     rien : on interroge le moteur, comme le faisait déjà le contrôle des
+     barèmes du lot 5. */
+  function moisClosDependantsAvenant(avenant, avenants, recaps) {
+    var out = [];
+    (recaps || []).forEach(function (r) {
+      if (r.statut !== 'fige') return;
+      var applicable = Engine.conditionsApplicables(avenants, r.annee, r.mois);
+      if (applicable && applicable.id === avenant.id) out.push(r);
+    });
+    return out;
+  }
+
+  /* Les mois clôturés, indexés 'YYYY-MM' -> raison. Sert au sélecteur de
+     date : les mois interdits sont MONTRÉS et barrés, avec ce qui les bloque. */
+  function moisInterdits(recaps) {
+    var out = {};
+    (recaps || []).forEach(function (r) {
+      if (r.statut !== 'fige') return;
+      out[r.annee + '-' + String(r.mois).padStart(2, '0')] =
+        r.fige_le ? 'clôturé le ' + Kit.dateLongue(r.fige_le) : 'clôturé';
+    });
+    return out;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Le bloc de la fiche                                                 */
+  /* ------------------------------------------------------------------ */
+
+  function blocConditions(contrat, avenants, recaps) {
+    var bloc = Kit.ce('div');
+    var tries = trierAvenants(avenants);
+    var m = global.App.moisCourant();
+    var enVigueur = Engine.conditionsApplicables(tries, m.annee, m.mois);
+
+    bloc.appendChild(Kit.section('Conditions'));
+
+    if (!tries.length) {
+      /* Sans aucun avenant, aucun mois ne se calcule : le moteur refuse
+         plutôt que de deviner. On le dit, et on propose le geste. */
+      bloc.appendChild(Kit.warnbox('Aucune condition enregistrée',
+        'Tant qu’aucune condition n’est posée, aucun mois de ce contrat ne peut être ' +
+        'calculé ni clôturé.'));
+      if (!contrat.archive) bloc.appendChild(boutonAvenant(contrat, tries, recaps));
+      return bloc;
+    }
+
+    /* Un avenant À VENIR est visible sans être appliqué (§17.4). Il disparaît
+       de lui-même à sa date : rien n'est à faire pour le « valider ». */
+    var aVenir = tries.filter(function (a) {
+      return !enVigueur || a.date_effet > enVigueur.date_effet;
+    });
+    if (aVenir.length) {
+      var suivant = aVenir[0];
+      var chgts = differences(enVigueur, suivant);
+      var bandeau = Kit.note('Avenant n° ' + suivant.numero + ' à venir — au ' +
+        Kit.dateLongue(suivant.date_effet),
+        chgts.length
+          ? 'Il changera : ' + chgts.map(function (d) {
+              return d.libelle.toLowerCase() + ' (' + d.avant + ' → ' + d.apres + ')';
+            }).join(', ') + '. Les mois d’avant ne bougeront pas.'
+          : 'Il ne change aucun réglage. Les mois d’avant ne bougeront pas.');
+      bandeau.classList.add('a-venir');
+      bloc.appendChild(bandeau);
+    }
+
+    if (!enVigueur) {
+      bloc.appendChild(Kit.warnbox('Aucune condition applicable aujourd’hui',
+        'Le premier avenant de ce contrat prend effet le ' +
+        Kit.dateLongue(tries[0].date_effet) + '. Les mois d’avant ne peuvent pas être calculés.'));
+    } else {
+      REGLAGES_LISIBLES.forEach(function (r) {
+        bloc.appendChild(Kit.fld(r[1], r[2](enVigueur[r[0]])));
+      });
+      /* §16.5 — la phrase qui réconcilie la fin d'accueil et l'heure à
+         laquelle l'enfant repart vraiment. Elle est produite par le MOTEUR
+         depuis le lot 17 : c'est la référence d'une journée (§17.5), et elle
+         décide du signe de chaque écart déclaré. */
+      bloc.appendChild(Kit.ce('p', 'sb q',
+        'L’enfant repart vers ' + heureDeReferenceLisible(enVigueur) + ' : les ' +
+        Kit.duree(enVigueur.minutes_sup_jour) + ' s’ajoutent à l’accueil.'));
+      bloc.appendChild(Kit.fld('Majoration fin de contrat', libelleMajoration()));
+
+      var depuis = Kit.ce('p', 'sb',
+        'En vigueur depuis le ' + Kit.dateLongue(enVigueur.date_effet) +
+        ' · avenant n° ' + enVigueur.numero +
+        (enVigueur.reconstitue ? ' (reconstitué)' : ''));
+      bloc.appendChild(depuis);
+      if (enVigueur.brut_mensuel_centimes == null) {
+        bloc.appendChild(Kit.warnbox('Aucune rémunération connue',
+          'Tant que le brut et le net ne sont pas renseignés, les montants de ce contrat ' +
+          'restent à zéro et ses mois ne peuvent pas être clôturés.'));
+      }
+    }
+
+    var bFrise = Kit.bouton('btn nt', function () { feuilleFrise(contrat, tries, recaps); });
+    bFrise.textContent = 'Voir l’historique des conditions';
+    bloc.appendChild(bFrise);
+
+    if (!contrat.archive) bloc.appendChild(boutonAvenant(contrat, tries, recaps));
+
+    bloc.appendChild(Kit.ce('p', 'sb q',
+      'Ces conditions gouvernent vos calculs. Un avenant ne touche jamais un mois ' +
+      'antérieur à sa date : c’est ce qui protège les documents déjà remis. ' +
+      'La majoration de fin de contrat est une clause écrite au contrat, elle ne se règle pas ici.'));
+    return bloc;
+  }
+
+  function boutonAvenant(contrat, avenants, recaps) {
+    var b = Kit.bouton('btn', function () {
+      feuilleAvenant(contrat, avenants, recaps, null);
+    });
+    b.textContent = 'Faire un avenant';
+    return b;
+  }
+
+  /* La référence d'une journée, en clair. Le calcul appartient au moteur
+     (§17.5) ; ici on ne fait que l'écrire. */
+  function heureDeReferenceLisible(conditions) {
+    var minutes;
+    try {
+      minutes = Engine.heureDeReference(conditions);
+    } catch (e) {
+      return '—';
+    }
+    return Math.floor(minutes / 60) + 'h' + String(minutes % 60).padStart(2, '0');
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* La frise                                                            */
+  /* ------------------------------------------------------------------ */
+
+  /* « La suite des périodes, du plus récent au plus ancien, chacune avec ses
+     dates, son numéro, et ce qui a changé en clair. La plus ancienne porte la
+     mention "reconstituées". » */
+  function feuilleFrise(contrat, avenants, recaps) {
+    var tries = trierAvenants(avenants);
+    Kit.ouvrirFeuille('Historique des conditions', contrat.prenom_enfant,
+      function (corps) {
+        if (!tries.length) {
+          corps.appendChild(Kit.ce('p', 'vide', 'Aucune condition enregistrée.'));
+          return;
+        }
+        var m = global.App.moisCourant();
+        var enVigueur = Engine.conditionsApplicables(tries, m.annee, m.mois);
+
+        for (var i = tries.length - 1; i >= 0; i--) {
+          (function (a, precedent) {
+            var suivant = tries[i + 1] || null;
+            var carte = Kit.ce('div', 'card');
+            var ligne = Kit.ce('div', 'row');
+            ligne.appendChild(Kit.ce('span', 'nm', 'Avenant n° ' + a.numero));
+            /* Le mot est dit en toutes lettres, jamais la couleur seule
+               (V8-01). La classe, elle, reste un identifiant simple : un nom
+               de classe avec un espace et un accent ne s'applique pas. */
+            var etat = enVigueur && a.id === enVigueur.id ? 'en vigueur'
+              : (!enVigueur || a.date_effet > enVigueur.date_effet) ? 'à venir' : 'passé';
+            var jeton = etat === 'en vigueur' ? 'vigueur'
+              : etat === 'à venir' ? 'avenir' : 'passe';
+            ligne.appendChild(Kit.ce('span', 'pastille p-' + jeton, etat));
+            carte.appendChild(ligne);
+
+            /* Les BORNES de la période, pas seulement sa date de début : « du
+               1er avril au 31 octobre » se lit d'un coup d'œil, « à partir du
+               1er avril » oblige à regarder la ligne suivante. */
+            carte.appendChild(Kit.ce('div', 'sb',
+              suivant
+                ? 'Du ' + Kit.dateLongue(a.date_effet) + ' au ' +
+                  Kit.dateLongue(veilleDe(suivant.date_effet))
+                : 'À partir du ' + Kit.dateLongue(a.date_effet)));
+
+            if (a.reconstitue) {
+              /* « On ne fait pas passer une reconstitution pour un fait. » */
+              carte.appendChild(Kit.note('Conditions reconstituées',
+                'L’application n’a pas connu ces conditions au moment où elles ont pris ' +
+                'effet : elle les a reconstituées à partir des valeurs courantes du contrat. ' +
+                'Corrigez-les si vous avez le contrat signé.'));
+            }
+
+            var chgts = differences(precedent, a);
+            if (!precedent) {
+              carte.appendChild(Kit.ce('div', 'sb q', 'Conditions initiales.'));
+            } else if (!chgts.length) {
+              carte.appendChild(Kit.ce('div', 'sb q', 'Aucun réglage modifié.'));
+            } else {
+              var liste = Kit.lines(carte);
+              chgts.forEach(function (d) {
+                Kit.ligne(liste, d.libelle, d.avant + ' → ' + d.apres);
+              });
+            }
+
+            if (!contrat.archive) {
+              var bM = Kit.bouton('btn nt', function () {
+                feuilleAvenant(contrat, tries, recaps, a);
+              });
+              bM.textContent = 'Corriger cet avenant';
+              carte.appendChild(bM);
+              /* Le PREMIER avenant ne se supprime pas : le contrat n'aurait
+                 plus aucune condition applicable à son mois d'ouverture, et
+                 tous ses mois deviendraient incalculables. On le corrige. */
+              if (tries.length > 1 && a.id !== tries[0].id) {
+                var bS = Kit.bouton('btn dg', function () {
+                  feuilleSuppressionAvenant(contrat, a, tries, recaps);
+                });
+                bS.textContent = 'Supprimer cet avenant';
+                carte.appendChild(bS);
+              }
+            }
+            corps.appendChild(carte);
+          })(tries[i], tries[i - 1] || null);
+        }
+      });
+  }
+
+  function veilleDe(dateIso) {
+    return global.Feries.ajouterJours(dateIso, -1);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Faire un avenant — ou en corriger un                                */
+  /* ------------------------------------------------------------------ */
+
+  /* « La date d'abord — un sélecteur de MOIS, jamais de jours — puis les
+     réglages pré-remplis, avec ce qui change mis en évidence. »
+
+     LE GARDE-FOU : un avenant n'est JAMAIS rétroactif. Sa date ne peut pas
+     tomber sur un mois clôturé, parce que ce mois-là ne sera pas recalculé
+     (RG-15) : l'avenant deviendrait la condition d'un mois qu'il n'a jamais
+     servi à calculer, et toute réouverture le reclôturerait en silence sur de
+     nouveaux montants. Les mois clôturés sont MONTRÉS et barrés, avec leur
+     raison — un mois absent de la liste n'apprend rien. */
+  function feuilleAvenant(contrat, avenants, recaps, existant) {
+    var tries = trierAvenants(avenants);
+    var m = global.App.moisCourant();
+    var prochain = Chaine.moisSuivant(m.annee, m.mois);
+    var interdits = moisInterdits(recaps);
+
+    /* En correction, le mois de l'avenant lui-même n'est pas « interdit » du
+       fait de sa propre présence : c'est sa date actuelle. Mais s'il est
+       utilisé par un mois clôturé, la correction entière est refusée — c'est
+       le contrôle ci-dessous, pas celui du sélecteur. */
+    var bloquants = existant ? moisClosDependantsAvenant(existant, tries, recaps) : [];
+
+    /* Les conditions à pré-remplir : celles de l'avenant qu'on corrige, sinon
+       celles en vigueur au mois visé — « un avenant ne change QUE ce qu'il
+       change, et le reste est repris tel quel ». */
+    var depart = existant
+      || Engine.conditionsApplicables(tries, prochain.annee, prochain.mois)
+      || tries[tries.length - 1]
+      || null;
+
+    Kit.ouvrirFeuille(existant ? 'Corriger l’avenant n° ' + existant.numero : 'Faire un avenant',
+      contrat.prenom_enfant, function (corps) {
+
+        if (bloquants.length) {
+          /* « Sinon, refus qui NOMME les mois et propose de les rouvrir.
+             Jamais un bouton grisé sans explication. » */
+          corps.appendChild(Kit.warnbox(
+            'Cet avenant ne peut pas être modifié',
+            'Il sert de conditions à des mois déjà clôturés : ' +
+            listeMois(bloquants) + '. Les modifier changerait des documents ' +
+            'qui sont partis chez la famille. Rouvrez ces mois d’abord si vous ' +
+            'devez vraiment corriger cet avenant.'));
+          var bRouvrir = Kit.bouton('btn nt', function () {
+            Kit.fermerFeuille();
+            global.App.aller('historique', { contratId: contrat.id });
+          });
+          bRouvrir.textContent = 'Ouvrir l’historique pour rouvrir ces mois';
+          corps.appendChild(bRouvrir);
+          return;
+        }
+
+        var borneBasse = Chaine.moisDeDate(contrat.date_debut);
+        var date = Kit.champMoisListe('À partir du 1er',
+          existant ? existant.date_effet : Kit.iso(prochain.annee, prochain.mois, 1),
+          {
+            interdits: interdits,
+            deMois: borneBasse,
+            /* Aucune limite vers le futur, dit le §17.4 : trois ans suffisent
+               à couvrir toute négociation réelle sans faire une liste illisible. */
+            aMois: { annee: m.annee + 3, mois: 12 }
+          });
+        corps.appendChild(date.bloc);
+
+        var phraseAvant = Kit.ce('div', 'sb q');
+        corps.appendChild(phraseAvant);
+
+        var conditions = Kit.champsConditions(depart || {}, { titre: 'Les conditions à partir de cette date' });
+        corps.appendChild(conditions.bloc);
+
+        var apercu = Kit.ce('div', 'apercu-avenant');
+        corps.appendChild(apercu);
+
+        var msg = Kit.ce('div', 'msg');
+        corps.appendChild(msg);
+        var b = Kit.bouton('btn', function () { enregistrer(); });
+        corps.appendChild(b);
+
+        function erreur(t) { msg.textContent = t; msg.className = 'msg ko'; }
+
+        /* Ce qui change, et ce qui ne changera PAS. Les deux phrases comptent
+           autant : « Les mois d'octobre et avant ne changeront pas » est ce
+           qui autorise Maria à appuyer sans crainte. */
+        function majPhrases() {
+          var mm = date.mois();
+          var veille = Chaine.moisSuivant(mm.annee, mm.mois);
+          veille = { annee: mm.mois === 1 ? mm.annee - 1 : mm.annee,
+                     mois: mm.mois === 1 ? 12 : mm.mois - 1 };
+          Kit.vider(phraseAvant);
+          phraseAvant.appendChild(document.createTextNode(
+            'Les mois de ' + Kit.libelleMois(veille.mois) + ' ' + veille.annee +
+            ' et avant ne changeront pas.'));
+
+          b.textContent = (existant ? 'Enregistrer l’avenant au 1er ' : 'Faire l’avenant au 1er ') +
+            Kit.libelleMois(mm.mois) + ' ' + mm.annee;
+
+          Kit.vider(apercu);
+          var precedent = conditionsAvant(tries, date.valeur(), existant);
+          var chgts = differences(precedent, conditions.valeurs());
+          if (!precedent) {
+            apercu.appendChild(Kit.note('Premières conditions de ce contrat',
+              'Il n’y a rien avant : ces conditions valent depuis l’ouverture du contrat.'));
+            return;
+          }
+          if (!chgts.length) {
+            apercu.appendChild(Kit.note('Rien ne change',
+              'Ces conditions sont identiques aux précédentes. Un avenant qui ne change ' +
+              'rien n’est pas une erreur, mais il n’aura aucun effet sur vos calculs.'));
+            return;
+          }
+          var pane = Kit.pane('Ce que change cet avenant');
+          var l = Kit.lines(pane);
+          chgts.forEach(function (d) { Kit.ligne(l, d.libelle, d.avant + ' → ' + d.apres); });
+          apercu.appendChild(pane);
+          /* L'effet CHIFFRÉ sur le premier mois concerné, rejoué par le
+             moteur (§17.4, et B.0-5 : aucun chiffre écrit en dur). */
+          apercu.appendChild(Kit.ce('div', 'attente', 'Calcul de l’effet sur ' +
+            Kit.libelleMois(mm.mois) + '…'));
+          effetPremierMois(contrat, tries, existant, date.valeur(), conditions.valeurs())
+            .then(function (texte) {
+              if (!apercu.isConnected && apercu.parentNode === null) return;
+              var att = apercu.querySelector('.attente');
+              if (att) att.parentNode.removeChild(att);
+              apercu.appendChild(Kit.note('Effet sur ' + Kit.libelleMois(mm.mois) + ' ' + mm.annee, texte));
+            })
+            .catch(function (e) {
+              var att = apercu.querySelector('.attente');
+              if (att) att.parentNode.removeChild(att);
+              /* Un effet non chiffrable ne bloque pas l'avenant — mais il ne
+                 se tait pas non plus : un encart absent se lirait comme
+                 « aucun effet ». */
+              apercu.appendChild(Kit.warnbox('Effet non calculable',
+                Kit.messageErreur(e) + ' L’avenant reste enregistrable.'));
+            });
+        }
+
+        date.select.addEventListener('change', majPhrases);
+        conditions.bloc.addEventListener('change', majPhrases);
+        majPhrases();
+
+        function enregistrer() {
+          msg.textContent = ''; msg.className = 'msg';
+          var refus = conditions.erreur();
+          if (refus) { erreur(refus); return; }
+          var cle = date.valeur().slice(0, 7);
+          if (interdits[cle]) {
+            erreur('Le mois de ' + cle + ' est clôturé : un avenant n’est jamais rétroactif.');
+            return;
+          }
+          /* Deux avenants au même mois : la base le refuse
+             (`unique (contrat_id, date_effet)`), et le dire ici évite un
+             message technique. */
+          var collision = tries.filter(function (a) {
+            return a.date_effet.slice(0, 7) === cle && (!existant || a.id !== existant.id);
+          })[0];
+          if (collision) {
+            erreur('L’avenant n° ' + collision.numero + ' prend déjà effet ce mois-là. ' +
+              'Corrigez-le plutôt que d’en poser un second.');
+            return;
+          }
+
+          var champs = { date_effet: date.valeur() };
+          var vals = conditions.valeurs();
+          Object.keys(vals).forEach(function (k) { champs[k] = vals[k]; });
+
+          b.disabled = true;
+          msg.className = 'msg';
+          msg.textContent = 'Enregistrement…';
+          var p = existant
+            ? global.DB.majAvenant(existant.id, champs)
+            : global.DB.ajouterAvenant(contrat.id, champs);
+          p.then(function () {
+            global.App.invalider();
+            Kit.fermerFeuille();
+            Kit.toast(existant ? 'Avenant enregistré' : 'Avenant créé');
+            return global.App.rafraichir();
+          }).catch(function (e) {
+            b.disabled = false;
+            erreur('Enregistrement impossible : ' + Kit.messageErreur(e) +
+              ' Votre saisie est conservée.');
+          });
+        }
+      });
+  }
+
+  /* Les conditions qui précèdent immédiatement une date d'effet, en ignorant
+     l'avenant qu'on est en train de corriger — sinon il se comparerait à
+     lui-même et « rien ne change » serait toujours vrai. */
+  function conditionsAvant(avenants, dateEffet, existant) {
+    var candidats = avenants.filter(function (a) {
+      if (existant && a.id === existant.id) return false;
+      return a.date_effet < dateEffet;
+    });
+    return candidats.length ? candidats[candidats.length - 1] : null;
+  }
+
+  /* L'effet chiffré du premier mois concerné, REJOUÉ PAR LE MOTEUR.
+
+     On rejoue le mois deux fois — une fois avec les conditions actuelles, une
+     fois avec les nouvelles — et on annonce l'écart. Aucun montant n'est
+     recomposé à la main : c'est la sixième des qualités à ne pas casser. */
+  function effetPremierMois(contrat, avenants, existant, dateEffet, valeurs) {
+    var mm = Chaine.moisDeDate(dateEffet);
+    var futurs = avenants.filter(function (a) {
+      return !existant || a.id !== existant.id;
+    }).concat([mêmeAvenant(valeurs, dateEffet)]);
+
+    return Promise.all([
+      Chaine.mois1(contrat, mm.annee, mm.mois),
+      Chaine.mois1(contrat, mm.annee, mm.mois, { avenants: futurs })
+    ]).then(function (r) {
+      var avant = r[0] && r[0].resultat;
+      var apres = r[1] && r[1].resultat;
+      if (!avant || !apres) throw new Error('mois non calculable');
+      var dTotal = (apres.totalAVerserCentimes || 0) - (avant.totalAVerserCentimes || 0);
+      var dSup = (apres.minutesSupAcquises || 0) - (avant.minutesSupAcquises || 0);
+      var morceaux = [];
+      morceaux.push('Total à verser : ' + Kit.eur(avant.totalAVerserCentimes) +
+        ' → ' + Kit.eur(apres.totalAVerserCentimes) +
+        (dTotal === 0 ? ' (inchangé)' : ' (' + (dTotal > 0 ? '+ ' : '− ') +
+          Kit.eur(Math.abs(dTotal)) + ')'));
+      if (dSup !== 0) {
+        morceaux.push('Heures supplémentaires : ' + Kit.heures(avant.minutesSupAcquises) +
+          ' → ' + Kit.heures(apres.minutesSupAcquises));
+      }
+      if ((apres.joursPresence || 0) !== (avant.joursPresence || 0)) {
+        morceaux.push('Jours de présence : ' + avant.joursPresence + ' → ' + apres.joursPresence);
+      }
+      return morceaux.join('. ') + '.';
+    });
+  }
+
+  /* La forme d'avenant que le moteur attend, à partir d'une saisie. Elle n'est
+     jamais écrite en base : elle sert au rejeu de l'aperçu. */
+  function mêmeAvenant(valeurs, dateEffet) {
+    var a = { id: '__apercu__', date_effet: dateEffet, numero: 0, reconstitue: false };
+    Object.keys(valeurs).forEach(function (k) { a[k] = valeurs[k]; });
+    /* Le brut et le net à zéro plutôt qu'à `null` : c'est ce que fait la
+       chaîne quand la rémunération est inconnue, et l'aperçu doit montrer le
+       même chiffre que le mois réel. */
+    if (a.brut_mensuel_centimes == null) a.brut_mensuel_centimes = 0;
+    if (a.net_mensuel_centimes == null) a.net_mensuel_centimes = 0;
+    return a;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Supprimer un avenant                                                */
+  /* ------------------------------------------------------------------ */
+
+  function feuilleSuppressionAvenant(contrat, avenant, avenants, recaps) {
+    var bloquants = moisClosDependantsAvenant(avenant, avenants, recaps);
+    var precedent = conditionsAvant(avenants, avenant.date_effet, avenant);
+
+    Kit.ouvrirFeuille('Supprimer l’avenant n° ' + avenant.numero + ' ?',
+      contrat.prenom_enfant + ' — à partir du ' + Kit.dateLongue(avenant.date_effet),
+      function (corps) {
+        if (bloquants.length) {
+          corps.appendChild(Kit.warnbox('Suppression impossible',
+            'Cet avenant sert de conditions à des mois déjà clôturés : ' +
+            listeMois(bloquants) + '. Rouvrez ces mois d’abord si vous devez ' +
+            'vraiment le supprimer.'));
+          return;
+        }
+        corps.appendChild(Kit.ce('p', 'sb q',
+          precedent
+            ? 'Le contrat reviendra aux conditions de l’avenant n° ' + precedent.numero +
+              ', en vigueur depuis le ' + Kit.dateLongue(precedent.date_effet) + '.'
+            : 'Ce contrat n’aurait plus aucune condition applicable : ses mois deviendraient ' +
+              'incalculables.'));
+        var chgts = differences(precedent, avenant);
+        if (chgts.length) {
+          var pane = Kit.pane('Ce qui revient en arrière');
+          var l = Kit.lines(pane);
+          chgts.forEach(function (d) { Kit.ligne(l, d.libelle, d.apres + ' → ' + d.avant); });
+          corps.appendChild(pane);
+        }
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Tous les mois non clôturés à partir du ' + Kit.dateLongue(avenant.date_effet) +
+          ' seront recalculés.'));
+        var msg = Kit.ce('div', 'msg');
+        corps.appendChild(msg);
+        var b = Kit.bouton('btn dg', function () {
+          b.disabled = true;
+          msg.className = 'msg';
+          msg.textContent = 'Suppression…';
+          global.DB.supprimerAvenant(avenant.id).then(function () {
+            global.App.invalider();
+            Kit.fermerFeuille();
+            Kit.toast('Avenant supprimé');
+            return global.App.rafraichir();
+          }).catch(function (e) {
+            b.disabled = false;
+            msg.className = 'msg ko';
+            msg.textContent = 'Suppression impossible : ' + Kit.messageErreur(e);
+          });
+        });
+        b.textContent = 'Supprimer cet avenant';
+        corps.appendChild(b);
+      });
+  }
+
   /* Un barème est « utilisé par un mois clôturé » si, pour au moins un mois
      figé, c'est lui que RG-15 retient. On ne recalcule rien : on interroge le
      moteur. */
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
   function moisClosDependants(bareme, salaires, recaps) {
     var out = [];
     (recaps || []).forEach(function (r) {
@@ -1079,6 +1623,7 @@
     return rs.map(function (r) { return Kit.libelleMoisAnnee(r.annee, r.mois); }).join(', ');
   }
 
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
   function feuilleBareme(contrat, bareme, salaires, recaps) {
     var creation = !bareme;
     var m = global.App.moisCourant();
@@ -1240,6 +1785,7 @@
       });
   }
 
+  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
   function feuilleSuppressionBareme(contrat, bareme, salaires, recaps) {
     var dep = moisClosDependants(bareme, salaires, recaps);
     Kit.ouvrirFeuille('Supprimer ce barème ?',
@@ -1277,6 +1823,27 @@
   /* Fin de contrat (RG-13)                                              */
   /* ------------------------------------------------------------------ */
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 17 §17.8 — LA FIN DE CONTRAT ET L'INDEMNITÉ DE RUPTURE          */
+  /*                                                                     */
+  /* Trois défauts corrigés d'un coup, tous constatés :                   */
+  /*                                                                     */
+  /*  1. LE RÉSULTAT S'AFFICHAIT AU-DESSUS DU BOUTON qui le calcule. Sur  */
+  /*     un téléphone, Maria appuyait et ne voyait rien changer : le      */
+  /*     chiffre apparaissait hors de l'écran, au-dessus de son doigt.    */
+  /*     La zone est désormais SOUS le bouton.                            */
+  /*                                                                     */
+  /*  2. LES CONGÉS PAYÉS PASSENT AVANT LA RÉCUPÉRATION. C'est l'ordre    */
+  /*     du contrat (RG-07) et celui de tous les autres écrans depuis le  */
+  /*     lot 18 ; un ordre différent ici faisait chercher deux fois.      */
+  /*                                                                     */
+  /*  3. IL MANQUAIT LA LIGNE DE TOTAL. « À régler en plus du dernier     */
+  /*     mois » est LE chiffre que Maria annonce aux parents ; l'écran    */
+  /*     donnait ses composantes et la laissait faire l'addition.          */
+  /*                                                                     */
+  /* Et l'indemnité de rupture est calculée, avec son détail par période. */
+  /* ------------------------------------------------------------------ */
+
   function ecranFinContrat(ctx, contrat) {
     global.App.barreRetour(ctx.barre, 'Fin du contrat — ' + contrat.prenom_enfant, { fermer: true });
     var corps = ctx.corps;
@@ -1291,12 +1858,13 @@
     });
     corps.appendChild(date.bloc);
 
-    var zone = Kit.ce('div');
-    corps.appendChild(zone);
-
     var bSoldes = Kit.bouton('btn nt', function () { afficherSoldes(zone, contrat, date.valeur()); });
     bSoldes.textContent = 'Calculer les soldes de fin de contrat';
     corps.appendChild(bSoldes);
+
+    /* §17.8 — SOUS le bouton, pas au-dessus. */
+    var zone = Kit.ce('div');
+    corps.appendChild(zone);
 
     var bFin = Kit.bouton('btn dg', function () { demanderFin(contrat, date.valeur()); });
     bFin.textContent = 'Ranger ce contrat';
@@ -1314,54 +1882,245 @@
     }
     zone.appendChild(Kit.ce('div', 'attente', 'Calcul des soldes…'));
 
+    /* Le contrat AVEC sa date de fin : c'est elle qui borne les journées et,
+       depuis le §17.7, qui proratise le salaire du dernier mois. */
     var simule = {};
     Object.keys(contrat).forEach(function (k) { simule[k] = contrat[k]; });
     simule.date_fin = dateFin;
     var m = Chaine.moisDeDate(dateFin);
 
+    /* LA CHAÎNE ENTIÈRE, pas seulement le dernier mois. L'indemnité de rupture
+       est le 1/80ᵉ du total des bruts DEPUIS LE DÉBUT du contrat : elle a
+       besoin de tous les mois, chacun calculé avec les conditions de SON
+       époque — ce que le §17.2 rend enfin possible. Les mois clôturés
+       fournissent leur instantané ; les autres sont recalculés. */
     Promise.all([
-      Chaine.mois1(simule, m.annee, m.mois),
-      global.DB.getSalaires(contrat.id)
+      global.App.serie(simule, { annee: m.annee, mois: m.mois }),
+      global.App.avenants(contrat.id)
     ]).then(function (r) {
-      var entree = r[0];
-      var salaires = r[1] || [];
+      var chaine = r[0];
+      var avenants = r[1] || [];
+      var entree = global.App.moisDe(chaine, m.annee, m.mois);
       Kit.vider(zone);
       if (!entree) {
         zone.appendChild(Kit.ce('p', 'vide', 'Aucun mois calculable jusqu’à cette date.'));
         return;
       }
+
+      var conditions = Engine.conditionsApplicables(avenants, m.annee, m.mois);
       var cs = entree.compteurSortie || {};
       var minutes = Kit.supDisponible(cs);
       var cp = Kit.cpDisponible(cs);
+      var parJour = (conditions && conditions.minutes_par_jour_conge) || 0;
+      var brut = conditions ? conditions.brut_mensuel_centimes : null;
 
       var p = Kit.pane('Soldes au ' + Kit.dateLongue(dateFin));
       var l = Kit.lines(p);
+      /* §17.8 — les congés payés d'abord, comme partout ailleurs. */
+      Kit.ligne(l, 'Congés payés restants', Kit.joursCp(cp, parJour));
       Kit.ligne(l, 'Récupération restante', Kit.heures(minutes));
-      Kit.ligne(l, 'Congés payés restants', Kit.joursCp(cp));
 
-      var salaire = Engine.salaireApplicable(salaires, m.annee, m.mois);
-      if (salaire) {
-        /* RG-13 : exactement la formule validée par le cas T6 du moteur. */
-        var montant = Engine.montantCentimes(salaire.brut_mensuel_centimes,
-          Math.max(0, minutes), COEFF_FIN_CONTRAT);
-        Kit.ligne(l, 'Heures sup majorées de ' + libelleMajoration() + ' (indicatif)',
-          Kit.eur(montant), { total: true });
+      var aRegler = 0;
+      var chiffrable = brut != null;
+
+      if (chiffrable) {
+        /* RG-13 : exactement la formule validée par le cas T6 du moteur. Les
+           heures NÉGATIVES ne se transforment pas en montant à retenir : le
+           §17.5 laisse le compteur passer sous zéro, mais ce qu'on en fait en
+           fin de contrat est une question ouverte pour Maria. On borne à zéro
+           et on le DIT, plus bas. */
+        var montantSup = Engine.montantCentimes(brut, Math.max(0, minutes), COEFF_FIN_CONTRAT);
+        Kit.ligne(l, 'Heures supplémentaires, majorées de ' + libelleMajoration(),
+          Kit.eur(montantSup));
+        aRegler += montantSup;
       }
       zone.appendChild(p);
 
+      /* --- L'INDEMNITÉ DE RUPTURE (§17.8) --------------------------- */
+      var moisBruts = (chaine.mois || [])
+        .filter(function (e) { return e.resultat && !e.horsContrat; })
+        .map(function (e) {
+          return { cle: e.cle, brutDuCentimes: e.resultat.brutDuCentimes || 0 };
+        });
+      var ind = Engine.indemniteRupture({
+        date_debut: contrat.date_debut, date_fin: dateFin, moisBruts: moisBruts
+      });
+
+      var pi = Kit.pane('Indemnité de rupture');
+      var li = Kit.lines(pi);
+      Kit.ligne(li, 'Ancienneté', libelleAnciennete(ind.ancienneteMois));
+      if (!ind.due) {
+        /* « En dessous de neuf mois, l'écran dit qu'aucune indemnité n'est due
+           ET POURQUOI. » Un zéro sans motif se lit comme une panne. */
+        pi.appendChild(Kit.note('Aucune indemnité n’est due',
+          ind.motif === 'ANCIENNETE_INSUFFISANTE'
+            ? 'L’indemnité de rupture est due à partir de neuf mois d’ancienneté. ' +
+              'Ce contrat en compte ' + libelleAnciennete(ind.ancienneteMois) + '.'
+            : 'Les dates du contrat sont incomplètes : l’ancienneté ne peut pas être établie.'));
+      } else {
+        Kit.ligne(li, 'Total des salaires bruts', Kit.eur(ind.totalBrutCentimes));
+        Kit.ligne(li, 'Indemnité — 1/80ᵉ', Kit.eur(ind.indemniteCentimes), { total: true });
+        aRegler += ind.indemniteCentimes;
+        pi.appendChild(Kit.ce('div', 'sb q',
+          'Hors indemnités d’entretien. Calculée sur ' + libellePeriodes(avenants) +
+          ', du ' + Kit.dateLongue(contrat.date_debut) + ' au ' + Kit.dateLongue(dateFin) + '.'));
+        var bDetail = Kit.bouton('btn nt', function () {
+          feuilleDetailIndemnite(contrat, dateFin, chaine, avenants, ind);
+        });
+        bDetail.textContent = 'Voir le détail par période';
+        pi.appendChild(bDetail);
+      }
+      zone.appendChild(pi);
+
+      /* --- LE CHIFFRE QUE MARIA ANNONCE AUX PARENTS ------------------ */
+      if (chiffrable) {
+        var pt = Kit.pane('À régler en plus du dernier mois');
+        var lt = Kit.lines(pt);
+        Kit.ligne(lt, 'Total', Kit.eur(aRegler), { total: true });
+        pt.appendChild(Kit.ce('div', 'sb q',
+          'Le montant des congés payés restants n’y figure PAS : sa base de calcul n’est ' +
+          'pas tranchée, et l’inventer donnerait un total faux et crédible. ' +
+          'Ces ' + Kit.joursCp(cp, parJour) + ' sont à régler en plus.'));
+        zone.appendChild(pt);
+      } else {
+        zone.appendChild(Kit.warnbox('Montants non chiffrables',
+          'Aucune rémunération n’est connue pour ' + Kit.libelleMoisAnnee(m.annee, m.mois) +
+          ' : ni les heures supplémentaires ni le total ne peuvent être calculés.'));
+      }
+
+      if (minutes < 0) {
+        /* Question ouverte n° 3 pour Maria : « un solde d'heures négatif en fin
+           de contrat : déduit du solde à régler, ou seulement signalé ? »
+           Tant qu'elle n'a pas répondu, on SIGNALE — déduire d'office
+           reviendrait à trancher à sa place, sur un chiffre qui part chez une
+           famille. */
+        zone.appendChild(Kit.warnbox('Votre compteur de récupération est négatif',
+          'Il manque ' + Kit.heures(-minutes) + ' à ' + contrat.prenom_enfant + '. ' +
+          'Ce temps n’est PAS déduit du total ci-dessus : la règle n’est pas tranchée. ' +
+          'Voyez avec la famille.'));
+      }
+
       zone.appendChild(Kit.note('À la fin du contrat',
         'Les congés payés restants sont payés sans majoration ; les heures supplémentaires ' +
-        'sont payées avec une majoration de ' + libelleMajoration() + '. Le montant des congés ' +
-        'payés n’est pas calculé ici : la base de calcul n’est pas définie au cahier des charges. ' +
+        'sont payées avec une majoration de ' + libelleMajoration() + '. ' +
         'Notez ces chiffres, rien n’est enregistré.'));
+
       if (!entree.fige) {
-        zone.appendChild(Kit.warnbox('Le dernier mois n’est pas clôturé',
-          'Ces soldes resteront provisoires tant qu’il ne l’est pas.'));
+        /* §18.6 — la phrase qui évite une erreur, dite AVANT le calcul plutôt
+           qu'après : sans elle, le contrat reste ouvert pour toujours. */
+        zone.appendChild(Kit.warnbox(
+          'Le mois de ' + Kit.libelleMois(m.mois) + ' n’est pas encore clôturé',
+          'Clôturez-le avant de ranger le contrat : ces soldes resteront provisoires ' +
+          'tant qu’il ne l’est pas.'));
       }
     }).catch(function (e) {
       Kit.vider(zone);
       zone.appendChild(Kit.warnbox('Calcul impossible', Kit.messageErreur(e)));
     });
+  }
+
+  function libelleAnciennete(mois) {
+    if (mois == null) return '—';
+    var ans = Math.floor(mois / 12);
+    var reste = mois % 12;
+    if (ans && reste) return ans + ' an' + (ans > 1 ? 's' : '') + ' ' + reste + ' mois';
+    if (ans) return ans + ' an' + (ans > 1 ? 's' : '');
+    return reste + ' mois';
+  }
+
+  function libellePeriodes(avenants) {
+    var n = (avenants || []).length;
+    if (n <= 1) return 'une seule période de conditions';
+    return n + ' périodes de conditions';
+  }
+
+  /* « Voir le détail par période » — le détail qui rend le 1/80ᵉ vérifiable.
+
+     Un total de 54 016,80 € qu'on ne peut pas décomposer est un chiffre qu'on
+     ne peut pas défendre. Le détail montre chaque période de conditions, les
+     mois qu'elle couvre, et ce qu'ils ont réellement pesé. */
+  function feuilleDetailIndemnite(contrat, dateFin, chaine, avenants, ind) {
+    var tries = trierAvenants(avenants);
+    Kit.ouvrirFeuille('Détail de l’indemnité', contrat.prenom_enfant +
+      ' — ' + Kit.eur(ind.indemniteCentimes), function (corps) {
+
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'L’indemnité vaut le 1/80ᵉ du total des salaires bruts réellement dus depuis ' +
+          'le début du contrat. Un mois sans solde ou un mois partiel y pèse moins : ' +
+          'c’est le brut DÛ qui compte, pas le brut prévu au contrat.'));
+
+        var mois = (chaine.mois || []).filter(function (e) {
+          return e.resultat && !e.horsContrat;
+        });
+
+        tries.forEach(function (a, i) {
+          var suivant = tries[i + 1] || null;
+          var duPeriode = mois.filter(function (e) {
+            var premier = Chaine.premierJour(e.annee, e.mois);
+            return premier >= a.date_effet && (!suivant || premier < suivant.date_effet);
+          });
+          if (!duPeriode.length) return;
+          var total = duPeriode.reduce(function (n, e) {
+            return n + (e.resultat.brutDuCentimes || 0);
+          }, 0);
+
+          var carte = Kit.ce('div', 'card');
+          carte.appendChild(Kit.ce('div', 'nm', 'Avenant n° ' + a.numero +
+            (a.reconstitue ? ' (reconstitué)' : '')));
+          carte.appendChild(Kit.ce('div', 'sb',
+            'À partir du ' + Kit.dateLongue(a.date_effet) + ' · ' +
+            duPeriode.length + ' mois'));
+          var l = Kit.lines(carte);
+          Kit.ligne(l, 'Brut mensuel au contrat',
+            a.brut_mensuel_centimes == null ? 'inconnu' : Kit.eur(a.brut_mensuel_centimes));
+          Kit.ligne(l, 'Bruts réellement dus sur la période', Kit.eur(total), { total: true });
+          /* Les mois qui S'ÉCARTENT du brut contractuel sont nommés : ce sont
+             eux qu'on vient vérifier quand un total surprend. */
+          var ecarts = duPeriode.filter(function (e) {
+            return (e.resultat.brutDuCentimes || 0) !== (a.brut_mensuel_centimes || 0);
+          });
+          if (ecarts.length) {
+            var det = Kit.ce('details');
+            det.appendChild(Kit.ce('summary', null,
+              ecarts.length + (ecarts.length > 1 ? ' mois s’écartent' : ' mois s’écarte') +
+              ' du brut prévu'));
+            var ld = Kit.lines(det);
+            ecarts.forEach(function (e) {
+              Kit.ligne(ld, Kit.libelleMoisAnnee(e.annee, e.mois),
+                Kit.eur(e.resultat.brutDuCentimes || 0) + raisonEcartBrut(e.resultat));
+            });
+            det.appendChild(Kit.ce('div', 'sb q',
+              'Un mois partiel est proratisé ; un jour sans solde est retenu sur le brut.'));
+            carte.appendChild(det);
+          }
+          corps.appendChild(carte);
+        });
+
+        var pane = Kit.pane('Total');
+        var lt = Kit.lines(pane);
+        Kit.ligne(lt, 'Salaires bruts', Kit.eur(ind.totalBrutCentimes));
+        Kit.ligne(lt, 'Ancienneté', libelleAnciennete(ind.ancienneteMois));
+        Kit.ligne(lt, 'Indemnité — 1/80ᵉ', Kit.eur(ind.indemniteCentimes), { total: true });
+        corps.appendChild(pane);
+
+        /* Le point d'assiette non tranché, dit à l'écran comme le demande le
+           §17.8 : tant que Maria n'a pas répondu, les indemnités de congés
+           payés versées N'ENTRENT PAS dans le total. */
+        corps.appendChild(Kit.note('Un point reste à confirmer',
+          'Les indemnités de congés payés versées n’entrent PAS dans ce total de bruts. ' +
+          'Si votre convention dit le contraire, ce montant sera à revoir.'));
+      });
+  }
+
+  function raisonEcartBrut(r) {
+    var raisons = [];
+    if (r.prorata && r.prorata.applique) {
+      raisons.push('mois partiel, ' + r.prorata.joursCouverts + ' j sur ' + r.prorata.joursDuMois);
+    }
+    if (r.retenueSansSoldeCentimes > 0) {
+      raisons.push('sans solde retenu ' + Kit.eur(r.retenueSansSoldeCentimes));
+    }
+    return raisons.length ? ' (' + raisons.join(', ') + ')' : '';
   }
 
   function demanderFin(contrat, dateFin) {

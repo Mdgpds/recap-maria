@@ -26,6 +26,11 @@
    Lancement : node test/lot16-verite-et-conges.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -114,17 +119,18 @@ function journeesConge(dates) {
 /* Base simulée minimale : la chaîne ne lit que ces cinq fonctions. */
 function baseSimulee(opts) {
   return {
-    getSalaires: function () {
-      return Promise.resolve([{ id: 's1', contrat_id: 'c-test', date_effet: '2026-01-01',
-        brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]);
+    getAvenants: function () {
+      return Promise.resolve(Decor.avenantsDe(contrat(),
+        [{ id: 's1', contrat_id: 'c-test', date_effet: '2026-01-01',
+           brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]));
     },
     getCompteurInitial: function () {
-      return Promise.resolve({
+      return Promise.resolve(Decor.compteurEnMinutes({
         contrat_id: 'c-test', date_reference: '2026-06-01',
         minutes_sup: opts.minutesSup || 0,
         dixiemes_cp_acquis: opts.cpAcquis || 0,
         dixiemes_cp_pris: 0
-      });
+      }));
     },
     getJourneesMois: function () { return Promise.resolve(opts.journees || {}); },
     listRecapsPeriode: function () { return Promise.resolve([]); },
@@ -176,9 +182,12 @@ function moisDe(s, annee, mois) {
   try {
     Engine.calculerMois({
       contrat: contrat(),
-      salaire: { brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 },
+      /* §17.3 — le moteur reçoit les CONDITIONS du mois, assemblées à partir
+         des mêmes valeurs qu'avant. §17.6 — les congés payés sont en minutes. */
+      conditions: Decor.avenantDe(contrat(),
+        { brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }),
       journees: jours.map(function (d) { return opts.journees[d]; }),
-      compteurEntree: { minutesSup: CINQ_JOURS_DE_RECUP, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
+      compteurEntree: { minutesSup: CINQ_JOURS_DE_RECUP, minutesCpAcquis: 0, minutesCpPris: 0 },
       annee: 2026, mois: 6, imputations: opts.imputations
     });
   } catch (e) { refus = e; }

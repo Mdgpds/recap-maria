@@ -12,6 +12,12 @@
    Lancement : node test/lot13-reouverture.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`, qui assemble l'avenant à partir du contrat et du
+   barème déjà écrits ici. Aucune valeur n'est inventée. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -68,14 +74,20 @@ var SALAIRE = { id: 's1', contrat_id: 'c-lea', date_effet: '2025-09-01',
 /* L'instantané DÉJÀ ÉTABLI de mai 2026. Ses valeurs sont volontairement
    différentes de ce que le moteur recalculerait : c'est ainsi qu'on simule
    « une journée a été corrigée » et « le barème a changé » (P4 et P5). */
+/* LOT 17 — les congés payés sont en MINUTES (§17.6). L'instantané porte donc
+   `uniteCp: 'minutes'`, le marqueur que pose le moteur et que
+   `ChaineMois.instantaneEnMinutes` cherche pour reconnaître un instantané
+   ancien. Les quantités ne changent pas : 25 dixièmes = 1350 minutes,
+   225 dixièmes = 12 150 minutes, au facteur `minutes_par_jour_conge / 10`. */
 var SNAPSHOT_ORIGINE = {
   joursPresence: 20, entretienCentimes: 10000,
   salaireNetCentimes: 107250, totalAVerserCentimes: 117250,
   minutesSupAcquises: 600, joursCongesDecomptes: 0,
-  dixiemesCpAcquis: 25, retenueSansSoldeCentimes: 0,
-  salaireBrutCentimes: 137289,
-  compteurSortie: { minutesSup: 600, dixiemesCpAcquis: 225, dixiemesCpPris: 0 },
-  imputation: { joursSurCp: 0, dixiemesCpConsommes: 0, joursSurSup: 0, minutesSupConsommees: 0, joursSansSolde: 0 },
+  minutesCpAcquis: 1350, retenueSansSoldeCentimes: 0,
+  salaireBrutCentimes: 137289, brutDuCentimes: 137289,
+  uniteCp: 'minutes',
+  compteurSortie: { minutesSup: 600, minutesCpAcquis: 12150, minutesCpPris: 0 },
+  imputation: { joursSurCp: 0, minutesCpConsommees: 0, joursSurSup: 0, minutesSupConsommees: 0, joursSansSolde: 0 },
   prenomEnfant: 'Léa', nomFamille: 'Papillon',
   salaireDateEffet: '2025-09-01', joursConge: []
 };
@@ -100,6 +112,16 @@ function recapRouvert(transmisLe) {
 
 var appels = { rouvrir: [], recloturer: [], evenements: 0 };
 var etatTest = { reouvertureCassee: false };
+
+
+var TOUS_CONTRATS = [LEA];
+
+/* LOT 17 §17.2 — le contrat par son identifiant. `getAvenants` en a besoin
+   pour reprendre les réglages du décor dans l'avenant : le moteur ne les lit
+   plus sur `contrat`. */
+function contratDe(id) {
+  return TOUS_CONTRATS.filter(function (c) { return c.id === id; })[0] || TOUS_CONTRATS[0];
+}
 
 var DB = {
   getSession: function () {
@@ -130,10 +152,13 @@ var DB = {
      d'AFFICHER ou non la suppression franche. Décor mis à jour ici : sans
      cette fonction, l'écran lève avant même de se rendre. */
   contratEstVierge: function () { return Promise.resolve(false); },
-  getSalaires: function () { return Promise.resolve([SALAIRE]); },
+  getAvenants: function (id) {
+    return Promise.resolve(Decor.avenantsDe(contratDe(id), [SALAIRE]));
+  },
   getCompteurInitial: function (id) {
-    return Promise.resolve({ contrat_id: id, date_reference: '2026-05-01',
-      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 });
+    return Promise.resolve(Decor.compteurEnMinutes({ contrat_id: id,
+      date_reference: '2026-05-01',
+      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 }));
   },
   getJourneesMois: function () { return Promise.resolve({}); },
   listImputationsPourMois: function () { return Promise.resolve([]); },

@@ -25,6 +25,12 @@
    Lancement : node test/lot15-rappels.smoke.js
    ========================================================================= */
 'use strict';
+/* LOT 17 §17.2 — les conditions du contrat sont DATÉES : le décor expose
+   `getAvenants`, pas `getSalaires`. La traduction est faite par
+   `test/decor-avenants.js`, qui assemble l'avenant à partir du contrat et du
+   barème déjà écrits ici. Aucune valeur n'est inventée. */
+var Decor = require('./decor-avenants.js');
+
 
 var fs = require('fs');
 var path = require('path');
@@ -162,6 +168,15 @@ function recapsDe(id) {
     .map(function (k) { return scene.recaps[k]; });
 }
 
+
+/* LOT 17 §17.2 — le contrat par son identifiant. `getAvenants` en a besoin
+   pour reprendre les réglages du décor dans l'avenant : le moteur ne les lit
+   plus sur `contrat`. */
+function contratDe(id) {
+  var liste = scene.contrats || [];
+  return liste.filter(function (c) { return c && c.id === id; })[0] || liste[0] || {};
+}
+
 var DB = {
   getSession: function () {
     return Promise.resolve({ user: { id: 'u1', email: 'maria@exemple.test' } });
@@ -184,13 +199,15 @@ var DB = {
   listFamillesAvecContrats: function () { return Promise.resolve([]); },
   listModeles: function () { return Promise.resolve([]); },
   modeleEnVigueur: function () { return Promise.resolve(null); },
-  getSalaires: function (id) {
-    return Promise.resolve([{ id: 's-' + id, contrat_id: id, date_effet: '2026-01-01',
-      brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]);
+  getAvenants: function (id) {
+    return Promise.resolve(Decor.avenantsDe(contratDe(id),
+      [{ id: 's-' + id, contrat_id: id, date_effet: '2026-01-01',
+         brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }]));
   },
   getCompteurInitial: function (id) {
-    return Promise.resolve({ contrat_id: id, date_reference: '2026-01-01',
-      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 });
+    return Promise.resolve(Decor.compteurEnMinutes({ contrat_id: id,
+      date_reference: '2026-01-01',
+      minutes_sup: 0, dixiemes_cp_acquis: 200, dixiemes_cp_pris: 0 }));
   },
   getJourneesMois: function (id) { return Promise.resolve(scene.journees[id] || {}); },
   getJourneesPeriode: function (id) {

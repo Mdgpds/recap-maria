@@ -66,8 +66,18 @@
   function heures(minutes) {
     return Format ? Format.minutesEnHeures(minutes || 0) : (minutes || 0) + ' min';
   }
-  function joursCp(dixiemes) {
-    return Format ? Format.dixiemesEnJours(dixiemes || 0) : ((dixiemes || 0) / 10) + ' j';
+  /* LOT 17 §17.6 — les congés payés sont en MINUTES et s'affichent en jours.
+     Le second paramètre est le facteur de conversion, `minutes_par_jour_conge`,
+     qui vient des CONDITIONS du mois — un avenant peut le changer.
+
+     Il est OBLIGATOIRE. Un repli silencieux sur 540 afficherait « 10 j » là où
+     un contrat à 480 minutes en a 11,25 : un chiffre faux, crédible, et sur le
+     compteur qui se propage le plus loin. On préfère afficher des heures
+     brutes, visiblement inhabituelles, qu'un nombre de jours inventé. */
+  function joursCp(minutes, minutesParJourConge) {
+    if (Format) return Format.minutesEnJoursCp(minutes || 0, minutesParJourConge);
+    if (!minutesParJourConge) return (minutes || 0) + ' min';
+    return ((minutes || 0) / minutesParJourConge) + ' j';
   }
   function jours(n) { return n + NBSP + 'j'; }
 
@@ -94,7 +104,7 @@
      erronée) ne doit pas afficher un solde négatif à Maria. */
   function cpDisponible(compteurSortie) {
     var cs = compteurSortie || {};
-    return Math.max(0, (cs.dixiemesCpAcquis || 0) - (cs.dixiemesCpPris || 0));
+    return Math.max(0, (cs.minutesCpAcquis || 0) - (cs.minutesCpPris || 0));
   }
 
   /* Solde de récupération, même principe. */
@@ -105,9 +115,20 @@
   /* SEUIL UNIQUE de « compteur bas » (relecture lot 6, A3). Trois écrans en
      portaient trois valeurs différentes : à 7 jours restants, l'un affichait
      « compteur bas » en orange pendant qu'un autre annonçait « tout est à
-     jour ». 80 dixièmes = 8 jours ouvrables : au-dessous, une semaine complète
-     de congé (6 jours, RG-06) ne laisse plus de quoi en poser une seconde. */
-  var SEUIL_CP_BAS_DIXIEMES = 80;
+     jour ». 8 jours ouvrables : au-dessous, une semaine complète de congé
+     (6 jours, RG-06) ne laisse plus de quoi en poser une seconde.
+
+     LOT 17 §17.6 — le seuil était exprimé en dixièmes (80). Il l'est désormais
+     en JOURS, et se convertit en minutes avec le facteur du contrat : un
+     contrat à 480 minutes par jour de congé a le même seuil de 8 jours, pas le
+     même nombre de minutes. Une constante en minutes aurait figé le seuil sur
+     un seul contrat. */
+  var SEUIL_CP_BAS_JOURS = 8;
+
+  function cpEstBas(minutesDisponibles, minutesParJourConge) {
+    if (!minutesParJourConge || minutesParJourConge <= 0) return false;
+    return (minutesDisponibles || 0) < SEUIL_CP_BAS_JOURS * minutesParJourConge;
+  }
 
   /* Saisie française d'un montant -> centimes entiers. Mise en forme d'entrée,
      pas un calcul : le point n'est un séparateur décimal que sans virgule.
@@ -293,6 +314,234 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* LOT 17 §17.4 — LE FORMULAIRE DES ONZE CONDITIONS                    */
+  /*                                                                     */
+  /* Les mêmes onze champs servent à DEUX écrans : la création d'un      */
+  /* contrat et « Faire un avenant ». Ils vivent donc ici, en un seul     */
+  /* exemplaire. Deux formulaires jumeaux finiraient par diverger — l'un  */
+  /* validerait un planning vide que l'autre refuse — et la divergence ne */
+  /* se verrait qu'au moment où un calcul devient faux.                   */
+  /*                                                                     */
+  /* AUCUNE RÈGLE MÉTIER ICI. Ce composant lit et écrit des valeurs ; ce  */
+  /* qu'elles font au calcul appartient au moteur. Il refuse seulement ce */
+  /* que la base refuserait de toute façon, pour le dire en français      */
+  /* avant l'aller-retour.                                                */
+  /* ------------------------------------------------------------------ */
+
+  var NOMS_JOURS_COURTS = ['', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+  /* Durée en minutes saisie en heures ET minutes : Maria lit « 9 h » sur son
+     contrat, pas « 540 ». Deux champs plutôt qu'un, parce qu'un champ unique
+     « 9,5 » se lit tantôt neuf heures et demie, tantôt neuf heures cinquante. */
+  function champDuree(libelle, minutes, opts) {
+    var m = minutes || 0;
+    var f = ce('div', 'fld duree');
+    f.appendChild(ce('span', 'lb', libelle));
+    var ligne = ce('div', 'row');
+    var h = ce('input');
+    h.type = 'text'; h.inputMode = 'numeric'; h.value = String(Math.floor(m / 60));
+    var mn = ce('input');
+    mn.type = 'text'; mn.inputMode = 'numeric'; mn.value = String(m % 60);
+    ligne.appendChild(h);
+    ligne.appendChild(ce('span', 'u', 'h'));
+    ligne.appendChild(mn);
+    ligne.appendChild(ce('span', 'u', 'min'));
+    f.appendChild(ligne);
+    if (opts && opts.aide) f.appendChild(ce('div', 'sb q', opts.aide));
+    return {
+      bloc: f, heures: h, minutes: mn,
+      /* `null` si la saisie est illisible — jamais zéro par défaut : un champ
+         vidé par mégarde ne doit pas passer pour « aucune minute due ». */
+      valeur: function () {
+        var a = parseEntier(h.value, 0);
+        var b = parseEntier(mn.value, 0);
+        if (a === null || b === null || b > 59) return null;
+        return a * 60 + b;
+      }
+    };
+  }
+
+  /* Heure de la journée, en listes déroulantes par quart d'heure : un champ
+     libre laisse écrire « 8h3 » et « 17.30 », et une heure fausse déplace la
+     référence de toutes les journées du mois (§17.5). */
+  function champHeure(libelle, valeur, opts) {
+    var v = String(valeur || '08:30').slice(0, 5);
+    var options = [];
+    for (var hh = 5; hh <= 22; hh++) {
+      for (var q = 0; q < 60; q += 15) {
+        var t = String(hh).padStart(2, '0') + ':' + String(q).padStart(2, '0');
+        options.push([t, t.replace(':', 'h')]);
+      }
+    }
+    /* Une valeur enregistrée hors des quarts d'heure — une donnée d'avant ce
+       sélecteur — reste proposée : on ne la fait pas disparaître en silence. */
+    var connue = options.some(function (o) { return o[0] === v; });
+    if (!connue) options.push([v, v.replace(':', 'h')]);
+    var ch = champSelect(libelle, options, v);
+    if (opts && opts.aide) ch.bloc.appendChild(ce('div', 'sb q', opts.aide));
+    return { bloc: ch.bloc, select: ch.select,
+             valeur: function () { return ch.select.value; } };
+  }
+
+  /* Les jours de garde, en cases à cocher du lundi au dimanche. Le samedi et
+     le dimanche sont proposés comme les autres : certains contrats en ont, et
+     surtout RG-06 compte le samedi que Maria travaille ou non. */
+  function champPlanning(libelle, planning) {
+    var choisis = (planning || [1, 2, 3, 4, 5]).slice();
+    var f = ce('div', 'fld planning');
+    f.appendChild(ce('span', 'lb', libelle));
+    var ligne = ce('div', 'row jours');
+    var cases = {};
+    for (var j = 1; j <= 7; j++) {
+      (function (jour) {
+        var lab = ce('label', 'jour');
+        var box = ce('input');
+        box.type = 'checkbox';
+        box.checked = choisis.indexOf(jour) !== -1;
+        cases[jour] = box;
+        lab.appendChild(box);
+        lab.appendChild(ce('span', null, NOMS_JOURS_COURTS[jour]));
+        ligne.appendChild(lab);
+      })(j);
+    }
+    f.appendChild(ligne);
+    return {
+      bloc: f, cases: cases,
+      valeur: function () {
+        var out = [];
+        for (var k = 1; k <= 7; k++) if (cases[k].checked) out.push(k);
+        return out;
+      }
+    };
+  }
+
+  /* Le formulaire complet. `valeurs` pré-remplit ; `opts.titre` coiffe le bloc
+     (« Conditions au 1er septembre 2026 » — le vocabulaire prépare l'avenant,
+     §17.4). Rend { bloc, valeurs(), erreur() } : `erreur()` renvoie la phrase
+     française du premier refus, ou `null`. */
+  function champsConditions(valeurs, opts) {
+    var v = valeurs || {};
+    var o = opts || {};
+    var bloc = ce('div', 'conditions');
+    if (o.titre) bloc.appendChild(section(o.titre));
+
+    var planning = champPlanning('Jours de garde', v.jours_planning);
+    bloc.appendChild(planning.bloc);
+
+    var arrivee = champHeure('Début d’accueil', v.heure_arrivee || '08:30');
+    bloc.appendChild(arrivee.bloc);
+    /* §16.5 — « fin d'accueil », pas « heure de départ ». L'accueil s'arrête à
+       17h30 ; les minutes supplémentaires viennent APRÈS, et c'est leur somme
+       qui fait la référence d'une journée (§17.5). */
+    var depart = champHeure('Fin d’accueil', v.heure_depart || '17:30',
+      { aide: 'Les minutes supplémentaires ci-dessous viennent après cette heure.' });
+    bloc.appendChild(depart.bloc);
+
+    var contractuelles = champDuree('Journée d’accueil prévue au contrat',
+      v.minutes_contractuelles == null ? 540 : v.minutes_contractuelles);
+    bloc.appendChild(contractuelles.bloc);
+
+    var supJour = champDuree('Minutes supplémentaires par jour travaillé',
+      v.minutes_sup_jour == null ? 30 : v.minutes_sup_jour);
+    bloc.appendChild(supJour.bloc);
+
+    var parJourConge = champDuree('Ce que consomme un jour de congé',
+      v.minutes_par_jour_conge == null ? 540 : v.minutes_par_jour_conge,
+      { aide: 'Sert à convertir vos compteurs en jours. Un jour de congé retire ' +
+              'cette durée de vos réserves.' });
+    bloc.appendChild(parJourConge.bloc);
+
+    var entretien = champ('Indemnité d’entretien par jour de présence',
+      v.entretien_centimes_jour == null ? '5,00'
+        : centimesEnSaisie(v.entretien_centimes_jour),
+      { inputmode: 'decimal', placeholder: '5,00' });
+    bloc.appendChild(entretien.bloc);
+
+    var supSiAbsent = champSelect(
+      'Minutes supplémentaires dues quand l’enfant est absent',
+      [['oui', 'Oui, elles restent dues'], ['non', 'Non']],
+      v.sup_dues_si_enfant_absent === false ? 'non' : 'oui');
+    bloc.appendChild(supSiAbsent.bloc);
+
+    var ordre = champSelect('Vos congés se prennent d’abord sur',
+      [['cp_puis_sup', 'Mes congés payés'], ['sup_puis_cp', 'Ma récupération']],
+      v.ordre_imputation === 'sup_puis_cp' ? 'sup_puis_cp' : 'cp_puis_sup');
+    bloc.appendChild(ordre.bloc);
+
+    bloc.appendChild(section('Rémunération'));
+    var brut = champ('Salaire brut mensuel',
+      v.brut_mensuel_centimes == null ? '' : centimesEnSaisie(v.brut_mensuel_centimes),
+      { inputmode: 'decimal', placeholder: '1 401,20' });
+    bloc.appendChild(brut.bloc);
+    var net = champ('Salaire net mensuel',
+      v.net_mensuel_centimes == null ? '' : centimesEnSaisie(v.net_mensuel_centimes),
+      { inputmode: 'decimal', placeholder: '1 094,60' });
+    bloc.appendChild(net.bloc);
+    bloc.appendChild(ce('p', 'sb q',
+      'Le net se lit sur la fiche de paie : il ne se calcule pas depuis le brut.'));
+
+    function valeursSaisies() {
+      return {
+        jours_planning: planning.valeur(),
+        heure_arrivee: arrivee.valeur(),
+        heure_depart: depart.valeur(),
+        minutes_contractuelles: contractuelles.valeur(),
+        minutes_sup_jour: supJour.valeur(),
+        minutes_par_jour_conge: parJourConge.valeur(),
+        entretien_centimes_jour: parseEuros(entretien.input.value),
+        sup_dues_si_enfant_absent: supSiAbsent.select.value === 'oui',
+        ordre_imputation: ordre.select.value,
+        brut_mensuel_centimes: brut.input.value.trim() ? parseEuros(brut.input.value) : null,
+        net_mensuel_centimes: net.input.value.trim() ? parseEuros(net.input.value) : null
+      };
+    }
+
+    /* Les refus disent CE QUI ne va pas et POURQUOI. Ils reprennent les
+       contraintes de la migration `014`, qui reste la garantie : celles-ci
+       ne servent qu'à parler français avant l'aller-retour. */
+    function erreur() {
+      var x = valeursSaisies();
+      if (!x.jours_planning.length) {
+        return 'Choisissez au moins un jour de garde : sans planning, aucun mois ne peut être calculé.';
+      }
+      if (x.heure_depart <= x.heure_arrivee) {
+        return 'La fin d’accueil doit venir après le début.';
+      }
+      if (x.minutes_contractuelles === null || x.minutes_contractuelles <= 0) {
+        return 'La journée d’accueil prévue au contrat est illisible ou nulle.';
+      }
+      if (x.minutes_sup_jour === null) {
+        return 'Les minutes supplémentaires par jour sont illisibles.';
+      }
+      if (x.minutes_par_jour_conge === null || x.minutes_par_jour_conge <= 0) {
+        return 'Ce que consomme un jour de congé doit être une durée non nulle : ' +
+               'c’est elle qui convertit vos compteurs en jours.';
+      }
+      if (x.entretien_centimes_jour === null) {
+        return 'L’indemnité d’entretien est illisible (exemple : 5,00).';
+      }
+      if (brut.input.value.trim() && x.brut_mensuel_centimes === null) {
+        return 'Le salaire brut est illisible (exemple : 1 401,20).';
+      }
+      if (net.input.value.trim() && x.net_mensuel_centimes === null) {
+        return 'Le salaire net est illisible (exemple : 1 094,60).';
+      }
+      return null;
+    }
+
+    return { bloc: bloc, valeurs: valeursSaisies, erreur: erreur };
+  }
+
+  /* Centimes -> saisie française, sans le symbole ni l'espace insécable :
+     c'est ce qu'on remet DANS un champ, pas ce qu'on affiche. */
+  function centimesEnSaisie(centimes) {
+    if (centimes == null) return '';
+    var signe = centimes < 0 ? '-' : '';
+    var abs = centimes < 0 ? -centimes : centimes;
+    return signe + Math.floor(abs / 100) + ',' + String(abs % 100).padStart(2, '0');
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Sélecteurs de date — listes déroulantes, jamais de clavier          */
   /* ------------------------------------------------------------------ */
 
@@ -381,6 +630,63 @@
       bloc: f,
       valeur: function () { return iso(Number(selAnnee.value), Number(selMois.value), 1); },
       mois: function () { return { annee: Number(selAnnee.value), mois: Number(selMois.value) }; }
+    };
+  }
+
+  /* LOT 17 §17.4 — SÉLECTEUR DE MOIS EN LISTE UNIQUE, avec les mois INTERDITS
+     montrés et barrés plutôt que cachés.
+
+     « Le sélecteur affiche les mois clôturés barrés AVEC LEUR RAISON plutôt
+     que de les cacher. » Un mois absent de la liste ne dit rien : Maria le
+     cherche, ne le trouve pas, et conclut à un défaut de l'application. Un
+     mois barré qui porte « clôturé le 3 novembre » lui dit ce qui bloque et ce
+     qu'elle peut faire — rouvrir ce mois-là.
+
+     `opts.interdits` : { 'YYYY-MM': 'raison en français' }. La liste couvre
+     `opts.deMois` → `opts.aMois` inclus, tous deux { annee, mois }. */
+  function champMoisListe(libelle, isoDefaut, opts) {
+    opts = opts || {};
+    var interdits = opts.interdits || {};
+    var de = opts.deMois || { annee: Number(String(isoDefaut).slice(0, 4)) - 1, mois: 1 };
+    var a = opts.aMois || { annee: de.annee + 3, mois: 12 };
+
+    var f = ce('div', 'fld');
+    f.appendChild(ce('span', 'lb', libelle));
+    var sel = ce('select');
+    var courant = { annee: de.annee, mois: de.mois };
+    var voulu = String(isoDefaut || '').slice(0, 7);
+    var premierLibre = null;
+    while (courant.annee * 12 + courant.mois <= a.annee * 12 + a.mois) {
+      var cle = courant.annee + '-' + String(courant.mois).padStart(2, '0');
+      var op = ce('option');
+      op.value = cle + '-01';
+      var etiquette = MOIS[courant.mois] + ' ' + courant.annee;
+      if (interdits[cle]) {
+        /* Barré ET expliqué. Le tiret cadratin et la parenthèse font le travail
+           du style barré, qui ne survit pas dans un <option> selon le système. */
+        op.textContent = '— ' + etiquette + ' (' + interdits[cle] + ')';
+        op.disabled = true;
+      } else {
+        op.textContent = etiquette;
+        if (premierLibre === null) premierLibre = op.value;
+      }
+      sel.appendChild(op);
+      courant.mois++;
+      if (courant.mois > 12) { courant.mois = 1; courant.annee++; }
+    }
+    /* La valeur voulue si elle est libre ; sinon le premier mois disponible —
+       jamais un mois interdit présélectionné, qui ferait croire qu'il passe. */
+    var cible = interdits[voulu] ? null : voulu + '-01';
+    sel.value = cible || premierLibre || '';
+    f.appendChild(sel);
+    if (opts.aide) f.appendChild(ce('div', 'sb q', opts.aide));
+
+    return {
+      bloc: f, select: sel,
+      valeur: function () { return sel.value; },
+      mois: function () {
+        return { annee: Number(sel.value.slice(0, 4)), mois: Number(sel.value.slice(5, 7)) };
+      }
     };
   }
 
@@ -526,11 +832,22 @@
   var TYPES_NON_TRAVAILLES = ['conge_maria', 'sans_solde', 'hors_planning', 'ferie'];
 
   /* Les jours du mois qui appartiennent au planning du contrat ET à ses bornes.
-     Rien d'autre : ni férié, ni congé — c'est l'étape d'avant. */
-  function joursPlanning(contrat, annee, mois) {
-    var planning = contrat.jours_planning || [1, 2, 3, 4, 5];
+     Rien d'autre : ni férié, ni congé — c'est l'étape d'avant.
+
+     LOT 17 §17.2 — LE PLANNING EST DONNÉ, PAS LU SUR `contrat`. Les jours de
+     garde sont datés depuis le lot 17 : un avenant peut les changer au 1er
+     d'un mois. Lire `contrat.jours_planning` afficherait le planning
+     d'aujourd'hui sur un mois d'hier, et réécrirait les « journées
+     particulières » d'un document déjà remis à une famille.
+
+     L'appelant passe donc le planning du MOIS, résolu depuis les conditions.
+     Il reste facultatif — un `null` retombe sur lundi-vendredi — parce que
+     certains écrans travaillent sur un contrat dont la chaîne n'a pas encore
+     répondu ; c'est un défaut d'affichage, jamais un chiffre. */
+  function joursPlanning(contrat, planning, annee, mois) {
+    var pl = (planning && planning.length) ? planning : [1, 2, 3, 4, 5];
     return global.Engine.joursDuMois(annee, mois).filter(function (d) {
-      if (planning.indexOf(global.Engine.jourSemaine(d)) === -1) return false;
+      if (pl.indexOf(global.Engine.jourSemaine(d)) === -1) return false;
       if (contrat.date_debut && d < contrat.date_debut) return false;
       if (contrat.date_fin && d > contrat.date_fin) return false;
       return true;
@@ -542,9 +859,9 @@
      jour férié), moins les journées dont une ligne saisie dit qu'elle ne
      travaillait pas. Une absence de l'ENFANT reste un jour travaillé.
      `journees` = { 'YYYY-MM-DD' : ligne } tel que rendu par DB. */
-  function joursTravailles(contrat, annee, mois, journees) {
+  function joursTravailles(contrat, planning, annee, mois, journees) {
     journees = journees || {};
-    return joursPlanning(contrat, annee, mois).filter(function (d) {
+    return joursPlanning(contrat, planning, annee, mois).filter(function (d) {
       var ligne = journees[d];
       var type = ligne ? ligne.type : (Feries.estJourFerie(d) ? 'ferie' : 'presence');
       return TYPES_NON_TRAVAILLES.indexOf(type) === -1;
@@ -631,9 +948,9 @@
 
      `journees` est FACULTATIF : les appelants qui ne l'ont pas obtiennent le
      décompte d'avant, jamais une exception. */
-  function joursTravaillesRestants(contrat, annee, mois, aujourdhuiIso, journees) {
+  function joursTravaillesRestants(contrat, planning, annee, mois, aujourdhuiIso, journees) {
     if (!contrat || !aujourdhuiIso) return 0;
-    return joursPlanning(contrat, annee, mois).filter(function (d) {
+    return joursPlanning(contrat, planning, annee, mois).filter(function (d) {
       if (d <= aujourdhuiIso) return false;
       if (Feries.estJourFerie(d)) return false;
       /* Une journée DÉJÀ SAISIE qui n'est pas une présence — congé de Maria,
@@ -752,7 +1069,8 @@
     ce: ce, vider: vider, bouton: bouton, ajouter: ajouter,
     eur: eur, eurCourt: eurCourt, heures: heures, joursCp: joursCp, jours: jours, duree: duree,
     cpDisponible: cpDisponible, supDisponible: supDisponible,
-    SEUIL_CP_BAS_DIXIEMES: SEUIL_CP_BAS_DIXIEMES,
+    SEUIL_CP_BAS_JOURS: SEUIL_CP_BAS_JOURS,
+    cpEstBas: cpEstBas,
     parseEuros: parseEuros, parseEntier: parseEntier,
     libelleMois: libelleMois, libelleMoisAnnee: libelleMoisAnnee, moisCapitale: moisCapitale,
     /* LOT 16 §16.6 — élision ; §16.8 — libellé d'une période. */
@@ -770,6 +1088,12 @@
     etatDuMois: etatDuMois, joursTravaillesRestants: joursTravaillesRestants,
     pastilleEtat: pastilleEtat, LIBELLE_ETAT: LIBELLE_ETAT,
     JOUR_BASCULE_CLOTURE: JOUR_BASCULE_CLOTURE,
+    /* LOT 17 §17.4 — le formulaire des onze conditions, partagé par la
+       création d'un contrat et « Faire un avenant ». */
+    champsConditions: champsConditions, champDuree: champDuree,
+    champMoisListe: champMoisListe,
+    champHeure: champHeure, champPlanning: champPlanning,
+    centimesEnSaisie: centimesEnSaisie,
     accord: accord, accordDe: accordDe, avatar: avatar, nomComplet: nomComplet,
     COULEURS_IDENTITE: COULEURS_IDENTITE, couleurIdentite: couleurIdentite
   };
