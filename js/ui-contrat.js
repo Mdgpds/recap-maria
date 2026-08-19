@@ -98,8 +98,30 @@
       portrait.appendChild(pTx);
       corps.appendChild(portrait);
 
-      corps.appendChild(Kit.fld('Prénom de l’enfant', contrat.prenom_enfant));
-      corps.appendChild(Kit.fld('Nom de l’enfant', contrat.nom || '—'));
+      /* LOT 18 §18.3 — LE PRÉNOM ET LE NOM SE CORRIGENT SUR PLACE.
+
+         Corriger une faute d'orthographe demandait d'ouvrir « Modifier
+         l'identité », un formulaire de douze champs où l'on croise la date de
+         début du contrat et son statut — deux réglages qui, eux, changent des
+         calculs. Le geste le plus anodin de la fiche passait par l'écran le
+         plus risqué.
+
+         Ces deux champs-là ne changent AUCUN chiffre : ils changent un nom.
+         Ils se corrigent donc ici, d'un appui, et le formulaire complet reste
+         pour tout le reste. Sur un contrat rangé, les champs redeviennent de
+         simples lignes en lecture : un contrat terminé ne se modifie plus. */
+      if (contrat.archive) {
+        corps.appendChild(Kit.fld('Prénom de l’enfant', contrat.prenom_enfant));
+        corps.appendChild(Kit.fld('Nom de l’enfant', contrat.nom || '—'));
+      } else {
+        corps.appendChild(Kit.fldModifiable('Prénom de l’enfant', contrat.prenom_enfant, {
+          obligatoire: 'Le prénom de l’enfant est obligatoire.',
+          enregistrer: function (v) { return majIdentiteSurPlace(contrat, { prenom_enfant: v }); }
+        }));
+        corps.appendChild(Kit.fldModifiable('Nom de l’enfant', contrat.nom, {
+          enregistrer: function (v) { return majIdentiteSurPlace(contrat, { nom: v }); }
+        }));
+      }
       corps.appendChild(Kit.fld('Genre', libelleGenre(contrat.genre)));
 
       /* LOT 8 — LE CHAMP « Nom de la famille » A DISPARU DE CETTE FICHE.
@@ -366,6 +388,24 @@
      règle pas : le moteur s'en sert pour ignorer les jours d'avant, jamais
      pour choisir un tarif. Elle reste donc sensible, et l'avertissement la
      concernant est conservé. */
+  /* L'écriture de la correction sur place. Un seul champ part à la fois, et
+     RIEN d'autre : ni date de début, ni statut, ni couleur. Le nom du FOYER
+     n'est pas touché non plus — c'est le défaut du lot 8, et il ne revient
+     pas par cette porte.
+
+     La liste des contrats est rechargée pour que les autres écrans affichent
+     le nouveau nom ; l'écran courant se redessine ensuite. Un échec remonte
+     tel quel : c'est le champ qui l'annonce et qui garde la saisie. */
+  function majIdentiteSurPlace(contrat, champs) {
+    return global.DB.majContrat(contrat.id, champs).then(function () {
+      for (var k in champs) contrat[k] = champs[k];
+      return global.App.rechargerContrats();
+    }).then(function () {
+      Kit.toast('C’est enregistré.');
+      return global.App.rafraichir();
+    });
+  }
+
   function feuilleContrat(contrat, recaps) {
     var maintenant = global.App.moisCourant();
     Kit.ouvrirFeuille('Modifier l’identité', contrat.prenom_enfant,
@@ -1854,9 +1894,43 @@
 
     var date = Kit.champDate('Dernier jour de garde', global.App.aujourdhui(), {
       anneeMin: Number(String(contrat.date_debut).slice(0, 4)),
-      anneeMax: global.App.moisCourant().annee + 1
+      anneeMax: global.App.moisCourant().annee + 1,
+      onchange: function () { avertirMoisOuvert(); }
     });
     corps.appendChild(date.bloc);
+
+    /* LOT 18 §18.6 — L'AVERTISSEMENT VIENT AVANT LE CALCUL, PAS APRÈS.
+
+       « Le mois de décembre n'est pas encore clôturé » ne s'affichait qu'une
+       fois les soldes calculés — c'est-à-dire seulement si Maria appuyait sur
+       un bouton facultatif. Celle qui range directement le contrat ne le
+       voyait jamais, et le dernier mois restait ouvert indéfiniment : un mois
+       jamais clôturé n'a pas de document, et il n'y a plus d'écran pour aller
+       le chercher une fois le contrat rangé.
+
+       La phrase suit la date choisie : changer de mois change l'avertissement. */
+    var alerteMois = Kit.ce('div');
+    corps.appendChild(alerteMois);
+
+    function avertirMoisOuvert() {
+      var m = Chaine.moisDeDate(date.valeur());
+      Kit.vider(alerteMois);
+      global.App.recapsDuMois(m.annee, m.mois).then(function (parId) {
+        Kit.vider(alerteMois);
+        if (global.App.estClos(parId, contrat.id)) return;
+        alerteMois.appendChild(Kit.warnbox(
+          'Le mois de ' + Kit.libelleMois(m.mois) + ' n’est pas encore clôturé',
+          'Clôturez-le avant de ranger le contrat : une fois le contrat rangé, ' +
+          'ce mois n’aura jamais de récapitulatif.'));
+      }).catch(function (e) {
+        Kit.vider(alerteMois);
+        /* B.0-9 : on ne se tait pas sur ce qu'on n'a pas pu lire. */
+        alerteMois.appendChild(Kit.warnbox(
+          'Impossible de savoir si le mois de ' + Kit.libelleMois(m.mois) + ' est clôturé',
+          ' ' + Kit.messageErreur(e) + ' Vérifiez-le avant de ranger le contrat.'));
+      });
+    }
+    avertirMoisOuvert();
 
     var bSoldes = Kit.bouton('btn nt', function () { afficherSoldes(zone, contrat, date.valeur()); });
     bSoldes.textContent = 'Calculer les soldes de fin de contrat';
@@ -2006,8 +2080,10 @@
         'Notez ces chiffres, rien n’est enregistré.'));
 
       if (!entree.fige) {
-        /* §18.6 — la phrase qui évite une erreur, dite AVANT le calcul plutôt
-           qu'après : sans elle, le contrat reste ouvert pour toujours. */
+        /* Le rappel, une seconde fois, au pied des soldes : ce sont EUX qui
+           sont provisoires tant que le mois n'est pas clôturé. L'avertissement
+           qui empêche d'oublier, lui, est en haut de l'écran (§18.6) et ne
+           dépend pas de ce bouton. */
         zone.appendChild(Kit.warnbox(
           'Le mois de ' + Kit.libelleMois(m.mois) + ' n’est pas encore clôturé',
           'Clôturez-le avant de ranger le contrat : ces soldes resteront provisoires ' +

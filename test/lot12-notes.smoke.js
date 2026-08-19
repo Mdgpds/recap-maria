@@ -274,12 +274,13 @@ function zoneNote() { return corps.querySelector('textarea.note-mois'); }
     'A1 : et à qui elle NE l’est pas');
   assert(!!zoneNote(), 'P1 : la zone de texte est là');
 
-  /* V8-17 — la note vient AVANT les compteurs. */
+  /* V8-17 — la note vient AVANT les réserves (« Compteurs » au lot 12,
+     renommé « Réserves » au §18.5 ; l'ordre, lui, ne change pas). */
   var panneaux = corps.querySelectorAll('.pane');
   var iNote = Array.prototype.indexOf.call(panneaux, pNote);
   var iCompteurs = Array.prototype.indexOf.call(panneaux,
-    parTexte(corps, '.pane', 'Compteurs de'));
-  assert(iNote < iCompteurs, 'V8-17 : la note est placée avant les compteurs');
+    parTexte(corps, '.pane', 'Réserves de'));
+  assert(iNote < iCompteurs, 'V8-17 : la note est placée avant les réserves');
 
   var z = zoneNote();
   z.value = 'Les parents sont arrivés en retard le 6.';

@@ -42,6 +42,20 @@
 
   --danger: #8f2d2d;
   --danger-l: #e0a0a0;
+
+  /* CORRECTIF D'UN DÉFAUT DU LOT 17, signalé en restitution.
+     Le lot 17 a écrit `var(--bg2)`, `var(--bd)` et `var(--bg)` dans les styles
+     des champs de durée et des jours de garde. Ces trois variables n'ont
+     jamais été définies : une propriété personnalisée absente rend la
+     déclaration entière invalide, et les cases du planning se sont retrouvées
+     sans fond ni bordure sur l'écran de création d'un contrat.
+     Ce n'est pas une correction de confort glissée dans un autre lot : c'est
+     une feuille de style cassée, que le lot 18 hériterait telle quelle. Les
+     valeurs reprennent la palette existante, à l'identique. */
+  --bg:  #f4f6f8;  /* fond de page */
+  --bg2: #ffffff;  /* fond des surfaces */
+  --bd:  #cfd6dd;  /* bordure — même valeur que --ln */
+  --wad: #7a3b00;  /* orange foncé, pour du texte d'alerte sur fond clair */
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -962,3 +976,57 @@ button.coche:active { transform: scale(.99); }
    champs et le bouton : c'est le dernier chose lue avant d'appuyer. */
 .apercu-avenant { margin: 10px 0; }
 .apercu-avenant .attente { padding: 8px 0; font-size: 13px; color: var(--ink3); }
+
+/* ------------------------------------------------------------------ */
+/* LOT 18 §18.1 — Marquer plusieurs jours d'un coup                    */
+/* ------------------------------------------------------------------ */
+
+/* La barre permanente, sous le calendrier. Elle ne crie pas : c'est un
+   raccourci offert, pas une action attendue. */
+.multi { margin-top: 10px; }
+.multi-tt { margin-bottom: 8px; }
+.multi-tt b { display: block; font-size: 14.5px; }
+.multi-tt span { display: block; font-size: 13px; color: var(--ink3); margin-top: 2px; }
+
+/* En mode sélection, une case choisie se voit sans dépendre de sa couleur
+   d'état : le calendrier en porte déjà cinq, une sixième teinte n'y serait
+   plus lisible. C'est un cadre épais, doublé d'un aria-checked. */
+table.cal td.sel { box-shadow: inset 0 0 0 3px var(--ac); }
+table.cal td.hors-sel { opacity: .4; cursor: default; }
+table.cal td.hors-sel:active { transform: none; }
+
+/* Le pied fixe. Il reste sous les yeux pendant que le calendrier défile :
+   le compte des jours et l'effet chiffré n'ont d'utilité que visibles au
+   moment où l'on choisit. */
+.selbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: var(--bg2); border-top: 1px solid var(--bd);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .10);
+}
+.selbar .sb-n { font-weight: 700; font-size: 14.5px; }
+.selbar .sb-ch { display: flex; gap: 8px; margin: 8px 0; }
+.selbar .sb-ch .pas {
+  flex: 1; min-height: 44px; border: 1px solid var(--bd); border-radius: 10px;
+  background: var(--bg); font-size: 14px; cursor: pointer;
+}
+.selbar .sb-ch .pas.on { border-color: var(--ac); background: var(--acs); font-weight: 700; }
+.selbar .sb-ef { font-size: 13px; color: var(--ink2); margin-bottom: 6px; }
+.selbar .sb-wa { font-size: 13px; color: var(--wad); margin-bottom: 6px; }
+.selbar .sb-ac { display: flex; gap: 8px; }
+.selbar .sb-ac .btn { flex: 1; margin: 0; }
+
+/* LOT 18 §18.3 — le champ qui se corrige sur place. */
+.fld.mod .vl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fld.mod .crayon {
+  border: 0; background: none; color: var(--ac); font-size: 13px;
+  text-decoration: underline; cursor: pointer; padding: 6px 2px; min-height: 44px;
+}
+.fld.mod input { flex: 1 1 140px; }
+.fld.mod .grp { display: flex; gap: 6px; }
+.fld.mod .grp .pas {
+  min-height: 44px; padding: 0 10px; border: 1px solid var(--bd);
+  border-radius: 10px; background: var(--bg2); font-size: 14px; cursor: pointer;
+}
+.fld.mod .grp .pas.ok { border-color: var(--ac); background: var(--acs); font-weight: 700; }
+.fld.mod .msg { flex: 1 1 100%; font-size: 13px; }

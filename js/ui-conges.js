@@ -369,6 +369,15 @@
        second geste, et le second ne posait rien du tout — il expliquait
        comment faire ailleurs. Trois boutons pour un geste, dont un qui ne fait
        rien, c'est trois occasions de se tromper. */
+    /* LOT 18 §18.6 — CETTE PHRASE PASSE DEVANT LES BOUTONS.
+       Elle dit ce que le geste va faire — un congé posé une fois vaut pour
+       tous les contrats. Placée APRÈS les boutons, elle arrivait quand Maria
+       avait déjà appuyé : une explication lue trop tard n'évite aucune
+       erreur. */
+    corps.appendChild(Kit.note('Un congé vaut pour ' + libelleContrats(fiches.length),
+      'Vous le posez une fois, il s’applique partout — mais vous choisissez, pour chaque ' +
+      'enfant, comment il est décompté. Une semaine complète compte 6 jours, samedi inclus.'));
+
     var bPoser = Kit.bouton('btn', function () { ouvrirParcours(); });
     bPoser.textContent = 'Poser des congés';
     bPoser.disabled = enErreur.length > 0;
@@ -377,10 +386,6 @@
     var bRetrait = Kit.bouton('btn nt', function () { feuilleRetrait(); });
     bRetrait.textContent = 'Retirer des congés';
     corps.appendChild(bRetrait);
-
-    corps.appendChild(Kit.note('Un congé vaut pour ' + libelleContrats(fiches.length),
-      'Vous le posez une fois, il s’applique partout — mais vous choisissez, pour chaque ' +
-      'enfant, comment il est décompté. Une semaine complète compte 6 jours, samedi inclus.'));
   }
 
   function libelleContrats(n) {
@@ -994,13 +999,72 @@
           });
         }));
 
-    return prepare.then(function (fiches) {
+    return prepare
+      .then(function (fiches) { return avecJourneesDeLaPeriode(fiches, plage); })
+      .then(function (fiches) {
       return preparerVentilationsAvec(fiches, plage);
     }).catch(function (e) {
       Kit.fermerFeuille();
       Kit.toast('Impossible de lire vos compteurs pour cette période : ' +
         Kit.messageErreur(e) + ' Rien n’a été posé.', true);
     });
+  }
+
+  /* LOT 18 §18.4 (10·A5) — DE QUOI RÉTABLIR L'AVERTISSEMENT DE SAISIE
+     MANUELLE.
+
+     La garde existait avant la réécriture de cet écran au lot 10, et n'a
+     jamais été rétablie. Poser un congé passe par un `upsert` qui REMPLACE la
+     ligne du jour et remet heures réelles et indemnité à `null` : une journée
+     de familiarisation, saisie à la main heure par heure, disparaît sans
+     retour possible et sans un mot.
+
+     Ce n'est pas une phrase de confort, c'est une garde : elle protège la
+     seule donnée de l'application que personne ne peut recalculer.
+
+     Les journées du mois affiché sont déjà en mémoire, mais une période peut
+     tomber sur un AUTRE mois — c'est même le cas le plus fréquent, un congé
+     se pose d'avance. On charge donc les journées de tous les mois que la
+     période touche. Un échec de lecture n'est pas tu : l'écran dira qu'il n'a
+     pas pu vérifier, plutôt que de laisser croire qu'il n'y a rien à
+     écraser. */
+  function avecJourneesDeLaPeriode(fiches, plage) {
+    var mois = moisDePeriode(plage);
+    return Promise.all(fiches.map(function (f) {
+      if (f.erreur) return f;
+      return Promise.all(mois.map(function (m) {
+        return global.App.journees(f.contrat.id, m.annee, m.mois)
+          .then(function (j) { return j || {}; })
+          .catch(function () { return null; });
+      })).then(function (paquets) {
+        var toutes = {}, incomplet = false;
+        paquets.forEach(function (j) {
+          if (!j) { incomplet = true; return; }
+          Object.keys(j).forEach(function (k) { toutes[k] = j[k]; });
+        });
+        var copie = {};
+        for (var k in f) copie[k] = f[k];
+        copie.journeesPeriode = toutes;
+        copie.journeesPeriodeIncomplete = incomplet;
+        return copie;
+      });
+    }));
+  }
+
+  /* Les journées de CE contrat, dans la période, que la pose va effacer :
+     une familiarisation, des heures réelles ou une indemnité saisies à la
+     main. Même prédicat que dans l'espace enfant — une seule définition de
+     « saisie manuelle » dans l'application. */
+  function journeesManuelles(p) {
+    var source = (p.fiche && p.fiche.journeesPeriode) || {};
+    var out = [];
+    (p.joursPoses || []).forEach(function (d) {
+      var l = source[d];
+      if (!l) return;
+      if (l.type === 'familiarisation' ||
+          l.minutes_reelles != null || l.entretien_centimes != null) out.push(d);
+    });
+    return out;
   }
 
   function preparerVentilationsAvec(fiches, plage) {
@@ -1092,6 +1156,20 @@
 
         var reste = Kit.ce('div', 'reste');
         var effet = Kit.ce('div', 'effet-sans-solde');
+        /* LOT 18 §18.3 — LES DEUX RACCOURCIS.
+           Une semaine de congé sur quatre contrats demandait jusqu'à
+           vingt-quatre appuis sur les « + » : six jours, quatre enfants, un
+           appui par jour. Ces deux boutons font le geste courant en un seul.
+
+           LA RÉPARTITION VIENT DU MOTEUR (B.0-5). Le raccourci ne calcule
+           rien : il rappelle `Engine.imputerConges` avec l'ordre demandé, la
+           même fonction qui a produit la proposition initiale. C'est ce qui
+           garantit qu'il ne dépasse JAMAIS le disponible — la borne est celle
+           du moteur, pas une borne réécrite ici. Ce qui ne tient pas dans la
+           réserve choisie suit l'ordre habituel, puis le sans solde, et
+           l'encart de bascule le dit déjà, avec son montant. */
+        corps.appendChild(raccourcis(p, function () { etapeVentilation(); }));
+
         var bSuite = Kit.bouton('btn', function () { validerEtape(); });
         bSuite.textContent = parcours.index === parcours.plans.length - 1
           ? 'Voir le récapitulatif' : 'Continuer';
@@ -1135,7 +1213,18 @@
         /* A3 — le sans-solde n'a pas de borne haute : c'est le seul moyen de
            poser un congé quand les réserves sont épuisées. Il est borné par le
            nombre de jours de la période, pas par une réserve. */
-        corps.appendChild(compteur('Sans solde', p.choix, 'joursSansSolde', p.jours, majAffichage));
+        /* LOT 18 §18.6 — LE PRIX D'UN JOUR, SOUS SON PROPRE COMPTEUR.
+           Le total de la retenue s'affichait déjà, mais seulement APRÈS avoir
+           appuyé sur « + ». Le coût unitaire doit se voir AVANT : c'est lui
+           qui fait hésiter, et c'est la seule ligne de cet écran qui retire de
+           l'argent à Maria. Le montant vient du moteur (RG-08), aucun taux
+           horaire n'est écrit ici. */
+        var brutJour = brutDe(p.fiche);
+        var prixJour = brutJour ? Engine.montantCentimes(brutJour, mpjc(cond)) : null;
+        corps.appendChild(compteur('Sans solde', p.choix, 'joursSansSolde', p.jours, majAffichage,
+          prixJour != null
+            ? 'retenue de ' + Kit.eur(prixJour) + ' par jour'
+            : 'retenue non chiffrable, le barème de ce contrat n’est pas renseigné'));
 
         corps.appendChild(reste);
 
@@ -1160,6 +1249,38 @@
 
         majAffichage();
       });
+  }
+
+  /* Les deux raccourcis de répartition (§18.3). Rien n'est écrit ici : la
+     ventilation est celle que le moteur produit pour l'ordre demandé. */
+  function raccourcis(p, apres) {
+    var bloc = Kit.ce('div', 'raccourcis');
+    [['cp_puis_sup', 'Tout sur mes congés payés'],
+     ['sup_puis_cp', 'Tout sur ma récupération']].forEach(function (o) {
+      var b = Kit.bouton('btn nt', function () {
+        var r = Engine.imputerConges(p.jours,
+          { minutesCp: p.cp, minutesSup: p.sup }, condAvecOrdre(p.cond, o[0]));
+        p.choix = {
+          joursSurCp: r.joursSurCp,
+          joursSurSup: r.joursSurSup,
+          joursSansSolde: r.joursSansSolde
+        };
+        apres();
+      });
+      b.textContent = o[1];
+      bloc.appendChild(b);
+    });
+    return bloc;
+  }
+
+  /* Une COPIE des conditions, avec l'ordre demandé. On ne touche jamais aux
+     conditions du contrat : un raccourci d'écran ne modifie pas un réglage
+     daté (RG-07), il ne fait que poser une question différente au moteur. */
+  function condAvecOrdre(cond, ordre) {
+    var copie = {};
+    for (var k in (cond || {})) copie[k] = cond[k];
+    copie.ordre_imputation = ordre;
+    return copie;
   }
 
   /* Un compteur « − n + », borné. La borne haute est passée en paramètre
@@ -1302,6 +1423,25 @@
             chiffrable ? ' : ' + Kit.eur(retenueTotale) + ' de retenue sur vos salaires.'
                        : ' : la retenue ne peut pas être entièrement chiffrée, un barème manque.'));
         }
+
+        /* LOT 18 §18.4 (10·A5) — L'AVERTISSEMENT, AVANT LE BOUTON QUI ÉCRIT. */
+        parcours.plans.forEach(function (p) {
+          if (p.fiche && p.fiche.journeesPeriodeIncomplete) {
+            corps.appendChild(Kit.warnbox(
+              'Impossible de vérifier les journées déjà saisies pour ' + p.contrat.prenom_enfant,
+              ' Une partie de ses journées n’a pas pu être lue. Si l’une d’elles porte des ' +
+              'heures saisies à la main, poser ce congé les effacera sans qu’on puisse ' +
+              'vous le signaler.'));
+            return;
+          }
+          var manuelles = journeesManuelles(p);
+          if (!manuelles.length) return;
+          corps.appendChild(Kit.warnbox(
+            'Une saisie manuelle sera remplacée chez ' + p.contrat.prenom_enfant,
+            ' ' + manuelles.map(function (d) { return Kit.jourLong(d).toLowerCase(); }).join(', ') +
+            ' : ces journées portent des heures réelles ou une indemnité saisies à la main ' +
+            '(familiarisation). Poser un congé les efface sans possibilité de les retrouver.'));
+        });
 
         var b = Kit.bouton('btn', function () { poser(b); });
         b.textContent = 'Poser ces congés';

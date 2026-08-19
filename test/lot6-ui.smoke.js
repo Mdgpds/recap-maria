@@ -250,11 +250,20 @@ var sheet = document.getElementById('sheet');
   assert(!!pNote, 'V8-17 : le panneau de note est présent');
   assert(txt(pNote).indexOf('n’apparaît pas sur le document remis à la famille') !== -1,
     'V8-17 : et il dit à qui la note est destinée');
-  var pCompteurs = parTexte(corps, '.pane', 'Compteurs de');
+  /* LOT 18 §18.5 — « Compteurs de » est devenu « Réserves de » : une réserve
+     est ce qui reste, un compteur est un instrument. */
+  var pCompteurs = parTexte(corps, '.pane', 'Réserves de');
   assert(!!pCompteurs && txt(pCompteurs).indexOf('Récupération') !== -1 &&
          txt(pCompteurs).indexOf('Congés payés') !== -1,
-    'compteurs du contrat en barres');
+    'réserves du contrat en barres');
   assert(pCompteurs.querySelectorAll('.cptr .cb i').length === 2, 'deux barres de progression');
+  /* LOT 18 §18.5 — les congés payés PASSENT DEVANT la récupération : l'ordre
+     à l'écran doit être celui de la consommation. */
+  assert(txt(pCompteurs).indexOf('Congés payés') < txt(pCompteurs).indexOf('Récupération'),
+    '§18.5 : les congés payés sont affichés avant la récupération');
+  /* LOT 18 §18.6 — devant deux réserves, laquelle sera consommée ? */
+  assert(txt(pCompteurs).indexOf('Vos congés se prennent d’abord sur') !== -1,
+    '§18.6 : l’ordre d’imputation est dit sous les réserves');
   assert(!!parTexte(corps, '.pane', 'Depuis le début du contrat'),
     'panneau « depuis le début »');
 

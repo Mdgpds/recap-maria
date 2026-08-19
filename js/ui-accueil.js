@@ -623,6 +623,7 @@
   function boutonsEtape(ctx, cible, entree) {
     var actions = Kit.ce('div', 'actions');
 
+
     /* LOT 16 §16.1 c) — DANS LA FIN DE MOIS GUIDÉE AUSSI. Un mois dont une
        répartition ne tient plus ne se clôture pas : son étape ne propose que
        « Passer pour l'instant », et le chemin pour corriger. Sans ce garde, le
@@ -647,6 +648,25 @@
     if (!bloque && entree && !entree.salaireManquant && entree.resultat.salaireNetCentimes) {
       actions.appendChild(boutonTexte('btn pr', 'Clôturer et continuer', function (ev) {
         cloturerEtape(ctx, cible, entree, ev && ev.currentTarget);
+      }));
+    }
+
+    /* LOT 18 §18.2 — RELIRE AVANT DE CLÔTURER.
+
+       L'étape guidée montre cinq lignes de chiffres ; le document remis à la
+       famille en porte bien davantage — les congés du mois, les compteurs du
+       contrat, l'encart qui explique le décompte en jours ouvrables. On ne
+       fige pas un document qu'on n'a pas pu relire, et la clôture est le seul
+       geste de l'application qu'on ne défait pas sans laisser de trace.
+
+       La navigation EMPILE l'écran du document : le retour ramène à cette
+       étape, au même rang, parce que la pile conserve les paramètres du
+       parcours. Rien n'est perdu, rien n'est clôturé au passage. */
+    if (entree) {
+      actions.appendChild(boutonTexte('btn nt', 'Voir le récapitulatif complet', function () {
+        global.App.aller('document', {
+          contratId: cible.contrat.id, annee: cible.annee, mois: cible.mois
+        });
       }));
     }
 

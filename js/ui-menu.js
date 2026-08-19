@@ -514,12 +514,28 @@
 
     Kit.ouvrirFeuille('Famille ' + f.nom, prenomsDe(contrats) || 'Aucun enfant rattaché',
       function (corps) {
+        /* LOT 18 §18.3 — LES ENFANTS D'UN FOYER MÈNENT À LEUR FICHE.
+
+           C'étaient des lignes inertes : Maria ouvrait la famille pour
+           atteindre un enfant, ne trouvait rien de cliquable, refermait, et
+           repassait par l'accueil. Le chemin le plus naturel était le seul qui
+           ne menait nulle part. */
         if (contrats.length) {
-          var l = Kit.lines(corps);
           contrats.forEach(function (c) {
-            Kit.ligne(l, Kit.nomComplet(c),
-              c.archive || c.statut === 'termine' ? 'terminé' : 'en cours',
-              { discret: c.archive });
+            var b = Kit.bouton('big', function () {
+              Kit.fermerFeuille();
+              global.App.aller('fiche', { contratId: c.id });
+            });
+            var top = Kit.ce('div', 'top');
+            top.appendChild(Kit.avatar(c, 'pt'));
+            var ident = Kit.ce('div');
+            ident.appendChild(Kit.ce('div', 'nm', Kit.nomComplet(c)));
+            ident.appendChild(Kit.ce('div', 'fm',
+              c.archive || c.statut === 'termine' ? 'contrat terminé' : 'contrat en cours'));
+            top.appendChild(ident);
+            top.appendChild(Kit.ce('div', 'ar', '›'));
+            b.appendChild(top);
+            corps.appendChild(b);
           });
         }
 
@@ -1396,11 +1412,24 @@
     var pris = Kit.champ('Congés payés déjà pris (en jours)',
       joursEnSaisie(actuel.minutes_cp_pris, parJour),
       { inputmode: 'decimal', placeholder: '3' });
-    p.appendChild(acquis.bloc);
-    p.appendChild(pris.bloc);
+    /* LOT 18 §18.6 — LA PHRASE PASSE DEVANT LES DEUX CHAMPS.
+       Elle était sous eux : Maria saisissait 25 — le compte en jours ouvrés
+       qu'elle a en tête — puis lisait, une ligne plus bas, qu'il fallait
+       compter les samedis. Une saisie faite une seule fois, dont tout
+       l'historique dérive, ne peut pas s'expliquer après coup. */
     p.appendChild(Kit.ce('p', 'sb q',
       'En jours ouvrables, samedi inclus — c’est ainsi que se comptent les congés ' +
       'd’une assistante maternelle. Une semaine complète vaut 6 jours.'));
+    p.appendChild(acquis.bloc);
+    p.appendChild(pris.bloc);
+
+    /* LOT 18 §18.6 — CE QUI EST ENCORE RATTRAPABLE, DIT AVANT D'ENREGISTRER.
+       L'application ne le disait qu'une fois la porte fermée : « impossible de
+       modifier, des mois sont déjà clôturés ». La même vérité, dite avant,
+       enlève la peur de se tromper et empêche l'erreur définitive. */
+    p.appendChild(Kit.ce('p', 'sb q',
+      'Vous pourrez corriger ces valeurs tant qu’aucun mois postérieur n’est ' +
+      'clôturé pour ' + c.prenom_enfant + '. Après, elles ne bougeront plus.'));
 
     var msg = Kit.ce('div', 'msg');
     p.appendChild(msg);

@@ -165,12 +165,27 @@
           m.annee, m.mois, auj, r[1]),
         /* Lot 10 — les périodes de congé ventilées qui touchent ce mois. */
         imputations: r[4] || [],
-        note: r[5] || null
+        note: r[5] || null,
+        /* LOT 18 §18.1 — le mode « marquer plusieurs jours ». `null` = mode
+           ordinaire. L'écran se redessine sans repasser par le réseau : entrer
+           et sortir du mode ne doit rien recharger. */
+        selection: null,
+        corps: ctx.corps
       };
       vue.lectureSeule = vue.range || vue.clos;
       Kit.vider(ctx.corps);
       rendre(ctx.corps);
     });
+  }
+
+  /* Redessine l'écran à partir de ce qui est DÉJÀ en mémoire. Aucun appel
+     réseau : c'est ce qui rend l'entrée et la sortie du mode sélection
+     instantanées, et ce qui garantit que les chiffres affichés sont les mêmes
+     avant et après (§18.1 A2 — ils viennent du même `vue`). */
+  function redessiner() {
+    if (!vue || !vue.corps) return;
+    Kit.vider(vue.corps);
+    rendre(vue.corps);
   }
 
   function barre(barreEl, contrat, m) {
@@ -291,6 +306,11 @@
     corps.appendChild(panneauCompteurs());
     corps.appendChild(panneauDepuisDebut());
     corps.appendChild(boutonFiche());
+
+    /* Le pied de sélection vient EN DERNIER et se fixe en bas de l'écran : il
+       doit rester visible pendant que Maria fait défiler le calendrier, sans
+       quoi le compte et l'effet chiffré ne servent à rien. */
+    if (vue.selection) corps.appendChild(piedSelection());
   }
 
   /* Bandeau d'état du mois (§6.3, V8-02). Jusqu'ici l'espace enfant se taisait
@@ -308,8 +328,37 @@
             Kit.libelleMois(vue.mois) + '.'
           : 'Ce mois n’est pas terminé.');
     }
+
+    /* LOT 18 §18.4 (7·A5) — LE BANDEAU DU 25.
+
+       L'état « à clôturer » est juste : dès le 25, Maria connaît l'essentiel
+       de son mois et la tuile doit apparaître à l'accueil. Mais la PHRASE ne
+       l'était pas : du 25 au 31, l'espace enfant affirmait « Ce mois est
+       terminé » d'un mois qui court encore, et la mention « Chiffres
+       provisoires » disparaissait le jour même où elle devient la plus utile —
+       il reste des journées à venir, et le total affiché va encore bouger.
+
+       Un mois ÉCHU garde le bandeau d'origine : là, il est vrai. */
+    if (moisEnCours()) {
+      return Kit.note('Chiffres provisoires — le mois n’est pas fini',
+        (vue.restants > 0
+          ? 'Il reste ' + phraseJoursRestants(vue.restants) + ' en ' +
+            Kit.libelleMois(vue.mois) + '. '
+          : '') +
+        'Vous pouvez déjà vérifier les journées ; la clôture attendra la fin du mois.');
+    }
+
     return Kit.warnbox('Ce mois est terminé',
       'Vérifiez les journées, puis clôturez-le.');
+  }
+
+  /* Le mois affiché est-il le mois COURANT ? Comparé à `vue.aujourdhui`, lue
+     une seule fois à l'ouverture de l'écran : aucune fonction ne relit
+     l'horloge, sans quoi le comportement du 25 redeviendrait invérifiable. */
+  function moisEnCours() {
+    var auj = String(vue.aujourdhui || '');
+    if (auj.length < 7) return false;
+    return Number(auj.slice(0, 4)) === vue.annee && Number(auj.slice(5, 7)) === vue.mois;
   }
 
   function phraseJoursRestants(n) {
@@ -387,11 +436,259 @@
        qui prévoit 45 minutes le dira — et une constante « 30 » serait fausse
        ce jour-là, sans que rien ne le signale. */
     p.appendChild(phrasePermanente());
+    p.appendChild(barreMultiSelection());
     return p;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 18 §18.1 — MARQUER PLUSIEURS JOURS D'UN COUP (décision V8-10)   */
+  /*                                                                     */
+  /* La décision existait depuis la maquette v8 et n'avait jamais reçu de */
+  /* paragraphe de spécification : ce n'est pas un oubli du développeur   */
+  /* précédent, il n'a jamais reçu l'exigence.                            */
+  /*                                                                     */
+  /* DEUX MARQUAGES, PAS TROIS. « Mon congé » n'entre pas ici : un congé  */
+  /* de Maria vaut pour ses quatre contrats et porte une ventilation      */
+  /* entre congés payés, récupération et sans solde. Le poser depuis le   */
+  /* calendrier d'un seul enfant reviendrait à écrire les journées en     */
+  /* laissant la ventilation au moteur — exactement ce que le lot 10 a    */
+  /* rendu à Maria.                                                       */
+  /*                                                                     */
+  /* L'EFFET CHIFFRÉ EST REJOUÉ PAR LE MOTEUR (B.0-5). Aucun « 5 × 5,50 » */
+  /* n'est écrit ici : le mois entier est recalculé avec les journées     */
+  /* sélectionnées, et l'écart affiché est la différence entre deux       */
+  /* résultats du moteur. C'est ce qui rend l'annonce et le résultat      */
+  /* identiques par construction (A2).                                    */
+  /* ------------------------------------------------------------------ */
+
+  function barreMultiSelection() {
+    var c = vue.contrat;
+    var bloc = Kit.ce('div', 'multi');
+
+    /* Un mois clôturé ou un contrat rangé n'entre pas en mode sélection : le
+       bouton n'apparaît pas du tout. Un bouton qui refuse est pire qu'un
+       bouton absent — il laisse croire à une panne. Un mois à venir non plus :
+       on ne saisit pas l'avenir (V8-05). */
+    if (vue.lectureSeule || vue.aVenir || !vue.entree) return bloc;
+
+    if (vue.selection) {
+      var bStop = Kit.bouton('btn nt', function () { quitterSelection(); });
+      bStop.textContent = 'Quitter la sélection';
+      bloc.appendChild(bStop);
+      return bloc;
+    }
+
+    var t = Kit.ce('div', 'multi-tt');
+    t.appendChild(Kit.ce('b', null, 'Marquer plusieurs jours d’un coup'));
+    t.appendChild(Kit.ce('span', null,
+      'Absences de ' + c.prenom_enfant + ', ou retour à la présence. ' +
+      'Pour vos congés, passez par l’onglet Mes congés.'));
+    bloc.appendChild(t);
+
+    var b = Kit.bouton('btn nt', function () { entrerSelection(); });
+    b.textContent = 'Choisir plusieurs jours';
+    bloc.appendChild(b);
+    return bloc;
+  }
+
+  /* Une journée qui porte une absence de MARIA n'est pas sélectionnable : son
+     chemin est l'onglet des congés. Tout le reste l'est — y compris une
+     familiarisation, qui déclenchera son avertissement avant d'être écrasée
+     (§18.1 A3). */
+  function selectionnable(d, type) {
+    return TYPES_ABSENCE_MARIA.indexOf(type) === -1;
+  }
+
+  function entrerSelection() {
+    vue.selection = { jours: {}, marque: 'absence_enfant' };
+    redessiner();
+  }
+
+  function quitterSelection() {
+    vue.selection = null;
+    redessiner();
+  }
+
+  /* COCHER UN JOUR NE REDESSINE PAS L'ÉCRAN.
+
+     Un redessin complet à chaque appui perdrait la position de défilement :
+     Maria coche le 8, l'écran remonte en haut, elle redescend, coche le 9, et
+     ainsi de suite. Sur le geste dont tout ce paragraphe existe pour réduire
+     le nombre d'appuis, ce serait l'exact contraire du but.
+
+     Seuls la case touchée et le pied changent. Le pied est reconstruit — il
+     porte le compte et l'effet rejoué par le moteur, qui changent à chaque
+     appui — mais il fait vingt lignes, pas un écran. */
+  function basculerJour(d, td) {
+    if (!vue.selection) return;
+    if (vue.selection.jours[d]) delete vue.selection.jours[d];
+    else vue.selection.jours[d] = true;
+
+    if (td) {
+      var choisi = !!vue.selection.jours[d];
+      td.className = td.className.replace(/ ?\bsel\b/, '') + (choisi ? ' sel' : '');
+      td.setAttribute('aria-checked', choisi ? 'true' : 'false');
+    }
+    majPied();
+  }
+
+  function majPied() {
+    if (!vue || !vue.corps) return;
+    var ancien = vue.corps.querySelector('.selbar');
+    if (!vue.selection) { if (ancien) ancien.parentNode.removeChild(ancien); return; }
+    var neuf = piedSelection();
+    if (ancien) ancien.parentNode.replaceChild(neuf, ancien);
+    else vue.corps.appendChild(neuf);
+  }
+
+  function joursSelectionnes() {
+    if (!vue.selection) return [];
+    return Object.keys(vue.selection.jours).sort();
+  }
+
+  /* Le pied fixe : le compte, le marquage, l'effet, et les deux boutons. */
+  function piedSelection() {
+    var c = vue.contrat;
+    var jours = joursSelectionnes();
+    var pied = Kit.ce('div', 'selbar');
+
+    var haut = Kit.ce('div', 'sb-n');
+    haut.textContent = jours.length === 0
+      ? 'Touchez les jours à marquer'
+      : jours.length + (jours.length > 1 ? ' jours choisis' : ' jour choisi');
+    pied.appendChild(haut);
+
+    var choix = Kit.ce('div', 'sb-ch');
+    [['absence_enfant', 'Absence de ' + c.prenom_enfant],
+     ['presence', 'Présence']].forEach(function (o) {
+      var b = Kit.bouton('pas' + (vue.selection.marque === o[0] ? ' on' : ''), function () {
+        vue.selection.marque = o[0];
+        majPied();
+      });
+      b.textContent = o[1];
+      b.setAttribute('aria-pressed', vue.selection.marque === o[0] ? 'true' : 'false');
+      choix.appendChild(b);
+    });
+    pied.appendChild(choix);
+
+    if (jours.length) {
+      pied.appendChild(Kit.ce('div', 'sb-ef', effetSelection(jours, vue.selection.marque)));
+      var perdues = journeesManuellesEcrasees(jours);
+      if (perdues.length && vue.selection.marque !== 'presence') {
+        pied.appendChild(Kit.ce('div', 'sb-wa',
+          'Une saisie manuelle sera remplacée : ' + libelleJours(perdues) +
+          '. Ces journées portent des heures ou une indemnité saisies à la main.'));
+      } else if (perdues.length) {
+        pied.appendChild(Kit.ce('div', 'sb-wa',
+          'Une saisie manuelle sera effacée : ' + libelleJours(perdues) +
+          '. Ces journées portent des heures ou une indemnité saisies à la main.'));
+      }
+    }
+
+    var actions = Kit.ce('div', 'sb-ac');
+    var bOk = Kit.bouton('btn pr', function () { validerSelection(bOk); });
+    bOk.textContent = 'Valider';
+    bOk.disabled = jours.length === 0;
+    actions.appendChild(bOk);
+    var bNon = Kit.bouton('btn nt', function () { quitterSelection(); });
+    bNon.textContent = 'Annuler';
+    actions.appendChild(bNon);
+    pied.appendChild(actions);
+    return pied;
+  }
+
+  /* Les journées de CE contrat que le marquage va écraser : une
+     familiarisation, des heures réelles ou une indemnité saisies à la main.
+     Même prédicat que `journeesEcrasees`, appliqué au contrat courant. */
+  function journeesManuellesEcrasees(jours) {
+    var out = [];
+    jours.forEach(function (d) {
+      var l = (vue.journees || {})[d];
+      if (!l) return;
+      if (l.type === 'familiarisation' ||
+          l.minutes_reelles != null || l.entretien_centimes != null) out.push(d);
+    });
+    return out;
+  }
+
+  function libelleJours(jours) {
+    return jours.map(function (d) { return String(Number(d.slice(8, 10))); }).join(', ') +
+      ' ' + Kit.libelleMois(vue.mois);
+  }
+
+  /* L'EFFET, REJOUÉ PAR LE MOTEUR. Deux résultats, une soustraction : rien
+     d'autre. Le libellé des minutes suit RG-09 tel que le contrat le règle,
+     il ne le devine pas. */
+  function effetSelection(jours, marque) {
+    var avant = vue.entree.resultat;
+    var apres = simulerJours(jours, marque === 'presence' ? null : marque);
+
+    var dEntretien = (apres.entretienCentimes || 0) - (avant.entretienCentimes || 0);
+    var dSup = (apres.minutesSupAcquises || 0) - (avant.minutesSupAcquises || 0);
+    var dTotal = (apres.totalAVerserCentimes || 0) - (avant.totalAVerserCentimes || 0);
+
+    if (dEntretien === 0 && dSup === 0 && dTotal === 0) {
+      return 'Aucun changement sur le mois : ces journées sont déjà ainsi.';
+    }
+
+    var phrase = '';
+    if (dEntretien !== 0) {
+      phrase += 'Entretien : ' + (dEntretien < 0 ? '− ' : '+ ') +
+        Kit.eur(Math.abs(dEntretien)) + ' sur le mois. ';
+    }
+    var minutesJour = reg('minutes_sup_jour', 0);
+    if (dSup === 0 && minutesJour > 0) {
+      phrase += 'Vos ' + Kit.duree(minutesJour) + ' par jour restent dues.';
+    } else if (dSup < 0) {
+      phrase += Kit.duree(-dSup) + ' de récupération en moins.';
+    } else if (dSup > 0) {
+      phrase += Kit.duree(dSup) + ' de récupération en plus.';
+    }
+    if (!phrase) {
+      phrase = 'Total à verser : ' + (dTotal < 0 ? '− ' : '+ ') + Kit.eur(Math.abs(dTotal)) + '.';
+    }
+    return phrase.trim();
+  }
+
+  function validerSelection(bouton) {
+    var jours = joursSelectionnes();
+    if (!jours.length) return;
+    var c = vue.contrat;
+    var marque = vue.selection.marque;
+    var retour = { contrats: [c.id], jours: jours };
+
+    if (marque === 'presence') {
+      ecrire(global.DB.supprimerJournees(c.id, jours), bouton,
+        jours.length > 1 ? jours.length + ' journées enregistrées' : 'Journée enregistrée',
+        retour);
+      return;
+    }
+    ecrire(global.DB.marquerJournees(c.id, jours, 'absence_enfant'), bouton,
+      jours.length > 1
+        ? jours.length + ' journées notées en absence'
+        : c.prenom_enfant + ' ' + Kit.accordDe(c, 'noté') + ' ' + Kit.accordDe(c, 'absent'),
+      retour);
   }
 
   function phrasePermanente() {
     var c = vue.contrat;
+
+    /* LOT 18 §18.6 — SUR UN MOIS CLÔTURÉ, « Rien à faire les jours normaux »
+       INVITE À TOUCHER DES JOURS INERTES. La phrase est juste sur un mois
+       ouvert et trompeuse sur un mois verrouillé : Maria appuie, rien ne se
+       passe, et rien ne lui dit pourquoi. On la remplace par ce qui est vrai
+       ici — et par le chemin pour rouvrir. */
+    if (vue.clos) {
+      var recap = vue.entree && vue.entree.recap;
+      var nc = Kit.note('Ce mois est clôturé',
+        'Vous pouvez le rouvrir depuis le bandeau ci-dessus si vous devez corriger.' +
+        (recap && !recap.transmis_le
+          ? ' Il n’a pas encore été transmis.'
+          : ''));
+      nc.classList.add('permanente');
+      return nc;
+    }
+
     var minutes = reg('minutes_sup_jour', 0);
     var n = Kit.note('Rien à faire les jours normaux',
       'Tant que vous ne touchez pas un jour, ' + c.prenom_enfant + ' est ' +
@@ -468,6 +765,29 @@
         (ajustee ? 'heures ajustées' : ''));
     }
     if (d === vue.aujourdhui) td.setAttribute('aria-current', 'date');
+
+    /* LOT 18 §18.1 — EN MODE SÉLECTION, LA CASE CHANGE DE MÉTIER. Elle ne
+       s'ouvre plus, elle se coche. Les journées qui portent une absence de
+       MARIA restent hors d'atteinte : un congé vaut pour les quatre contrats
+       et se retire depuis « Mes congés », jamais depuis le calendrier d'un
+       seul enfant (décision V8-09). */
+    if (vue.selection) {
+      if (touchable && !vue.lectureSeule && selectionnable(d, type)) {
+        var choisi = !!vue.selection.jours[d];
+        if (choisi) td.className += ' sel';
+        td.setAttribute('role', 'checkbox');
+        td.setAttribute('aria-checked', choisi ? 'true' : 'false');
+        td.setAttribute('tabindex', '0');
+        td.setAttribute('aria-label', Kit.jourLong(d));
+        td.addEventListener('click', function () { basculerJour(d, td); });
+        td.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); basculerJour(d, td); }
+        });
+      } else {
+        td.className += ' hors-sel';
+      }
+      return td;
+    }
 
     if (touchable && !vue.lectureSeule) {
       td.setAttribute('role', 'button');
@@ -624,24 +944,28 @@
     return p;
   }
 
-  /* --- 3. Compteurs de ce contrat ------------------------------------ */
+  /* --- 3. Réserves de ce contrat (§18.5) ----------------------------- */
 
+  /* LOT 18 §18.5 — « RÉSERVES », ET LES CONGÉS PAYÉS EN PREMIER.
+
+     Deux corrections de vocabulaire et d'ordre, qui disent la même chose :
+     ce panneau répond à « qu'est-ce qu'il me reste ? », pas à « où en est
+     l'instrument ? ». Une réserve est ce qui reste ; un compteur est un
+     appareil. Et les congés payés passent devant, parce que c'est sur eux que
+     les congés se prennent d'abord — l'ordre à l'écran doit être celui de la
+     consommation, sinon il enseigne l'inverse de la règle.
+
+     LE NOMBRE DE JOURS VIENT DU MOTEUR. `Math.floor(minutes / parJour)` était
+     RG-05 réécrite ici, dans un écran — exactement ce que le contrôle B.0-5
+     interdit. `Chaine.reservesEnJours` fait déjà ce calcul pour l'écran des
+     congés ; il n'y a aucune raison qu'il existe deux fois. */
   function panneauCompteurs() {
     var c = vue.contrat;
     var cs = vue.entree.resultat.compteurSortie || {};
-    var p = Kit.pane('Compteurs de ' + c.prenom_enfant);
+    var p = Kit.pane('Réserves de ' + c.prenom_enfant);
 
-    var minutes = Kit.supDisponible(cs);
     var parJour = mpjc();
-    var joursRecup = parJour ? Math.floor(minutes / parJour) : 0;
-    compteur(p, {
-      titre: 'Récupération',
-      valeur: Kit.heures(minutes),
-      pct: pourcent(minutes, BARRE_RECUP_EN_JOURS * parJour),
-      note: joursRecup + ' jour' + (joursRecup > 1 ? 's' : '') + ' de congé — ' +
-            Kit.duree(parJour) + ' accumulées = 1 jour',
-      bas: false
-    });
+    var enJours = Chaine.reservesEnJours(cond(), cs);
 
     var cp = Kit.cpDisponible(cs);
     var bas = Kit.cpEstBas(cp, parJour);
@@ -650,11 +974,33 @@
       valeur: Kit.joursCp(cp, parJour),
       pct: pourcent(cp, BARRE_CP_EN_JOURS * parJour),
       note: bas
-        ? 'Compteur bas — un congé d’été passerait en partie sans solde'
+        ? 'Réserve basse — un congé d’été passerait en partie sans solde'
         : 'sur 30 jours ouvrables acquis par an',
       bas: bas
     });
+
+    var minutes = Kit.supDisponible(cs);
+    compteur(p, {
+      titre: 'Récupération',
+      valeur: Kit.heures(minutes),
+      pct: pourcent(minutes, BARRE_RECUP_EN_JOURS * parJour),
+      note: enJours.joursSup + ' jour' + (enJours.joursSup > 1 ? 's' : '') + ' de congé — ' +
+            Kit.duree(parJour) + ' accumulées = 1 jour',
+      bas: false
+    });
+
+    /* LOT 18 §18.6 — DEVANT DEUX RÉSERVES, LAQUELLE SERA CONSOMMÉE ?
+       La question se pose à chaque congé posé, et la réponse était introuvable
+       sans ouvrir la fiche du contrat. Elle vient du réglage daté (RG-07),
+       jamais d'un ordre supposé. */
+    p.appendChild(Kit.note('Vos congés se prennent d’abord sur ' + premiereReserve(),
+      'Modifiable dans le contrat de ' + c.prenom_enfant + '.'));
     return p;
+  }
+
+  function premiereReserve() {
+    return reg('ordre_imputation', 'cp_puis_sup') === 'sup_puis_cp'
+      ? 'votre récupération' : 'les congés payés';
   }
 
   function pourcent(valeur, max) {
@@ -1495,17 +1841,38 @@
 
   /* Rejoue le mois avec la journée `d` forcée au type `type`. Fonction pure. */
   function simuler(d, type, extra) {
+    return simulerLignes([{ jour: d, type: type === 'presence' ? null : type, extra: extra }]);
+  }
+
+  /* LOT 18 §18.1 — LE MÊME REJEU, POUR PLUSIEURS JOURS. Un seul chemin de
+     simulation dans cet écran : celui du geste unitaire et celui du geste
+     groupé doivent voir exactement la même chose, sinon l'aperçu de l'un
+     contredirait l'aperçu de l'autre sur les mêmes journées.
+     `type` à `null` = retour à la présence (la ligne disparaît, saisie par
+     exception, B.0-2). */
+  function simulerJours(jours, type) {
+    return simulerLignes(jours.map(function (d) {
+      return { jour: d, type: type, extra: null };
+    }));
+  }
+
+  /* `forcees` = [{ jour, type|null, extra }]. Fonction pure. */
+  function simulerLignes(forcees) {
+    var vises = {};
+    forcees.forEach(function (f) { vises[f.jour] = f; });
+
     var lignes = [];
     Object.keys(vue.journees).forEach(function (k) {
-      if (k !== d) lignes.push(vue.journees[k]);
+      if (!vises[k]) lignes.push(vue.journees[k]);
     });
-    if (type !== 'presence') {
+    forcees.forEach(function (f) {
+      if (f.type == null) return;            // présence : aucune ligne
       lignes.push({
-        contrat_id: vue.contrat.id, jour: d, type: type,
-        minutes_reelles: extra ? extra.minutes_reelles : null,
-        entretien_centimes: extra ? extra.entretien_centimes : null
+        contrat_id: vue.contrat.id, jour: f.jour, type: f.type,
+        minutes_reelles: f.extra ? f.extra.minutes_reelles : null,
+        entretien_centimes: f.extra ? f.extra.entretien_centimes : null
       });
-    }
+    });
     /* LOT 17 §17.3 — LES CONDITIONS DU MOIS, telles que la chaîne les a
        résolues. Ce rejeu doit voir EXACTEMENT ce que voit la chaîne : lui
        passer les réglages de `contrat` ferait diverger l'aperçu « voilà ce que

@@ -44,7 +44,16 @@
    ajouté doit entrer dans `index.html` ET dans cette liste, et `CACHE` doit
    changer de nom. Un fichier absent de la liste n'est rafraîchi qu'au hasard
    des requêtes. */
-var CACHE = 'recap-lot17-temps-et-avenants-v1';
+/* LOT 18 — NOM DE CACHE CHANGÉ. Aucun fichier n'est ajouté par ce lot non
+   plus, mais sept fichiers changent de contenu, dont `js/ui-kit.js` et
+   `js/db.js` — dont tous les écrans dépendent.
+
+   Le cas à éviter est concret : `js/ui-enfant.js` rafraîchi et `js/db.js`
+   resté à la version d'avant. L'écran proposerait « Marquer plusieurs jours
+   d'un coup », Maria en choisirait cinq, et l'appui sur « Valider »
+   appellerait une fonction qui n'existe pas dans le fichier servi. Le geste
+   échouerait sans que rien n'explique pourquoi. */
+var CACHE = 'recap-lot18-confort-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

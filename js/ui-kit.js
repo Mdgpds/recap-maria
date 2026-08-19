@@ -280,6 +280,94 @@
     return f;
   }
 
+  /* LOT 18 §18.3 — LE CHAMP QUI SE CORRIGE SUR PLACE.
+
+     Corriger un prénom mal orthographié demandait d'ouvrir un formulaire de
+     douze champs, de retrouver la bonne ligne, puis de tout réenregistrer. Le
+     geste le plus banal de la fiche était le plus coûteux.
+
+     Ici, le champ se lit comme un `fld` ordinaire et s'ouvre d'un appui. Deux
+     règles tiennent tout :
+     - `enregistrer` rend une promesse ; tant qu'elle n'a pas abouti, l'input
+       reste à l'écran avec ce que Maria a tapé. Une écriture qui échoue ne
+       perd jamais la saisie (B.0-9).
+     - une valeur inchangée ne déclenche AUCUNE écriture : rouvrir et refermer
+       un champ ne doit pas toucher la base.
+
+     `opts.obligatoire` refuse le vide, avec sa phrase — un prénom effacé
+     rendrait quatre écrans muets. */
+  function fldModifiable(libelle, valeur, opts) {
+    opts = opts || {};
+    var f = ce('div', 'fld mod');
+    f.appendChild(ce('span', 'lb', libelle));
+
+    var zone = ce('span', 'vl');
+    f.appendChild(zone);
+
+    function lecture() {
+      vider(zone);
+      zone.appendChild(ce('span', null, valeur == null || valeur === '' ? '—' : String(valeur)));
+      var b = bouton('crayon', ouvrir);
+      b.textContent = 'Modifier';
+      b.setAttribute('aria-label', 'Modifier ' + libelle.toLowerCase());
+      zone.appendChild(b);
+    }
+
+    function ouvrir() {
+      vider(zone);
+      var i = ce('input');
+      i.type = 'text';
+      i.value = valeur == null ? '' : String(valeur);
+      i.setAttribute('aria-label', libelle);
+      zone.appendChild(i);
+
+      var msg = ce('div', 'msg');
+      var bOk = bouton('pas ok', valider);
+      bOk.textContent = 'Enregistrer';
+      var bNon = bouton('pas', function () { lecture(); });
+      bNon.textContent = 'Annuler';
+      var actions = ce('div', 'grp');
+      actions.appendChild(bOk);
+      actions.appendChild(bNon);
+      zone.appendChild(actions);
+      zone.appendChild(msg);
+      i.focus();
+
+      i.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); valider(); }
+        if (e.key === 'Escape') { e.preventDefault(); lecture(); }
+      });
+
+      function valider() {
+        var v = String(i.value || '').trim();
+        if (opts.obligatoire && !v) {
+          msg.className = 'msg ko';
+          msg.textContent = opts.obligatoire;
+          return;
+        }
+        var ancienne = valeur == null ? '' : String(valeur);
+        if (v === ancienne) { lecture(); return; }
+        bOk.disabled = true;
+        bNon.disabled = true;
+        msg.className = 'msg';
+        msg.textContent = 'Enregistrement…';
+        Promise.resolve(opts.enregistrer(v || null))
+          .then(function () { valeur = v; lecture(); })
+          .catch(function (e) {
+            bOk.disabled = false;
+            bNon.disabled = false;
+            msg.className = 'msg ko';
+            /* La saisie reste à l'écran : c'est tout l'objet de la garde. */
+            msg.textContent = 'Rien n’a été enregistré : ' + messageErreur(e) +
+              ' Votre saisie est conservée.';
+          });
+      }
+    }
+
+    lecture();
+    return f;
+  }
+
   /* Champ saisissable (texte, e-mail…). Renvoie { bloc, input }. */
   function champ(libelle, valeur, opts) {
     opts = opts || {};
@@ -595,6 +683,17 @@
     boite.appendChild(selMois);
     boite.appendChild(selAnnee);
     f.appendChild(boite);
+
+    /* LOT 18 §18.6 — un écran peut avoir besoin de RÉAGIR au changement de
+       date, et pas seulement de la lire au moment où l'on valide. L'écran de
+       fin de contrat en a besoin : l'avertissement « ce mois n'est pas encore
+       clôturé » ne vaut que pour le mois de la date choisie.
+       Optionnel : les appelants existants ne changent pas d'un caractère. */
+    if (typeof opts.onchange === 'function') {
+      [selJour, selMois, selAnnee].forEach(function (sel) {
+        sel.addEventListener('change', function () { opts.onchange(); });
+      });
+    }
 
     return {
       bloc: f,
@@ -1079,7 +1178,7 @@
     jourLong: jourLong, dateLongue: dateLongue,
     MOIS: MOIS, MOIS_COURT: MOIS_COURT, JOURS_SEMAINE: JOURS_SEMAINE, NBSP: NBSP,
     pane: pane, lines: lines, ligne: ligne, note: note, warnbox: warnbox, section: section,
-    fld: fld, champ: champ, champSelect: champSelect, selectSimple: selectSimple,
+    fld: fld, fldModifiable: fldModifiable, champ: champ, champSelect: champSelect, selectSimple: selectSimple,
     champDate: champDate, champMois: champMois, nbJoursDansMois: nbJoursDansMois, iso: iso,
     ouvrirFeuille: ouvrirFeuille, fermerFeuille: fermerFeuille, feuilleEstOuverte: feuilleEstOuverte,
     choix: choix,

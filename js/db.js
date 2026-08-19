@@ -961,6 +961,50 @@
       .then(function (r) { if (r.error) throw r.error; return true; });
   }
 
+  /* LOT 18 §18.1 — L'ÉCRITURE GROUPÉE D'UN SEUL CONTRAT.
+
+     `poserAbsenceMaria` écrit une absence de MARIA sur plusieurs contrats.
+     Ici c'est l'inverse : plusieurs jours, UN SEUL contrat — parce qu'une
+     absence d'enfant ne vaut que pour son contrat (B.0-6, RG-02).
+
+     Les deux fonctions ci-dessous ne décident RIEN : la liste des jours leur
+     arrive déjà filtrée sur le planning et les bornes du contrat par l'écran
+     qui l'a construite. Elles n'inventent aucun jour, et n'en retirent aucun.
+
+     Un seul appel réseau dans les deux cas : cinq jours marqués d'un geste ne
+     doivent pas produire cinq allers-retours, dont trois pourraient réussir et
+     deux échouer — un état à moitié écrit est exactement ce qu'on ne veut pas
+     avoir à expliquer à Maria. */
+  function marquerJournees(contratId, jours, type) {
+    if (!contratId || !jours || !jours.length) return Promise.resolve([]);
+    var payload = jours.map(function (j) {
+      return {
+        contrat_id: contratId,
+        jour: j,
+        type: type,
+        minutes_reelles: null,
+        entretien_centimes: null,
+        commentaire: null
+      };
+    });
+    return client.from('journee')
+      .upsert(payload, { onConflict: 'contrat_id,jour' })
+      .select()
+      .then(deballer);
+  }
+
+  /* Le retour à la présence : la saisie par exception veut qu'une journée
+     ordinaire n'ait PAS de ligne (B.0-2). Marquer « présent » n'écrit donc
+     rien — cela supprime l'exception. */
+  function supprimerJournees(contratId, jours) {
+    if (!contratId || !jours || !jours.length) return Promise.resolve(true);
+    return client.from('journee')
+      .delete()
+      .eq('contrat_id', contratId)
+      .in('jour', jours)
+      .then(function (r) { if (r.error) throw r.error; return true; });
+  }
+
   /* Action groupée (§5 specs) : pose une absence de Maria (congé, jour non
      travaillé) sur PLUSIEURS contrats à la fois.
      C'est l'asymétrie qui fait gagner du temps : une absence de Maria vaut
@@ -1362,6 +1406,8 @@
     getJourneesPeriode: getJourneesPeriode,
     enregistrerJournee: enregistrerJournee,
     supprimerJournee: supprimerJournee,
+    marquerJournees: marquerJournees,
+    supprimerJournees: supprimerJournees,
     poserAbsenceMaria: poserAbsenceMaria,
     retirerAbsenceMaria: retirerAbsenceMaria,
     listImputations: listImputations,
