@@ -48,8 +48,20 @@
      congé vaut `minutes_par_jour_conge` minutes ; 2,5 jours en valent deux
      fois et demie autant. L'arrondi n'existe que si `minutes_par_jour_conge`
      est impair — 540 donne 1350 minutes exactement. Il est fait ICI, une
-     seule fois par mois, et jamais sur un cumul : c'est la même arithmétique
-     que la conversion de la migration `014` (dixièmes × minutes / 10). */
+     seule fois par mois, et jamais sur un cumul.
+
+     CORRECTION C2 DE LA RELECTURE DU LOT 17. Le commentaire d'origine ajoutait
+     « c'est la même arithmétique que la conversion de la migration 014 ».
+     C'était FAUX : `Math.round` en JavaScript arrondit, la division entière
+     SQL tronque. Pour 545 minutes et 25 dixièmes, le moteur retient 1363 et la
+     migration écrivait 1362 — une demi-minute par mois, cumulative, invisible,
+     et en faveur de Maria.
+
+     La divergence est désormais impossible, non par une règle d'arrondi
+     harmonisée mais par une CONTRAINTE : la migration `015` impose
+     `minutes_par_jour_conge` multiple de 10. Le produit est alors toujours
+     entier, et les deux arithmétiques coïncident au bit près. Tous les
+     contrats réels sont à 540 : la contrainte ne change rien à l'existant. */
   function minutesCpParMois(conditions) {
     return Math.round(DIXIEMES_CP_PAR_MOIS * conditions.minutes_par_jour_conge / 10);
   }
@@ -858,9 +870,19 @@
            heures supplémentaires est NET, et la ligne qui l'explique nomme la
            journée. Une somme sans son détail est incontestable et
            inexplicable à la fois — c'est exactement ce qu'on refuse. */
+        /* CORRECTION DE LA REMARQUE 4 DE LA RELECTURE DU LOT 17 —
+           L'ÉVÉNEMENT, PAS SEULEMENT LA DESTINATION.
+
+           La spécification écrit « dont 1 h 30 déduite — LIBÉRATION ANTICIPÉE
+           du 17 novembre » ; le document écrivait « déduite de ma
+           récupération ». Une libération anticipée et une arrivée décalée à la
+           demande de Maria produisaient la même phrase, alors que ce sont deux
+           gestes différents — et c'est le geste, pas la poche, qui explique au
+           parent pourquoi le temps a bougé. */
         ecartsDeclares.push({
           jour: d,
           minutes: detailSup.ecart,
+          evenement: (ligne && ligne.ecart_evenement) || null,
           imputeSur: detailSup.ecartImputeSur
         });
       }
@@ -1261,6 +1283,51 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Le solde de fin de contrat (§17.8) — CORRECTION C1 DE LA RELECTURE  */
+  /* ------------------------------------------------------------------ */
+
+  /* « À régler en plus du dernier mois » est LE chiffre que Maria annonce aux
+     parents. Il était additionné dans `ui-contrat.js`, poste par poste, à
+     quatre endroits — c'est le contrôle B.0-5 mis en défaut sur le montant le
+     plus sensible de l'application.
+
+     Cette fonction ne fait rien de neuf : elle assemble RG-13 (les heures
+     supplémentaires restantes, majorées) et le §17.8 (l'indemnité de rupture)
+     en un seul total, au seul endroit qui a le droit de calculer.
+
+     LE SOLDE D'HEURES NÉGATIF N'EST PAS DÉDUIT. Depuis le §17.5, ce solde peut
+     légitimement être négatif ; ce qu'on en fait en fin de contrat est une
+     question ouverte pour Maria. Déduire d'office trancherait à sa place, sur
+     un chiffre qui part chez une famille. On borne à zéro, et on rend
+     `minutesDues` pour que l'écran le DISE.
+
+     `brutMensuelCentimes` à null = rémunération inconnue : rien n'est
+     chiffrable, et le dire vaut mieux qu'un zéro crédible. */
+  function soldeFinContrat(entrees) {
+    var brut = entrees.brutMensuelCentimes;
+    var minutesSup = entrees.minutesSupSolde || 0;
+    var coefficient = entrees.coefficient === undefined ? 1 : entrees.coefficient;
+    var indemnite = entrees.indemnite || { due: false, indemniteCentimes: 0 };
+
+    var chiffrable = brut != null;
+    var minutesPayees = Math.max(0, minutesSup);
+    var montantSupCentimes = chiffrable
+      ? montantCentimes(brut, minutesPayees, coefficient)
+      : null;
+    var indemniteCentimes = indemnite.due ? (indemnite.indemniteCentimes || 0) : 0;
+
+    return {
+      chiffrable: chiffrable,
+      minutesSupPayees: minutesPayees,
+      /* Positif quand Maria DOIT du temps. Zéro sinon. */
+      minutesDues: minutesSup < 0 ? -minutesSup : 0,
+      montantSupCentimes: montantSupCentimes,
+      indemniteCentimes: indemniteCentimes,
+      totalARegler: chiffrable ? (montantSupCentimes + indemniteCentimes) : null
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Jours fériés décomptés dans une période de congé (§16.8)            */
   /* ------------------------------------------------------------------ */
 
@@ -1296,6 +1363,9 @@
 
   var api = {
     joursFeriesFrance: joursFeriesFrance,
+    /* §17.8 / correction C1 — le total de fin de contrat, calculé ici et
+       nulle part ailleurs. */
+    soldeFinContrat: soldeFinContrat,
     estJourFerie: estJourFerie,
     decompterJoursOuvrables: decompterJoursOuvrables,
     imputerConges: imputerConges,

@@ -86,12 +86,26 @@
     [/avenant_date_effet_premier_du_mois/,
       'un avenant prend toujours effet un 1er de mois : un mois porte un seul ' +
       'jeu de conditions.'],
-    [/avenant_contrat_contrat_id_date_effet_key|avenant_contrat_numero_unique/,
+    /* CORRECTION C3 DE LA RELECTURE — DEUX CONTRAINTES TRÈS DIFFÉRENTES
+       PARTAGEAIENT UNE PHRASE. Une collision de numérotation envoyait Maria
+       chercher un doublon de date qui n'existait pas. Elles sont désormais
+       séparées, et chacune dit sa propre cause. */
+    [/avenant_contrat_contrat_id_date_effet_key/,
       'un avenant prend déjà effet à cette date pour ce contrat. Corrigez-le ' +
       'plutôt que d’en poser un second.'],
+    [/avenant_contrat_numero_unique/,
+      'deux avenants de ce contrat portent le même numéro. Ce n’est pas une ' +
+      'erreur de votre part : signalez-le, rien n’a été enregistré.'],
+    [/avenant_numero_immuable/,
+      'le numéro d’un avenant ne se change pas : c’est la référence que vous ' +
+      'donnez à la famille. La date, elle, se corrige.'],
     [/journee_ecart_signe_coherent|journee_ecart_coherent/,
       'ce que vous avez déclaré et les minutes ne concordent pas. Reprenez ' +
       'l’événement et l’heure réelle.'],
+    [/avenant_minutes_par_jour_conge_decimal/,
+      'la durée d’un jour de congé doit être un multiple de 10 minutes : ' +
+      'c’est ce qui garantit que vos compteurs se convertissent sans perdre ' +
+      'de minute. Par exemple 540 (9 h) ou 480 (8 h).'],
     [/avenant_minutes_par_jour_conge_positif/,
       'la durée d’un jour de congé doit être supérieure à zéro : c’est elle ' +
       'qui convertit vos compteurs en jours.'],

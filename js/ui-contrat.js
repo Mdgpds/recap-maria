@@ -77,12 +77,31 @@
     /* LOT 17 §17.9 — le rattachement à un contrat type ne se lit plus : les
        contrats types sortent de l'application, et la notion d'« écart »
        disparaît avec eux. La colonne `contrat.modele_id` reste en base. */
+    /* CORRECTION B2 DE LA RELECTURE DU LOT 17 — CETTE LECTURE ÉCHOUE FERMÉ.
+
+       `.catch(function () { return []; })` transformait un échec de lecture en
+       « aucun mois n'est clôturé ». Or cette liste est la source UNIQUE des
+       trois garde-fous du §17.4 : quels mois le sélecteur interdit, quels mois
+       clôturés dépendent d'un avenant qu'on veut corriger, et les mêmes pour
+       la suppression.
+
+       Conséquence mesurée par la relecture : sur une simple coupure réseau,
+       Maria pouvait poser un avenant sur un mois clôturé, et SUPPRIMER
+       l'avenant qui avait produit un document déjà parti chez une famille.
+
+       C'est le défaut B7 d'août, corrigé une fois puis revenu sur un écran
+       neuf. Le correctif correct existait à quelques centaines de lignes de
+       là, dans `js/ui-menu.js` : `{ ok, liste }` / `{ ok, erreur }`. Il est
+       repris ici, et il est repris À L'IDENTIQUE — un échec ne rend pas une
+       liste, il rend un état. */
     return Promise.all([
       global.App.avenants(contrat.id),
-      global.DB.listRecapsContrat(contrat.id).catch(function () { return []; })
+      global.DB.listRecapsContrat(contrat.id)
+        .then(function (l) { return { ok: true, liste: l || [], erreur: null }; })
+        .catch(function (e) { return { ok: false, liste: [], erreur: e }; })
     ]).then(function (r) {
       var avenants = r[0] || [];
-      var recaps = r[1] || [];
+      var recaps = r[1];
       Kit.vider(ctx.corps);
       var corps = ctx.corps;
 
@@ -1127,9 +1146,25 @@
      figé, c'est LUI que `conditionsApplicables` retient. On ne recalcule
      rien : on interroge le moteur, comme le faisait déjà le contrôle des
      barèmes du lot 5. */
+  /* CORRECTION B2 — l'état de lecture des récapitulatifs, en un seul endroit.
+     `recaps` est désormais `{ ok, liste, erreur }` ; ces deux lectures rendent
+     l'écriture des appelants inchangée là où elle est légitime, et rendent
+     IMPOSSIBLE de lire la liste sans avoir vu le drapeau. */
+  function listeRecaps(recaps) {
+    if (!recaps) return [];
+    if (Array.isArray(recaps)) return recaps;      // appelants historiques
+    return recaps.liste || [];
+  }
+
+  function recapsLus(recaps) {
+    if (!recaps) return false;
+    if (Array.isArray(recaps)) return true;
+    return recaps.ok === true;
+  }
+
   function moisClosDependantsAvenant(avenant, avenants, recaps) {
     var out = [];
-    (recaps || []).forEach(function (r) {
+    listeRecaps(recaps).forEach(function (r) {
       if (r.statut !== 'fige') return;
       var applicable = Engine.conditionsApplicables(avenants, r.annee, r.mois);
       if (applicable && applicable.id === avenant.id) out.push(r);
@@ -1141,7 +1176,7 @@
      date : les mois interdits sont MONTRÉS et barrés, avec ce qui les bloque. */
   function moisInterdits(recaps) {
     var out = {};
-    (recaps || []).forEach(function (r) {
+    listeRecaps(recaps).forEach(function (r) {
       if (r.statut !== 'fige') return;
       out[r.annee + '-' + String(r.mois).padStart(2, '0')] =
         r.fige_le ? 'clôturé le ' + Kit.dateLongue(r.fige_le) : 'clôturé';
@@ -1232,12 +1267,27 @@
     return bloc;
   }
 
+  /* CORRECTION B2 — SANS LA LISTE DES MOIS CLÔTURÉS, ON NE PROPOSE RIEN.
+     Un avenant posé à l'aveugle peut tomber sur un mois déjà remis à une
+     famille, et un mois clôturé ne se recalcule jamais. Le refus dit ce qui
+     manque et ce qu'il faut faire — il ne laisse pas croire à une
+     interdiction définitive. */
   function boutonAvenant(contrat, avenants, recaps) {
+    if (!recapsLus(recaps)) return refusFauteDeRecaps(recaps);
     var b = Kit.bouton('btn', function () {
       feuilleAvenant(contrat, avenants, recaps, null);
     });
     b.textContent = 'Faire un avenant';
     return b;
+  }
+
+  function refusFauteDeRecaps(recaps) {
+    var e = recaps && recaps.erreur;
+    return Kit.warnbox('Impossible de vérifier les mois déjà clôturés',
+      ' ' + (e ? Kit.messageErreur(e) : 'La lecture n’a pas abouti.') +
+      ' Tant que cette vérification échoue, aucun avenant ne peut être posé, ' +
+      'corrigé ni supprimé : il pourrait tomber sur un mois déjà remis à une ' +
+      'famille. Réessayez une fois le réseau revenu.');
   }
 
   /* La référence d'une journée, en clair. Le calcul appartient au moteur
@@ -1315,7 +1365,11 @@
               });
             }
 
-            if (!contrat.archive) {
+            if (!contrat.archive && !recapsLus(recaps)) {
+              /* CORRECTION B2 — même garde sur la frise : ni correction ni
+                 suppression tant qu'on ne sait pas quels mois sont clôturés. */
+              carte.appendChild(refusFauteDeRecaps(recaps));
+            } else if (!contrat.archive) {
               var bM = Kit.bouton('btn nt', function () {
                 feuilleAvenant(contrat, tries, recaps, a);
               });
@@ -1490,7 +1544,11 @@
           if (refus) { erreur(refus); return; }
           var cle = date.valeur().slice(0, 7);
           if (interdits[cle]) {
-            erreur('Le mois de ' + cle + ' est clôturé : un avenant n’est jamais rétroactif.');
+            /* CORRECTION C3 — « Le mois de 2026-06 est clôturé » : un format
+               machine à l'écran, alors que `Kit.libelleMoisAnnee` est utilisé
+               partout ailleurs sur cet écran. */
+            erreur('Le mois ' + Kit.deMoisAnnee(Number(cle.slice(0, 4)), Number(cle.slice(5, 7))) +
+              ' est clôturé : un avenant n’est jamais rétroactif.');
             return;
           }
           /* Deux avenants au même mois : la base le refuse
@@ -1983,31 +2041,22 @@
 
       var conditions = Engine.conditionsApplicables(avenants, m.annee, m.mois);
       var cs = entree.compteurSortie || {};
-      var minutes = Kit.supDisponible(cs);
-      var cp = Kit.cpDisponible(cs);
+      /* CORRECTION B5 — LES SOLDES SIGNÉS. Ces deux lignes lisaient les
+         valeurs bornées à zéro : un compteur à −9 h s'affichait « 0h00 », et
+         l'avertissement « votre compteur est négatif », gardé par
+         `if (minutes < 0)`, ne pouvait s'afficher JAMAIS. */
+      var minutes = Kit.supSolde(cs);
+      var cp = Kit.cpSolde(cs);
       var parJour = (conditions && conditions.minutes_par_jour_conge) || 0;
       var brut = conditions ? conditions.brut_mensuel_centimes : null;
 
       var p = Kit.pane('Soldes au ' + Kit.dateLongue(dateFin));
       var l = Kit.lines(p);
       /* §17.8 — les congés payés d'abord, comme partout ailleurs. */
-      Kit.ligne(l, 'Congés payés restants', Kit.joursCp(cp, parJour));
-      Kit.ligne(l, 'Récupération restante', Kit.heures(minutes));
-
-      var aRegler = 0;
-      var chiffrable = brut != null;
-
-      if (chiffrable) {
-        /* RG-13 : exactement la formule validée par le cas T6 du moteur. Les
-           heures NÉGATIVES ne se transforment pas en montant à retenir : le
-           §17.5 laisse le compteur passer sous zéro, mais ce qu'on en fait en
-           fin de contrat est une question ouverte pour Maria. On borne à zéro
-           et on le DIT, plus bas. */
-        var montantSup = Engine.montantCentimes(brut, Math.max(0, minutes), COEFF_FIN_CONTRAT);
-        Kit.ligne(l, 'Heures supplémentaires, majorées de ' + libelleMajoration(),
-          Kit.eur(montantSup));
-        aRegler += montantSup;
-      }
+      Kit.ligne(l, 'Congés payés restants',
+        cp < 0 ? '− ' + Kit.joursCp(-cp, parJour) : Kit.joursCp(cp, parJour));
+      Kit.ligne(l, 'Récupération restante',
+        minutes < 0 ? '− ' + Kit.heures(-minutes) : Kit.heures(minutes));
       zone.appendChild(p);
 
       /* --- L'INDEMNITÉ DE RUPTURE (§17.8) --------------------------- */
@@ -2019,6 +2068,24 @@
       var ind = Engine.indemniteRupture({
         date_debut: contrat.date_debut, date_fin: dateFin, moisBruts: moisBruts
       });
+
+      /* CORRECTION C1 DE LA RELECTURE — LE TOTAL VIENT DU MOTEUR.
+         « À régler en plus du dernier mois » était additionné ici, poste par
+         poste, à quatre endroits. C'est le chiffre que Maria annonce aux
+         parents : c'est le dernier de l'application qui devrait être calculé
+         dans un écran. */
+      var solde = Engine.soldeFinContrat({
+        brutMensuelCentimes: brut,
+        minutesSupSolde: minutes,
+        coefficient: COEFF_FIN_CONTRAT,
+        indemnite: ind
+      });
+
+      if (solde.chiffrable) {
+        /* RG-13, la formule validée par le cas T6 du moteur. */
+        Kit.ligne(l, 'Heures supplémentaires, majorées de ' + libelleMajoration(),
+          Kit.eur(solde.montantSupCentimes));
+      }
 
       var pi = Kit.pane('Indemnité de rupture');
       var li = Kit.lines(pi);
@@ -2034,7 +2101,6 @@
       } else {
         Kit.ligne(li, 'Total des salaires bruts', Kit.eur(ind.totalBrutCentimes));
         Kit.ligne(li, 'Indemnité — 1/80ᵉ', Kit.eur(ind.indemniteCentimes), { total: true });
-        aRegler += ind.indemniteCentimes;
         pi.appendChild(Kit.ce('div', 'sb q',
           'Hors indemnités d’entretien. Calculée sur ' + libellePeriodes(avenants) +
           ', du ' + Kit.dateLongue(contrat.date_debut) + ' au ' + Kit.dateLongue(dateFin) + '.'));
@@ -2047,14 +2113,14 @@
       zone.appendChild(pi);
 
       /* --- LE CHIFFRE QUE MARIA ANNONCE AUX PARENTS ------------------ */
-      if (chiffrable) {
+      if (solde.chiffrable) {
         var pt = Kit.pane('À régler en plus du dernier mois');
         var lt = Kit.lines(pt);
-        Kit.ligne(lt, 'Total', Kit.eur(aRegler), { total: true });
+        Kit.ligne(lt, 'Total', Kit.eur(solde.totalARegler), { total: true });
         pt.appendChild(Kit.ce('div', 'sb q',
           'Le montant des congés payés restants n’y figure PAS : sa base de calcul n’est ' +
           'pas tranchée, et l’inventer donnerait un total faux et crédible. ' +
-          'Ces ' + Kit.joursCp(cp, parJour) + ' sont à régler en plus.'));
+          'Ces ' + Kit.joursCp(Math.max(0, cp), parJour) + ' sont à régler en plus.'));
         zone.appendChild(pt);
       } else {
         zone.appendChild(Kit.warnbox('Montants non chiffrables',
@@ -2062,14 +2128,14 @@
           ' : ni les heures supplémentaires ni le total ne peuvent être calculés.'));
       }
 
-      if (minutes < 0) {
+      if (solde.minutesDues > 0) {
         /* Question ouverte n° 3 pour Maria : « un solde d'heures négatif en fin
            de contrat : déduit du solde à régler, ou seulement signalé ? »
            Tant qu'elle n'a pas répondu, on SIGNALE — déduire d'office
            reviendrait à trancher à sa place, sur un chiffre qui part chez une
            famille. */
         zone.appendChild(Kit.warnbox('Votre compteur de récupération est négatif',
-          'Il manque ' + Kit.heures(-minutes) + ' à ' + contrat.prenom_enfant + '. ' +
+          'Il manque ' + Kit.heures(solde.minutesDues) + ' à ' + contrat.prenom_enfant + '. ' +
           'Ce temps n’est PAS déduit du total ci-dessus : la règle n’est pas tranchée. ' +
           'Voyez avec la famille.'));
       }
@@ -2136,8 +2202,11 @@
             return premier >= a.date_effet && (!suivant || premier < suivant.date_effet);
           });
           if (!duPeriode.length) return;
+          /* CORRECTION C1 — l'assiette du 1/80ᵉ se lit là où elle est
+             définie. `Chaine.brutDuCentimes` porte le repli des instantanés
+             d'avant le lot 17 ; l'addition faite ici comptait zéro sur eux. */
           var total = duPeriode.reduce(function (n, e) {
-            return n + (e.resultat.brutDuCentimes || 0);
+            return n + Chaine.brutDuCentimes(e.resultat);
           }, 0);
 
           var carte = Kit.ce('div', 'card');

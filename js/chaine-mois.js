@@ -375,7 +375,15 @@
        date_debut <= dernier jour du mois
        ET (date_fin nulle OU date_fin >= premier jour du mois)
      Comparaisons sur des chaînes 'YYYY-MM-DD' (dates pures). */
-  function contratCouvreLeMois(contrat, annee, mois) {
+  /* CORRECTION DE LA REMARQUE 1 DE LA RELECTURE DU LOT 17 — RENOMMÉE.
+
+     Elle s'appelait `contratCouvreLeMois`, comme la fonction du moteur
+     (`js/engine.js`), qui dit l'INVERSE : là-bas, « couvre » signifie couvrir
+     le mois ENTIER, pour RG-11 ; ici, il s'agit de savoir si le contrat
+     TOUCHE le mois, ne serait-ce qu'un jour. Deux règles opposées sous le même
+     nom, dans deux fichiers voisins : aucun défaut trouvé, mais un piège posé
+     pour le lot suivant. */
+  function contratToucheLeMois(contrat, annee, mois) {
     var premier = premierJour(annee, mois);
     var dernier = dernierJour(annee, mois);
     if (contrat.date_debut && contrat.date_debut > dernier) return false;
@@ -416,7 +424,7 @@
      exactement, en défaisant l'enchaînement que ce module a lui-même posé :
        entrée.minutesSup = sortie − acquises + consommées
        entrée.cpAcquis   = sortie − acquis du mois
-       entrée.cpPris     = sortie − consommés du mois
+       entrée.cpPris     = sortie − consommés du mois − minutes de congé à l'heure
      Aucune règle nouvelle : c'est l'inverse littéral du chaînage. Sert à ce
      qu'un récapitulatif de période démarrant sur un mois figé affiche le
      solde d'entrée du DOCUMENT, et non celui d'un rejeu. Repli sur `defaut`
@@ -429,7 +437,16 @@
     return {
       minutesSup: s.minutesSup - (donnees.minutesSupAcquises || 0) + (imp.minutesSupConsommees || 0),
       minutesCpAcquis: (s.minutesCpAcquis || 0) - (donnees.minutesCpAcquis || 0),
+      /* CORRECTION C6 DE LA RELECTURE DU LOT 17 — LES CONGÉS À L'HEURE.
+         Depuis le §17.6, la sortie vaut `entrée + minutesCpConsommees +
+         minutesEcartSurCp`. Ce dernier terme n'était jamais retranché : un
+         mois clôturé portant une libération d'1h30 imputée sur les congés
+         payés affichait « 9 j 5h30 » au 1er du mois au lieu de « 10 j ».
+         C'est ce compteur qui alimente le récapitulatif de période et le
+         bilan annuel. Les instantanés d'avant le lot 17 ne portent pas ce
+         champ : il vaut alors zéro, et le calcul est inchangé pour eux. */
       minutesCpPris: (s.minutesCpPris || 0) - (imp.minutesCpConsommees || 0)
+                     - (donnees.minutesEcartSurCp || 0)
     };
   }
 
@@ -489,6 +506,25 @@
     if (copie.brutDuCentimes == null) {
       copie.brutDuCentimes = Math.max(0,
         (donnees.salaireBrutCentimes || 0) - (donnees.retenueSansSoldeCentimes || 0));
+    }
+    /* CORRECTION B4 DE LA RELECTURE — LE NET ET LE BRUT PRORATISÉS EXISTENT
+       SUR TOUS LES INSTANTANÉS, SANS EXCEPTION.
+
+       Le §17.7 fait du net proratisé LE net du mois. Un instantané d'avant le
+       lot 17 ne le porte pas — et chaque écran devait alors se souvenir de
+       replier sur `salaireNetCentimes`. Un seul l'a fait : le document. Les
+       cinq autres écrans, plus `agregerPeriode`, affichaient le net
+       contractuel, et se contredisaient entre eux sur le même mois.
+
+       Le repli est donc posé ICI, une fois : aucun instantané ne sort de la
+       chaîne sans ses deux champs proratisés. Ces mois n'ont jamais connu le
+       prorata, leur net contractuel EST leur net dû — la reprise est exacte,
+       pas approchée. */
+    if (copie.salaireNetProrataCentimes == null) {
+      copie.salaireNetProrataCentimes = copie.salaireNetCentimes || 0;
+    }
+    if (copie.salaireBrutProrataCentimes == null) {
+      copie.salaireBrutProrataCentimes = copie.salaireBrutCentimes || 0;
     }
     /* On NE POSE PAS `uniteCp` sur la copie : elle resterait indiscernable
        d'un instantané récent si elle était un jour réécrite en base. La copie
@@ -612,7 +648,7 @@
                    rejoué pour ne pas rompre la continuité des compteurs, mais
                    il est MARQUÉ — aucun récapitulatif mensuel n'existe ni ne
                    peut exister pour lui, et agregerPeriode l'écarte. */
-                var hors = !contratCouvreLeMois(contrat, mm.annee, mm.mois);
+                var hors = !contratToucheLeMois(contrat, mm.annee, mm.mois);
                 var compteurEntree = compteur;
                 /* §17.3 — LES CONDITIONS DU MOIS, et plus seulement son
                    barème. Même règle de sélection qu'avant (le dernier avenant
@@ -852,15 +888,27 @@
       somme.imputation.minutesCpConsommees += imp.minutesCpConsommees || 0;
       somme.retenueSansSoldeCentimes += r.retenueSansSoldeCentimes || 0;
       somme.minutesCpAcquis += r.minutesCpAcquis || 0;
-      somme.salaireBrutCentimes += r.salaireBrutCentimes || 0;
+      /* CORRECTION B4 — LES SALAIRES AGRÉGÉS SONT CEUX QUI SONT DUS.
+         `agregerPeriode` totalisait les nets CONTRACTUELS. Sur une période
+         contenant un premier ou un dernier mois de contrat, la ligne
+         « Salaires nets » pouvait dépasser le « Total versé », lequel inclut
+         pourtant l'indemnité d'entretien. Le récapitulatif de période se
+         contredisait tout seul — et c'est la pièce que Maria sortira si un
+         désaccord remonte à plusieurs années.
+         `instantaneEnMinutes` garantit ces deux champs sur tous les
+         instantanés ; le repli reste, pour qu'un chemin oublié ne totalise
+         jamais zéro en silence. */
+      somme.salaireBrutCentimes += (r.salaireBrutProrataCentimes == null)
+        ? (r.salaireBrutCentimes || 0)
+        : r.salaireBrutProrataCentimes;
       /* Repli pour les instantanés d'avant le lot 17, que
          `instantaneEnMinutes` a déjà complétés — la double garde ne coûte
          rien et évite qu'un chemin oublié fasse silencieusement compter zéro
          dans l'assiette de l'indemnité. */
-      somme.brutDuCentimes += (r.brutDuCentimes == null)
-        ? Math.max(0, (r.salaireBrutCentimes || 0) - (r.retenueSansSoldeCentimes || 0))
-        : r.brutDuCentimes;
-      somme.salaireNetCentimes += r.salaireNetCentimes || 0;
+      somme.brutDuCentimes += brutDuCentimes(r);
+      somme.salaireNetCentimes += (r.salaireNetProrataCentimes == null)
+        ? (r.salaireNetCentimes || 0)
+        : r.salaireNetProrataCentimes;
       somme.totalAVerserCentimes += r.totalAVerserCentimes || 0;
 
       if (e.fige && r.prenomEnfant) {
@@ -880,6 +928,9 @@
       var dateEffet = (r.salaireDateEffet != null)
         ? r.salaireDateEffet
         : (e.salaire ? e.salaire.date_effet : null);
+      /* Le regroupement des barèmes lit les montants CONTRACTUELS, et c'est
+         voulu : un barème n'est pas proratisé, c'est le mois qui l'est. Deux
+         mois du même barème, dont l'un partiel, doivent rester regroupés. */
       var cle = dateEffet + '|' + (r.salaireBrutCentimes || 0) + '|' + (r.salaireNetCentimes || 0);
       if (!baremesParCle[cle]) {
         baremesParCle[cle] = {
@@ -938,7 +989,14 @@
   var POSTES_COMPARES = [
     { cle: 'joursPresence',        libelle: 'Jours de présence',              format: 'jours' },
     { cle: 'entretienCentimes',    libelle: 'Indemnité d’entretien',          format: 'euros' },
-    { cle: 'salaireNetCentimes',   libelle: 'Salaire net',                    format: 'euros' },
+    /* CORRECTION B4 — le poste comparé à la reclôture est le net RÉELLEMENT
+       DÛ. Comparer les nets contractuels tairait précisément l'écart qu'une
+       réouverture pour cause de prorata (§17.7) est censée faire apparaître.
+       `repli` couvre les instantanés d'avant le lot 17, qui n'ont jamais connu
+       le prorata : leur net contractuel EST leur net dû. Sans ce repli, la
+       première comparaison d'un vieux mois annoncerait « 0 € → 1 072 € ». */
+    { cle: 'salaireNetProrataCentimes', repli: 'salaireNetCentimes',
+      libelle: 'Salaire net',                                                 format: 'euros' },
     { cle: 'totalAVerserCentimes', libelle: 'Total à verser',                 format: 'euros' },
     { cle: 'minutesSupAcquises',   libelle: 'Heures supplémentaires du mois', format: 'minutes' },
     { cle: 'joursCongesDecomptes', libelle: 'Congés décomptés',               format: 'jours' },
@@ -958,6 +1016,51 @@
     { cle: 'compteurSortie.minutesSup',      libelle: 'Récupération restante',          format: 'minutes' }
   ];
 
+  /* CORRECTION B4 — LE NET ET LE BRUT DU MOIS, EN UN SEUL ENDROIT.
+
+     Le §17.7 fait du montant proratisé LE montant du mois. Ces deux lectures
+     ne calculent rien : elles choisissent le bon champ du résultat, et
+     replient sur le net contractuel pour les instantanés d'avant le lot 17,
+     qui n'ont jamais connu le prorata et dont le contractuel EST le dû.
+
+     Elles vivent ici et non dans les écrans parce que le repli répété six fois
+     est le repli qu'on oublie cinq fois — c'est exactement ce qui s'est passé :
+     un seul écran sur six l'appliquait. */
+  function netDuMois(resultat) {
+    var r = resultat || {};
+    return (r.salaireNetProrataCentimes == null)
+      ? (r.salaireNetCentimes || 0)
+      : r.salaireNetProrataCentimes;
+  }
+
+  /* Le brut RÉELLEMENT dû du mois : l'assiette du 1/80ᵉ (§17.8). Le repli
+     couvre les instantanés d'avant le lot 17, qui n'ont jamais connu le
+     prorata : brut contractuel moins la retenue de sans solde, déjà exprimée
+     en brut (RG-08).
+
+     CORRECTION C1 — cette formule existait en TROIS exemplaires : ici, dans
+     `agregerPeriode`, et dans l'export CSV. Trois copies d'une règle qui
+     décide d'une indemnité de rupture. */
+  function brutDuCentimes(resultat) {
+    var r = resultat || {};
+    if (r.brutDuCentimes != null) return r.brutDuCentimes;
+    return Math.max(0, (r.salaireBrutCentimes || 0) - (r.retenueSansSoldeCentimes || 0));
+  }
+
+  function brutDuMois(resultat) {
+    var r = resultat || {};
+    return (r.salaireBrutProrataCentimes == null)
+      ? (r.salaireBrutCentimes || 0)
+      : r.salaireBrutProrataCentimes;
+  }
+
+  /* Le mois est-il partiel, et dans quelle proportion ? Rend `null` quand le
+     contrat couvre le mois entier — l'écran n'a alors rien à dire. */
+  function proratOuNull(resultat) {
+    var p = resultat && resultat.prorata;
+    return (p && p.applique) ? p : null;
+  }
+
   /* Compare l'instantané déjà établi et celui qu'on s'apprête à écrire.
      Retourne UNIQUEMENT les postes qui diffèrent :
      [{ cle, libelle, format, ancien, nouveau }], dans l'ordre du document.
@@ -975,13 +1078,22 @@
     var ecarts = [];
     for (var i = 0; i < POSTES_COMPARES.length; i++) {
       var p = POSTES_COMPARES[i];
-      var a = valeurComparee(lire(ancien, p.cle));
-      var n = valeurComparee(lire(nouveau, p.cle));
+      var a = valeurComparee(lireAvecRepli(ancien, p));
+      var n = valeurComparee(lireAvecRepli(nouveau, p));
       if (a !== n) {
         ecarts.push({ cle: p.cle, libelle: p.libelle, format: p.format, ancien: a, nouveau: n });
       }
     }
     return ecarts;
+  }
+
+  /* Lecture d'un poste, avec son repli éventuel : un instantané produit par
+     une version antérieure de l'application n'a pas les mêmes champs, et un
+     champ absent doit être lu comme son équivalent d'alors, pas comme zéro. */
+  function lireAvecRepli(instantane, poste) {
+    var v = lire(instantane, poste.cle);
+    if (v == null && poste.repli) v = lire(instantane, poste.repli);
+    return v;
   }
 
   /* Lecture d'un poste, y compris imbriqué : 'compteurSortie.minutesSup'. */
@@ -1037,9 +1149,15 @@
     instantaneEnMinutes: instantaneEnMinutes,
     ecartsInstantanes: ecartsInstantanes,
     POSTES_COMPARES: POSTES_COMPARES,
+    /* §17.7 / correction B4 — le montant du mois, lu au bon endroit. */
+    netDuMois: netDuMois, brutDuMois: brutDuMois, proratOuNull: proratOuNull,
+    brutDuCentimes: brutDuCentimes,
+    /* Exportée pour être testable : c'est l'inverse littéral du chaînage, et
+       la correction C6 y ajoute un terme qu'aucun test ne pouvait voir. */
+    compteurEntreeDe: compteurEntreeDe,
     fenetre: fenetre,
     fenetreContrat: fenetreContrat,
-    contratCouvreLeMois: contratCouvreLeMois,
+    contratToucheLeMois: contratToucheLeMois,
     agregerPeriode: agregerPeriode,
     totaliserAgregats: totaliserAgregats,
     /* calendrier, partagé par les écrans */

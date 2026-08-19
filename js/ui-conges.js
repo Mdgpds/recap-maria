@@ -617,7 +617,7 @@
       Kit.ligne(l, f.contrat.prenom_enfant,
         Kit.joursCp(cp, mpjc(cond)) + ' de congés payés · ' +
         joursDeRecup(cond, sup) + ' de récupération',
-        { alerte: Kit.cpEstBas(cp, mpjc(cond)) });
+        { alerte: Kit.cpEstBas(cp, cond) });
     });
     p.appendChild(Kit.ce('div', 'sb q',
       'Les compteurs diffèrent car les contrats n’ont pas commencé en même temps.'));
@@ -636,10 +636,15 @@
     return (conditions && conditions.minutes_par_jour_conge) || 0;
   }
 
+  /* CORRECTION C1 DE LA RELECTURE — RG-05 NE SE RÉÉCRIT PAS ICI.
+     `Math.floor(minutes / parJour)` est la règle de conversion du moteur,
+     recopiée dans un écran. `Chaine.reservesEnJours` a précisément été créée
+     au lot 16 pour la porter — elle interroge `Engine.imputerConges`, la seule
+     fonction qui a le droit de dire combien de jours une réserve couvre. */
   function joursDeRecup(conditions, minutes) {
     var parJour = mpjc(conditions);
     if (!parJour) return Kit.heures(minutes);
-    var n = Math.floor(minutes / parJour);
+    var n = Chaine.reservesEnJours(conditions, { minutesSup: minutes }).joursSup;
     return Kit.jours(n) + ' (' + Kit.heures(minutes) + ')';
   }
 

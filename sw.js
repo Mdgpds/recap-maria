@@ -53,7 +53,15 @@
    d'un coup », Maria en choisirait cinq, et l'appui sur « Valider »
    appellerait une fonction qui n'existe pas dans le fichier servi. Le geste
    échouerait sans que rien n'explique pourquoi. */
-var CACHE = 'recap-lot18-confort-v1';
+/* CORRECTIONS DES RELECTURES DES LOTS 17 ET 18 — NOM DE CACHE CHANGÉ.
+
+   Onze fichiers changent, dont `js/engine.js`, `js/chaine-mois.js` et
+   `js/app.js`. Le cas à éviter est précis : `js/db.js` rafraîchi — qui ne
+   renumérote plus les avenants, parce que la base s'en charge — et
+   `js/app.js` resté en arrière, avec son cache de chaîne sans la date de fin.
+   Le téléphone de Maria ferait tourner un mélange dont chaque moitié est
+   correcte et dont l'ensemble ne l'est pas. */
+var CACHE = 'recap-correctifs-17-18-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

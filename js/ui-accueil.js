@@ -37,6 +37,9 @@
   'use strict';
 
   var Kit = global.Kit;
+  /* CORRECTION B4 — la chaîne, pour lire le montant DÛ d'un mois. Aucun calcul
+     n'entre ici : `netDuMois` choisit un champ, elle n'en produit pas. */
+  var Chaine = global.ChaineMois;
 
   /* `Kit.bouton(classe, onclick)` ne pose pas de libellé : ce raccourci évite
      de répéter trois lignes à chaque bouton de cet écran. */
@@ -301,7 +304,7 @@
       if (f.erreur || !f.entree) return;
       var cp = cpDisponible(f.entree);
       var parJour = mpjcDe(f.entree);
-      if (!Kit.cpEstBas(cp, parJour)) return;
+      if (!Kit.cpEstBas(cp, f.entree && f.entree.conditions)) return;
       nb++;
       tuile(corps, '⚠',
         f.contrat.prenom_enfant + ' n’a plus que ' + Kit.joursCp(cp, parJour) +
@@ -592,7 +595,15 @@
     var lignes = Kit.lines(p);
     Kit.ligne(lignes, 'Jours de présence', Kit.jours(r.joursPresence));
     Kit.ligne(lignes, 'Indemnité d’entretien', Kit.eur(r.entretienCentimes));
-    Kit.ligne(lignes, 'Salaire net', Kit.eur(r.salaireNetCentimes));
+    /* CORRECTION B4 — le net dû, pas le net contractuel. C'est l'écran qui
+       précède immédiatement la clôture : y annoncer un montant que le document
+       contredira dix secondes plus tard est le pire endroit pour le faire. */
+    Kit.ligne(lignes, 'Salaire net', Kit.eur(Chaine.netDuMois(r)));
+    var partiel = Chaine.proratOuNull(r);
+    if (partiel) {
+      Kit.ligne(lignes, 'Mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
+        partiel.joursDuMois + ' au contrat', '', { discret: true });
+    }
     Kit.ligne(lignes, 'Heures supplémentaires du mois', Kit.heures(r.minutesSupAcquises));
     Kit.ligne(lignes, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
     ctx.corps.appendChild(p);

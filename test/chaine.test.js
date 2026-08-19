@@ -172,16 +172,16 @@ cas.push({
 });
 
 cas.push({
-  nom: 'B1 — contratCouvreLeMois : mêmes bornes que listContratsPourMois',
+  nom: 'B1 — contratToucheLeMois : mêmes bornes que listContratsPourMois',
   fn: function () {
     var c = { date_debut: '2026-03-16', date_fin: '2026-03-15' };
-    egal(Chaine.contratCouvreLeMois({ date_debut: '2025-09-01', date_fin: '2026-03-15' }, 2026, 3), true,
+    egal(Chaine.contratToucheLeMois({ date_debut: '2025-09-01', date_fin: '2026-03-15' }, 2026, 3), true,
       'archivé le 15 du mois : le mois est couvert');
-    egal(Chaine.contratCouvreLeMois({ date_debut: '2025-09-01', date_fin: '2026-03-15' }, 2026, 4), false,
+    egal(Chaine.contratToucheLeMois({ date_debut: '2025-09-01', date_fin: '2026-03-15' }, 2026, 4), false,
       'mois suivant la fin : non couvert');
-    egal(Chaine.contratCouvreLeMois({ date_debut: '2026-03-31', date_fin: null }, 2026, 3), true,
+    egal(Chaine.contratToucheLeMois({ date_debut: '2026-03-31', date_fin: null }, 2026, 3), true,
       'commencé le dernier jour du mois : couvert');
-    egal(Chaine.contratCouvreLeMois({ date_debut: '2026-04-01', date_fin: null }, 2026, 3), false,
+    egal(Chaine.contratToucheLeMois({ date_debut: '2026-04-01', date_fin: null }, 2026, 3), false,
       'commencé le mois suivant : non couvert');
     egal(typeof c, 'object', 'garde-fou de lecture');
   }
@@ -289,7 +289,7 @@ cas.push({
     egal(e[1].format, 'euros', 'P4.format de l’entretien');
     egal(e[2].cle, 'totalAVerserCentimes', 'P4.puis le total');
     /* Un poste identique ne figure JAMAIS dans le tableau. */
-    egal(e.filter(function (x) { return x.cle === 'salaireNetCentimes'; }).length, 0,
+    egal(e.filter(function (x) { return x.cle === 'salaireNetProrataCentimes'; }).length, 0,
       'P4.le salaire net inchangé est absent');
   }
 });
@@ -305,7 +305,11 @@ cas.push({
       instantane({ net: 110000, total: 120000 })
     );
     egal(e.length, 2, 'P5.deux postes touchés');
-    egal(e[0].cle, 'salaireNetCentimes', 'P5.salaire net');
+    /* CORRECTION B4 DU LOT 17 : le poste comparé est le net RÉELLEMENT DÛ.
+       Ces deux instantanés n'ont pas de champ proratisé — ils datent d'avant
+       le lot 17 — et le repli sur `salaireNetCentimes` les rend comparables :
+       c'est exactement ce que la correction doit garantir. */
+    egal(e[0].cle, 'salaireNetProrataCentimes', 'P5.salaire net');
     egal(e[1].cle, 'totalAVerserCentimes', 'P5.total à verser');
     egal(e[0].ancien, 107200, 'P5.ancien net');
     egal(e[0].nouveau, 110000, 'P5.nouveau net');
@@ -324,7 +328,7 @@ cas.push({
        silence. Ajout délibéré, hors lettre de la spécification. */
     egal(Chaine.POSTES_COMPARES.length, 10, 'dix postes');
     egal(Chaine.POSTES_COMPARES.map(function (p) { return p.cle; }).join(','),
-      'joursPresence,entretienCentimes,salaireNetCentimes,totalAVerserCentimes,' +
+      'joursPresence,entretienCentimes,salaireNetProrataCentimes,totalAVerserCentimes,' +
       'minutesSupAcquises,joursCongesDecomptes,' +
       'imputation.minutesCpConsommees,imputation.minutesSupConsommees,' +
       'compteurSortie.minutesCpPris,compteurSortie.minutesSup',
@@ -333,9 +337,19 @@ cas.push({
     /* Les six premiers restent en tête, et dans l'ordre du document : l'écran
        des écarts se lit comme le document lui-même. */
     egal(Chaine.POSTES_COMPARES.slice(0, 6).map(function (p) { return p.cle; }).join(','),
-      'joursPresence,entretienCentimes,salaireNetCentimes,totalAVerserCentimes,' +
+      'joursPresence,entretienCentimes,salaireNetProrataCentimes,totalAVerserCentimes,' +
       'minutesSupAcquises,joursCongesDecomptes',
       'les six postes du document restent en tête, dans l’ordre');
+
+    /* CORRECTION B4 — le poste du salaire porte son repli. Sans lui, la
+       première comparaison d'un mois clôturé avant le lot 17 annoncerait
+       « 0 € → 1 072 € » et ferait croire à une correction qui n'a pas eu
+       lieu. */
+    var posteNet = Chaine.POSTES_COMPARES.filter(function (p) {
+      return p.cle === 'salaireNetProrataCentimes';
+    })[0];
+    egal(posteNet.repli, 'salaireNetCentimes',
+      'le salaire net comparé se replie sur le net contractuel des vieux instantanés');
 
     /* Chaque poste sait comment il se présente : l'écran met en forme, il ne
        décide pas de ce qui est comparé. `cp` = dixièmes de jour. */
@@ -446,6 +460,75 @@ cas.push({
     var e = Chaine.ecartsInstantanes(ancienPartiel, instantane());
     egal(e.length > 0, true, 'écart réel signalé malgré le poste manquant');
     egal(e[0].ancien, 0, 'poste manquant lu comme 0');
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* CORRECTIONS DE LA RELECTURE DU LOT 17                                */
+/* ------------------------------------------------------------------ */
+
+cas.push({
+  nom: 'C6 — le compteur d’entrée d’un mois figé retranche les congés à l’heure',
+  fn: function () {
+    /* Depuis le §17.6, la sortie vaut `entrée + minutesCpConsommees +
+       minutesEcartSurCp`. Le dernier terme n'était jamais défait : un mois
+       clôturé portant une libération d'1h30 imputée sur les congés payés
+       affichait « 9 j 5h30 » au 1er du mois au lieu de « 10 j ». */
+    var mpjc = 540;
+    var entree = Chaine.compteurEntreeDe({
+      minutesSupAcquises: 0,
+      minutesCpAcquis: 0,
+      minutesEcartSurCp: 90,                       // 1h30 de congé à l'heure
+      imputation: { minutesSupConsommees: 0, minutesCpConsommees: 0 },
+      compteurSortie: { minutesSup: 0, minutesCpAcquis: 10 * mpjc, minutesCpPris: 90 }
+    }, null);
+    egal(entree.minutesCpPris, 0, 'aucun congé payé pris à l’entrée du mois');
+    egal(entree.minutesCpAcquis - entree.minutesCpPris, 10 * mpjc,
+      'le disponible d’entrée vaut bien 10 jours pleins');
+  }
+});
+
+cas.push({
+  nom: 'C6 — un instantané d’avant le lot 17 n’est pas modifié par la correction',
+  fn: function () {
+    /* Ces instantanés ne portent pas `minutesEcartSurCp` : le terme vaut zéro
+       et le calcul est exactement celui d'avant. */
+    var entree = Chaine.compteurEntreeDe({
+      minutesSupAcquises: 600,
+      minutesCpAcquis: 1350,
+      imputation: { minutesSupConsommees: 0, minutesCpConsommees: 540 },
+      compteurSortie: { minutesSup: 600, minutesCpAcquis: 1350, minutesCpPris: 540 }
+    }, null);
+    egal(entree.minutesSup, 0, 'récupération d’entrée');
+    egal(entree.minutesCpAcquis, 0, 'congés acquis d’entrée');
+    egal(entree.minutesCpPris, 0, 'congés pris d’entrée');
+  }
+});
+
+cas.push({
+  nom: 'B4 — le net et le brut du mois sont ceux qui sont DUS',
+  fn: function () {
+    egal(Chaine.netDuMois({ salaireNetCentimes: 78000, salaireNetProrataCentimes: 42545 }),
+      42545, 'un mois partiel rend le net proratisé');
+    egal(Chaine.netDuMois({ salaireNetCentimes: 78000 }), 78000,
+      'un instantané d’avant le lot 17 rend son net contractuel');
+    egal(Chaine.brutDuMois({ salaireBrutCentimes: 100000, salaireBrutProrataCentimes: 54545 }),
+      54545, 'même règle pour le brut');
+    egal(Chaine.proratOuNull({ prorata: { applique: false } }), null,
+      'un mois entier n’a rien à dire');
+    egal(Chaine.proratOuNull({ prorata: { applique: true, joursCouverts: 12, joursDuMois: 22 } })
+      .joursCouverts, 12, 'un mois partiel porte son quotient');
+  }
+});
+
+cas.push({
+  nom: 'C1 — le brut réellement dû se lit à un seul endroit',
+  fn: function () {
+    egal(Chaine.brutDuCentimes({ brutDuCentimes: 4242 }), 4242, 'valeur portée telle quelle');
+    egal(Chaine.brutDuCentimes({ salaireBrutCentimes: 100000, retenueSansSoldeCentimes: 6336 }),
+      93664, 'instantané d’avant le lot 17 : le repli reconstitue exactement');
+    egal(Chaine.brutDuCentimes({ salaireBrutCentimes: 1000, retenueSansSoldeCentimes: 9000 }),
+      0, 'jamais négatif');
   }
 });
 

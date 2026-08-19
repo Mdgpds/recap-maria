@@ -573,15 +573,15 @@
 
     if (jours.length) {
       pied.appendChild(Kit.ce('div', 'sb-ef', effetSelection(jours, vue.selection.marque)));
+      /* CORRECTION C1/C2 DU LOT 18 — l'avertissement couvre désormais les
+         sept colonnes qu'un marquage détruit, pas trois. La note, elle,
+         survit : elle n'a plus à être annoncée. */
       var perdues = journeesManuellesEcrasees(jours);
-      if (perdues.length && vue.selection.marque !== 'presence') {
-        pied.appendChild(Kit.ce('div', 'sb-wa',
-          'Une saisie manuelle sera remplacée : ' + libelleJours(perdues) +
-          '. Ces journées portent des heures ou une indemnité saisies à la main.'));
-      } else if (perdues.length) {
+      if (perdues.length) {
         pied.appendChild(Kit.ce('div', 'sb-wa',
           'Une saisie manuelle sera effacée : ' + libelleJours(perdues) +
-          '. Ces journées portent des heures ou une indemnité saisies à la main.'));
+          '. Ces journées portent des heures, une indemnité ou un écart d’horaire ' +
+          'saisis à la main. Vos notes, elles, sont conservées.'));
       }
     }
 
@@ -600,15 +600,40 @@
   /* Les journées de CE contrat que le marquage va écraser : une
      familiarisation, des heures réelles ou une indemnité saisies à la main.
      Même prédicat que `journeesEcrasees`, appliqué au contrat courant. */
+  /* CORRECTION C1 ET C2 DE LA RELECTURE DU LOT 18 — LE PRÉDICAT COUVRE TOUT
+     CE QU'UN MARQUAGE GROUPÉ DÉTRUIT, pas trois colonnes sur sept.
+
+     Il ne regardait que la familiarisation, les heures réelles et l'indemnité
+     saisies à la main. Il ignorait les trois colonnes d'ajustement du lot 12
+     et les quatre de l'écart d'horaire du lot 17 — c'est-à-dire précisément ce
+     que la correction de B1 efface désormais. Maria n'était prévenue de rien.
+
+     La NOTE n'y figure pas, et c'est voulu : depuis la correction de B1 elle
+     survit au marquage. Avertir de la perte d'une donnée qui ne se perd plus
+     serait aussi faux que de se taire sur celles qui se perdent. */
   function journeesManuellesEcrasees(jours) {
     var out = [];
     jours.forEach(function (d) {
       var l = (vue.journees || {})[d];
       if (!l) return;
       if (l.type === 'familiarisation' ||
-          l.minutes_reelles != null || l.entretien_centimes != null) out.push(d);
+          l.minutes_reelles != null || l.entretien_centimes != null ||
+          (l.minutes_sup_exceptionnelles || 0) > 0 ||
+          (l.minutes_sup_renoncees || 0) > 0 ||
+          l.sup_dues_override != null ||
+          l.ecart_minutes != null) out.push(d);
     });
     return out;
+  }
+
+  /* Les journées d'une sélection qui portent une NOTE. Elles ne peuvent pas
+     passer par la suppression, qui détruirait la ligne entière — donc la note
+     avec (correction C2). */
+  function journeesAvecNote(jours) {
+    return jours.filter(function (d) {
+      var l = (vue.journees || {})[d];
+      return !!(l && l.commentaire);
+    });
   }
 
   function libelleJours(jours) {
@@ -658,7 +683,21 @@
     var retour = { contrats: [c.id], jours: jours };
 
     if (marque === 'presence') {
-      ecrire(global.DB.supprimerJournees(c.id, jours), bouton,
+      /* CORRECTION C2 DE LA RELECTURE DU LOT 18 — LA NOTE SURVIT AU RETOUR À
+         LA PRÉSENCE.
+
+         La suppression détruit la ligne entière : la note avec. Les journées
+         annotées passent donc par une écriture qui pose `type = 'presence'`
+         et remet les ajustements à plat SANS toucher au commentaire. Pour le
+         moteur, une journée de présence sans ajustement et une journée sans
+         ligne se calculent à l'identique : l'effet annoncé reste celui obtenu
+         (§18.1 A2). */
+      var annotees = journeesAvecNote(jours);
+      var ordinaires = jours.filter(function (d) { return annotees.indexOf(d) === -1; });
+      var gestes = [];
+      if (ordinaires.length) gestes.push(global.DB.supprimerJournees(c.id, ordinaires));
+      if (annotees.length) gestes.push(global.DB.marquerJournees(c.id, annotees, 'presence'));
+      ecrire(Promise.all(gestes), bouton,
         jours.length > 1 ? jours.length + ' journées enregistrées' : 'Journée enregistrée',
         retour);
       return;
@@ -840,7 +879,20 @@
         vue.journees).length;
       Kit.ligne(l, 'Jours de présence', r.joursPresence + ' j sur ' + travailles);
     }
-    Kit.ligne(l, 'Salaire net', Kit.eur(r.salaireNetCentimes));
+    /* CORRECTION B4 DE LA RELECTURE DU LOT 17 — LE NET AFFICHÉ EST LE NET DÛ.
+       Cet écran montrait le net CONTRACTUEL au-dessus d'un total qui, lui,
+       était proratisé : 780,00 € de salaire net et 485,45 € à verser sur le
+       même mois, sans un mot pour expliquer l'écart. Et le document remis à la
+       famille annonçait 425,45 €. Deux écrans du même mois se contredisaient
+       de 354,55 €. */
+    Kit.ligne(l, 'Salaire net', Kit.eur(Chaine.netDuMois(r)));
+    var partiel = Chaine.proratOuNull(r);
+    if (partiel) {
+      /* La même phrase que sur le document : un montant proratisé sans son
+         quotient est indéfendable. */
+      Kit.ligne(l, 'Mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
+        partiel.joursDuMois + ' au contrat', '', { discret: true });
+    }
     Kit.ligne(l, libelleEntretien(r), Kit.eur(r.entretienCentimes));
 
     if (r.joursCongesDecomptes > 0) {
@@ -967,26 +1019,35 @@
     var parJour = mpjc();
     var enJours = Chaine.reservesEnJours(cond(), cs);
 
-    var cp = Kit.cpDisponible(cs);
-    var bas = Kit.cpEstBas(cp, parJour);
+    /* CORRECTION B5 — LE SOLDE AFFICHÉ EST LE SOLDE RÉEL, SIGNE COMPRIS.
+       Ce panneau lisait les valeurs bornées à zéro : un compteur à −9 h
+       s'affichait « 0h00 », pendant que le document remis à la famille
+       montrait le vrai solde. §17.5 A4 : « le compteur peut être négatif, et
+       l'écran le dit ». */
+    var cp = Kit.cpSolde(cs);
+    var bas = cp >= 0 && Kit.cpEstBas(cp, cond());
     compteur(p, {
       titre: 'Congés payés',
-      valeur: Kit.joursCp(cp, parJour),
-      pct: pourcent(cp, BARRE_CP_EN_JOURS * parJour),
-      note: bas
-        ? 'Réserve basse — un congé d’été passerait en partie sans solde'
-        : 'sur 30 jours ouvrables acquis par an',
-      bas: bas
+      valeur: cp < 0 ? '− ' + Kit.joursCp(-cp, parJour) : Kit.joursCp(cp, parJour),
+      pct: pourcent(Math.max(0, cp), BARRE_CP_EN_JOURS * parJour),
+      note: cp < 0
+        ? 'Solde négatif — signalez-le : des congés ont été décomptés au-delà de vos droits'
+        : (bas
+          ? 'Réserve basse — un congé d’été passerait en partie sans solde'
+          : 'sur 30 jours ouvrables acquis par an'),
+      bas: bas || cp < 0
     });
 
-    var minutes = Kit.supDisponible(cs);
+    var minutes = Kit.supSolde(cs);
     compteur(p, {
       titre: 'Récupération',
-      valeur: Kit.heures(minutes),
-      pct: pourcent(minutes, BARRE_RECUP_EN_JOURS * parJour),
-      note: enJours.joursSup + ' jour' + (enJours.joursSup > 1 ? 's' : '') + ' de congé — ' +
-            Kit.duree(parJour) + ' accumulées = 1 jour',
-      bas: false
+      valeur: minutes < 0 ? '− ' + Kit.heures(-minutes) : Kit.heures(minutes),
+      pct: pourcent(Math.max(0, minutes), BARRE_RECUP_EN_JOURS * parJour),
+      note: minutes < 0
+        ? 'Vous devez ce temps : il se rattrapera sur vos prochaines heures supplémentaires'
+        : enJours.joursSup + ' jour' + (enJours.joursSup > 1 ? 's' : '') + ' de congé — ' +
+          Kit.duree(parJour) + ' accumulées = 1 jour',
+      bas: minutes < 0
     });
 
     /* LOT 18 §18.6 — DEVANT DEUX RÉSERVES, LAQUELLE SERA CONSOMMÉE ?
@@ -1441,6 +1502,16 @@
      lui-même referait la règle une deuxième fois, sur des horaires qui
      changent d'un avenant à l'autre. */
 
+  /* Le signe que chaque événement DOIT produire. C'est la même règle que la
+     contrainte `journee_ecart_signe_coherent` de la migration `014` : sans
+     elle, « j'ai libéré plus tôt » pourrait AJOUTER des minutes au compteur de
+     Maria, et le document serait indéfendable. */
+  var SIGNE_ATTENDU = {
+    retard_parent: 1,
+    liberation_anticipee: -1,
+    arrivee_decalee: -1
+  };
+
   var EVENEMENTS_ECART = [
     ['', 'Rien à signaler'],
     ['retard_parent', 'Un parent est venu en retard'],
@@ -1585,6 +1656,31 @@
         return;
       }
 
+      /* CORRECTION DE LA REMARQUE 5 DE LA RELECTURE DU LOT 17 — UN ÉVÉNEMENT
+         DONT LE SIGNE NE CORRESPOND PAS EST REFUSÉ ICI, EN FRANÇAIS.
+
+         Le sélecteur propose tous les quarts d'heure de 5h00 à 22h00. Une
+         « arrivée décalée » saisie AVANT le début d'accueil produit un écart
+         POSITIF, qui alimenterait la récupération sous le libellé « j'ai
+         demandé qu'on me l'amène plus tard » — l'inverse de ce que Maria
+         déclare. Le cas est atteignable par simple erreur de saisie.
+
+         La base le refuse déjà (`journee_ecart_signe_coherent`), mais elle le
+         refuse en fin de course, avec un message de contrainte. L'écran doit
+         le dire AVANT, et dire quoi corriger. */
+      var attendu = SIGNE_ATTENDU[evenementChoisi()];
+      if (attendu && ((attendu > 0 && minutes < 0) || (attendu < 0 && minutes > 0))) {
+        effet.appendChild(Kit.warnbox('Cette heure ne correspond pas à ce que vous déclarez',
+          attendu < 0
+            ? ' Une arrivée décalée à votre demande se saisit APRÈS l’heure d’arrivée ' +
+              'habituelle, et une libération anticipée AVANT l’heure de fin. Vérifiez ' +
+              'l’heure, ou changez ce que vous déclarez.'
+            : ' Un retard à la reprise se saisit APRÈS l’heure de fin habituelle. ' +
+              'Vérifiez l’heure, ou changez ce que vous déclarez.'));
+        majBouton(true);
+        return;
+      }
+
       /* §17.6 — LA DESTINATION, seulement pour un écart NÉGATIF. Un retard de
          parent va toujours à la récupération : il n'y a rien à choisir. */
       if (minutes < 0) {
@@ -1604,7 +1700,10 @@
         ecart_impute_sur: etat.destination
       };
       var detail = Engine.detailSupDuJour(simule, conditions);
-      var totalJour = detail.base + detail.ajoutees - detail.renoncees + detail.ecartSurRecuperation;
+      /* CORRECTION C1 DE LA RELECTURE — c'était `minutesSupDuJour` recopiée
+         mot pour mot dans un écran, alors que le moteur l'exporte. Une règle
+         écrite deux fois est une règle qui divergera. */
+      var totalJour = Engine.minutesSupDuJour(simule, conditions);
 
       var phrase = Kit.ce('div');
       phrase.appendChild(Kit.ce('b', null, 'Ce jour : ' + Kit.heures(totalJour)));
@@ -1615,6 +1714,27 @@
       if (detail.minutesSurCp > 0) {
         effet.appendChild(Kit.ce('div', 'sb',
           Kit.duree(detail.minutesSurCp) + ' seront retirées de vos congés payés.'));
+        /* CORRECTION C5 DE LA RELECTURE DU LOT 17 — CE QUI EST RETIRÉ PEUT NE
+           PAS EXISTER.
+
+           `minutesEcartSurCp` s'ajoute inconditionnellement à `minutesCpPris` :
+           rien, ni dans le moteur ni ici, ne le confronte au disponible. Le
+           solde passait sous zéro, et le bornage d'affichage le rendait
+           indétectable — « 0 j » là où il manquait 1h45.
+
+           LE §17.6 NE TRANCHE PAS ce qui doit arriver dans ce cas : refuser,
+           basculer le surplus en sans solde, ou l'autoriser en négatif comme
+           la récupération. La question est remontée à Maria. En attendant,
+           l'application ne décide pas à sa place — mais elle ne se tait pas
+           non plus : elle DIT ce qui va se passer, avant qu'elle n'appuie. */
+        var dispoCp = Kit.cpSolde(vue.entree.resultat.compteurSortie);
+        if (detail.minutesSurCp > dispoCp) {
+          effet.appendChild(Kit.warnbox('Vos congés payés ne couvrent pas ces minutes',
+            ' Il vous en reste ' + Kit.duree(Math.max(0, dispoCp)) + ' sur ce contrat, ' +
+            'et ' + Kit.duree(detail.minutesSurCp) + ' seraient retirées. Le solde ' +
+            'passerait en négatif. Choisissez plutôt votre récupération ou le sans ' +
+            'solde si ce n’est pas ce que vous voulez.'));
+        }
       }
       if (detail.minutesSansSolde > 0) {
         var retenue = (conditions.brut_mensuel_centimes != null)
@@ -1627,7 +1747,11 @@
               'n’est pas renseignée.'));
       }
       if (detail.ecartSurRecuperation < 0) {
-        var apres = Kit.supDisponible(vue.entree.resultat.compteurSortie) + detail.ecartSurRecuperation;
+        /* CORRECTION B5 — la dette annoncée partait d'un solde BORNÉ à zéro :
+           sur un compteur déjà à −9 h, l'écran annonçait « vous devrez 1h00 »
+           au lieu de 10h00. L'erreur valait exactement la dette déjà
+           accumulée, et elle n'était pas bornée. */
+        var apres = Kit.supSolde(vue.entree.resultat.compteurSortie) + detail.ecartSurRecuperation;
         if (apres < 0) {
           effet.appendChild(Kit.ce('div', 'sb',
             'Votre récupération passera en négatif : vous devrez ' +
@@ -1644,7 +1768,11 @@
     });
     corps.appendChild(b);
 
-    function majBouton() {
+    /* `incoherent` : le signe déclaré ne correspond pas à l'événement
+       (remarque 5). L'enregistrement est refusé, et la phrase au-dessus dit
+       quoi corriger — un bouton mort sans explication ferait croire à une
+       panne. */
+    function majBouton(incoherent) {
       var evt = evenementChoisi();
       var minutes = minutesDeclarees();
       if (!evt) {
@@ -1653,7 +1781,7 @@
         return;
       }
       b.textContent = 'Enregistrer';
-      b.disabled = (minutes === null || minutes === 0);
+      b.disabled = (minutes === null || minutes === 0 || incoherent === true);
     }
 
     selEvt.select.addEventListener('change', redessiner);
@@ -1865,12 +1993,23 @@
     Object.keys(vue.journees).forEach(function (k) {
       if (!vises[k]) lignes.push(vue.journees[k]);
     });
+    /* La ligne simulée est EXACTEMENT celle que `marquerJournees` écrira :
+       type changé, ajustements remis à plat. C'est ce qui rend l'aperçu et le
+       résultat identiques par construction (§18.1 A2). Le commentaire n'entre
+       dans aucun calcul : son sort ne change rien ici. */
     forcees.forEach(function (f) {
       if (f.type == null) return;            // présence : aucune ligne
       lignes.push({
         contrat_id: vue.contrat.id, jour: f.jour, type: f.type,
         minutes_reelles: f.extra ? f.extra.minutes_reelles : null,
-        entretien_centimes: f.extra ? f.extra.entretien_centimes : null
+        entretien_centimes: f.extra ? f.extra.entretien_centimes : null,
+        minutes_sup_exceptionnelles: 0,
+        minutes_sup_renoncees: 0,
+        sup_dues_override: null,
+        ecart_minutes: null,
+        ecart_evenement: null,
+        ecart_heure_reelle: null,
+        ecart_impute_sur: null
       });
     });
     /* LOT 17 §17.3 — LES CONDITIONS DU MOIS, telles que la chaîne les a
@@ -2083,13 +2222,23 @@
     var gestes = avant.map(function (x) {
       if (!x.ligne) return global.DB.supprimerJournee(x.contratId, x.jour);
       var l = x.ligne;
+      /* CORRECTION C1 DE LA RELECTURE DU LOT 18 — « ANNULER » REND TOUT.
+         Les quatre colonnes de l'écart d'horaire (lot 17) manquaient : une
+         déclaration « j'ai libéré plus tôt », effacée par un marquage groupé,
+         ne revenait pas. Un bouton d'annulation qui ne rend qu'une partie de
+         ce qu'il a défait est pire qu'aucun bouton : il fait croire que
+         l'affaire est réglée. */
       return global.DB.enregistrerJournee({
         contrat_id: x.contratId, jour: x.jour, type: l.type,
         minutes_reelles: l.minutes_reelles, entretien_centimes: l.entretien_centimes,
-        commentaire: l.commentaire,
+        commentaire: l.commentaire == null ? null : l.commentaire,
         minutes_sup_exceptionnelles: l.minutes_sup_exceptionnelles,
         minutes_sup_renoncees: l.minutes_sup_renoncees,
-        sup_dues_override: l.sup_dues_override
+        sup_dues_override: l.sup_dues_override,
+        ecart_minutes: l.ecart_minutes == null ? null : l.ecart_minutes,
+        ecart_evenement: l.ecart_evenement == null ? null : l.ecart_evenement,
+        ecart_heure_reelle: l.ecart_heure_reelle == null ? null : l.ecart_heure_reelle,
+        ecart_impute_sur: l.ecart_impute_sur == null ? null : l.ecart_impute_sur
       });
     });
     return Promise.all(gestes)

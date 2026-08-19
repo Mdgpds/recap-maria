@@ -488,8 +488,39 @@
      pas des soldes qui n'ont pas de sens.
 
      Un échec n'est pas mémorisé : on doit pouvoir réessayer. */
+  /* CORRECTION B3 DE LA RELECTURE DU LOT 17 — LA CLÉ PORTE LES BORNES DU
+     CONTRAT, PAS SEULEMENT SON IDENTIFIANT.
+
+     Ce qui se passait. L'écran de fin de contrat copie le contrat, y pose la
+     date de fin SAISIE, et demande la chaîne. La clé ne retenant que
+     `contrat.id` et le mois, deux choses en découlaient, toutes deux graves :
+
+     1. Recalculer après avoir corrigé la date rendait les chiffres de la
+        PREMIÈRE date, sous un titre qui annonçait la seconde. Aucun signal.
+     2. Pire : la chaîne SIMULÉE restait en cache sous la clé du contrat RÉEL.
+        L'espace de l'enfant, ouvert ensuite, affichait un mois amputé — « 4 j
+        de présence sur 22 », « total à verser 189,09 € » au lieu de 1 040,00 €.
+        Et l'Accueil propose la clôture juste à côté. Un mois clôturé ne se
+        recalcule jamais : le document serait parti chez la famille avec ce
+        chiffre, définitivement.
+
+     C'était le seul chemin trouvé dans le lot 17 par lequel un chiffre faux
+     pouvait devenir irréversible. Avant le lot 17 ce code appelait
+     `Chaine.mois1`, qui recalculait à chaque fois : c'est le cache qui a
+     introduit le défaut, et c'est donc sa clé qui le corrige.
+
+     Les bornes sont ce que le moteur lit sur `contrat` — et depuis le §17.2,
+     les SEULES choses qu'il y lise. Deux contrats de même identifiant mais de
+     bornes différentes sont, pour la chaîne, deux contrats différents. */
+  function cleSerie(contrat, cible) {
+    return contrat.id +
+      '|' + (contrat.date_debut || '') +
+      '|' + (contrat.date_fin || '') +
+      '|' + Chaine.cleMois(cible.annee, cible.mois);
+  }
+
   function serie(contrat, cible) {
-    var cle = contrat.id + '|' + Chaine.cleMois(cible.annee, cible.mois);
+    var cle = cleSerie(contrat, cible);
     if (!etat.series[cle]) {
       var depuis = Chaine.moisDeDate(contrat.date_debut);
       etat.series[cle] = Chaine.serie(contrat, cible, { depuis: depuis }).catch(function (e) {

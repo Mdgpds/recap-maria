@@ -1622,7 +1622,8 @@
           (r.statut === 'fige' ? ' — clôturé' : ' — en cours'));
         out.push('    Jours de présence      : ' + (v.joursPresence || 0));
         out.push('    Indemnité d’entretien  : ' + Kit.eur(v.entretienCentimes || 0));
-        out.push('    Salaire net            : ' + Kit.eur(v.salaireNetCentimes || 0));
+        /* CORRECTION B4 — le net DÛ, celui qui figure sur le document. */
+        out.push('    Salaire net            : ' + Kit.eur(Chaine.netDuMois(v)));
         out.push('    Total à verser         : ' + Kit.eur(v.totalAVerserCentimes || 0));
         out.push('    Heures supplémentaires : ' + Kit.heures(v.minutesSupAcquises || 0));
         out.push('    Congés décomptés       : ' + (v.joursCongesDecomptes || 0) + ' j ouvrables');
@@ -1905,7 +1906,11 @@
       lignes.push([
         csv(c.prenom_enfant), csv((c.famille && c.famille.nom) || ''),
         r.annee, r.mois, r.statut === 'fige' ? 'clôturé' : 'en cours',
-        v.joursPresence || 0, v.entretienCentimes || 0, v.salaireNetCentimes || 0,
+        /* CORRECTION B4 — `salaire_net_centimes` est le net DÛ du mois, celui
+           du document. Le net CONTRACTUEL a sa propre colonne plus loin,
+           `net_mensuel_centimes` : les deux se lisent, et ne se confondent
+           plus. */
+        v.joursPresence || 0, v.entretienCentimes || 0, Chaine.netDuMois(v),
         v.totalAVerserCentimes || 0, v.minutesSupAcquises || 0, v.joursCongesDecomptes || 0,
         a.numero == null ? '' : a.numero,
         csv(a.date_effet || ''),
@@ -1924,11 +1929,9 @@
         v.salaireNetCentimes == null ? '' : v.salaireNetCentimes,
         pro.joursCouverts == null ? '' : pro.joursCouverts,
         pro.joursDuMois == null ? '' : pro.joursDuMois,
-        /* Les instantanés d'avant le lot 17 ne portent pas `brutDuCentimes` :
-           ils n'ont jamais connu le prorata, et leur brut dû se reconstitue
-           exactement (brut contractuel moins la retenue de sans solde). */
-        v.brutDuCentimes != null ? v.brutDuCentimes
-          : Math.max(0, (v.salaireBrutCentimes || 0) - (v.retenueSansSoldeCentimes || 0)),
+        /* CORRECTION C1 — la troisième copie de la règle du §17.8 a disparu :
+           le brut dû se lit là où il est défini, dans la chaîne. */
+        Chaine.brutDuCentimes(v),
         csv(dep.date_reference || ''),
         dep.minutes_sup == null ? '' : dep.minutes_sup,
         dep.minutes_cp_acquis == null ? '' : dep.minutes_cp_acquis,

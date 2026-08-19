@@ -137,11 +137,13 @@
 
          Les instantanés d'avant le lot 17 ne portent pas `salaireNetProrata` :
          ils n'ont jamais connu le prorata, et leur net contractuel EST leur net
-         du mois. Le repli est donc exact, pas approximatif. */
-      ['Salaire net', Kit.eur(r.salaireNetProrataCentimes != null
-        ? r.salaireNetProrataCentimes : r.salaireNetCentimes)],
-      ['Salaire brut correspondant', Kit.eur(r.salaireBrutProrataCentimes != null
-        ? r.salaireBrutProrataCentimes : r.salaireBrutCentimes), { doux: true }]
+         du mois. Le repli est donc exact, pas approximatif.
+
+         CORRECTION B4 — ce repli vivait ICI, et ici seulement : les cinq
+         autres écrans lisaient le net contractuel. Il est désormais dans
+         `Chaine.netDuMois`, appelée par tous. */
+      ['Salaire net', Kit.eur(Chaine.netDuMois(r))],
+      ['Salaire brut correspondant', Kit.eur(Chaine.brutDuMois(r)), { doux: true }]
     ];
     if (r.prorata && r.prorata.applique) {
       /* La phrase qui rend le chiffre vérifiable. Un montant proratisé sans son
@@ -239,20 +241,41 @@
      parent : une déduction sur les congés payés ou en sans solde ne se lit pas
      comme une déduction sur la récupération, et le sans-solde apparaît en plus
      dans la retenue. */
-  var LIBELLE_EVENEMENT_ECART = {
+  var LIBELLE_DESTINATION_ECART = {
     recuperation: 'déduite de ma récupération',
     conges_payes: 'déduite de mes congés payés',
     sans_solde: 'passée en sans solde'
   };
 
+  /* CORRECTION DE LA REMARQUE 4 DE LA RELECTURE DU LOT 17 — LA PHRASE NOMME
+     L'ÉVÉNEMENT.
+
+     La spécification écrit « dont 1 h 30 déduite — LIBÉRATION ANTICIPÉE du
+     17 novembre ». Le document écrivait la DESTINATION : « déduite de ma
+     récupération ». Une libération anticipée et une arrivée décalée à la
+     demande de Maria donnaient donc la même phrase, alors que ce sont deux
+     gestes différents — et c'est le geste, pas la poche, qui explique au
+     parent pourquoi le temps a bougé.
+
+     La destination reste dite quand elle change quelque chose pour lui : une
+     déduction en sans solde apparaît aussi dans la retenue. */
+  var LIBELLE_EVENEMENT_ECART = {
+    liberation_anticipee: 'libération anticipée',
+    arrivee_decalee: 'arrivée décalée à ma demande',
+    retard_parent: 'retard à la reprise'
+  };
+
   function libelleEcartHoraire(e) {
     var quand = ' du ' + Kit.jourLong(e.jour).toLowerCase();
+    var evenement = LIBELLE_EVENEMENT_ECART[e.evenement] || null;
     if (e.minutes > 0) {
-      return 'Dont ' + Kit.heures(e.minutes) + ' de garde en plus' + quand;
+      return 'Dont ' + Kit.heures(e.minutes) + ' de garde en plus' + quand +
+        (evenement ? ' — ' + evenement : '');
     }
-    var suffixe = LIBELLE_EVENEMENT_ECART[e.imputeSur] || '';
+    var destination = LIBELLE_DESTINATION_ECART[e.imputeSur] || '';
     return 'Dont ' + Kit.heures(-e.minutes) + ' que je n’ai pas gardée' + quand +
-      (suffixe ? ' — ' + suffixe : '');
+      (evenement ? ' — ' + evenement : '') +
+      (destination ? ', ' + destination : '');
   }
 
   /* Même mise en forme que l'historique du lot 13 : « 31 août 2026 à 18h42 ».

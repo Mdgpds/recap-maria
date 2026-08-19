@@ -492,4 +492,77 @@ definir('§16.8 — joursOuvrablesParMois donne la part d’une période à chev
   egal(t[1].cle, '2026-08', 'puis août');
 });
 
+/* ------------------------------------------------------------------ */
+/* CORRECTION C1 DE LA RELECTURE — LE TOTAL DE FIN DE CONTRAT           */
+/* ------------------------------------------------------------------ */
+
+definir('C1 — « À régler en plus du dernier mois » est calculé par le moteur', function () {
+  var s = Engine.soldeFinContrat({
+    brutMensuelCentimes: 137289,
+    minutesSupSolde: 600,
+    coefficient: 1.5,
+    indemnite: { due: true, indemniteCentimes: 67521 }
+  });
+  egal(s.chiffrable, true, 'chiffrable');
+  egal(s.minutesSupPayees, 600, 'les 600 minutes sont payées');
+  egal(s.minutesDues, 0, 'rien n’est dû par Maria');
+  egal(s.montantSupCentimes, Engine.montantCentimes(137289, 600, 1.5),
+    'exactement RG-13, la formule du cas T6');
+  egal(s.totalARegler, s.montantSupCentimes + 67521,
+    'le total est la somme des deux postes, faite une seule fois');
+});
+
+definir('C1 — un solde d’heures négatif n’est pas déduit, il est signalé', function () {
+  /* §17.5 laisse le compteur passer sous zéro ; ce qu'on en fait en fin de
+     contrat est une question ouverte pour Maria. Déduire d'office
+     trancherait à sa place, sur un chiffre qui part chez une famille. */
+  var s = Engine.soldeFinContrat({
+    brutMensuelCentimes: 137289,
+    minutesSupSolde: -540,
+    coefficient: 1.5,
+    indemnite: { due: true, indemniteCentimes: 10000 }
+  });
+  egal(s.minutesSupPayees, 0, 'aucune heure payée');
+  egal(s.montantSupCentimes, 0, 'aucun montant d’heures');
+  egal(s.minutesDues, 540, 'la dette est rendue, pour que l’écran la DISE');
+  egal(s.totalARegler, 10000, 'le total ne retranche rien');
+});
+
+definir('C1 — sans rémunération connue, rien n’est chiffré (et le zéro n’est pas rendu)', function () {
+  var s = Engine.soldeFinContrat({
+    brutMensuelCentimes: null, minutesSupSolde: 600, coefficient: 1.5,
+    indemnite: { due: false, indemniteCentimes: 0 }
+  });
+  egal(s.chiffrable, false, 'non chiffrable');
+  egal(s.montantSupCentimes, null, 'aucun montant inventé');
+  egal(s.totalARegler, null, 'aucun total inventé — un zéro crédible serait pire');
+});
+
+definir('C1 — une indemnité non due n’entre pas dans le total', function () {
+  var s = Engine.soldeFinContrat({
+    brutMensuelCentimes: 137289, minutesSupSolde: 0, coefficient: 1.5,
+    indemnite: { due: false, motif: 'ANCIENNETE_INSUFFISANTE', indemniteCentimes: 0 }
+  });
+  egal(s.indemniteCentimes, 0, 'aucune indemnité');
+  egal(s.totalARegler, 0, 'total nul, et chiffrable');
+});
+
+definir('Remarque 4 — l’écart déclaré porte son ÉVÉNEMENT, pas seulement sa destination',
+  function () {
+    var r = Engine.calculerMois({
+      contrat: { date_debut: '2026-01-01' },
+      conditions: CONDITIONS,
+      annee: 2026, mois: 6,
+      journees: [{ jour: '2026-06-17', type: 'presence', ecart_minutes: -90,
+                   ecart_evenement: 'liberation_anticipee',
+                   ecart_impute_sur: 'recuperation' }],
+      compteurEntree: { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 }
+    });
+    egal(r.ecartsDeclares.length, 1, 'un écart déclaré');
+    egal(r.ecartsDeclares[0].evenement, 'liberation_anticipee',
+      'l’événement remonte jusqu’au document — une libération anticipée et une ' +
+      'arrivée décalée ne doivent plus produire la même phrase');
+    egal(r.ecartsDeclares[0].imputeSur, 'recuperation', 'la destination reste, elle aussi');
+  });
+
 module.exports = { cas: cas };

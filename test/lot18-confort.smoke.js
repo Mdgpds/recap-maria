@@ -127,6 +127,17 @@ var JOURNEES_ALPHA_JUIN = {
     id: 'j-fam', contrat_id: 'c-alpha', jour: '2026-06-03', type: 'familiarisation',
     minutes_reelles: 300, entretien_centimes: 250, commentaire: null,
     minutes_sup_exceptionnelles: 0, minutes_sup_renoncees: 0, sup_dues_override: null
+  },
+  /* CORRECTIONS B1, C1 ET C2 DE LA RELECTURE DU LOT 18 — une journée de
+     présence qui porte À LA FOIS un ajustement d'heures (lot 12) et une note
+     (lot 12 également). Les deux n'ont pas le même sort : l'ajustement est
+     effacé par un changement de type et annoncé avant ; la note survit. */
+  '2026-06-09': {
+    id: 'j-ajust', contrat_id: 'c-alpha', jour: '2026-06-09', type: 'presence',
+    minutes_reelles: null, entretien_centimes: null, commentaire: 'Rendez-vous',
+    minutes_sup_exceptionnelles: 45, minutes_sup_renoncees: 0, sup_dues_override: null,
+    ecart_minutes: null, ecart_evenement: null, ecart_heure_reelle: null,
+    ecart_impute_sur: null
   }
 };
 
@@ -308,7 +319,9 @@ var sheet = document.getElementById('sheet');
 
   /* Cinq jours de présence ordinaires : le 8, 9, 10, 11 et 12 juin. */
   var tableAuDepart = corps.querySelector('table.cal');
-  var CINQ = ['2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12'];
+  /* Cinq journées ORDINAIRES : le 9 en est exclu, il porte un ajustement
+     d'heures et son cas est traité plus bas (correction B1 du lot 18). */
+  var CINQ = ['2026-06-08', '2026-06-10', '2026-06-11', '2026-06-12', '2026-06-15'];
   CINQ.forEach(function (d) {
     var td = celluleDu(d);
     assert(!!td && td.getAttribute('role') === 'checkbox', 'le ' + d + ' est cochable');
@@ -486,6 +499,73 @@ var sheet = document.getElementById('sheet');
     'chaque contrat ne reçoit que les jours de SES bornes — rien après la date de ' +
     'fin de Beta');
   assert(joursAlpha.length > 0, 'et Alpha, lui, reçoit bien ses jours');
+
+  /* ==================================================================== */
+  /* CORRECTIONS DE LA RELECTURE DU LOT 18                                */
+  /* ==================================================================== */
+  console.log('\n--- B1 : l’effet annoncé EST l’effet obtenu, ajustements compris ---');
+
+  ecritures.marquees.length = 0;
+  window.App.invalider();
+  window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 6 }, true);
+  await pause(350);
+  boutonExact(corps, 'Choisir plusieurs jours').click();
+  await pause(150);
+  celluleDu('2026-06-09').click();
+  await pause(200);
+
+  var piedAjust = corps.querySelector('.selbar');
+  var annonceAjust = txt(piedAjust.querySelector('.sb-ef'));
+  assert(annonceAjust.indexOf('45 min') !== -1 || annonceAjust.indexOf('45') !== -1,
+    'B1 : l’écran annonce la perte des 45 minutes ajoutées (obtenu « ' + annonceAjust + ' »)');
+  assert(txt(piedAjust).indexOf('Une saisie manuelle sera effacée') !== -1,
+    'C1 : et l’avertissement couvre les ajustements, pas seulement les heures réelles');
+  assert(txt(piedAjust).indexOf('Vos notes, elles, sont conservées') !== -1,
+    'C2 : il dit aussi ce qui NE sera pas perdu');
+
+  boutonExact(piedAjust, 'Valider').click();
+  await pause(350);
+
+  egal(ecritures.marquees.length, 1, 'B1 : une écriture est partie');
+  egal(ecritures.marquees[0].jours.join(','), '2026-06-09', 'B1 : sur la bonne journée');
+
+  /* CE QUE CE FICHIER NE PEUT PAS VÉRIFIER, ET OÙ ÇA L'EST.
+     Le double remplace `DB` : il ne voit pas la charge utile réellement
+     envoyée en base, qui est précisément ce que la relecture a pris en défaut.
+     Les sept colonnes remises à plat et l'absence délibérée de `commentaire`
+     sont donc contrôlées dans `test/ecriture-vs-schema.test.js`, qui lit
+     `js/db.js` — le seul endroit d'où cette charge utile est observable sans
+     base de données. Ce qui se vérifie ICI, c'est que l'écran ANNONCE la
+     perte, et qu'il achemine chaque journée vers le bon geste. */
+
+  /* Le chemin « Présence » : une journée annotée ne passe PAS par la
+     suppression, qui détruirait la ligne entière. */
+  console.log('\n--- C2 : la note survit au retour à la présence ---');
+  ecritures.marquees.length = 0;
+  ecritures.supprimees.length = 0;
+  window.App.invalider();
+  window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 6 }, true);
+  await pause(350);
+  boutonExact(corps, 'Choisir plusieurs jours').click();
+  await pause(150);
+  celluleDu('2026-06-09').click();          // annotée
+  celluleDu('2026-06-10').click();          // ordinaire
+  await pause(200);
+  var piedP = corps.querySelector('.selbar');
+  Array.prototype.filter.call(piedP.querySelectorAll('button'), function (b) {
+    return txt(b).trim() === 'Présence';
+  })[0].click();
+  await pause(200);
+  boutonExact(corps.querySelector('.selbar'), 'Valider').click();
+  await pause(350);
+
+  egal(ecritures.supprimees.length, 1, 'C2 : une suppression pour la journée ordinaire');
+  egal(ecritures.supprimees[0].jours.join(','), '2026-06-10',
+    'C2 : et elle ne porte QUE la journée sans note');
+  egal(ecritures.marquees.length, 1, 'C2 : une écriture pour la journée annotée');
+  egal(ecritures.marquees[0].jours.join(','), '2026-06-09', 'C2 : c’est bien elle');
+  egal(ecritures.marquees[0].type, 'presence',
+    'C2 : elle repasse en présence sans que sa ligne — donc sa note — soit détruite');
 
   /* ==================================================================== */
   /* §18.2 — RELIRE AVANT DE CLÔTURER                                     */

@@ -112,6 +112,41 @@
     return Math.max(0, (compteurSortie || {}).minutesSup || 0);
   }
 
+  /* CORRECTION B5 DE LA RELECTURE DU LOT 17 — CE QU'ON PEUT CONSOMMER ET CE
+     QU'ON MONTRE SONT DEUX CHOSES.
+
+     Le bornage à zéro est la correction B1 du lot 1 : elle porte sur ce qu'une
+     imputation a le droit de CONSOMMER. Un compteur incohérent ne doit pas
+     « rendre » des jours.
+
+     Mais depuis le §17.5, un solde de récupération négatif est un état
+     LÉGITIME : Maria a libéré l'enfant plus tôt de son fait, elle doit ce
+     temps. La spécification est explicite — « le compteur peut être négatif,
+     ET L'ÉCRAN LE DIT ». Or les écrans lisaient `supDisponible` et affichaient
+     « 0h00 » sur un compteur à −9 h, pendant que le document remis à la
+     famille affichait le solde brut. Les deux se contredisaient.
+
+     Pire : l'avertissement « votre compteur est négatif » de l'écran de fin de
+     contrat était gardé par `if (Kit.supDisponible(cs) < 0)`. Structurellement
+     inatteignable : il ne pouvait s'afficher JAMAIS.
+
+     `supSolde` rend donc la valeur SIGNÉE, et c'est elle que lisent les
+     écrans. `supDisponible` reste, inchangée, pour les bornes de ventilation :
+     on ne pose pas un congé sur une dette. */
+  function supSolde(compteurSortie) {
+    return (compteurSortie || {}).minutesSup || 0;
+  }
+
+  /* Le même couple pour les congés payés. Un solde négatif y est, lui, une
+     ANOMALIE et non un état voulu (voir la question C5 remontée par la
+     relecture : rien ne confronte encore un congé à l'heure imputé sur les
+     congés payés au disponible). Le montrer plutôt que le border à zéro est ce
+     qui permettra de s'en apercevoir. */
+  function cpSolde(compteurSortie) {
+    var cs = compteurSortie || {};
+    return (cs.minutesCpAcquis || 0) - (cs.minutesCpPris || 0);
+  }
+
   /* SEUIL UNIQUE de « compteur bas » (relecture lot 6, A3). Trois écrans en
      portaient trois valeurs différentes : à 7 jours restants, l'un affichait
      « compteur bas » en orange pendant qu'un autre annonçait « tout est à
@@ -125,9 +160,22 @@
      un seul contrat. */
   var SEUIL_CP_BAS_JOURS = 8;
 
-  function cpEstBas(minutesDisponibles, minutesParJourConge) {
-    if (!minutesParJourConge || minutesParJourConge <= 0) return false;
-    return (minutesDisponibles || 0) < SEUIL_CP_BAS_JOURS * minutesParJourConge;
+  /* CORRECTION C1 DE LA RELECTURE DU LOT 17 — LA CONVERSION VIENT DU MOTEUR.
+     Le seuil est exprimé en JOURS ; comparer des minutes obligeait à convertir
+     ici, c'est-à-dire à réécrire RG-05 dans la boîte à outils de l'interface.
+     `Chaine.reservesEnJours` interroge `Engine.imputerConges`, la seule
+     fonction qui a le droit de dire combien de jours une réserve couvre.
+     `conditions` est l'avenant en vigueur pour le mois affiché. */
+  function cpEstBas(minutesDisponibles, conditions) {
+    var Chaine = global.ChaineMois;
+    if (!conditions || !Chaine || typeof Chaine.reservesEnJours !== 'function') return false;
+    if (!conditions.minutes_par_jour_conge || conditions.minutes_par_jour_conge <= 0) return false;
+    /* `reservesEnJours` attend un COMPTEUR (acquis − pris), pas un solde déjà
+       fait : on lui donne le disponible comme acquis, et zéro pris. */
+    var jours = Chaine.reservesEnJours(conditions, {
+      minutesCpAcquis: minutesDisponibles || 0, minutesCpPris: 0
+    }).joursCp;
+    return jours < SEUIL_CP_BAS_JOURS;
   }
 
   /* Saisie française d'un montant -> centimes entiers. Mise en forme d'entrée,
@@ -754,7 +802,18 @@
     var sel = ce('select');
     var courant = { annee: de.annee, mois: de.mois };
     var voulu = String(isoDefaut || '').slice(0, 7);
+    /* CORRECTION DE LA REMARQUE 3 DE LA RELECTURE DU LOT 17 — LE REPLI PART DU
+       MOIS VOULU, PAS DU DÉBUT DE LA LISTE.
+
+       `premierLibre` retenait le premier mois libre de TOUTE la liste, donc le
+       plus ancien. Si juillet 2026 était clôturé, l'écran proposait « Faire
+       l'avenant au 1er septembre 2024 » — deux ans en arrière — avec la phrase
+       « Les mois d'août 2024 et avant ne changeront pas ». Le repli est
+       désormais le premier mois libre À PARTIR de celui qu'on visait. */
     var premierLibre = null;
+    var rangVoulu = voulu
+      ? Number(voulu.slice(0, 4)) * 12 + Number(voulu.slice(5, 7))
+      : -Infinity;
     while (courant.annee * 12 + courant.mois <= a.annee * 12 + a.mois) {
       var cle = courant.annee + '-' + String(courant.mois).padStart(2, '0');
       var op = ce('option');
@@ -767,7 +826,9 @@
         op.disabled = true;
       } else {
         op.textContent = etiquette;
-        if (premierLibre === null) premierLibre = op.value;
+        if (premierLibre === null && courant.annee * 12 + courant.mois >= rangVoulu) {
+          premierLibre = op.value;
+        }
       }
       sel.appendChild(op);
       courant.mois++;
@@ -1168,6 +1229,8 @@
     ce: ce, vider: vider, bouton: bouton, ajouter: ajouter,
     eur: eur, eurCourt: eurCourt, heures: heures, joursCp: joursCp, jours: jours, duree: duree,
     cpDisponible: cpDisponible, supDisponible: supDisponible,
+    /* §17.5 / correction B5 — le solde SIGNÉ, pour l'affichage. */
+    cpSolde: cpSolde, supSolde: supSolde,
     SEUIL_CP_BAS_JOURS: SEUIL_CP_BAS_JOURS,
     cpEstBas: cpEstBas,
     parseEuros: parseEuros, parseEntier: parseEntier,

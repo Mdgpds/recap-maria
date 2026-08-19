@@ -784,31 +784,31 @@
   /* onze réglages. Aucun calcul ici : la couche données ne fait que lire */
   /* et écrire.                                                          */
   /*                                                                     */
-  /* `numero` n'est pas transmis par l'écran : il est déduit du rang de la */
-  /* date d'effet, ici, à l'écriture. Le laisser à la charge de l'écran   */
-  /* reviendrait à répartir sur quatre appelants une numérotation qui doit */
-  /* rester unique par contrat (index `avenant_contrat_numero_unique`).   */
+  /* CORRECTION B1 ET C4 DE LA RELECTURE DU LOT 17 — LE NUMÉRO EST POSÉ EN   */
+  /* BASE, ET IL EST UNE IDENTITÉ.                                          */
+  /*                                                                        */
+  /* CE QUI NE MARCHAIT PAS. `numero` est `not null` sans valeur par défaut  */
+  /* et sans trigger ; il était délibérément exclu du corps de la requête,   */
+  /* pour être posé APRÈS l'insertion par une renumérotation. L'insertion    */
+  /* partait donc sans lui : `23502 null value in column "numero"`, à tous   */
+  /* les coups, sur tous les contrats. « Faire un avenant » — LA fonction du */
+  /* lot 17 — était inutilisable en production.                             */
+  /*                                                                        */
+  /* Et la renumérotation elle-même ne pouvait pas fonctionner : quatre      */
+  /* requêtes indépendantes, sans transaction, contre un index unique. Sur   */
+  /* une permutation cyclique — corriger la date d'un avenant vers l'amont — */
+  /* aucun ordre d'exécution ligne à ligne ne l'applique. L'écran annonçait  */
+  /* un échec TOTAL alors que la date avait bien été écrite.                 */
+  /*                                                                        */
+  /* DÉCISION D'ADRIEN : le numéro est l'identité de l'avenant, pas son      */
+  /* rang. C'est le numéro que Maria cite à une famille ; il est posé à la   */
+  /* création par la migration `015` et ne change plus jamais. La base le    */
+  /* refuse même en modification.                                           */
+  /*                                                                        */
+  /* L'ORDRE D'APPLICATION, LUI, VIENT TOUJOURS DE `date_effet` : le moteur, */
+  /* la chaîne et la frise trient par date, jamais par numéro. Un numéro non */
+  /* monotone dans la frise est donc possible, et c'est voulu.               */
   /* ------------------------------------------------------------------ */
-
-  /* Renumérote tous les avenants d'un contrat, par date d'effet croissante.
-     Appelée après chaque insertion, modification de date ou suppression :
-     un avenant n° 2 qui deviendrait le premier de la liste après une
-     suppression porterait un numéro que la frise afficherait tel quel. */
-  function renumeroterAvenants(contratId) {
-    return getAvenants(contratId).then(function (liste) {
-      var aCorriger = (liste || []).filter(function (a, i) {
-        return a.numero !== i + 1;
-      });
-      if (!aCorriger.length) return liste;
-      return Promise.all(liste.map(function (a, i) {
-        if (a.numero === i + 1) return null;
-        return client.from('avenant_contrat')
-          .update({ numero: i + 1 })
-          .eq('id', a.id)
-          .then(function (r) { if (r.error) throw r.error; return true; });
-      })).then(function () { return getAvenants(contratId); });
-    });
-  }
 
   function ajouterAvenant(contratId, champs) {
     return client.from('avenant_contrat')
@@ -816,16 +816,7 @@
                        ['contrat_id'].concat(CHAMPS_AVENANT_MODIFIABLES)))
       .select(CHAMPS_AVENANT)
       .then(deballer)
-      .then(function (r) {
-        return renumeroterAvenants(contratId).then(function (liste) {
-          /* On rend la ligne RELUE après renumérotation : rendre celle de
-             l'insert ferait afficher un numéro périmé sur l'écran qui vient
-             de la créer. */
-          var id = r[0].id;
-          for (var i = 0; i < liste.length; i++) if (liste[i].id === id) return liste[i];
-          return r[0];
-        });
-      });
+      .then(function (r) { return r[0]; });
   }
 
   function majAvenant(id, champs) {
@@ -834,12 +825,7 @@
       .eq('id', id)
       .select(CHAMPS_AVENANT)
       .then(deballer)
-      .then(function (r) {
-        return renumeroterAvenants(r[0].contrat_id).then(function (liste) {
-          for (var i = 0; i < liste.length; i++) if (liste[i].id === id) return liste[i];
-          return r[0];
-        });
-      });
+      .then(function (r) { return r[0]; });
   }
 
   /* Suppression d'un avenant. L'appelant DOIT avoir vérifié qu'aucun mois
@@ -848,20 +834,9 @@
      concernés ne sert à rien. */
   function supprimerAvenant(id) {
     return client.from('avenant_contrat')
-      .select('contrat_id')
+      .delete()
       .eq('id', id)
-      .maybeSingle()
-      .then(function (r) { if (r.error) throw r.error; return r.data; })
-      .then(function (ligne) {
-        return client.from('avenant_contrat')
-          .delete()
-          .eq('id', id)
-          .then(function (r) { if (r.error) throw r.error; return ligne; });
-      })
-      .then(function (ligne) {
-        if (!ligne) return true;
-        return renumeroterAvenants(ligne.contrat_id).then(function () { return true; });
-      });
+      .then(function (r) { if (r.error) throw r.error; return true; });
   }
 
   /* ------------------------------------------------------------------ */
@@ -975,6 +950,28 @@
      doivent pas produire cinq allers-retours, dont trois pourraient réussir et
      deux échouer — un état à moitié écrit est exactement ce qu'on ne veut pas
      avoir à expliquer à Maria. */
+  /* CORRECTION B1 ET C1 DE LA RELECTURE DU LOT 18.
+
+     CE QUI NE MARCHAIT PAS. Un `upsert` ne met à jour que les colonnes
+     PRÉSENTES dans la charge utile. Les trois colonnes d'ajustement du lot 12
+     et les quatre de l'écart d'horaire du lot 17 n'y figuraient pas : elles
+     SURVIVAIENT au changement de type, alors que la simulation les
+     supprimait. L'effet annoncé avant validation n'était donc pas celui
+     obtenu après — le critère §18.1 A2, mis en défaut.
+
+     Et la ligne écrite était incohérente en elle-même : une journée
+     `absence_enfant` portant « +45 minutes travaillées en plus ». Le moteur
+     les comptait, le document les portait, et rien à l'écran ne permettait de
+     comprendre d'où elles venaient.
+
+     DÉCISION D'ADRIEN : l'ajustement est EFFACÉ avec le changement de type,
+     l'écran l'annonce avant validation, et « Annuler » le rend.
+
+     LA NOTE, ELLE, SURVIT. Décision d'Adrien également : elle porte souvent la
+     raison de l'absence — c'est même son usage le plus probable ici — et
+     « rien ne se supprime jamais » (B.0-7). `commentaire` est donc ABSENT de
+     la charge utile, et son absence est délibérée : c'est ce qui la préserve.
+     Ne pas l'y remettre. */
   function marquerJournees(contratId, jours, type) {
     if (!contratId || !jours || !jours.length) return Promise.resolve([]);
     var payload = jours.map(function (j) {
@@ -984,7 +981,14 @@
         type: type,
         minutes_reelles: null,
         entretien_centimes: null,
-        commentaire: null
+        /* Les sept colonnes qu'un changement de type doit remettre à plat. */
+        minutes_sup_exceptionnelles: 0,
+        minutes_sup_renoncees: 0,
+        sup_dues_override: null,
+        ecart_minutes: null,
+        ecart_evenement: null,
+        ecart_heure_reelle: null,
+        ecart_impute_sur: null
       };
     });
     return client.from('journee')
@@ -995,7 +999,12 @@
 
   /* Le retour à la présence : la saisie par exception veut qu'une journée
      ordinaire n'ait PAS de ligne (B.0-2). Marquer « présent » n'écrit donc
-     rien — cela supprime l'exception. */
+     rien — cela supprime l'exception.
+
+     ATTENTION (correction C2 du lot 18) : cette suppression détruit la ligne
+     ENTIÈRE, note comprise. L'écran ne l'appelle donc que sur les journées qui
+     n'en portent pas ; celles qui en portent une passent par
+     `marquerJournees(…, 'presence')`, qui garde le commentaire. */
   function supprimerJournees(contratId, jours) {
     if (!contratId || !jours || !jours.length) return Promise.resolve(true);
     return client.from('journee')
