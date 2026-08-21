@@ -65,6 +65,20 @@ html, body {
   height: 100%;
   /* §3 des specs : pas de rafraîchissement par glissement vers le bas. */
   overscroll-behavior: none;
+
+  /* LE DOUBLE-APPUI NE ZOOME PLUS.
+     Signalé par Adrien sur le téléphone. `touch-action` valait `auto`, le
+     réglage par défaut du navigateur : deux appuis rapprochés déclenchent un
+     zoom. Sur un calendrier dont les cases font 44 px et que Maria touche
+     debout, un enfant dans les bras, deux jours voisins marqués coup sur coup
+     zooment l'écran au lieu d'enregistrer deux journées.
+
+     `manipulation` désactive le double-tap ET le délai de 300 ms qui va avec —
+     l'application répond plus vite au premier appui. Le PINCEMENT pour zoomer
+     reste possible : on ne retire pas l'accessibilité, on retire un geste
+     accidentel. C'est aussi pour ça qu'on n'écrit pas `user-scalable=no` dans
+     la balise viewport, qui, lui, l'interdirait pour de bon. */
+  touch-action: manipulation;
 }
 
 body {
@@ -86,6 +100,28 @@ body {
   flex-direction: column;
   overflow: hidden;
   background: #f4f6f8;
+
+  /* LA BANDE DE L'ENCOCHE EST PEINTE, ELLE AUSSI.
+     Signalé par Adrien : sur l'application installée depuis l'écran d'accueil,
+     un coin du haut de l'écran restait clair au lieu d'être vert. Le défaut est
+     antérieur aux lots 17 et 18.
+
+     La barre haute et l'en-tête de l'accueil réservent déjà la hauteur de
+     l'encoche (`env(safe-area-inset-top)` dans leur `padding-top`), mais rien
+     ne garantissait que la zone soit PEINTE sur toute sa largeur : selon
+     l'appareil et la version du système, le conteneur pouvait laisser
+     apparaître son propre fond.
+
+     Ce dégradé peint le haut en vert accent sur exactement la hauteur de
+     l'encoche, DERRIÈRE tout le reste. Là où la barre couvrait déjà la zone,
+     rien ne change — on superpose deux fois la même couleur. Là où elle ne la
+     couvrait pas, le trou disparaît. Sur un appareil sans encoche, la hauteur
+     vaut zéro et le dégradé n'existe pas. */
+  background-image: linear-gradient(
+    180deg,
+    var(--ac) 0,
+    var(--ac) env(safe-area-inset-top, 0px),
+    transparent env(safe-area-inset-top, 0px));
 }
 
 .bd {
@@ -102,6 +138,10 @@ body {
   color: #fff;
   padding: 15px 14px;
   padding-top: calc(15px + env(safe-area-inset-top));
+  /* Les marges latérales de l'encoche : en paysage, le titre passerait sinon
+     sous le coin arrondi de l'écran. */
+  padding-left: calc(14px + env(safe-area-inset-left, 0px));
+  padding-right: calc(14px + env(safe-area-inset-right, 0px));
   display: flex;
   align-items: center;
   gap: 10px;
@@ -130,6 +170,8 @@ body {
   color: #fff;
   padding: 20px 16px 18px;
   padding-top: calc(20px + env(safe-area-inset-top));
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
   flex: 0 0 auto;
 }
 .hero .hi { font-size: 14px; opacity: .85; }

@@ -83,7 +83,15 @@ var ALPHA = {
   nom: 'Un', genre: 'f', couleur: null, photo: null
 };
 
+var CONGE_JUIN = {};
+['2026-06-15', '2026-06-16', '2026-06-17', '2026-06-18', '2026-06-19'].forEach(function (d) {
+  CONGE_JUIN[d] = { id: 'j-' + d, contrat_id: 'c-alpha', jour: d, type: 'conge_maria',
+    minutes_reelles: null, entretien_centimes: null, commentaire: null,
+    minutes_sup_exceptionnelles: 0, minutes_sup_renoncees: 0, sup_dues_override: null };
+});
+
 var etatDecor = {
+  congeEnJuin: false,
   recapsEnEchec: false,      // B2 : la lecture des récapitulatifs échoue-t-elle ?
   supDepart: 0,              // B5 : récupération de départ, éventuellement négative
   avenantsEcrits: []
@@ -130,8 +138,17 @@ var DB = {
     return Promise.resolve({ contrat_id: id, date_reference: '2026-03-01',
       minutes_sup: etatDecor.supDepart, minutes_cp_acquis: 0, minutes_cp_pris: 0 });
   },
-  getJourneesMois: function () { return Promise.resolve({}); },
-  getJourneesPeriode: function () { return Promise.resolve({}); },
+  /* Une semaine de congé posée du 15 au 19 juin : c'est elle qui rend
+     l'encart RG-06 utile, et qui permet de vérifier qu'il est bien là quand il
+     explique un chiffre que la famille a sous les yeux. */
+  getJourneesMois: function (id, a, m) {
+    if (etatDecor.congeEnJuin && a === 2026 && m === 6) return Promise.resolve(CONGE_JUIN);
+    return Promise.resolve({});
+  },
+  getJourneesPeriode: function () {
+    if (etatDecor.congeEnJuin) return Promise.resolve({ '2026-06': CONGE_JUIN });
+    return Promise.resolve({});
+  },
   listImputations: function () { return Promise.resolve([]); },
   listImputationsPourMois: function () { return Promise.resolve([]); },
   majVentilationImputation: function () { return Promise.resolve({}); },
@@ -227,6 +244,47 @@ var sheet = document.getElementById('sheet');
     'contredira dix secondes plus tard');
   assert(txt(corps).indexOf('Mois partiel') !== -1,
     'B4 : avec son quotient, là aussi');
+
+  /* ==================================================================== */
+  /* L'ENCART RG-06 — DÉCISION D'ADRIEN DU 19 AOÛT 2026                   */
+  /*                                                                     */
+  /* ÉCART ASSUMÉ À LA SPÉCIFICATION. Le §A.3 range « l'encart figure sur */
+  /* TOUS les documents » parmi les six qualités à ne pas casser. La      */
+  /* décision le restreint aux mois qui portent des congés : sur un mois  */
+  /* sans aucun congé, il explique une règle que le document n'applique   */
+  /* nulle part.                                                          */
+  /*                                                                     */
+  /* Ces quatre assertions sont la contrepartie de l'écart : là où il     */
+  /* SERT, il doit être là — à l'écran ET dans le texte qui part chez la  */
+  /* famille.                                                             */
+  /* ==================================================================== */
+  console.log('\n--- Encart RG-06 : absent sans congé, présent avec ---');
+
+  etatDecor.congeEnJuin = false;
+  window.App.invalider();
+  window.App.aller('document', { contratId: 'c-alpha', annee: 2026, mois: 5 }, true);
+  await pause(400);
+  assert(txt(corps).indexOf('Décompte des congés') === -1,
+    'un mois SANS congé ne porte plus l’encart');
+
+  etatDecor.congeEnJuin = true;
+  window.App.invalider();
+  window.App.aller('document', { contratId: 'c-alpha', annee: 2026, mois: 6 }, true);
+  await pause(450);
+  assert(txt(corps).indexOf('Décompte des congés') !== -1,
+    'un mois AVEC congés le porte — c’est là qu’il éteint le litige');
+  assert(txt(corps).indexOf('Une semaine complète compte donc 6 jours') !== -1,
+    'et il énonce RG-06 mot pour mot, samedi inclus');
+
+  /* Le TEXTE À COLLER doit dire la même chose que le document : c'est lui qui
+     part chez la famille. Les faire diverger serait pire que les vider tous
+     les deux. */
+  var apercuTexte = corps.querySelector('.apercu-texte');
+  assert(!!apercuTexte && txt(apercuTexte).indexOf('Décompte des congés') !== -1,
+    'le texte à coller porte le même encart que le document');
+
+  etatDecor.congeEnJuin = false;
+  window.App.invalider();
 
   /* ==================================================================== */
   /* B2 — LE GARDE-FOU DE LA RÉTROACTIVITÉ ÉCHOUE FERMÉ                   */

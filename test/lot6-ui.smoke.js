@@ -339,7 +339,13 @@ var sheet = document.getElementById('sheet');
   await pause(80);
 
   assert(!!corps.querySelector('.doc'), 'le document garde son identité papier');
-  assert(txt(corps).indexOf('jours ouvrables') !== -1, 'encart permanent du décompte des congés (RG-06)');
+  /* DÉCISION D'ADRIEN (19 août 2026) — l'encart RG-06 ne figure plus que sur
+     les mois QUI PORTENT DES CONGÉS. Ce mois-ci n'en a aucun : sur un document
+     qui affiche « Aucun ce mois-ci », trois lignes de droit du travail
+     n'expliquent aucun chiffre. Le cas AVEC congés est vérifié dans
+     `lot17-correctifs.smoke.js`. */
+  assert(txt(corps).indexOf('Décompte des congés') === -1,
+    'l’encart RG-06 est absent d’un mois sans aucun congé');
   assert(txt(corps).indexOf('Salaire brut correspondant') !== -1, 'brut et net affichés séparément');
   assert(txt(corps).indexOf('L’envoi aux parents est facultatif') !== -1,
     '§2.4 : le partage est facultatif et l’écrit');

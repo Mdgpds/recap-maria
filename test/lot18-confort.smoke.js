@@ -585,9 +585,9 @@ var sheet = document.getElementById('sheet');
 
   bRelire.click();
   await pause(450);
-  assert(txt(corps).indexOf('Le décompte des congés') !== -1 ||
-         txt(corps).indexOf('jours ouvrables') !== -1,
-    '§18.2 : le document complet s’affiche, avec l’encart RG-06');
+  assert(txt(corps).indexOf('Récapitulatif mensuel') !== -1 &&
+         txt(corps).indexOf('Total à verser') !== -1,
+    '§18.2 : le document complet s’affiche');
 
   /* LE RETOUR RAMÈNE À LA MÊME ÉTAPE. Un bouton de relecture qui ferait perdre
      le parcours coûterait plus qu'il ne rapporte : Maria devrait tout

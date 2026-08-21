@@ -392,6 +392,36 @@
   /* Encart permanent de RG-06 : c'est lui qui doit éteindre le désaccord
      historique sur le décompte des congés. Il figure sur TOUS les documents,
      même ceux sans congé. */
+  /* DÉCISION D'ADRIEN (19 août 2026) — L'ENCART NE FIGURE PLUS QUE SUR LES
+     MOIS QUI PORTENT DES CONGÉS.
+
+     ÉCART ASSUMÉ À LA SPÉCIFICATION, à signaler en relecture. Le §A.3 range
+     « l'encart expliquant le décompte en jours ouvrables figure sur tous les
+     documents » parmi les six qualités à ne pas casser, et le référentiel dit
+     pourquoi : le décompte des congés est LE point de friction historique avec
+     les familles — elles comptent 5 jours pour une semaine, Maria en compte 6,
+     et c'est elle qui a raison.
+
+     Ce que la décision retient : sur un mois sans aucun congé, l'encart
+     explique une règle que le document n'applique nulle part. Trois lignes de
+     droit du travail sous « Aucun ce mois-ci », c'est du bruit — et le bruit,
+     à force, fait qu'on ne lit plus rien. Il reste donc là où il explique un
+     chiffre que la famille a sous les yeux.
+
+     UNE SEULE CONDITION, lue par les trois rendus — écran, texte, image. Les
+     séparer ferait diverger la pièce papier de ce qu'on colle dans un message,
+     et c'est exactement le genre d'écart qu'on ne voit qu'une fois le document
+     parti. */
+  function encartCongesUtile() {
+    var r = vue.entree && vue.entree.resultat;
+    if (!r) return false;
+    if ((r.joursCongesDecomptes || 0) > 0) return true;
+    /* Des journées de congé posées sans décompte — un mois entier de congé
+       à cheval, par exemple — méritent l'explication autant que les autres. */
+    var j = joursConge();
+    return !!(j && j.length);
+  }
+
   var ENCART_RG06 =
     'Les congés payés d’une assistante maternelle se comptent en jours ouvrables, ' +
     'du lundi au samedi, dimanches et jours fériés exclus. Une semaine complète compte ' +
@@ -569,10 +599,12 @@
       });
     });
 
-    var dn = Kit.ce('div', 'dn');
-    dn.appendChild(Kit.ce('b', null, 'Décompte des congés. '));
-    dn.appendChild(document.createTextNode(ENCART_RG06));
-    doc.appendChild(dn);
+    if (encartCongesUtile()) {
+      var dn = Kit.ce('div', 'dn');
+      dn.appendChild(Kit.ce('b', null, 'Décompte des congés. '));
+      dn.appendChild(document.createTextNode(ENCART_RG06));
+      doc.appendChild(dn);
+    }
     return doc;
   }
 
@@ -692,11 +724,23 @@
       if (b.titre) lignes.push(b.titre.toUpperCase());
       b.lignes.forEach(function (l) { lignes.push(l[0] + ' : ' + l[1]); });
     });
-    lignes.push('');
-    lignes.push('Décompte des congés. ' + ENCART_RG06);
-    if (!vue.entree.fige) {
+    if (encartCongesUtile()) {
       lignes.push('');
-      lignes.push('(Mois non encore clôturé : ces chiffres peuvent encore changer.)');
+      lignes.push('Décompte des congés. ' + ENCART_RG06);
+    }
+    /* DÉCISION D'ADRIEN — la longue parenthèse « Mois non encore clôturé : ces
+       chiffres peuvent encore changer » est retirée.
+
+       ELLE N'EST PAS SUPPRIMÉE POUR AUTANT, et voici pourquoi. À l'écran, le
+       bandeau « Document provisoire » le dit déjà. Mais le texte et l'image
+       SORTENT de l'application : ce sont eux qui arrivent chez la famille, et
+       ils ne portent aucun autre repère. Les vider entièrement recréerait le
+       défaut A11, corrigé au lot 7 — un récapitulatif envoyé avant clôture
+       devenait indiscernable d'un définitif.
+       La mention passe donc de deux lignes à quatre mots, en tête plutôt qu'en
+       pied : elle se lit d'un coup d'œil et n'alourdit plus la fin. */
+    if (!vue.entree.fige) {
+      lignes.splice(2, 0, 'Document provisoire');
     }
     return lignes.join('\n');
   }
@@ -774,24 +818,26 @@
       y += 10;
     });
 
-    g.fillStyle = '#f4f1e6';
-    g.fillRect(marge, y - 6, L - 2 * marge, 132);
-    g.strokeStyle = '#e3dcca'; g.lineWidth = 1;
-    g.strokeRect(marge, y - 6, L - 2 * marge, 132);
-    g.fillStyle = '#5d5747';
-    g.font = 'bold 19px -apple-system, Helvetica, Arial, sans-serif';
-    g.fillText('Décompte des congés', marge + 18, y + 26);
-    g.font = '19px -apple-system, Helvetica, Arial, sans-serif';
-    habiller(g, ENCART_RG06, marge + 18, y + 54, L - 2 * marge - 36, 26);
+    if (encartCongesUtile()) {
+      g.fillStyle = '#f4f1e6';
+      g.fillRect(marge, y - 6, L - 2 * marge, 132);
+      g.strokeStyle = '#e3dcca'; g.lineWidth = 1;
+      g.strokeRect(marge, y - 6, L - 2 * marge, 132);
+      g.fillStyle = '#5d5747';
+      g.font = 'bold 19px -apple-system, Helvetica, Arial, sans-serif';
+      g.fillText('Décompte des congés', marge + 18, y + 26);
+      g.font = '19px -apple-system, Helvetica, Arial, sans-serif';
+      habiller(g, ENCART_RG06, marge + 18, y + 54, L - 2 * marge - 36, 26);
+      y += 138;
+    }
 
-    /* Correction A11 : le texte copié porte la mention « provisoire » sur un
-       mois non clôturé, l'image ne la portait pas — un PNG envoyé aux parents
-       avant clôture était indiscernable du définitif. */
+    /* Correction A11, CONSERVÉE sous une forme plus courte. L'image ne porte
+       aucun autre repère que celui-ci : la vider ferait d'un PNG envoyé avant
+       clôture l'exact sosie d'un définitif. Deux mots suffisent. */
     if (!vue.entree.fige) {
       g.fillStyle = '#a34e00';
       g.font = 'bold 20px -apple-system, Helvetica, Arial, sans-serif';
-      g.fillText('Mois non encore clôturé — ces chiffres peuvent encore changer.',
-        marge, y + 168);
+      g.fillText('Document provisoire', marge, y + 30);
     }
 
     return canvas;

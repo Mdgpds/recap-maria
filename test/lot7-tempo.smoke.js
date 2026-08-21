@@ -372,17 +372,28 @@ async function ouvrirAccueil() {
   assert(/Indemnité d’entretien — \d+ jours × 5,00/.test(txt(doc)),
     'A8 : l’entretien est DÉTAILLÉ en n × montant (obtenu « ' +
     (txt(doc).match(/Indemnité d’entretien[^\n]{0,40}/) || [''])[0] + ' »)');
-  assert(txt(doc).indexOf('Décompte des congés') !== -1,
-    'P7 : l’encart sur le décompte des congés est présent MÊME sans congé');
-  assert(txt(doc).indexOf('Une semaine complète compte donc 6 jours') !== -1,
-    'P7 : l’encart énonce bien RG-06');
+  /* DÉCISION D'ADRIEN (19 août 2026) — l'exigence a changé : l'encart RG-06
+     accompagne les congés, il ne les précède plus. Sur un mois sans congé, il
+     n'explique rien et alourdit le document. Le cas AVEC congés est vérifié
+     dans `lot17-correctifs.smoke.js`. */
+  assert(txt(doc).indexOf('Décompte des congés') === -1,
+    'P7 : l’encart RG-06 est absent d’un mois sans congé');
+  /* La PHRASE de l'encart, elle, n'a pas changé d'un caractère : c'est son
+     APPARITION qui devient conditionnelle. Le texte exact reste vérifié — sur
+     un mois avec congés — dans `lot17-correctifs.smoke.js`. */
+  assert(window.UiDocument.ENCART_RG06.indexOf('Une semaine complète compte donc 6 jours') !== -1,
+    'P7 : la phrase de l’encart énonce toujours RG-06, mot pour mot');
 
   var apercu = corps.querySelector('.apercu-texte');
   assert(!!apercu, 'P8 : le texte à coller est AFFICHÉ, pas seulement copiable');
   assert(txt(corps).indexOf('Le message que vous allez coller') !== -1,
     'P8 : il est annoncé par son titre');
-  assert(txt(apercu).indexOf('Décompte des congés') !== -1,
+  assert(txt(apercu).indexOf('Récapitulatif mensuel') !== -1,
     'P8 : l’aperçu contient bien le texte intégral');
+  /* Correction A11, sous sa forme courte : le texte qui SORT de l’application
+     doit rester distinguable d’un définitif. */
+  assert(txt(apercu).indexOf('Document provisoire') !== -1,
+    'A11 : le texte à coller dit qu’il est provisoire');
   assert(txt(apercu).indexOf('Total à verser') !== -1, 'P8 : et les chiffres du mois');
 
   /* ==================================================================== */
