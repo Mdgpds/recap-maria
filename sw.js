@@ -61,7 +61,14 @@
    `js/app.js` resté en arrière, avec son cache de chaîne sans la date de fin.
    Le téléphone de Maria ferait tourner un mélange dont chaque moitié est
    correcte et dont l'ensemble ne l'est pas. */
-var CACHE = 'recap-correctifs-17-18-v1';
+/* CORRECTIF DE L'ÉCRAN « MES CONGÉS » — NOM DE CACHE CHANGÉ.
+
+   Trois fichiers changent : `css/style.css`, `js/ui-kit.js`, `js/ui-conges.js`.
+   Le cas à éviter est direct : la feuille de style rafraîchie et `js/ui-kit.js`
+   resté en arrière. La règle `.phr` existerait, mais aucune ligne ne porterait
+   la classe — et l'écran continuerait de glisser exactement comme avant, en
+   donnant l'impression que le correctif ne marche pas. */
+var CACHE = 'recap-conges-encadre-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
