@@ -363,6 +363,7 @@
 
     corps.appendChild(panneauPoses());
     corps.appendChild(panneauReserves());
+
     /* V8-08 — UN SEUL bouton. « Poser une semaine entière » et « Poser une
        seule journée » ont disparu : le premier était un cas particulier du
        second geste, et le second ne posait rien du tout — il expliquait
