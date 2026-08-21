@@ -372,11 +372,20 @@ table.cal td.futur:active { transform: none; }
 .pane { background: #fff; border: 1.5px solid var(--ln); border-radius: 14px; padding: 14px; margin-bottom: 11px; }
 .pane .pt { font-weight: 700; font-size: 15px; margin-bottom: 9px; display: flex; align-items: baseline; }
 .pane .pt .more { margin-left: auto; font-size: 12.5px; color: var(--ac); font-weight: 600; cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; }
-
 .lines { font-size: 14.5px; }
 .lines .l { display: flex; padding: 8px 0; border-bottom: 1px solid var(--ln2); gap: 12px; align-items: baseline; }
 .lines .l:last-child { border-bottom: none; }
 .lines .l span:last-child { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* UNE VALEUR QUI EST UNE PHRASE, PAS UN NOMBRE.
+   `nowrap` ci-dessus est fait pour « 1 234,00 € » : un montant coupé en deux
+   se lit mal, et on ne veut jamais d'un « € » seul à la ligne suivante. Mais
+   « Vos réserves » y met une phrase de 342 px — « 10 j de congés payés · 5 j
+   (47h00) de récupération ». Interdite de retour à la ligne, elle sortait de
+   l'encadré blanc de 38 px, et comme `.bd` porte `overflow-y: auto` — ce qui
+   fait calculer `overflow-x: auto` au navigateur — TOUT l'écran se mettait à
+   glisser latéralement de 43 px. Signalé par Adrien sur le téléphone.
+   L'option est explicite : sans elle, rien ne change nulle part ailleurs. */
+.lines .l span:last-child.phr { white-space: normal; text-align: right; }
 .lines .l.tot { border-top: 2px solid var(--ink); border-bottom: none; margin-top: 4px; padding-top: 10px; font-size: 16px; }
 .lines .l.q span { color: var(--ink3); font-weight: 500; }
 .lines .l .wa { color: var(--wa); }
