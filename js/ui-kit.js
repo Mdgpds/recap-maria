@@ -300,7 +300,11 @@
     opts = opts || {};
     var l = ce('div', 'l' + (opts.total ? ' tot' : '') + (opts.discret ? ' q' : ''));
     l.appendChild(ce('span', null, libelle));
-    var v = ce('span', opts.alerte ? 'wa' : null, valeur == null ? '' : valeur);
+    /* `opts.phrase` : la valeur est une phrase, pas un nombre — elle a le
+       droit de revenir à la ligne. À demander explicitement, pour que les
+       montants et les durées gardent leur insécabilité par défaut. */
+    var cv = (opts.alerte ? 'wa' : '') + (opts.phrase ? ' phr' : '');
+    var v = ce('span', cv.trim() || null, valeur == null ? '' : valeur);
     l.appendChild(v);
     bloc.appendChild(l);
     return l;
