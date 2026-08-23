@@ -882,9 +882,17 @@
       msg.className = 'msg';
       msg.textContent = 'Préparation de la photo…';
       reduirePhoto(fichier).then(function (dataUrl) {
+        /* CORRECTION C4 — LA VALEUR PRÉCÉDENTE EST CAPTURÉE AVANT D'ÊTRE
+           ÉCRASÉE. `appliquer` la lisait sur `courante.valeur`, qui portait
+           déjà la nouvelle : le retour arrière retombait systématiquement sur
+           `null`, et un échec d'écriture affichait l'initiale sur un enfant
+           qui a une photo en base. Le message disait « rien n'a été
+           enregistré » pendant que l'écran montrait le contraire. */
+        var precedente = courante.valeur;
         courante.valeur = dataUrl;
         redessiner();
-        if (opts.enregistrer) return appliquer(dataUrl, 'Photo enregistrée');
+        majRetirer();
+        if (opts.enregistrer) return appliquer(dataUrl, 'Photo enregistrée', precedente);
         msg.className = 'msg ok';
         msg.textContent = 'Photo prête. Elle sera enregistrée avec le contrat.';
       }).catch(function (e) {
@@ -904,10 +912,11 @@
     /* §22.2 — « Retirer la photo » n'apparaît QUE s'il y en a une. Un bouton
        qui ne peut rien faire n'apprend rien et fait douter. */
     var bRetirer = Kit.bouton('btn nt', function () {
+      var precedente = courante.valeur;
       courante.valeur = null;
       redessiner();
       majRetirer();
-      if (opts.enregistrer) return appliquer(null, 'Photo retirée');
+      if (opts.enregistrer) return appliquer(null, 'Photo retirée', precedente);
       msg.className = 'msg';
       msg.textContent = 'La photo sera retirée à l’enregistrement.';
     });
@@ -920,8 +929,7 @@
        et la photo affichée revient à ce que la base porte réellement : laisser
        à l'écran une photo qui n'a pas été enregistrée est exactement le genre
        de mensonge silencieux qu'on refuse (B.0-9). */
-    function appliquer(valeur, succes) {
-      var avant = courante.valeur;
+    function appliquer(valeur, succes, precedente) {
       msg.className = 'msg';
       msg.textContent = 'Enregistrement…';
       bChoisir.disabled = true;
@@ -930,7 +938,11 @@
         msg.className = 'msg ok';
         msg.textContent = succes;
       }).catch(function (e) {
-        courante.valeur = avant === valeur ? null : avant;
+        /* On revient à ce que la base porte encore : laisser à l'écran une
+           photo qui n'a pas été enregistrée — ou une initiale sur un enfant
+           qui en a une — est le mensonge silencieux que cette fonction existe
+           pour éviter (B.0-9). */
+        courante.valeur = precedente === undefined ? null : precedente;
         redessiner();
         majRetirer();
         msg.className = 'msg ko';

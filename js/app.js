@@ -397,7 +397,13 @@
       existante = Kit.ce('span', 'pastille-onglet');
       bouton.appendChild(existante);
     }
-    existante.textContent = nb > 9 ? '9+' : String(nb);
+    /* REMARQUE 3 DE LA RELECTURE — LE COMPTE RÉEL, PAS « 9+ ».
+       Le §22.3 A2 demande « le nombre de mois à clôturer ». Avec quatre
+       contrats, trois mois de retard en font douze : « 9+ » cache précisément
+       le cas où le chiffre compte. La pastille s'élargit d'elle-même
+       (`min-width` et `padding`), et l'annonce vocale donnait déjà le vrai
+       nombre — les deux disent désormais la même chose. */
+    existante.textContent = String(nb);
     /* Le nombre est écrit DANS la pastille et annoncé aux lecteurs d'écran :
        une tache de couleur ne dit rien à qui ne la voit pas. */
     bouton.setAttribute('aria-description',

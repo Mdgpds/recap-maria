@@ -292,7 +292,12 @@ function ongletActif() {
   assert(!!ligne, 'le Menu porte une entrée unique « Mes enfants »');
   contient(ligne, '2 en garde · 1 contrat terminé',
     '§22.1 : les deux comptes sont CALCULÉS, pas écrits en dur');
-  absent(corps, 'Aubépine', '§22.1 : le Menu n’affiche plus la liste en ligne');
+  /* §22.1 — le Menu n'affiche plus la LISTE DES ENFANTS en ligne. L'entrée
+     « Familles » y reste (correction C5 de la relecture) : la spécification ne
+     demandait pas sa suppression. */
+  absent(corps, 'Léa · Tom', '§22.1 : le Menu n’affiche plus la liste des enfants en ligne');
+  assert(!!parTexte(corps, '.menu', 'Familles'),
+    'C5 : l’accès par famille n’a pas été retiré du Menu');
 
   ligne.click();
   await pause(500);

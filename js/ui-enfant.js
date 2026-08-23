@@ -928,6 +928,10 @@
     var annotee = !!(ligneJour && ligneJour.commentaire);
     var ajustee = !!(ligneJour && ((ligneJour.minutes_sup_exceptionnelles || 0) > 0 ||
                                    (ligneJour.minutes_sup_renoncees || 0) > 0));
+    /* CORRECTION B2 — un congé posé à l'heure SE VOIT sur le calendrier. Il ne
+       change pas l'état de la journée — elle reste présente — donc il porte un
+       repère, comme la note et l'ajustement, jamais une couleur de plus. */
+    var congePose = !!(ligneJour && ligneJour.ecart_evenement === 'conge_horaire');
 
     var td = Kit.ce('td', classe +
       (aVenir ? ' futur' : '') +
@@ -935,15 +939,17 @@
       (touchable && vue.lectureSeule ? ' no' : ''));
     td.appendChild(Kit.ce('div', 'num', String(jour)));
     if (mini) td.appendChild(Kit.ce('div', 'mini', mini));
-    if (annotee || ajustee) {
+    if (annotee || ajustee || congePose) {
       var reperes = Kit.ce('div', 'reperes');
       if (annotee) reperes.appendChild(Kit.ce('span', 'rp note', '•'));
       if (ajustee) reperes.appendChild(Kit.ce('span', 'rp heures', '◆'));
+      if (congePose) reperes.appendChild(Kit.ce('span', 'rp conge', '▾'));
       td.appendChild(reperes);
-      td.setAttribute('aria-description',
-        (annotee ? 'journée annotée' : '') +
-        (annotee && ajustee ? ', ' : '') +
-        (ajustee ? 'heures ajustées' : ''));
+      var dits = [];
+      if (annotee) dits.push('journée annotée');
+      if (ajustee) dits.push('heures ajustées');
+      if (congePose) dits.push('congé posé sur cette journée');
+      td.setAttribute('aria-description', dits.join(', '));
     }
     if (d === vue.aujourdhui) td.setAttribute('aria-current', 'date');
 
@@ -1686,6 +1692,26 @@
     if (TYPES_SANS_ECART.indexOf(type) !== -1) return Kit.ce('div');
     if (!conditions) return Kit.ce('div');
 
+    /* CORRECTION B2 DE LA RELECTURE DES LOTS 20 À 22 — UN CONGÉ POSÉ À L'HEURE
+       N'EXISTAIT PAS DANS CET ÉCRAN, ET S'Y ÉCRASAIT SANS UN MOT.
+
+       Le lot 21 écrit le congé sur `journee.ecart_*`, avec l'événement
+       `conge_horaire`. Ce fichier n'a pas été touché, et `EVENEMENTS_ECART`
+       n'en connaît toujours que trois : le sélecteur s'ouvrait sur une valeur
+       qui ne correspond à aucune option, ne sélectionnait RIEN, et rien nulle
+       part ne disait qu'un congé était posé. Deux gestes le détruisaient — le
+       bouton « Retirer ce que j'avais déclaré », et le simple fait de déclarer
+       un vrai événement, qui écrasait les quatre colonnes.
+
+       La feuille de pose, elle, REFUSE d'écrire par-dessus un congé existant :
+       « un congé est déjà posé sur cette journée — retirez-le d'abord ». Les
+       deux écrans doivent dire la même chose. Celui-ci nomme donc le congé et
+       renvoie là où il se retire, plutôt que d'offrir une déclaration qui le
+       ferait disparaître (B.0-7, B.0-9). */
+    if (ligne.ecart_evenement === 'conge_horaire') {
+      return blocCongeHorairePose(d, ligne);
+    }
+
     var etat = {
       evenement: ligne.ecart_evenement || '',
       heure: String(ligne.ecart_heure_reelle || '').slice(0, 5) || null,
@@ -1965,6 +1991,38 @@
     redessiner();
     return det;
   }
+
+  /* §21.3 — CE QUE LA JOURNÉE PORTE, ET OÙ IL SE RETIRE. Une note, pas un
+     formulaire : un congé se pose et se retire depuis « Mes congés », parce
+     qu'il vaut pour plusieurs contrats à la fois et que le retirer d'un seul
+     ici laisserait les autres derrière. */
+  function blocCongeHorairePose(d, ligne) {
+    var minutes = -(ligne.ecart_minutes || 0);
+    var destination = LIBELLE_DESTINATION_CONGE[ligne.ecart_impute_sur] ||
+      'vos compteurs';
+    var bloc = Kit.ce('div');
+    bloc.appendChild(Kit.note('Un congé de ' + Kit.heures(minutes) + ' est posé ce jour-là',
+      'Déduit de ' + destination + '. La journée reste travaillée : ' +
+      'l’indemnité d’entretien reste due, et vos minutes du contrat aussi. ' +
+      'Ce congé se retire depuis « Mes congés », où il vaut peut-être pour ' +
+      'd’autres enfants.'));
+    var b = Kit.bouton('btn nt', function () {
+      var m = d.split('-');
+      global.App.aller('conges', { annee: Number(m[0]), mois: Number(m[1]) });
+    });
+    b.textContent = 'Ouvrir « Mes congés »';
+    bloc.appendChild(b);
+    bloc.appendChild(Kit.ce('p', 'sb q',
+      'Tant que ce congé est posé, aucune déclaration d’horaire ne peut être ' +
+      'saisie sur cette journée : les deux se disputeraient les mêmes minutes.'));
+    return bloc;
+  }
+
+  var LIBELLE_DESTINATION_CONGE = {
+    recuperation: 'votre récupération',
+    conges_payes: 'vos congés payés',
+    sans_solde: 'votre salaire, en sans solde'
+  };
 
   function heureLisible(minutes) {
     return Math.floor(minutes / 60) + 'h' + String(minutes % 60).padStart(2, '0');

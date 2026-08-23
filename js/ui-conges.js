@@ -890,6 +890,8 @@
          part d'une valeur ronde que Maria remplace. */
       minutes: format === 'demi' ? demiJournee().minutes : 90,
       qui: {},
+      /* Les contrats décochés PAR UN OBSTACLE, et non par Maria. */
+      exclu: {},
       cpt: {}
     };
     etapeHeure();
@@ -937,6 +939,16 @@
      n'empêche. On refuse plutôt que d'écraser : chacun de ces trois cas
      détruirait une donnée que personne ne peut recalculer. */
   function obstacleDuJour(f, jour) {
+    /* CORRECTION C1 — L'ÉCHEC DE LECTURE DIT SON VRAI MOTIF.
+
+       Le repli posait une ligne factice `{ ecart_evenement: 'illisible' }`, et
+       `obstacleDuJour` tombait sur la branche suivante : Maria lisait « une
+       déclaration d'horaire est déjà posée ce jour-là » sur une journée où il
+       n'y a rien, et allait la chercher dans l'espace enfant. Le comportement
+       — échouer fermé — était le bon ; c'est la phrase qui mentait. */
+    if (f.contexteIllisible) {
+      return 'impossible de vérifier cette journée pour l’instant';
+    }
     var l = (f.journeesPose || {})[jour];
     if (l && l.ecart_evenement === 'conge_horaire') {
       /* Reposer par-dessus remplacerait la déclaration existante sans un mot,
@@ -1012,7 +1024,7 @@
 
         chJour.bloc.addEventListener('change', function () {
           parcours.jour = chJour.valeur();
-          chargerJourneesDuJour().then(majTout);
+          chargerContexteDuJour().then(majTout);
         });
         if (chDuree) {
           chDuree.input.addEventListener('change', function () {
@@ -1035,7 +1047,9 @@
             if (parcours.minutes >= demi.minutes && demi.minutes > 0) {
               alerte.appendChild(Kit.warnbox(
                 Kit.heures(parcours.minutes) + ' : c’est une demi-journée ou plus',
-                ' Au-delà de ' + Kit.heures(demi.minutes) + ', choisissez « une ' +
+                /* REMARQUE 4 — « au-delà de » excluait 4 h 30, qui est
+                   pourtant déjà refusé. La borne est stricte : on le dit. */
+                ' À partir de ' + Kit.heures(demi.minutes) + ', choisissez « une ' +
                 'demi-journée » ou « une ou plusieurs journées ».'));
               dureeOk = false;
             } else if (parcours.minutes <= 0) {
@@ -1063,8 +1077,23 @@
           fiches.forEach(function (f) {
             var id = f.contrat.id;
             var obstacle = obstacleDuJour(f, parcours.jour);
+
+            /* UN DÉCOCHAGE IMPOSÉ N'EST PAS UN CHOIX DE MARIA.
+
+               L'obstacle décoche le contrat pour empêcher l'écriture. Mais la
+               date se change dans la même feuille : si Maria déplace la pose
+               sur une journée libre, le contrat doit REVENIR de lui-même. Sans
+               cette mémoire, il resterait exclu en silence — la feuille dirait
+               « Poser 1h00 sur 2 contrats » là où trois sont gardés, sans que
+               rien à l'écran n'explique le troisième absent. */
+            if (obstacle) {
+              parcours.exclu[id] = true;
+              parcours.qui[id] = false;
+            } else if (parcours.exclu[id]) {
+              delete parcours.exclu[id];
+              delete parcours.qui[id];
+            }
             var coche = parcours.qui[id] !== false && !obstacle;
-            if (obstacle) parcours.qui[id] = false;
 
             var b = Kit.choix(zoneQui, 'c1', coche ? '●' : '○',
               f.contrat.prenom_enfant,
@@ -1091,29 +1120,93 @@
               : (retenus.length > 1 ? ' sur ' + retenus.length + ' contrats' : ''));
         }
 
-        chargerJourneesDuJour().then(majTout);
+        chargerContexteDuJour().then(majTout);
       });
   }
 
   /* Les journées déjà saisies ce jour-là, pour chaque contrat : c'est ce qui
      dit si la pose est possible. Un échec de lecture ne laisse pas croire que
      la voie est libre — il coche l'obstacle « impossible de vérifier ». */
-  function chargerJourneesDuJour() {
+  /* CORRECTION B1 DE LA RELECTURE DES LOTS 20 À 22 — LE GARDE-FOU VÉRIFIAIT
+     LE SOLDE D'UN MOIS, ET L'ÉCRITURE ATTERRISSAIT SUR UN AUTRE.
+
+     `cpDe(f)` lit le compteur d'entrée de `f.entree`, construit UNE FOIS à
+     l'ouverture de l'écran, pour le MOIS AFFICHÉ. Or la feuille de pose offre
+     un champ de date libre sur quatre ans. Maria consulte juillet, pose une
+     demi-journée au 15 octobre : l'écran annonce les réserves de juillet, le
+     bouton « Congés payés » est actif, et l'écriture consomme un compteur
+     d'octobre qui peut être vide. Le moteur n'écrête pas, `cpDisponible` borne
+     l'affichage à zéro — et le solde négatif n'apparaît nulle part, pour
+     toujours (RG-12, aucune remise à zéro).
+
+     Changer de date recharge donc AUSSI les compteurs, pour le mois de la date
+     choisie. Chaque fiche porte `entreeDuJour` ; `cpDuJour` et `supDuJour` la
+     lisent, et c'est elle — pas le mois affiché — qui décide de ce que les
+     congés payés couvrent.
+
+     ÉCHOUE FERMÉ. Si la chaîne du mois visé ne peut pas être calculée, la
+     fiche est marquée illisible et la pose lui est refusée : proposer un
+     compteur qu'on n'a pas pu lire est exactement ce qui a produit ce
+     défaut. */
+  function chargerContexteDuJour() {
     var m = Chaine.moisDeDate(parcours.jour);
     return Promise.all((vue.fiches || []).map(function (f) {
       if (f.erreur) return null;
-      return global.App.journees(f.contrat.id, m.annee, m.mois)
-        .then(function (j) { f.journeesPose = j || {}; })
-        .catch(function () {
-          f.journeesPose = {};
-          f.journeesPose[parcours.jour] = { type: 'presence', ecart_evenement: 'illisible' };
-        });
+      return Promise.all([
+        global.App.journees(f.contrat.id, m.annee, m.mois)
+          .then(function (j) { return { ok: true, journees: j || {} }; })
+          .catch(function () { return { ok: false, journees: {} }; }),   // C1 : dit fermé, et dit vrai
+        global.App.serie(f.contrat, m)
+          .then(function (chaine) {
+            return { ok: true, entree: global.App.moisDe(chaine, m.annee, m.mois) };
+          })
+          .catch(function () { return { ok: false, entree: null }; })
+      ]).then(function (r) {
+        f.journeesPose = r[0].journees;
+        f.entreeDuJour = r[1].entree;
+        /* `null` sans erreur = le contrat ne couvre pas ce mois. Ce n'est pas
+           un échec : `fichesDuJour` l'écarte déjà par ses bornes. */
+        f.contexteIllisible = !r[0].ok || !r[1].ok;
+      });
     })).then(function () { return true; });
   }
 
+  /* Les réserves du MOIS DE LA DATE CHOISIE. Le repli sur `f.entree` ne sert
+     qu'aux écrans qui n'ouvrent pas la feuille de pose. */
+  function entreeDuJour(f) {
+    return f.entreeDuJour || f.entree || null;
+  }
+  function cpDuJour(f) {
+    var e = entreeDuJour(f);
+    return Kit.cpDisponible(e && e.compteurEntree);
+  }
+  function supDuJour(f) {
+    var e = entreeDuJour(f);
+    return Kit.supDisponible(e && e.compteurEntree);
+  }
+  /* Le solde SIGNÉ, pour l'affichage. Voir la correction C3. */
+  function supSoldeDuJour(f) {
+    var e = entreeDuJour(f);
+    return Kit.supSolde(e && e.compteurEntree);
+  }
+  function condDuJour(f) {
+    var m = Chaine.moisDeDate(parcours.jour);
+    return condDe(f, m.annee, m.mois);
+  }
+
+  /* CORRECTION C3 — LE SOLDE AFFICHÉ EST LE SOLDE SIGNÉ.
+
+     `supDisponible` borne à zéro : c'est ce qu'une ventilation a le droit de
+     CONSOMMER, et ça doit le rester. Mais l'écran l'utilisait aussi pour
+     AFFICHER, et annonçait « 0h00 » sur un compteur à − 1 h 30 — juste après
+     avoir prévenu « vous devrez 1 h 30 à cette famille ». C'est la correction
+     B5 du lot 17, portée à l'espace enfant et pas ici. Les deux lectures sont
+     désormais distinctes, comme `js/ui-kit.js` le demande. */
   function reservesLisibles(f) {
-    var cond = condDe(f);
-    return 'récup ' + Kit.heures(supDe(f)) + ' · CP ' + Kit.joursCp(cpDe(f), mpjc(cond));
+    var cond = condDuJour(f) || condDe(f);
+    var signe = supSoldeDuJour(f);
+    return 'récup ' + (signe < 0 ? '− ' + Kit.heures(-signe) : Kit.heures(signe)) +
+      ' · CP ' + Kit.joursCp(cpDuJour(f), mpjc(cond));
   }
 
   /* §21.2 — L'ISSUE, POUR CET ENFANT ET LUI SEUL.
@@ -1126,9 +1219,12 @@
      négatif, par aucun chemin. */
   function blocIssue(f, minutes, apres) {
     var id = f.contrat.id;
-    var cond = condDe(f);
-    var cp = cpDe(f);
-    var sup = supDe(f);
+    /* CORRECTION B1 — tout ce bloc lit le mois de la DATE CHOISIE, pas le mois
+       affiché : c'est lui que l'écriture va toucher. */
+    var cond = condDuJour(f) || condDe(f);
+    var cp = cpDuJour(f);
+    var sup = supDuJour(f);
+    var soldeSup = supSoldeDuJour(f);
     var cpCouvre = cp >= minutes;
 
     /* LE PRÉ-CHOIX SE RECALCULE TANT QUE MARIA N'A RIEN CHOISI.
@@ -1172,7 +1268,10 @@
 
     /* L'EFFET CHIFFRÉ, rejoué par le moteur — jamais écrit en dur (B.0-4). */
     if (choisi === 'recuperation') {
-      var apresRecup = sup - minutes;
+      /* La dette annoncée part du solde SIGNÉ : sur un compteur déjà à
+         − 3 h 00, annoncer « vous devrez 1 h 30 » au lieu de 4 h 30 serait
+         faux de toute la dette déjà accumulée (même défaut que B5 du lot 17). */
+      var apresRecup = soldeSup - minutes;
       bloc.appendChild(apresRecup >= 0
         ? Kit.ce('div', 'sb', '→ récupération : ' + Kit.heures(apresRecup))
         : Kit.warnbox('Vous devrez ' + Kit.heures(-apresRecup) + ' à cette famille',
@@ -1844,9 +1943,31 @@
     return f;
   }
 
+  /* CORRECTION C2 DE LA RELECTURE — `brutDe` NE RENDAIT JAMAIS `null`.
+
+     `(r && r.salaireBrutCentimes) || 0` rendait zéro dans les deux cas : brut
+     inconnu, et brut réellement nul. Les trois garde-fous qui testent
+     `brut != null` étaient donc STRUCTURELLEMENT INATTEIGNABLES, et l'écran
+     annonçait « − 0,00 € sur son mois » sur un mois dont la rémunération n'est
+     pas renseignée (§17.2 point 3). Un zéro crédible et faux est exactement ce
+     que ce projet refuse.
+
+     `null` désigne maintenant « inconnu », et lui seul. Les appelants qui
+     testaient la valeur en booléen continuent de fonctionner : `null` est
+     faux, comme `0` l'était.
+
+     OÙ LIRE « INCONNU ». Pas dans le résultat du moteur : `js/chaine-mois.js`
+     calcule un mois sans barème AVEC UN BARÈME NUL — c'est voulu, les heures
+     sup et les congés doivent continuer de s'accumuler — et le résultat porte
+     donc `salaireBrutCentimes = 0`, indiscernable d'un brut réellement nul.
+     Le maillon, lui, porte `salaireManquant` : c'est le seul endroit où
+     l'information survit. C'est lui qu'on lit. */
   function brutDe(fiche) {
-    var r = fiche.entree && fiche.entree.resultat;
-    return (r && r.salaireBrutCentimes) || 0;
+    var e = entreeDuJour(fiche) || fiche.entree;
+    if (!e || e.salaireManquant) return null;
+    var r = e.resultat;
+    if (!r || r.salaireBrutCentimes == null) return null;
+    return r.salaireBrutCentimes;
   }
 
   /* LOT 16 §16.1 d) — « Vos réserves ne couvrent pas toute la période ».

@@ -390,12 +390,15 @@ var moisPrecedent = corpsMoisPrecedent
   var compte = Number(annonce.split(' ')[0]);
   assert(compte >= 2,
     'P7 : elle compte les mois à clôturer des DEUX contrats — ' + compte);
-  /* La pastille est large de deux caractères : « 14 » y tiendrait, « 9+ » dit
-     la même chose sans jamais déborder, et le nombre exact reste dans
-     l'annonce ci-dessus. */
-  assert(txt(pas).length <= 2, 'P7 : et elle ne déborde jamais — « ' + txt(pas) + ' »');
-  assert(compte <= 9 ? txt(pas) === String(compte) : txt(pas) === '9+',
-    'P7 : au-delà de neuf, elle affiche « 9+ »');
+  /* LOT 22 §22.3 A2, remarque 3 de la relecture — LA PASTILLE AFFICHE LE
+     COMPTE RÉEL, plus « 9+ ». Avec quatre contrats, trois mois de retard en
+     font douze : « 9+ » cachait précisément le cas où le chiffre compte. La
+     pastille s'élargit d'elle-même (`min-width` et `padding` en CSS), et
+     l'annonce vocale disait déjà le vrai nombre — les deux concordent enfin. */
+  assert(txt(pas) === String(compte),
+    'P7 : la pastille affiche le COMPTE RÉEL — « ' + txt(pas) + ' » pour ' + compte);
+  assert(txt(pas) === annonce.split(' ')[0],
+    'P7 : et elle dit exactement la même chose que l’annonce vocale');
 
   /* Tout clôturé : la pastille DISPARAÎT. Une pastille qui reste allumée
      alors qu'il n'y a rien à faire s'ignore au bout de trois jours. */

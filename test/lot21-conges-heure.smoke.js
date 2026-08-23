@@ -492,6 +492,135 @@ function boutonIssue(prenom, libelle) {
   await pause(600);
   contient(corps, '10h56', 'A7 : et la pose de Tom, elle, n’a pas bougé');
 
+  /* ==================================================================== */
+  /* CORRECTION B1 — LE GARDE-FOU SUIT LA DATE CHOISIE, PAS LE MOIS AFFICHÉ */
+  /* ==================================================================== */
+  console.log('\n--- B1 : les compteurs suivent la date, pas l’écran ---');
+
+  /* Le défaut : `cpDe` lisait le compteur d'entrée du MOIS AFFICHÉ, alors que
+     la feuille offre un champ de date libre sur quatre ans. Maria consultait
+     juillet et posait en octobre : l'écran annonçait les réserves de juillet,
+     et l'écriture consommait un compteur d'octobre qui pouvait être vide.
+     Les congés payés passaient en négatif — et `cpDisponible` bornant à zéro,
+     le solde négatif n'apparaissait NULLE PART, pour toujours (RG-12).
+
+     Tom entre octobre avec 0 j de congés payés. En décembre, il en a acquis
+     deux mois : 5 j. Le même écran, la même feuille, deux dates — et deux
+     réponses différentes. C'est exactement ce que le garde-fou doit faire. */
+  window.App.invalider();
+  await ouvrirFormat('Une durée libre');
+  saisirDuree('01:00');
+  await pause(300);
+
+  /* On se place sur le VENDREDI 9 — un jour de planning libre de tout congé.
+     Le 8 en porte déjà un pour Tom, et la correction B2 refuse d'écrire
+     par-dessus : Tom y serait écarté, et ce n'est pas ce qu'on mesure ici. */
+  var champsDate = sheet.querySelectorAll('.fld .dates select');
+  champsDate[0].value = '9';
+  champsDate[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await pause(700);
+  absent(sheet, 'un congé est déjà posé sur cette journée',
+    'B1 : le 9 octobre est libre — Tom est bien dans le parcours');
+
+  contient(sheet, 'CP 0 j', 'B1 : en octobre, Tom n’a aucun congé payé');
+  var cpTomOct = boutonIssue('Tom', 'Congés payés');
+  assert(!!(cpTomOct && cpTomOct.disabled),
+    'B1 : et le bouton « Congés payés » est inactif');
+
+  /* On déplace la date en décembre 2026, sans rien changer d'autre. */
+  champsDate[1].value = '12';                      // le mois
+  champsDate[1].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await pause(700);
+
+  contient(sheet, 'CP 5 j',
+    'B1 : à la date de DÉCEMBRE, Tom a bien ses 5 jours acquis');
+  var cpTomDec = boutonIssue('Tom', 'Congés payés');
+  assert(!!(cpTomDec && !cpTomDec.disabled),
+    'B1 : et le bouton devient actif — le garde-fou a suivi la date');
+
+  /* Et dans l'autre sens, celui qui creusait le trou : on revient en octobre,
+     le bouton doit se refermer. */
+  champsDate[1].value = '10';
+  champsDate[1].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await pause(700);
+  var cpTomRetour = boutonIssue('Tom', 'Congés payés');
+  assert(!!(cpTomRetour && cpTomRetour.disabled),
+    'B1 : et il se referme quand on revient sur un mois sans réserve');
+  contient(issueDe('Tom'), 'plus assez — reste 0 j',
+    'B1 : avec la phrase du §21.2');
+
+  /* ==================================================================== */
+  /* CORRECTION C3 — LE SOLDE NÉGATIF S'AFFICHE (A5, seconde moitié)      */
+  /* ==================================================================== */
+  console.log('\n--- C3 : la récupération négative se voit ---');
+
+  /* Tom porte déjà un congé le 8 octobre. On regarde une autre journée : sa
+     récupération d'entrée d'octobre est de 1 h 30, et une pose de 2 h la
+     ferait passer en négatif. `supDisponible` bornait l'affichage à zéro. */
+  saisirDuree('02:00');
+  await pause(300);
+  boutonIssue('Tom', 'Récupération').click();
+  await pause(250);
+  contient(issueDe('Tom'), 'Vous devrez 0h30 à cette famille',
+    'C3 : la dette est annoncée avant validation');
+  contient(sheet, 'récup 1h30',
+    'C3 : et le solde affiché est le solde SIGNÉ, pas un zéro borné');
+
+  /* ==================================================================== */
+  /* CORRECTION C2 — « − 0,00 € » NE S'AFFICHE PLUS                       */
+  /* ==================================================================== */
+  console.log('\n--- C2 : une retenue inconnue se dit, elle ne vaut pas zéro ---');
+
+  /* Noah perd sa rémunération : son avenant n'en porte plus (§17.2 point 3,
+     brut et net sont nullables). Le sans solde ne peut alors pas être chiffré,
+     et l'écran doit le DIRE — pas annoncer « − 0,00 € ». */
+  AVENANTS['c-noah'][0].brut_mensuel_centimes = null;
+  AVENANTS['c-noah'][0].net_mensuel_centimes = null;
+  window.App.invalider();
+  await ouvrirFormat('Une durée libre');
+  saisirDuree('01:00');
+  await pause(400);
+  boutonIssue('Noah', 'Sans solde').click();
+  await pause(250);
+  contient(issueDe('Noah'), 'la retenue ne peut pas être chiffrée',
+    'C2 : la phrase existe enfin — elle était structurellement inatteignable');
+  absent(issueDe('Noah'), '− 0,00 €', 'C2 : et le zéro crédible et faux a disparu');
+  AVENANTS['c-noah'][0].brut_mensuel_centimes = 140400;
+  AVENANTS['c-noah'][0].net_mensuel_centimes = 107100;
+
+  /* ==================================================================== */
+  /* CORRECTION B2 — LE CONGÉ POSÉ EXISTE DANS L'ESPACE ENFANT            */
+  /* ==================================================================== */
+  console.log('\n--- B2 : le congé posé se voit, et ne s’écrase pas ---');
+
+  window.App.invalider();
+  window.App.aller('enfant', { contratId: 'c-tom', annee: 2026, mois: 10 });
+  await pause(700);
+
+  var case8 = Array.prototype.filter.call(
+    corps.querySelectorAll('table.cal td'), function (td) {
+      return txt(td.querySelector('.num')) === '8';
+    })[0];
+  assert(!!case8 && !!case8.querySelector('.rp.conge'),
+    'B2 : le calendrier porte un repère sur la journée du congé');
+  assert(String(case8.getAttribute('aria-description') || '')
+    .indexOf('congé posé') !== -1,
+    'B2 : et il est annoncé aux lecteurs d’écran');
+
+  case8.click();
+  await pause(300);
+  contient(sheet, 'Un congé de 1h34 est posé ce jour-là',
+    'B2 : la feuille du jour NOMME le congé');
+  contient(sheet, 'Déduit de votre récupération', 'B2 : et dit d’où il sort');
+  contient(sheet, 'La journée reste travaillée',
+    'B2 : elle rappelle que l’entretien reste dû');
+  absent(sheet, 'Que s’est-il passé ce jour-là ?',
+    'B2 : aucune déclaration d’horaire n’est proposée — elle écraserait le congé');
+  absent(sheet, 'Retirer ce que j’avais déclaré',
+    'B2 : et le bouton qui l’effaçait sans un mot a disparu');
+  assert(!!parTexte(sheet, 'button', 'Ouvrir « Mes congés »'),
+    'B2 : la feuille renvoie là où le congé se retire');
+
   console.log('\n' + (echecs ? echecs + ' échec(s).' : 'Tout est conforme.'));
   process.exit(echecs ? 1 : 0);
 })().catch(function (e) {

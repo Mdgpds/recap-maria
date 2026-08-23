@@ -74,6 +74,23 @@
     var ligneEnfants = entree('Mes enfants', 'Chargement…',
       function () { global.App.aller('enfants', {}); });
     corps.appendChild(ligneEnfants);
+
+    /* CORRECTION C5 DE LA RELECTURE — « FAMILLES » REVIENT DANS LE MENU.
+
+       Le §22.1 demande une entrée unique « Mes enfants » et une page dédiée.
+       Il ne demande NULLE PART de supprimer l'accès par famille : c'est un
+       changement de navigation que personne n'a réclamé, sur un écran que
+       Maria connaît, et la grille du lot 22 dit « rien d'autre n'a bougé ».
+       L'entrée est donc rétablie telle qu'elle était.
+
+       Le raccourci « Voir par famille » reste en bas de la page « Mes
+       enfants » : deux portes vers le même écran ne coûtent rien, et la
+       seconde est utile là où l'on vient de lire la liste des enfants.
+       Question remontée à Adrien : s'il préfère l'entrée unique, c'est cette
+       ligne-ci qui repart. */
+    var ligneFamilles = entree('Familles', 'Chargement…',
+      function () { global.App.aller('familles', {}); });
+    corps.appendChild(ligneFamilles);
     /* LOT 17 §17.9 — DEUX ENTRÉES DISPARAISSENT DU MENU.
 
        « Mes contrats types » : décision d'Adrien. Les données restent en base
@@ -133,6 +150,15 @@
       poserSousTitre(ligneEnfants, 'Liste indisponible pour l’instant');
     });
 
+    var pFamilles = global.DB.listFamillesAvecContrats().then(function (familles) {
+      var enCours = (familles || []).filter(function (f) { return !f.archive; });
+      poserSousTitre(ligneFamilles, enCours.length
+        ? enCours.map(function (f) { return f.nom; }).join(', ')
+        : 'Aucune famille pour l’instant');
+    }).catch(function () {
+      poserSousTitre(ligneFamilles, 'Liste indisponible pour l’instant');
+    });
+
     /* §16.4 — LE VRAI RÉGLAGE, ou RIEN. Une ligne qui n'a pas pu lire son
        réglage n'affiche aucun sous-titre : mieux vaut une ligne muette qu'un
        mot d'attente qu'elle ne saura jamais lever. */
@@ -142,7 +168,7 @@
       poserSousTitre(ligneRappels, null);
     });
 
-    return Promise.all([pEnfants, pRappels]);
+    return Promise.all([pEnfants, pFamilles, pRappels]);
   }
 
   function poserSousTitre(ligne, texte) {
@@ -524,14 +550,16 @@
     return { enGarde: enGarde, termines: termines };
   }
 
+  /* REMARQUE 5 DE LA RELECTURE — le ternaire portait deux branches
+     identiques : un accord au pluriel prévu puis oublié. « en garde » ne
+     s'accorde pas, il n'avait rien à faire là. */
   function phraseComptes(parts) {
     var g = parts.enGarde.length;
     var t = parts.termines.length;
-    var gauche = g + (g > 1 ? ' en garde' : ' en garde');
-    var droite = t + ' contrat' + (t > 1 ? 's terminés' : ' terminé');
     if (!g && !t) return 'Aucun enfant pour l’instant';
+    var gauche = g + ' en garde';
     if (!t) return gauche;
-    return gauche + ' · ' + droite;
+    return gauche + ' · ' + t + ' contrat' + (t > 1 ? 's terminés' : ' terminé');
   }
 
   function afficherEnfants(ctx) {

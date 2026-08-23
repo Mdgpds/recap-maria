@@ -436,13 +436,14 @@ var sheet = document.getElementById('sheet');
     'LOT 8 : la rubrique « Consulter » a disparu du Menu');
   assert(!parTexte(corps, '.menu', 'Anciens contrats'),
     'LOT 8 : « Anciens contrats » n’est plus une entrée du Menu');
-  /* LOT 22 §22.1 — « Mes enfants » REMPLACE « Familles » dans le Menu. La vue
-     par famille n'est pas perdue : elle est reprise en bas de la page « Mes
-     enfants ». Maria pense par enfant, pas par foyer. */
-  assert(!parTexte(corps, '.menu', 'Familles'),
-    'LOT 22 : « Familles » n’est plus une entrée du Menu');
+  /* LOT 22 §22.1 — « Mes enfants » S'AJOUTE au Menu ; « Familles » y reste.
+     La spécification demande l'entrée « Mes enfants » et une page dédiée ;
+     elle ne demande nulle part de supprimer l'accès par famille. Correction C5
+     de la relecture : les deux entrées cohabitent. */
+  assert(!!parTexte(corps, '.menu', 'Familles'),
+    'LOT 22 : « Familles » reste une entrée du Menu');
   var ligneEnfants = parTexte(corps, '.menu', 'Mes enfants');
-  assert(!!ligneEnfants, 'LOT 22 : le Menu propose « Mes enfants »');
+  assert(!!ligneEnfants, 'LOT 22 : et « Mes enfants » s’y ajoute');
   assert(!!parTexte(corps, '.menu', 'Ajouter un enfant'), 'le Menu garde « Ajouter un enfant »');
 
   /* ---------- 7bis. Onglet Historique ---------- */

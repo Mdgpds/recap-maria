@@ -82,7 +82,15 @@
    dans la page elle-même. Sans incrément, le service worker servirait
    l'ancienne page avec le nouveau CSS — une barre stylée pour des SVG, avec
    des caractères Unicode dedans. */
-var CACHE = 'recap-mes-enfants-v1';
+/* CORRECTIONS DE LA RELECTURE DES LOTS 20 À 22 — NOM DE CACHE CHANGÉ.
+
+   Aucun fichier ajouté, mais cinq fichiers servis changent : `js/app.js`,
+   `js/ui-conges.js`, `js/ui-contrat.js`, `js/ui-enfant.js`, `js/ui-menu.js`,
+   et `css/style.css`. Deux d'entre eux se répondent — la correction B2 fait
+   dire la MÊME chose à l'espace enfant et à « Mes congés » — et servir l'un
+   sans l'autre rendrait exactement le défaut corrigé : un congé posé visible
+   d'un côté, écrasable de l'autre. */
+var CACHE = 'recap-mes-enfants-v2';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

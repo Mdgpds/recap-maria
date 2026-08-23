@@ -898,6 +898,10 @@ button.coche:active { transform: scale(.99); }
 }
 .rp { font-size: 9px; color: var(--ink3); }
 .rp.heures { font-size: 7px; }
+/* Lot 21/22, correction B2 — un congé posé à l'heure sur une journée
+   travaillée. Troisième repère, jamais une couleur de plus : le calendrier a
+   déjà quatre états codés par la teinte. */
+.rp.conge { font-size: 9px; color: var(--ac); }
 .lg i.gnote, .lg i.gheures {
   border: none; background: none; width: auto; height: auto;
   color: var(--ink3); font-size: 10px; line-height: 1;
