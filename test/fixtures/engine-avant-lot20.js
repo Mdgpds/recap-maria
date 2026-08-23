@@ -1,4 +1,14 @@
 /* ============================================================================
+   FIXTURE — COPIE FIGÉE DE `js/engine.js` AU COMMIT `7433800`,
+   c'est-à-dire le moteur tel qu'il était AVANT le lot 20.
+
+   Ne jamais modifier ce fichier. Il n'est là que pour une chose : servir de
+   témoin au différentiel exhaustif du critère A1 du §20.5 — « un mois
+   entièrement hors familiarisation se calcule à l'identique de l'avant-lot ».
+   Le jour où on le « met à jour », le différentiel se compare à lui-même et
+   ne prouve plus rien.
+   ========================================================================= */
+/* ============================================================================
    engine.js — Moteur de calcul de l'application « Récap Maria ».
 
    Module PUR (§1 des specs) : aucun accès au DOM, aucun appel réseau,
@@ -12,13 +22,6 @@
    Aucun float dans les calculs — seule exception sanctionnée par les specs :
    le paramètre `coefficient` de montantCentimes (majoration 1.5 de RG-13),
    avec UN SEUL arrondi final.
-
-   LOT 20 — LA FAMILIARISATION DEVIENT UNE PÉRIODE (§20.1 à §20.3). Elle
-   n'est plus un simple type de journée : c'est une PÉRIODE de premier rang,
-   qui entre dans le moteur COMME DONNÉE (`periodesFamiliarisation`), jamais
-   lue par lui depuis la base ni depuis l'horloge. Pendant cette période, la
-   rémunération est HORAIRE — seules les minutes déclarées sont payées — et
-   la part mensualisée du mois est proratisée sur les jours qui restent.
 
    LOT 17 — LES CONDITIONS SONT DATÉES (§17.0 à §17.3). Le moteur ne lit plus
    aucun réglage sur `contrat` : il reçoit les `conditions` du mois, c'est-à-
@@ -504,138 +507,19 @@
      Retourne { joursCouverts, joursDuMois }. Quand les deux sont égaux, le
      prorata vaut 1 et aucun arrondi n'a lieu : c'est ce qui garantit qu'un
      mois entier donne EXACTEMENT le montant d'avant le lot 17. */
-  /* LOT 20 (§20.3) — LA PÉRIODE DE FAMILIARISATION EST UNE TROISIÈME BORNE.
-
-     Le prorata du lot 17 excluait les jours hors des dates du contrat. Un mois
-     mêlé — familiarisation du 1er au 19, garde ensuite — se calcule « en deux
-     parts » : la première aux heures déclarées, « le reste mensualisé au
-     prorata des jours couverts ». Les jours de familiarisation sortent donc du
-     numérateur, exactement comme les jours hors contrat, et pour la même
-     raison : ils sont payés autrement.
-
-     Le DÉNOMINATEUR ne bouge pas. C'est le mois entier au planning, et c'est
-     lui qui rend la phrase « 8 jours travaillés sur 22 » lisible pour une
-     famille. Le retrancher aussi ferait payer un mois plein pour huit jours.
-
-     Sans période, `joursFamiliarisation` vaut 0 et la fonction rend le même
-     couple qu'avant le lot 20, au jour près. */
-  function partCouverteDuMois(contrat, planning, annee, mois, periodesFam, parJour) {
+  function partCouverteDuMois(contrat, planning, annee, mois) {
     var jours = joursDuMois(annee, mois);
     var total = 0;
     var couverts = 0;
-    var enFamiliarisation = 0;
     for (var i = 0; i < jours.length; i++) {
       var d = jours[i];
       if (planning.indexOf(jourSemaine(d)) === -1) continue;
       total++;
       if (contrat.date_debut && d < contrat.date_debut) continue;
       if (contrat.date_fin && d > contrat.date_fin) continue;
-      /* CORRECTION B1 — AUCUN JOUR N'EST DÉDUIT DEUX FOIS.
-
-         Un jour qui échappe à la période suit son chemin ordinaire : il est
-         décompté en jours ouvrables, ou il porte une retenue de sans solde.
-         Cette retenue (RG-08) existe précisément pour ANNULER la part
-         mensualisée de la journée. Si le jour était en plus retranché du
-         prorata, la même journée serait déduite deux fois — 63,36 € de retenue
-         ET 1/22 du mois en moins. Il revient donc dans les jours couverts,
-         exactement comme dans un mois sans familiarisation.
-
-         `parJour` est optionnel : sans lui, la fonction se comporte comme
-         avant la correction. Les écrans qui l'appellent pour afficher « 8 jours
-         sur 22 » doivent le fournir, sinon leur quotient diverge de celui du
-         moteur. */
-      if (estEnFamiliarisation(d, periodesFam) &&
-          !echappeALaPeriode(parJour && parJour[d])) {
-        enFamiliarisation++;
-        continue;
-      }
       couverts++;
     }
-    return {
-      joursCouverts: couverts,
-      joursDuMois: total,
-      joursFamiliarisation: enFamiliarisation
-    };
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* §20.1 — Les périodes de familiarisation                             */
-  /* ------------------------------------------------------------------ */
-
-  /* Une période est une paire de dates pures, bornes INCLUSES, telle que la
-     table `periode_familiarisation` la porte. Le moteur ne la lit jamais
-     lui-même : elle lui arrive en entrée, comme les journées et les
-     imputations. Deux périodes d'un même contrat ne peuvent pas se chevaucher
-     (contrainte d'exclusion de la migration 016), mais le moteur ne s'y fie
-     pas : il répond « oui » dès la première qui contient le jour. */
-  function periodeFamiliarisationDuJour(dateStr, periodes) {
-    for (var i = 0; i < (periodes || []).length; i++) {
-      var p = periodes[i];
-      if (!p || !p.date_debut || !p.date_fin) continue;
-      if (dateStr >= p.date_debut && dateStr <= p.date_fin) return p;
-    }
-    return null;
-  }
-
-  function estEnFamiliarisation(dateStr, periodes) {
-    return periodeFamiliarisationDuJour(dateStr, periodes) !== null;
-  }
-
-  /* CORRECTION B1 DE LA RELECTURE DU LOT 20 — CE QUE LA PÉRIODE NE DOIT PAS
-     AVALER.
-
-     La priorité de la période sur la ligne de journée reste la bonne décision :
-     sans elle, un jour non déclaré serait payé une journée mensualisée pleine.
-     C'est son ÉTENDUE qui était trop large.
-
-     Deux types de journée TOUCHENT UN COMPTEUR, et les compteurs ne se
-     remettent jamais à zéro (RG-12) : un congé de Maria consomme des congés
-     payés ou de la récupération et pèse sur l'acquisition du mois ; un jour
-     sans solde déclenche une retenue (RG-08). Les avaler faussait, en silence,
-     des soldes qui se propagent sur des années. Ces deux-là gardent donc leur
-     type et suivent leur chemin ordinaire, même à l'intérieur d'une période.
-
-     Tout le reste reste avalé, et c'est exactement ce que la priorité de la
-     période existe pour couvrir : l'ABSENCE de ligne, `presence`,
-     `absence_enfant`, `ferie`, `hors_planning`. Aucun de ces cas ne touche un
-     compteur, et aucun ne doit payer une journée mensualisée que la
-     familiarisation remplace.
-
-     DÉCISION D'ADRIEN, 23 août 2026 : le cas n'est pas censé se produire — une
-     familiarisation est en début de contrat, avant tout compteur. S'il se
-     produit, « Maria prendra du sans solde, ou surtout sera amenée à modifier
-     la plage de dates de la familiarisation ». Le sans solde doit donc être
-     honoré, pas escamoté. */
-  var TYPES_QUI_ECHAPPENT_A_LA_PERIODE = ['conge_maria', 'sans_solde'];
-
-  function echappeALaPeriode(ligne) {
-    return !!(ligne && TYPES_QUI_ECHAPPENT_A_LA_PERIODE.indexOf(ligne.type) !== -1);
-  }
-
-  /* §20.4 d — LES JOURS OUVRÉS D'UNE PÉRIODE, dans l'ordre.
-
-     L'écran de la période liste « chaque jour ouvré de la période avec son
-     état ». Savoir quels jours du calendrier sont au planning est une règle du
-     moteur (c'est la même que celle du prorata) : un écran qui la referait la
-     ferait vivre à deux endroits, et le jour où un contrat passe au mercredi
-     l'un des deux resterait en arrière.
-
-     Les bornes du contrat ne sont pas appliquées ici : la période est bornée
-     par elle-même, et un écran qui affiche une période veut la voir en entier,
-     y compris la partie qu'un contrat raccourci ne couvrirait plus. */
-  function joursOuvresDePeriode(debutStr, finStr, joursPlanning) {
-    var planning = joursPlanning || PLANNING_DEFAUT;
-    var out = [];
-    if (!debutStr || !finStr || finStr < debutStr) return out;
-    var d = debutStr;
-    /* Borne dure : une période aberrante ne doit pas faire tourner l'écran
-       indéfiniment. Dix ans de jours, c'est déjà mille fois trop pour une
-       familiarisation de cinq à dix jours (RG-14). */
-    for (var garde = 0; garde < 3700 && d <= finStr; garde++) {
-      if (planning.indexOf(jourSemaine(d)) !== -1) out.push(d);
-      d = Feries.ajouterJours(d, 1);
-    }
-    return out;
+    return { joursCouverts: couverts, joursDuMois: total };
   }
 
   /* Le contrat couvre-t-il le mois entier ? (utile pour RG-11) */
@@ -845,11 +729,6 @@
                         'presence', ou 'ferie' si le calendrier le dit)
        compteurEntree : { minutesSup, minutesCpAcquis, minutesCpPris }
                         — LOT 17 : les congés payés sont en MINUTES (§17.6).
-       periodesFamiliarisation
-                      : LOT 20 (§20.1) — les lignes de
-                        `periode_familiarisation` du contrat qui RECOUPENT le
-                        mois, bornes incluses. Absent ou vide = comportement
-                        d'avant le lot 20, au centime près.
        annee, mois    : mois calculé
 
      Sortie : ResultatMois (§4.3 des specs). */
@@ -878,11 +757,6 @@
        db.js). Absent ou vide -> comportement d'avant le lot 9. */
     var imputations = entrees.imputations || [];
 
-    /* LOT 20 (§20.1) — les périodes de familiarisation, en DONNÉE. Le moteur
-       ne les lit ni en base ni à l'horloge : c'est la couche d'appel qui les
-       charge et les lui passe, comme les journées et les imputations. */
-    var periodesFam = entrees.periodesFamiliarisation || [];
-
     var joursPresence = 0;
     var entretienCentimes = 0;
     /* RG-03 / RG-04, détaillé depuis le lot 9 : base contractuelle, minutes
@@ -898,43 +772,7 @@
     var ecartsDeclares = [];
     var joursConge = [];             // jours 'conge_maria' posés dans le mois
     var joursSansSoldeSaisis = 0;    // lignes 'sans_solde' saisies explicitement
-    var joursFamiliarisation = 0;    // lignes 'familiarisation' HORS période (legacy)
-    /* §20.6 — journées dont Maria a retiré l'indemnité d'entretien.
-       Le document doit pouvoir écrire « 19 jours × 5,50 € + 1 jour sans
-       indemnité » : sans ce compte, le détail ne reconstitue pas le total et
-       la règle existante l'efface — on perdrait l'explication, pas le chiffre.
-
-       CORRECTION C1 DE LA RELECTURE — UN COMPTE PAR PART, comme les montants.
-       Un seul compteur additionnait les deux parts du mois. `libelleEntretien-
-       Detaille` confrontait alors `(joursPresence − joursSansEntretien) × tarif`
-       au seul entretien de la GARDE : les deux ne tombaient plus juste, et le
-       détail disparaissait — sur un document dont c'est justement le détail
-       qui éteint la contestation.
-
-       Le champ de premier niveau reste celui de la GARDE, et ce n'est pas un
-       détail de nommage : les instantanés d'avant le lot 20 ne le portent pas,
-       `ui-document.js` le lit avec `|| 0`, et un mois clôturé doit continuer de
-       se lire exactement pareil pour toujours (RG-15). */
-    var joursSansEntretien = 0;          // part mensualisée
-    var famJoursSansEntretien = 0;       // part familiarisation
-    /* §20.1 à §20.3 — la période de familiarisation, jour par jour. */
-    var famJoursDeLaPeriode = 0;     // jours du planning du mois dans une période
-    var famJoursDeclares = 0;        // ceux où des minutes ont été déclarées
-    var famMinutes = 0;              // total des minutes déclarées du mois
-    var famJoursAvecEntretien = 0;
-    var famEntretienCentimes = 0;
-    /* Les jours de la période qui portaient une AUTRE saisie (un congé posé
-       en groupe, un férié, une absence). Ils sont traités en familiarisation
-       comme tous les autres jours de la période — mais on ne l'avale pas :
-       l'écran doit pouvoir le dire (B.0-9). */
-    var famJoursIgnores = [];
-    /* Le détail jour par jour du mois : l'écran de la période et la carte de
-       l'Accueil en ont besoin, et aucun des deux ne doit le reconstituer —
-       « seules les minutes déclarées comptent » est une règle, pas un
-       affichage. Le moteur n'a pas d'horloge : c'est l'écran qui distingue
-       « à déclarer » (jour passé) de « à venir », lui seul sait quel jour on
-       est. Ici, on dit seulement ce qui EST déclaré. */
-    var famJours = [];
+    var joursFamiliarisation = 0;
     /* Type retenu pour chaque journée effectivement traitée du mois — jour du
        planning, dans les bornes du contrat. Sert au contrôle de correspondance
        B1 plus bas : une imputation doit correspondre aux journées RÉELLEMENT
@@ -961,69 +799,6 @@
       if (contrat.date_fin && d > contrat.date_fin) continue;
 
       var ligne = parJour[d];
-
-      /* LOT 20 (§20.4) — LA PÉRIODE PRIME SUR LA LIGNE.
-
-         Sans cette priorité, un jour de la période sans déclaration serait
-         présumé 'presence' (saisie par exception) : il paierait une journée
-         mensualisée pleine, son entretien et ses 30 minutes — l'exact
-         contraire de « seules les minutes déclarées sont payées ». La période
-         est de premier rang : à l'intérieur de ses bornes, le jour est de la
-         familiarisation, quoi que porte la ligne.
-
-         Un jour de la période qui portait une AUTRE saisie (un congé posé sur
-         les quatre contrats, un férié, une absence d'enfant) est donc traité
-         en familiarisation lui aussi — et il est NOMMÉ dans `joursIgnores`,
-         pour que l'écran puisse le dire au lieu de l'avaler. */
-      /* CORRECTION B1 — un congé de Maria et un jour sans solde gardent leur
-         type et suivent leur chemin ordinaire, même dans la période. Voir
-         `echappeALaPeriode` pour le raisonnement. */
-      if (estEnFamiliarisation(d, periodesFam) && !echappeALaPeriode(ligne)) {
-        typeDuJourTraite[d] = 'familiarisation';
-        famJoursDeLaPeriode++;
-        if (ligne && ligne.type && ligne.type !== 'familiarisation') {
-          famJoursIgnores.push(d);
-        }
-
-        /* Les minutes réellement faites, déclarées à la main. Rien de déclaré
-           = rien de payé : ni salaire, ni entretien. Un jour à zéro minute
-           déclarée n'est pas un jour déclaré — sinon l'entretien serait dû
-           sur un jour où l'enfant n'est pas venu. */
-        var minutesJour = minutesSaisies(ligne && ligne.minutes_reelles,
-                                         'minutes_reelles');
-        if (minutesJour > 0) {
-          famJoursDeclares++;
-          famMinutes += minutesJour;
-          /* §20.3 — l'entretien du jour est un CHOIX, et il paie le montant
-             PLEIN, jamais un prorata des heures. `entretien_du` vaut `true`
-             par défaut en base (migration 016) : retirer est un geste, pas un
-             automatisme (§20.6). `entretien_centimes` reste, comme partout
-             ailleurs, la surcharge du MONTANT quand l'indemnité est due. */
-          if (ligne && ligne.entretien_du === false) {
-            famJoursSansEntretien++;
-          } else {
-            famJoursAvecEntretien++;
-            famEntretienCentimes += (ligne && Number.isInteger(ligne.entretien_centimes))
-              ? ligne.entretien_centimes
-              : conditions.entretien_centimes_jour;
-          }
-        }
-
-        famJours.push({
-          jour: d,
-          minutes: minutesJour,
-          declare: minutesJour > 0,
-          entretien: minutesJour > 0 && !(ligne && ligne.entretien_du === false),
-          ecarte: !!(ligne && ligne.type && ligne.type !== 'familiarisation')
-        });
-
-        /* §20.3 — aucune minute supplémentaire n'est acquise ni due pendant
-           la période. On saute donc `detailSupDuJour` entièrement : il n'y a
-           ni base, ni écart possible sur une journée sans horaire de
-           référence. */
-        continue;
-      }
-
       /* Saisie par exception (§5) : sans ligne, un jour du planning est
          présumé 'presence' — sauf s'il est férié (RG-10 : Maria ne
          travaille jamais un jour férié). Une ligne explicite prime. */
@@ -1036,20 +811,9 @@
              demi-journée. RG-02 : indemnité par jour de présence (surcharge
              manuelle possible via journee.entretien_centimes, cf. RG-14). */
           joursPresence++;
-          /* §20.6 — L'ENTRETIEN RETIRABLE, ET SEULEMENT HORS DU CADRE.
-
-             La journée reste comptée présente pour tout le reste : le salaire
-             ne bouge pas, les minutes non plus. Seule l'indemnité saute. Le
-             moteur, lui, ne vérifie pas que la journée « sort du cadre » —
-             c'est l'écran qui n'offre l'interrupteur que là où il a un sens
-             (§20.6), et le moteur qui obéit à ce qui est écrit. */
-          if (ligne && ligne.entretien_du === false) {
-            joursSansEntretien++;
-          } else {
-            entretienCentimes += (ligne && Number.isInteger(ligne.entretien_centimes))
-              ? ligne.entretien_centimes
-              : conditions.entretien_centimes_jour;
-          }
+          entretienCentimes += (ligne && Number.isInteger(ligne.entretien_centimes))
+            ? ligne.entretien_centimes
+            : conditions.entretien_centimes_jour;
           break;
 
         case 'absence_enfant':
@@ -1087,9 +851,7 @@
              en saisie manuelle, hors mensualisation, et ResultatMois n'a
              pas de champ pour la porter. À trancher avant le lot 4. */
           joursFamiliarisation++;
-          if (ligne && ligne.entretien_du === false) {
-            joursSansEntretien++;
-          } else if (ligne && Number.isInteger(ligne.entretien_centimes)) {
+          if (ligne && Number.isInteger(ligne.entretien_centimes)) {
             entretienCentimes += ligne.entretien_centimes;
           }
           break;
@@ -1303,23 +1065,11 @@
        du travail effectif pour l'acquisition. Divergence signalée dans la
        restitution. Le plafond de 30 jours par exercice (RG-11) n'est pas
        contrôlable ici (le moteur ne voit pas l'exercice) : à porter par la
-       couche d'appel.
-
-       LOT 20 (§20.3) — LA FAMILIARISATION NE PRIVE PLUS DE RIEN. Le terme
-       `joursFamiliarisation === 0` figurait ici : un seul jour de
-       familiarisation privait Maria de ses 2,5 jours du mois. Il est retiré,
-       et LUI SEUL — congés, sans solde et couverture du contrat restent.
-
-       Conséquence assumée : un mois ENTIÈREMENT en familiarisation acquiert
-       aussi ses 2,5 jours. Et conséquence à connaître dans l'autre sens : une
-       familiarisation est presque toujours en début de contrat, donc sur un
-       mois que le contrat ne couvre pas en entier — `contratCouvreLeMois` y
-       reste faux, et ce mois-là n'acquiert toujours rien, pour cette
-       autre raison. Le critère A6 ne se vérifie donc que sur un contrat déjà
-       ouvert le 1er du mois. */
+       couche d'appel. */
     var moisEntierementTravaille =
       joursConge.length === 0 &&
       joursSansSoldeTotal === 0 &&
+      joursFamiliarisation === 0 &&
       contratCouvreLeMois(contrat, annee, mois);
     var minutesCpAcquises = moisEntierementTravaille ? minutesCpParMois(conditions) : 0;
 
@@ -1335,20 +1085,8 @@
 
     /* §17.7 — le prorata du premier et du dernier mois. UN SEUL arrondi, sur
        le montant final, et aucun arrondi du tout quand le mois est entier. */
-    var part = partCouverteDuMois(contrat, planning, annee, mois, periodesFam, parJour);
+    var part = partCouverteDuMois(contrat, planning, annee, mois);
     var moisEntier = part.joursCouverts === part.joursDuMois;
-
-    /* §20.3 — LA PART HORAIRE DU MOIS. Rémunération au taux du contrat :
-       `montantCentimes` divise le brut mensuel par 195 h, en un seul arrondi
-       — c'est le même taux que celui d'une heure supplémentaire, et c'est
-       exactement ce qu'on veut. Le net suit « au même prorata », par la même
-       fonction sur le net mensuel : le net n'est jamais dérivé du brut
-       (A.6 du référentiel), il est saisi à la main et proratisé, pas calculé.
-       Aucune minute déclarée = aucun centime, sans arrondi d'aucune sorte. */
-    var famBrutCentimes = famMinutes === 0 ? 0
-      : montantCentimes(salaire.brut_mensuel_centimes, famMinutes);
-    var famNetCentimes = famMinutes === 0 ? 0
-      : montantCentimes(salaire.net_mensuel_centimes, famMinutes);
     var brutProrata = moisEntier || part.joursDuMois === 0
       ? salaire.brut_mensuel_centimes
       : Math.round(salaire.brut_mensuel_centimes * part.joursCouverts / part.joursDuMois);
@@ -1358,16 +1096,7 @@
 
     return {
       joursPresence: joursPresence,
-      /* L'entretien de la GARDE mensualisée, et lui seul. Celui de la
-         familiarisation vit dans `familiarisation.entretienCentimes` : les
-         deux se lisent sur deux lignes différentes du document, avec deux
-         comptes de jours différents, et les mêler rendrait chaque détail
-         incapable de reconstituer son total (règle existante du §20.6). */
       entretienCentimes: entretienCentimes,
-      /* §20.6 — le nombre de journées dont l'indemnité a été retirée, pour que
-         le document puisse écrire « + 1 jour sans indemnité » et que le détail
-         reconstitue. */
-      joursSansEntretien: joursSansEntretien,
       minutesSupAcquises: minutesSupAcquises,
       /* Détail du mois (lot 9) : ce que le contrat prévoit, ce qui a été
          travaillé en plus, ce à quoi Maria a renoncé. Le récapitulatif du mois les
@@ -1419,35 +1148,9 @@
       prorata: {
         joursCouverts: part.joursCouverts,
         joursDuMois: part.joursDuMois,
-        /* §20.3 — la troisième borne, exposée : c'est elle qui explique
-           pourquoi « 8 jours sur 22 » et non « 22 sur 22 » sur un mois mêlé.
-           Un écran qui la recalculerait redirait la règle. */
-        joursFamiliarisation: part.joursFamiliarisation,
         applique: !moisEntier && part.joursDuMois > 0
       },
       salaireBrutProrataCentimes: brutProrata,
-      /* §20.1 à §20.3 — LA PART DE FAMILIARISATION DU MOIS.
-
-         `actif` dit qu'au moins un jour du planning du mois tombe dans une
-         période — c'est lui qui décide si le document montre deux blocs ou
-         un. Tout le reste est du compte, jamais une phrase : les libellés
-         appartiennent aux écrans. */
-      familiarisation: {
-        actif: famJoursDeLaPeriode > 0,
-        joursDeLaPeriode: famJoursDeLaPeriode,
-        joursDeclares: famJoursDeclares,
-        minutesDeclarees: famMinutes,
-        joursAvecEntretien: famJoursAvecEntretien,
-        entretienCentimes: famEntretienCentimes,
-        brutCentimes: famBrutCentimes,
-        netCentimes: famNetCentimes,
-        joursIgnores: famJoursIgnores,
-        /* §20.6 — les jours déclarés dont l'indemnité a été retirée, comptés
-           SÉPARÉMENT de ceux de la garde : c'est ce qui permet aux deux blocs
-           du document de reconstituer chacun son total. */
-        joursSansEntretien: famJoursSansEntretien,
-        jours: famJours
-      },
       salaireNetProrataCentimes: netProrata,
       /* §17.8 — LE BRUT RÉELLEMENT DÛ DU MOIS, celui qui entre dans l'assiette
          du 1/80ᵉ de l'indemnité de rupture. C'est le brut du mois après
@@ -1457,18 +1160,11 @@
          les mois partiels, et surpayé la famille sur un chiffre invérifiable.
          Jamais négatif : une retenue supérieure au brut du mois signale une
          donnée incohérente, pas une dette de Maria envers la famille. */
-      /* LOT 20 — la rémunération horaire de familiarisation ENTRE dans
-         l'assiette. C'est du brut réellement dû au titre du mois ; l'en
-         exclure sous-paierait l'indemnité de rupture d'un contrat court, sur
-         un chiffre que personne ne pourrait vérifier. Question posée à Adrien
-         avant le lot, recommandation retenue faute de réponse contraire. */
-      brutDuCentimes: Math.max(0, brutProrata + famBrutCentimes - retenueSansSoldeCentimes),
+      brutDuCentimes: Math.max(0, brutProrata - retenueSansSoldeCentimes),
       /* §5.8 du cahier : net du mois + entretien − retenue. NB : la retenue
          RG-08 est exprimée en brut (« convention à valider » dans le cahier),
          soustraite ici d'un total à base nette — hétérogénéité signalée. */
-      totalAVerserCentimes: netProrata + famNetCentimes
-                          + entretienCentimes + famEntretienCentimes
-                          - retenueSansSoldeCentimes
+      totalAVerserCentimes: netProrata + entretienCentimes - retenueSansSoldeCentimes
     };
   }
 
@@ -1482,25 +1178,6 @@
     var t = String(hhmm == null ? '' : hhmm).slice(0, 5);
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw erreurCode('HEURE_INVALIDE');
     return Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-  }
-
-  /* LOT 20 (§20.4 c) — LA DURÉE ENTRE UNE ARRIVÉE ET UN DÉPART, à la minute.
-
-     « 9 h 05 → 11 h 47 donne exactement 2 h 42 » : c'est de l'arithmétique sur
-     des heures, donc une règle, donc le moteur. Un écran qui la referait
-     réintroduirait un calcul métier dans l'interface (B.0-5) — et le premier
-     jour où quelqu'un y ajouterait une tolérance ou un arrondi, personne ne
-     saurait où le chercher.
-
-     Un départ AVANT l'arrivée est refusé, pas ramené à zéro : c'est une saisie
-     à corriger, et la feuille doit rester ouverte pour que Maria la corrige
-     (B.0-9). Une durée nulle l'est aussi — déclarer zéro minute et déclarer
-     rien sont la même chose, et le §20.3 dit qu'un jour sans déclaration ne
-     paie rien. */
-  function dureeEntreHeures(arrivee, depart) {
-    var d = heureEnMinutes(depart) - heureEnMinutes(arrivee);
-    if (d <= 0) throw erreurCode('DUREE_NON_POSITIVE');
-    return d;
   }
 
   /* LA RÉFÉRENCE D'UNE JOURNÉE (§17.5) : la fin d'accueil PLUS les minutes
@@ -1727,9 +1404,6 @@
        décide du signe, donc du sens du compteur. */
     heureEnMinutes: heureEnMinutes,
     heureDeReference: heureDeReference,
-    /* §20.4 c — la durée d'une journée de familiarisation saisie en
-       arrivée → départ. Règle, pas affichage : le moteur, et lui seul. */
-    dureeEntreHeures: dureeEntreHeures,
     ecartDepuisHeureReelle: ecartDepuisHeureReelle,
     /* §17.7 — l'assiette du prorata, exposée pour que l'écran puisse dire
        « 12 jours de garde sur 22 » sans la recalculer. */
@@ -1746,13 +1420,7 @@
        alors à deux endroits.
        AUCUN CHANGEMENT DE COMPORTEMENT : une ligne ajoutée à la table
        d'export, rien d'autre. Le différentiel exhaustif le vérifie. */
-    detailSupDuJour: detailSupDuJour,
-    /* LOT 20 (§20.4) — l'écran de la période doit dire, pour CHAQUE jour
-       ouvré, s'il tombe dans la familiarisation. Il ne doit pas redire la
-       règle : la borne « bornes incluses » vit ici et nulle part ailleurs. */
-    estEnFamiliarisation: estEnFamiliarisation,
-    periodeFamiliarisationDuJour: periodeFamiliarisationDuJour,
-    joursOuvresDePeriode: joursOuvresDePeriode
+    detailSupDuJour: detailSupDuJour
   };
 
   if (typeof module !== 'undefined' && module.exports) {

@@ -132,6 +132,11 @@ function baseSimulee(opts) {
         dixiemes_cp_pris: 0
       }));
     },
+    /* LOT 20, correction C3 — la chaîne appelle `listPeriodesFamiliarisation`
+       sans repli : un décor qui ne l'expose pas fait échouer le rejeu, et c'est
+       voulu. Ce décor n'a aucune période de familiarisation. */
+    listPeriodesFamiliarisation: function () { return Promise.resolve([]); },
+    listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
     getJourneesMois: function () { return Promise.resolve(opts.journees || {}); },
     listRecapsPeriode: function () { return Promise.resolve([]); },
     listImputations: function () { return Promise.resolve(opts.imputations || []); }
@@ -455,10 +460,18 @@ function moisDe(s, annee, mois) {
      COMMENTAIRES COMPRIS : `indexOf('Conditions du contrat')` aurait été
      satisfait par un simple commentaire portant ces mots. */
   var menuNu = sansCommentaires(sourceMenu);
+  /* LOT 22 — DEUX sous-titres d'attente, et non plus un : « Mes enfants »
+     s'ajoute à « Familles » dans le Menu. La garde du §16.4 est inchangée dans
+     son fond : un mot d'attente n'est admis que si QUELQU'UN sait le lever. Le
+     contrôle vérifie donc que chaque ligne qui en pose un a bien sa promesse
+     de levée, plutôt que de compter les occurrences. */
   var nbChargement = (sourceMenu.match(/'Chargement…'/g) || []).length;
-  egal(nbChargement, 1,
-    '§16.4 : un seul sous-titre d’attente subsiste — celui des Familles, que ' +
-    'quelqu’un sait lever');
+  egal(nbChargement, 2,
+    '§16.4 : deux sous-titres d’attente — « Mes enfants » et « Familles »');
+  assert(/poserSousTitre\(ligneFamilles,/.test(sourceMenu),
+    '§16.4 : et celui des Familles est levé par quelqu’un');
+  assert(/poserSousTitre\(ligneEnfants,/.test(sourceMenu),
+    '§16.4 : celui de « Mes enfants » aussi');
   assert(menuNu.indexOf("querySelectorAll('.menu')[0]") === -1,
     '§16.4 : la ligne n’est plus retrouvée par sa POSITION dans la liste');
   assert(menuNu.indexOf('function libelleReglageRappel') !== -1,

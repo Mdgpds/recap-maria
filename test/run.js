@@ -13,6 +13,11 @@ var suites = [
      d'avant, sur 13 440 scénarios. */
   { titre: 'Différentiel moteur avant/après le lot 17 (§17.3)', suite: require('./lot17-differentiel.test.js') },
   { titre: 'Le temps : écarts d’horaire, congés à l’heure, prorata, rupture (lot 17)', suite: require('./lot17-temps.test.js') },
+  /* Même place, même rôle, un lot plus tard : le lot 20 rouvre le moteur, et
+     la première chose à prouver est que les mois SANS familiarisation n'ont
+     pas bougé d'un centime (§20.5, A1). Ce qu'il ajoute vient juste après. */
+  { titre: 'Différentiel moteur avant/après le lot 20 (§20.5, A1)', suite: require('./lot20-differentiel.test.js') },
+  { titre: 'La familiarisation en période, et l’entretien retirable (lot 20)', suite: require('./lot20-familiarisation.test.js') },
   { titre: 'Chaîne des mois et agrégation de période (lot 5)', suite: require('./chaine.test.js') },
   { titre: 'Messages d’échec en français (lot 5)', suite: require('./messages.test.js') },
   { titre: 'Couche données : aucune colonne lue sans être demandée', suite: require('./couche-donnees.test.js') },

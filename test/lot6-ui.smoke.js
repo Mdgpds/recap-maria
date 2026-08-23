@@ -150,6 +150,11 @@ var DB = {
     enregistrerNoteMensuelle: function (c, a, m, t) { return Promise.resolve({ texte: t }); },
   getJourneesPeriode: function () { return Promise.resolve({}); },
   listRecapsPeriode: function () { return Promise.resolve([]); },
+  /* LOT 20 — les périodes de familiarisation (§20.2). Le décor les rend
+     vides : ces écrans-là n'en ont aucune, et la fiche du contrat doit
+     l'afficher comme telle plutôt que d'échouer. */
+  listPeriodesFamiliarisation: function () { return Promise.resolve([]); },
+  listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
   listRecapsContrat: function () { return Promise.resolve([]); },
   getRecap: function () { return Promise.resolve(null); },
   enregistrerJournee: function (l) { appels.journee.push(l); return Promise.resolve(l); },
@@ -179,6 +184,7 @@ require('../js/ui-document.js');
 require('../js/ui-conges.js');
 require('../js/ui-historique.js');
 require('../js/ui-contrat.js');
+require('../js/ui-familiarisation.js');
 require('../js/ui-menu.js');
 require('../js/ui-periode.js');
 require('../js/app.js');
@@ -229,7 +235,19 @@ var sheet = document.getElementById('sheet');
   cartes[0].click();
   await pause(80);
 
-  assert(tabbar.hidden === true, '§1 : pas de barre d’onglets hors des écrans racine');
+  /* LOT 22 §22.3 — LA BARRE SUIT DÉSORMAIS LES ÉCRANS INTÉRIEURS.
+     Elle disparaissait dès qu'on descendait d'un cran, et sur un téléphone en
+     mode installé — sans barre de navigateur — il ne restait qu'un chevron de
+     retour pour dire où l'on est. Elle reste affichée, avec l'onglet PARENT
+     actif : « Accueil » sur l'espace d'un enfant. Le §22.3 prime ici sur le
+     §B.1 du référentiel, qui parle encore de trois écrans racine. */
+  assert(tabbar.hidden === false,
+    '§22.3 : la barre d’onglets reste visible sur l’espace enfant');
+  var ongletActif = tabbar.querySelector('button.on');
+  assert(!!ongletActif && ongletActif.getAttribute('data-onglet') === 'accueil',
+    '§22.3 : et c’est « Accueil », l’onglet parent, qui est actif');
+  assert(ongletActif.getAttribute('aria-current') === 'page',
+    '§22.3 : l’état actif est annoncé, pas seulement peint');
   assert(!!barre.querySelector('.bk'), 'l’espace enfant a un bouton retour');
   assert(txt(barre).indexOf('Léa — mai 2026') !== -1, 'titre de la barre : enfant et mois');
   assert(!!corps.querySelector('table.cal'), 'calendrier présent');
@@ -418,7 +436,14 @@ var sheet = document.getElementById('sheet');
     'LOT 8 : la rubrique « Consulter » a disparu du Menu');
   assert(!parTexte(corps, '.menu', 'Anciens contrats'),
     'LOT 8 : « Anciens contrats » n’est plus une entrée du Menu');
-  assert(!!parTexte(corps, '.menu', 'Familles'), 'LOT 8 : le Menu propose « Familles »');
+  /* LOT 22 §22.1 — « Mes enfants » S'AJOUTE au Menu ; « Familles » y reste.
+     La spécification demande l'entrée « Mes enfants » et une page dédiée ;
+     elle ne demande nulle part de supprimer l'accès par famille. Correction C5
+     de la relecture : les deux entrées cohabitent. */
+  assert(!!parTexte(corps, '.menu', 'Familles'),
+    'LOT 22 : « Familles » reste une entrée du Menu');
+  var ligneEnfants = parTexte(corps, '.menu', 'Mes enfants');
+  assert(!!ligneEnfants, 'LOT 22 : et « Mes enfants » s’y ajoute');
   assert(!!parTexte(corps, '.menu', 'Ajouter un enfant'), 'le Menu garde « Ajouter un enfant »');
 
   /* ---------- 7bis. Onglet Historique ---------- */

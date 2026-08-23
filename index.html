@@ -49,15 +49,27 @@
     <header id="barre" class="bar"></header>
     <div id="corps" class="bd"></div>
     <!-- Barre d'onglets : visible UNIQUEMENT sur Accueil, Mes congés, Menu. -->
+    <!-- LOT 22 §22.3 — QUATRE VRAIES ICÔNES SVG.
+
+         Les quatre onglets portaient des caractères Unicode décoratifs :
+         ⌂ ◷ ☾ ⋯. Ils ne s'affichent pas pareil d'un téléphone à l'autre —
+         certains les rendent en emoji couleur, d'autres les remplacent par un
+         rectangle vide, et « ◷ » manque à plusieurs polices système. Une barre
+         de navigation dont les icônes changent de forme selon l'appareil n'est
+         plus une barre de navigation.
+
+         Les SVG sont EMBARQUÉS dans la page : aucune requête, aucune police
+         d'icônes, rien à charger. Ils héritent de `currentColor`, donc l'état
+         actif les colore sans règle supplémentaire. -->
     <nav id="tabbar" class="tabbar" hidden>
-      <button type="button" data-onglet="accueil"><span class="i" aria-hidden="true">⌂</span>Accueil</button>
+      <button type="button" data-onglet="accueil"><span class="i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.2 12 4l9 7.2"/><path d="M5.5 9.8V20h13V9.8"/></svg></span>Accueil</button>
       <!-- Lot 8 : l'Historique devient un onglet racine. Il prend la deuxième
            position dans l'ordre de LECTURE — c'est le deuxième geste de Maria
            après consulter son mois — et absorbe le récapitulatif de période et
            les anciens contrats. La rubrique « Consulter » disparaît du Menu. -->
-      <button type="button" data-onglet="historique"><span class="i" aria-hidden="true">◷</span>Historique</button>
-      <button type="button" data-onglet="conges"><span class="i" aria-hidden="true">☾</span>Mes congés</button>
-      <button type="button" data-onglet="menu"><span class="i" aria-hidden="true">⋯</span>Menu</button>
+      <button type="button" data-onglet="historique"><span class="i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.6V12l3 2.2"/></svg></span>Historique</button>
+      <button type="button" data-onglet="conges"><span class="i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 13.6A8.2 8.2 0 1 1 10.4 3.8a6.6 6.6 0 0 0 9.8 9.8z"/></svg></span>Mes congés</button>
+      <button type="button" data-onglet="menu"><span class="i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></span>Menu</button>
     </nav>
   </section>
 
@@ -98,6 +110,9 @@
   <script src="js/ui-conges.js"></script>
   <script src="js/ui-historique.js"></script>
   <script src="js/ui-contrat.js"></script>
+  <!-- Lot 20 — l'écran de la période de familiarisation (§20.4 d). Après
+       ui-contrat.js, qui est son point d'entrée. -->
+  <script src="js/ui-familiarisation.js"></script>
   <script src="js/ui-menu.js"></script>
   <script src="js/ui-periode.js"></script>
 

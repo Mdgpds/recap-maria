@@ -117,6 +117,27 @@
       portrait.appendChild(pTx);
       corps.appendChild(portrait);
 
+      /* LOT 22 §22.2 — LA PHOTO DEVIENT ACCESSIBLE.
+
+         Elle existe depuis le lot 8 : réduite à 200 px, 50 Ko au plus, jamais
+         sur un document ni dans l'export. Mais on ne pouvait la poser que
+         depuis « Modifier l'identité » — un formulaire de douze champs où l'on
+         croise la date de début du contrat et son statut. Le geste le plus
+         anodin passait par l'écran le plus risqué, et personne ne l'a jamais
+         fait : l'application avait une photo que personne ne pouvait mettre.
+
+         Elle est donc EN TÊTE DE LA FICHE, et elle s'enregistre toute seule.
+         Sur un contrat rangé, elle reste en lecture : un contrat terminé ne se
+         modifie plus. */
+      if (!contrat.archive) {
+        corps.appendChild(blocPhoto({ valeur: contrat.photo || null }, {
+          grand: true,
+          enregistrer: function (valeur) {
+            return majIdentiteSurPlace(contrat, { photo: valeur });
+          }
+        }));
+      }
+
       /* LOT 18 §18.3 — LE PRÉNOM ET LE NOM SE CORRIGENT SUR PLACE.
 
          Corriger une faute d'orthographe demandait d'ouvrir « Modifier
@@ -175,12 +196,46 @@
          précisément ce qui rendait faux un juillet qui traînait. */
       corps.appendChild(blocConditions(contrat, avenants, recaps));
 
+      /* LOT 20 (§20.4 d) — LA PORTE DE LA PÉRIODE DE FAMILIARISATION.
+
+         Elle est sur la fiche, sous les conditions, parce que la période est
+         un CADRE du contrat au même titre qu'elles : elle décide de la règle
+         de rémunération d'une partie du mois. Le nombre de périodes est lu
+         ici pour que la ligne dise ce qu'elle ouvre — une entrée muette qui
+         mène parfois à un écran vide n'apprend rien. Un échec de lecture ne
+         cache pas la ligne : il le dit et laisse entrer. */
+      corps.appendChild(ligneFamiliarisation(contrat));
+
       if (contrat.archive) {
-        corps.appendChild(Kit.note('Contrat rangé',
-          'Il n’apparaît plus sur l’Accueil. Tout son historique reste consultable ' +
-          'depuis « Anciens contrats ».'));
+        /* LOT 22 §22.1 — LE CONTRAT TERMINÉ S'OUVRE EN LECTURE SEULE, ET LE DIT.
+
+           La lecture seule EXISTE déjà : aucune journée d'un contrat rangé ne
+           se modifie, aucun avenant ne s'y pose, et l'espace mensuel se rend
+           en consultation. Ce que ce lot lui donne, c'est sa PORTE D'ENTRÉE et
+           sa phrase — l'ancienne renvoyait vers « Anciens contrats », une
+           entrée de Menu qui n'existe plus depuis le lot 8. Une fiche qui
+           indique un chemin disparu est pire qu'une fiche muette.
+
+           Trois choses, et trois seulement : ce que le bandeau promet, ses
+           mois, et ses soldes de fin de contrat. */
+        corps.appendChild(Kit.note('Contrat terminé — ' + periodeDuContrat(contrat),
+          'Aucune journée n’est modifiable, et aucun montant ne bougera plus. ' +
+          'Tout son historique reste consultable ci-dessous.'));
+
+        var bMois = Kit.bouton('btn nt', function () {
+          global.App.aller('historique', { contratId: contrat.id });
+        });
+        bMois.textContent = 'Voir tous ses mois';
+        corps.appendChild(bMois);
+
+        var bSoldes = Kit.bouton('btn nt', function () {
+          global.App.aller('fiche', { contratId: contrat.id, section: 'fin' });
+        });
+        bSoldes.textContent = 'Ses soldes de fin de contrat';
+        corps.appendChild(bSoldes);
+
         var bRemettre = Kit.bouton('btn nt', function () { remettreEnCours(contrat, bRemettre); });
-        bRemettre.textContent = 'Remettre ce contrat en cours';
+        bRemettre.textContent = 'Remettre en cours';
         corps.appendChild(bRemettre);
       } else {
         var bFin = Kit.bouton('btn dg', function () {
@@ -415,6 +470,15 @@
      La liste des contrats est rechargée pour que les autres écrans affichent
      le nouveau nom ; l'écran courant se redessine ensuite. Un échec remonte
      tel quel : c'est le champ qui l'annonce et qui garde la saisie. */
+  /* La période d'un contrat, en clair. Sert au bandeau du §22.1 et à la carte
+     d'un contrat terminé sur la page « Mes enfants » — la même phrase aux deux
+     endroits, écrite une fois. */
+  function periodeDuContrat(contrat) {
+    if (!contrat.date_debut) return 'période inconnue';
+    return 'du ' + Kit.dateLongue(contrat.date_debut) +
+      (contrat.date_fin ? ' au ' + Kit.dateLongue(contrat.date_fin) : '');
+  }
+
   function majIdentiteSurPlace(contrat, champs) {
     return global.DB.majContrat(contrat.id, champs).then(function () {
       for (var k in champs) contrat[k] = champs[k];
@@ -774,8 +838,20 @@
   var COTE_PHOTO = 200;
   var POIDS_MAX_OCTETS = 50 * 1024;
 
-  function blocPhoto(courante) {
-    var f = Kit.ce('div', 'fld photo-fld');
+  /* LOT 22 §22.2 — LE MÊME BLOC, DEUX USAGES.
+
+     `blocPhoto` servait au formulaire d'identité : on y choisit une photo, et
+     elle part avec le reste à l'enregistrement du formulaire. Le §22.2 la veut
+     aussi EN TÊTE DE LA FICHE, où il n'y a pas de formulaire à valider : le
+     geste doit s'enregistrer tout seul.
+
+     `opts.enregistrer` porte cette différence, et elle seule. Sans lui, le
+     bloc se comporte comme avant, au caractère près — c'est ce qui permet aux
+     deux usages de partager le même code plutôt que d'en avoir deux qui
+     divergeront à la première correction. */
+  function blocPhoto(courante, opts) {
+    opts = opts || {};
+    var f = Kit.ce('div', 'fld photo-fld' + (opts.grand ? ' grand' : ''));
     f.appendChild(Kit.ce('span', 'lb', 'Photo'));
 
     var apercu = Kit.ce('div', 'apercu-photo');
@@ -806,8 +882,17 @@
       msg.className = 'msg';
       msg.textContent = 'Préparation de la photo…';
       reduirePhoto(fichier).then(function (dataUrl) {
+        /* CORRECTION C4 — LA VALEUR PRÉCÉDENTE EST CAPTURÉE AVANT D'ÊTRE
+           ÉCRASÉE. `appliquer` la lisait sur `courante.valeur`, qui portait
+           déjà la nouvelle : le retour arrière retombait systématiquement sur
+           `null`, et un échec d'écriture affichait l'initiale sur un enfant
+           qui a une photo en base. Le message disait « rien n'a été
+           enregistré » pendant que l'écran montrait le contraire. */
+        var precedente = courante.valeur;
         courante.valeur = dataUrl;
         redessiner();
+        majRetirer();
+        if (opts.enregistrer) return appliquer(dataUrl, 'Photo enregistrée', precedente);
         msg.className = 'msg ok';
         msg.textContent = 'Photo prête. Elle sera enregistrée avec le contrat.';
       }).catch(function (e) {
@@ -824,19 +909,55 @@
     bChoisir.textContent = 'Choisir une photo';
     f.appendChild(bChoisir);
 
+    /* §22.2 — « Retirer la photo » n'apparaît QUE s'il y en a une. Un bouton
+       qui ne peut rien faire n'apprend rien et fait douter. */
     var bRetirer = Kit.bouton('btn nt', function () {
+      var precedente = courante.valeur;
       courante.valeur = null;
       redessiner();
+      majRetirer();
+      if (opts.enregistrer) return appliquer(null, 'Photo retirée', precedente);
       msg.className = 'msg';
       msg.textContent = 'La photo sera retirée à l’enregistrement.';
     });
     bRetirer.textContent = 'Retirer la photo';
     f.appendChild(bRetirer);
+    function majRetirer() { bRetirer.hidden = !courante.valeur; }
+    majRetirer();
+
+    /* L'écriture immédiate, quand le bloc vit sur la fiche. Un échec se VOIT
+       et la photo affichée revient à ce que la base porte réellement : laisser
+       à l'écran une photo qui n'a pas été enregistrée est exactement le genre
+       de mensonge silencieux qu'on refuse (B.0-9). */
+    function appliquer(valeur, succes, precedente) {
+      msg.className = 'msg';
+      msg.textContent = 'Enregistrement…';
+      bChoisir.disabled = true;
+      bRetirer.disabled = true;
+      return opts.enregistrer(valeur).then(function () {
+        msg.className = 'msg ok';
+        msg.textContent = succes;
+      }).catch(function (e) {
+        /* On revient à ce que la base porte encore : laisser à l'écran une
+           photo qui n'a pas été enregistrée — ou une initiale sur un enfant
+           qui en a une — est le mensonge silencieux que cette fonction existe
+           pour éviter (B.0-9). */
+        courante.valeur = precedente === undefined ? null : precedente;
+        redessiner();
+        majRetirer();
+        msg.className = 'msg ko';
+        msg.textContent = 'Rien n’a été enregistré — ' + Kit.messageErreur(e);
+      }).then(function () {
+        bChoisir.disabled = false;
+        bRetirer.disabled = false;
+      });
+    }
 
     f.appendChild(msg);
     f.appendChild(Kit.ce('p', 'sb q',
-      'La photo ne figure sur aucun document remis aux familles. ' +
-      'Elle sert à reconnaître l’enfant d’un coup d’œil dans l’application.'));
+      'Réduite et rangée avec le contrat. Jamais sur le récapitulatif ni dans ' +
+      'l’export. Elle sert à reconnaître l’enfant d’un coup d’œil dans ' +
+      'l’application.'));
     return f;
   }
 
@@ -1717,6 +1838,41 @@
     return out;
   }
 
+  /* La ligne « Familiarisation » de la fiche. Elle se remplit après coup : la
+     fiche ne doit pas attendre une lecture de plus pour s'afficher. Le
+     sous-titre part sur « Chargement… » et est levé par CELUI QUI SAIT le
+     lever — jamais repéré par sa position dans la liste (correction §16.4). */
+  function ligneFamiliarisation(contrat) {
+    var ligne = Kit.ce('div', 'menu');
+    var tx = Kit.ce('div');
+    tx.appendChild(Kit.ce('div', null, 'Familiarisation'));
+    var sous = Kit.ce('div', 'd', 'Chargement…');
+    tx.appendChild(sous);
+    ligne.appendChild(tx);
+    ligne.appendChild(Kit.ce('span', 'ar', '›'));
+    ligne.setAttribute('role', 'button');
+    ligne.setAttribute('tabindex', '0');
+    function ouvrir() {
+      global.App.aller('familiarisation', { contratId: contrat.id });
+    }
+    ligne.addEventListener('click', ouvrir);
+    ligne.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrir(); }
+    });
+
+    global.DB.listPeriodesFamiliarisationContrat(contrat.id).then(function (l) {
+      var p = (l || [])[0];
+      sous.textContent = p
+        ? 'Du ' + Kit.dateLongue(p.date_debut) + ' au ' + Kit.dateLongue(p.date_fin) +
+          ' — seules les heures déclarées sont payées'
+        : 'Aucune période — les heures déclarées y sont payées à l’heure';
+    }).catch(function (e) {
+      sous.textContent = 'Périodes illisibles pour l’instant (' +
+        Kit.messageErreur(e) + ')';
+    });
+    return ligne;
+  }
+
   function listeMois(rs) {
     return rs.map(function (r) { return Kit.libelleMoisAnnee(r.annee, r.mois); }).join(', ');
   }
@@ -2346,6 +2502,14 @@
     /* Exporté pour que les trois chemins d'alignement (correctif B6) posent
        EXACTEMENT le même garde-fou que la feuille de barème. Un garde-fou
        recopié est un garde-fou qui finit par diverger. */
-    verifierDateEffet: verifierDateEffet
+    verifierDateEffet: verifierDateEffet,
+    /* LOT 22 §22.2 — la photo se pose aussi à la CRÉATION d'un enfant, depuis
+       `js/ui-menu.js`. Le bloc est exporté plutôt que recopié : deux blocs
+       photo, ce sont deux endroits où oublier la réduction à 200 px ou la
+       phrase qui promet qu'elle ne partira sur aucun document. */
+    blocPhoto: blocPhoto,
+    /* §22.1 — la carte d'un contrat terminé, sur la page « Mes enfants »,
+       annonce la même période que le bandeau de sa fiche. */
+    periodeDuContrat: periodeDuContrat
   };
 })(window);

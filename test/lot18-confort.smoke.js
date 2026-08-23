@@ -225,6 +225,11 @@ var DB = {
     if (id === 'c-alpha' && DB.__avrilClos) return Promise.resolve([RECAP_AVRIL]);
     return Promise.resolve([]);
   },
+  /* LOT 20 — les périodes de familiarisation (§20.2). Le décor les rend
+     vides : ces écrans-là n'en ont aucune, et la fiche du contrat doit
+     l'afficher comme telle plutôt que d'échouer. */
+  listPeriodesFamiliarisation: function () { return Promise.resolve([]); },
+  listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
   listRecapsContrat: function () { return Promise.resolve([]); },
   getRecap: function () { return Promise.resolve(null); },
   enregistrerJournee: function (l) { return Promise.resolve(l); },
@@ -256,6 +261,7 @@ require('../js/ui-document.js');
 require('../js/ui-conges.js');
 require('../js/ui-historique.js');
 require('../js/ui-contrat.js');
+require('../js/ui-familiarisation.js');
 require('../js/ui-menu.js');
 require('../js/ui-periode.js');
 require('../js/app.js');
@@ -411,6 +417,9 @@ var sheet = document.getElementById('sheet');
     '§18.6 : et elle est lue AVANT les boutons, pas après');
 
   boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format. */
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
   /* Du 1er au 5 juin : la période contient le 3, jour de familiarisation
      saisi à la main. C'est lui qui doit déclencher la garde du §18.4. */

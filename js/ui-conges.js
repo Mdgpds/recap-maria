@@ -419,15 +419,89 @@
     }
 
     var groupes = grouperPeriodes();
-    if (!groupes.length) {
+    var horaires = congesHoraires();
+
+    if (!groupes.length && !horaires.length) {
       p.appendChild(Kit.ce('div', 'sb q', 'Aucun congé posé ce mois-ci.'));
       return p;
     }
 
     var l = Kit.lines(p);
     groupes.forEach(function (g) { ligneperiode(l, g); });
-    p.appendChild(phraseDecompte(groupes));
+    /* §21.3 — LA TRACE D'UN CONGÉ POSÉ À L'HEURE.
+       « ½ journée le 8 octobre — Léa : récupération · Noah : sans solde ». Une
+       ligne par JOUR, pas par contrat : Maria a posé un seul congé, elle doit
+       en lire un seul — mais l'issue de chaque enfant est nommée, parce
+       qu'elle diffère et que c'est tout l'objet du §21.2. */
+    horaires.forEach(function (h) { ligneHoraire(l, h); });
+    if (groupes.length) p.appendChild(phraseDecompte(groupes));
     return p;
+  }
+
+  /* Les congés à l'heure du mois affiché, regroupés par jour. Ils vivent sur
+     les journées (`ecart_evenement = 'conge_horaire'`), pas dans
+     `imputation_conge` qui ne connaît que les jours entiers : c'est ce que la
+     migration `017` rend possible, et c'est ce qui permet au document du mois
+     de dire la vérité sur ce qui a été déduit. */
+  var LIBELLE_ISSUE = {
+    recuperation: 'récupération',
+    conges_payes: 'congés payés',
+    sans_solde: 'sans solde'
+  };
+
+  function congesHoraires() {
+    /* GROUPÉ PAR JOUR **ET PAR DURÉE**, pas par jour seul.
+
+       Une pose vaut la même durée sur tous les contrats retenus — c'est la
+       même absence — et les additionner ferait lire « 6 h 08 » pour une
+       demi-journée posée sur quatre enfants. Mais deux poses différentes
+       peuvent tomber le même jour : 1 h 34 sur un contrat le matin, une
+       demi-journée sur deux autres l'après-midi. Les fondre en une ligne
+       ferait retirer les trois d'un seul geste, et rendrait aux compteurs des
+       minutes que personne n'y avait prises. La durée fait donc partie de la
+       clé. */
+    var par = {};
+    var ordre = [];
+    (vue.fiches || []).forEach(function (f) {
+      if (f.erreur) return;
+      Object.keys(f.journees || {}).forEach(function (d) {
+        var ligne = f.journees[d];
+        if (!ligne || ligne.ecart_evenement !== 'conge_horaire') return;
+        var minutes = -(ligne.ecart_minutes || 0);
+        var cle = d + '|' + minutes;
+        if (!par[cle]) {
+          par[cle] = { jour: d, minutes: minutes, parts: [] };
+          ordre.push(cle);
+        }
+        par[cle].parts.push({
+          contratId: f.contrat.id,
+          prenom: f.contrat.prenom_enfant,
+          issue: ligne.ecart_impute_sur || 'recuperation'
+        });
+      });
+    });
+    ordre.sort();
+    return ordre.map(function (k) { return par[k]; });
+  }
+
+  function ligneHoraire(l, h) {
+    var demi = demiJournee();
+    var titre = (demi.minutes > 0 && h.minutes === demi.minutes)
+      ? '½ journée' : Kit.heures(h.minutes);
+    var detail = h.parts.map(function (x) {
+      return x.prenom + ' : ' + (LIBELLE_ISSUE[x.issue] || x.issue);
+    }).join(' · ');
+
+    /* Ligne construite à la main, comme celle d'une période : `Kit.ligne` ne
+       prend qu'un libellé, et il faut ici un titre en gras suivi du sort de
+       chaque enfant. */
+    var ligne = Kit.ce('div', 'l');
+    var gauche = Kit.ce('span');
+    gauche.appendChild(Kit.ce('b', null, titre + ' ' + libellePlage(h.jour, h.jour)));
+    if (detail) gauche.appendChild(Kit.ce('div', 'sb', detail));
+    ligne.appendChild(gauche);
+    ligne.appendChild(Kit.ce('span', null, Kit.heures(h.minutes)));
+    l.appendChild(ligne);
   }
 
   /* Les périodes du mois, regroupées par bornes identiques. Maria pose ses
@@ -766,10 +840,545 @@
   /* 2. Le parcours de pose — trois étapes                               */
   /* ------------------------------------------------------------------ */
 
+  /* ================================================================== */
+  /* LOT 21 (§21.1) — TROIS FORMATS DE POSE                             */
+  /*                                                                     */
+  /* Maria ne pose plus seulement des journées. Elle pose aussi une      */
+  /* demi-journée, ou une durée libre — 23 min, 1 h, 1 h 34 — sur une    */
+  /* journée qu'elle travaille par ailleurs.                             */
+  /*                                                                     */
+  /* Le parcours en journées ne bouge pas d'une ligne : il a ses dates,  */
+  /* son décompte RG-06, sa ventilation entre trois compteurs et son     */
+  /* `imputation_conge`. Les deux formats à l'heure prennent un chemin   */
+  /* entièrement distinct — une seule date, une durée en minutes, et UNE */
+  /* issue par enfant. Les mélanger aurait fait de la ventilation en     */
+  /* jours un cas particulier d'un mécanisme en minutes, ou l'inverse :  */
+  /* deux règles d'imputation dans le même écran, et la garantie qu'une  */
+  /* correction dans l'une casserait l'autre.                            */
+  /* ================================================================== */
+
+  var FORMATS = [
+    { cle: 'journees', titre: 'Une ou plusieurs journées',
+      sous: 'Des dates, puis la répartition famille par famille.' },
+    { cle: 'demi', titre: 'Une demi-journée',
+      sous: 'Une date, et la moitié d’une journée de congé.' },
+    { cle: 'libre', titre: 'Une durée libre',
+      sous: 'Une date, et la durée que vous voulez — 23 min, 1 h, 1 h 34…' }
+  ];
+
   function ouvrirParcours() {
+    Kit.ouvrirFeuille('Je pose…', 'Trois façons de poser un congé.',
+      function (corps) {
+        FORMATS.forEach(function (f, i) {
+          Kit.choix(corps, 'c' + (i + 1), ['⬛', '◧', '⏱'][i], f.titre, f.sous,
+            function () { demarrerFormat(f.cle); });
+        });
+      });
+  }
+
+  function demarrerFormat(format) {
     var auj = global.App.aujourdhui();
-    parcours = { debut: auj, fin: auj, etape: 1, index: 0, plans: [] };
-    etapeDates();
+    if (format === 'journees') {
+      parcours = { debut: auj, fin: auj, etape: 1, index: 0, plans: [] };
+      return etapeDates();
+    }
+    parcours = {
+      format: format,
+      jour: auj,
+      cptExplicite: {},
+      /* La demi-journée est pré-remplie et non modifiable ; la durée libre
+         part d'une valeur ronde que Maria remplace. */
+      minutes: format === 'demi' ? demiJournee().minutes : 90,
+      qui: {},
+      /* Les contrats décochés PAR UN OBSTACLE, et non par Maria. */
+      exclu: {},
+      cpt: {}
+    };
+    etapeHeure();
+  }
+
+  /* §21.1 — LA DEMI-JOURNÉE, ET LE SEUIL DE LA DURÉE LIBRE.
+
+     La spécification écrit « 4 h 30 (270 minutes) ». Ce n'est pas un nombre
+     magique : c'est la moitié d'une journée de congé, et la journée de congé
+     vient de l'avenant (`minutes_par_jour_conge`, 540 aujourd'hui). Figer 270
+     rendrait la demi-journée fausse le jour où un avenant change la journée de
+     référence — exactement le défaut que le lot 17 a passé un cycle à éteindre.
+
+     Les quatre contrats peuvent en théorie porter des journées de référence
+     différentes. On retient alors la plus COURTE : c'est celle qui rend le
+     seuil de la durée libre valable pour tous, et la divergence est dite. */
+  function demiJournee() {
+    var valeurs = [];
+    (vue.fiches || []).forEach(function (f) {
+      if (f.erreur) return;
+      var m = mpjc(condDe(f));
+      if (m > 0 && valeurs.indexOf(m) === -1) valeurs.push(m);
+    });
+    if (!valeurs.length) return { minutes: 0, divergent: false };
+    var mini = Math.min.apply(null, valeurs);
+    return { minutes: Math.floor(mini / 2), divergent: valeurs.length > 1 };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 21 — LA POSE À L'HEURE : une date, une durée, une issue par      */
+  /* enfant. Tout tient dans une seule feuille : le geste est court, et   */
+  /* un parcours en trois étapes pour poser 23 minutes serait absurde.    */
+  /* ------------------------------------------------------------------ */
+
+  /* Les fiches qui peuvent recevoir une pose ce jour-là : contrat lisible,
+     jour au planning, dans les bornes du contrat, hors férié. Un enfant rangé
+     n'est pas dans `vue.fiches` — l'écran ne liste que les contrats actifs. */
+  function fichesDuJour(jour) {
+    return (vue.fiches || []).filter(function (f) {
+      return !f.erreur && joursDuContrat(f, { debut: jour, fin: jour }).length === 1;
+    });
+  }
+
+  /* Ce qui EMPÊCHE de poser sur cette journée, pour ce contrat. `null` = rien
+     n'empêche. On refuse plutôt que d'écraser : chacun de ces trois cas
+     détruirait une donnée que personne ne peut recalculer. */
+  function obstacleDuJour(f, jour) {
+    /* CORRECTION C1 — L'ÉCHEC DE LECTURE DIT SON VRAI MOTIF.
+
+       Le repli posait une ligne factice `{ ecart_evenement: 'illisible' }`, et
+       `obstacleDuJour` tombait sur la branche suivante : Maria lisait « une
+       déclaration d'horaire est déjà posée ce jour-là » sur une journée où il
+       n'y a rien, et allait la chercher dans l'espace enfant. Le comportement
+       — échouer fermé — était le bon ; c'est la phrase qui mentait. */
+    if (f.contexteIllisible) {
+      return 'impossible de vérifier cette journée pour l’instant';
+    }
+    var l = (f.journeesPose || {})[jour];
+    if (l && l.ecart_evenement === 'conge_horaire') {
+      /* Reposer par-dessus remplacerait la déclaration existante sans un mot,
+         et le compteur rendrait puis reprendrait des minutes différentes. On
+         demande de retirer d'abord : c'est un geste de plus, et c'est le seul
+         qui laisse une trace lisible de ce qui s'est passé. */
+      return 'un congé est déjà posé sur cette journée — retirez-le d’abord';
+    }
+    if (l && l.ecart_evenement) {
+      return 'une déclaration d’horaire est déjà posée ce jour-là';
+    }
+    if (l && l.type === 'familiarisation') {
+      return 'cette journée est en familiarisation, payée à l’heure';
+    }
+    if (l && TYPES_ABSENCE_MARIA.indexOf(l.type) !== -1) {
+      return 'vous êtes déjà absente toute la journée';
+    }
+    return null;
+  }
+
+  function etapeHeure() {
+    var libre = parcours.format === 'libre';
+    var demi = demiJournee();
+
+    Kit.ouvrirFeuille(libre ? 'Une durée libre' : 'Une demi-journée',
+      'La journée reste travaillée : seules les minutes posées sortent de vos compteurs.',
+      function (corps) {
+        var maintenant = global.App.moisCourant();
+        var chJour = Kit.champDate('Le jour', parcours.jour,
+          { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 });
+        corps.appendChild(chJour.bloc);
+
+        var chDuree = null;
+        if (libre) {
+          chDuree = Kit.champHeureMinute('Durée', minutesEnIso(parcours.minutes));
+          corps.appendChild(chDuree.bloc);
+          corps.appendChild(Kit.ce('p', 'sb q',
+            'Ce que vous voulez, à la minute près, en dessous de ' +
+            Kit.heures(demi.minutes) + '.'));
+          var raccourcis = Kit.ce('div', 'row');
+          [23, 60, 94].forEach(function (m) {
+            var b = Kit.bouton('btn sm nt', function () {
+              parcours.minutes = m;
+              chDuree.input.value = minutesEnIso(m);
+              majTout();
+            });
+            b.textContent = Kit.heures(m);
+            raccourcis.appendChild(b);
+          });
+          corps.appendChild(raccourcis);
+        } else {
+          corps.appendChild(Kit.fld('Durée', Kit.heures(demi.minutes) +
+            ' — la moitié d’une journée de congé'));
+          if (demi.divergent) {
+            corps.appendChild(Kit.ce('p', 'sb q',
+              'Vos contrats n’ont pas tous la même journée de référence : ' +
+              'la plus courte fait foi, pour qu’aucun compteur ne soit dépassé.'));
+          }
+        }
+
+        var alerte = Kit.ce('div');
+        corps.appendChild(alerte);
+        corps.appendChild(Kit.section('Pour qui, et sur quoi ?'));
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Chaque famille se règle individuellement.'));
+        var zoneQui = Kit.ce('div');
+        corps.appendChild(zoneQui);
+
+        var msg = Kit.ce('div', 'msg');
+        corps.appendChild(msg);
+        var bPoser = Kit.bouton('btn', function () { poserHoraire(bPoser, msg); });
+        corps.appendChild(bPoser);
+
+        chJour.bloc.addEventListener('change', function () {
+          parcours.jour = chJour.valeur();
+          chargerContexteDuJour().then(majTout);
+        });
+        if (chDuree) {
+          chDuree.input.addEventListener('change', function () {
+            parcours.minutes = isoEnMinutes(chDuree.valeur());
+            majTout();
+          });
+        }
+
+        function majTout() {
+          Kit.vider(alerte);
+          Kit.vider(zoneQui);
+          msg.className = 'msg';
+          msg.textContent = '';
+
+          /* §21.1 — LES DEUX REFUS, ET LEUR PHRASE EXACTE. Le bouton reste
+             inactif tant que la durée n'est pas posable ; sans la phrase, un
+             bouton mort passerait pour une panne. */
+          var dureeOk = true;
+          if (libre) {
+            if (parcours.minutes >= demi.minutes && demi.minutes > 0) {
+              alerte.appendChild(Kit.warnbox(
+                Kit.heures(parcours.minutes) + ' : c’est une demi-journée ou plus',
+                /* REMARQUE 4 — « au-delà de » excluait 4 h 30, qui est
+                   pourtant déjà refusé. La borne est stricte : on le dit. */
+                ' À partir de ' + Kit.heures(demi.minutes) + ', choisissez « une ' +
+                'demi-journée » ou « une ou plusieurs journées ».'));
+              dureeOk = false;
+            } else if (parcours.minutes <= 0) {
+              alerte.appendChild(Kit.note('Saisissez une durée',
+                '1 h, 23 min, 1 h 34 — ce que vous voulez, en dessous de ' +
+                Kit.heures(demi.minutes) + '.'));
+              dureeOk = false;
+            }
+          } else if (demi.minutes <= 0) {
+            alerte.appendChild(Kit.warnbox('Journée de congé inconnue',
+              ' Aucun de vos contrats ne porte de conditions pour ce mois : ' +
+              'impossible de savoir ce que vaut une demi-journée.'));
+            dureeOk = false;
+          }
+
+          var minutes = libre ? parcours.minutes : demi.minutes;
+          var fiches = fichesDuJour(parcours.jour);
+          var retenus = [];
+
+          if (!fiches.length) {
+            zoneQui.appendChild(Kit.ce('p', 'vide',
+              'Aucun de vos contrats n’est gardé ce jour-là : il n’y a rien à poser.'));
+          }
+
+          fiches.forEach(function (f) {
+            var id = f.contrat.id;
+            var obstacle = obstacleDuJour(f, parcours.jour);
+
+            /* UN DÉCOCHAGE IMPOSÉ N'EST PAS UN CHOIX DE MARIA.
+
+               L'obstacle décoche le contrat pour empêcher l'écriture. Mais la
+               date se change dans la même feuille : si Maria déplace la pose
+               sur une journée libre, le contrat doit REVENIR de lui-même. Sans
+               cette mémoire, il resterait exclu en silence — la feuille dirait
+               « Poser 1h00 sur 2 contrats » là où trois sont gardés, sans que
+               rien à l'écran n'explique le troisième absent. */
+            if (obstacle) {
+              parcours.exclu[id] = true;
+              parcours.qui[id] = false;
+            } else if (parcours.exclu[id]) {
+              delete parcours.exclu[id];
+              delete parcours.qui[id];
+            }
+            var coche = parcours.qui[id] !== false && !obstacle;
+
+            var b = Kit.choix(zoneQui, 'c1', coche ? '●' : '○',
+              f.contrat.prenom_enfant,
+              obstacle ? 'Impossible : ' + obstacle + '.' : reservesLisibles(f),
+              function () {
+                if (obstacle) return;
+                parcours.qui[id] = !coche;
+                majTout();
+              });
+            if (coche) b.className += ' on';
+            if (obstacle) b.className += ' off';
+            b.setAttribute('role', 'checkbox');
+            b.setAttribute('aria-checked', coche ? 'true' : 'false');
+            if (!coche || !dureeOk || minutes <= 0) return;
+
+            retenus.push(f);
+            zoneQui.appendChild(blocIssue(f, minutes, majTout));
+          });
+
+          bPoser.disabled = !dureeOk || !retenus.length;
+          bPoser.textContent = 'Poser ' + Kit.heures(dureeOk ? minutes : 0) +
+            (retenus.length === 1
+              ? ' pour ' + retenus[0].contrat.prenom_enfant
+              : (retenus.length > 1 ? ' sur ' + retenus.length + ' contrats' : ''));
+        }
+
+        chargerContexteDuJour().then(majTout);
+      });
+  }
+
+  /* Les journées déjà saisies ce jour-là, pour chaque contrat : c'est ce qui
+     dit si la pose est possible. Un échec de lecture ne laisse pas croire que
+     la voie est libre — il coche l'obstacle « impossible de vérifier ». */
+  /* CORRECTION B1 DE LA RELECTURE DES LOTS 20 À 22 — LE GARDE-FOU VÉRIFIAIT
+     LE SOLDE D'UN MOIS, ET L'ÉCRITURE ATTERRISSAIT SUR UN AUTRE.
+
+     `cpDe(f)` lit le compteur d'entrée de `f.entree`, construit UNE FOIS à
+     l'ouverture de l'écran, pour le MOIS AFFICHÉ. Or la feuille de pose offre
+     un champ de date libre sur quatre ans. Maria consulte juillet, pose une
+     demi-journée au 15 octobre : l'écran annonce les réserves de juillet, le
+     bouton « Congés payés » est actif, et l'écriture consomme un compteur
+     d'octobre qui peut être vide. Le moteur n'écrête pas, `cpDisponible` borne
+     l'affichage à zéro — et le solde négatif n'apparaît nulle part, pour
+     toujours (RG-12, aucune remise à zéro).
+
+     Changer de date recharge donc AUSSI les compteurs, pour le mois de la date
+     choisie. Chaque fiche porte `entreeDuJour` ; `cpDuJour` et `supDuJour` la
+     lisent, et c'est elle — pas le mois affiché — qui décide de ce que les
+     congés payés couvrent.
+
+     ÉCHOUE FERMÉ. Si la chaîne du mois visé ne peut pas être calculée, la
+     fiche est marquée illisible et la pose lui est refusée : proposer un
+     compteur qu'on n'a pas pu lire est exactement ce qui a produit ce
+     défaut. */
+  function chargerContexteDuJour() {
+    var m = Chaine.moisDeDate(parcours.jour);
+    return Promise.all((vue.fiches || []).map(function (f) {
+      if (f.erreur) return null;
+      return Promise.all([
+        global.App.journees(f.contrat.id, m.annee, m.mois)
+          .then(function (j) { return { ok: true, journees: j || {} }; })
+          .catch(function () { return { ok: false, journees: {} }; }),   // C1 : dit fermé, et dit vrai
+        global.App.serie(f.contrat, m)
+          .then(function (chaine) {
+            return { ok: true, entree: global.App.moisDe(chaine, m.annee, m.mois) };
+          })
+          .catch(function () { return { ok: false, entree: null }; })
+      ]).then(function (r) {
+        f.journeesPose = r[0].journees;
+        f.entreeDuJour = r[1].entree;
+        /* `null` sans erreur = le contrat ne couvre pas ce mois. Ce n'est pas
+           un échec : `fichesDuJour` l'écarte déjà par ses bornes. */
+        f.contexteIllisible = !r[0].ok || !r[1].ok;
+      });
+    })).then(function () { return true; });
+  }
+
+  /* Les réserves du MOIS DE LA DATE CHOISIE. Le repli sur `f.entree` ne sert
+     qu'aux écrans qui n'ouvrent pas la feuille de pose. */
+  function entreeDuJour(f) {
+    return f.entreeDuJour || f.entree || null;
+  }
+  function cpDuJour(f) {
+    var e = entreeDuJour(f);
+    return Kit.cpDisponible(e && e.compteurEntree);
+  }
+  function supDuJour(f) {
+    var e = entreeDuJour(f);
+    return Kit.supDisponible(e && e.compteurEntree);
+  }
+  /* Le solde SIGNÉ, pour l'affichage. Voir la correction C3. */
+  function supSoldeDuJour(f) {
+    var e = entreeDuJour(f);
+    return Kit.supSolde(e && e.compteurEntree);
+  }
+  function condDuJour(f) {
+    var m = Chaine.moisDeDate(parcours.jour);
+    return condDe(f, m.annee, m.mois);
+  }
+
+  /* CORRECTION C3 — LE SOLDE AFFICHÉ EST LE SOLDE SIGNÉ.
+
+     `supDisponible` borne à zéro : c'est ce qu'une ventilation a le droit de
+     CONSOMMER, et ça doit le rester. Mais l'écran l'utilisait aussi pour
+     AFFICHER, et annonçait « 0h00 » sur un compteur à − 1 h 30 — juste après
+     avoir prévenu « vous devrez 1 h 30 à cette famille ». C'est la correction
+     B5 du lot 17, portée à l'espace enfant et pas ici. Les deux lectures sont
+     désormais distinctes, comme `js/ui-kit.js` le demande. */
+  function reservesLisibles(f) {
+    var cond = condDuJour(f) || condDe(f);
+    var signe = supSoldeDuJour(f);
+    return 'récup ' + (signe < 0 ? '− ' + Kit.heures(-signe) : Kit.heures(signe)) +
+      ' · CP ' + Kit.joursCp(cpDuJour(f), mpjc(cond));
+  }
+
+  /* §21.2 — L'ISSUE, POUR CET ENFANT ET LUI SEUL.
+
+     Trois issues, et le PRÉ-CHOIX est intelligent : récupération si elle
+     couvre, sinon congés payés s'ils couvrent, sinon sans solde. Maria peut
+     changer chaque choix — y compris forcer une récupération insuffisante, en
+     connaissance de cause. Les congés payés, eux, ne sont jamais
+     sélectionnables quand ils ne couvrent pas : ils ne passent JAMAIS en
+     négatif, par aucun chemin. */
+  function blocIssue(f, minutes, apres) {
+    var id = f.contrat.id;
+    /* CORRECTION B1 — tout ce bloc lit le mois de la DATE CHOISIE, pas le mois
+       affiché : c'est lui que l'écriture va toucher. */
+    var cond = condDuJour(f) || condDe(f);
+    var cp = cpDuJour(f);
+    var sup = supDuJour(f);
+    var soldeSup = supSoldeDuJour(f);
+    var cpCouvre = cp >= minutes;
+
+    /* LE PRÉ-CHOIX SE RECALCULE TANT QUE MARIA N'A RIEN CHOISI.
+
+       Il dépend de la DURÉE, pas seulement de l'enfant : 1 h tient sur la
+       récupération de Tom, 2 h non. Figer le pré-choix à la première durée
+       saisie laisserait « → récupération » sur un compteur qui ne couvre plus
+       — et le §21.2 dit que le pré-choix est intelligent, pas qu'il est posé
+       une fois pour toutes.
+
+       Dès que Maria touche un des trois boutons, son choix devient EXPLICITE
+       et plus rien ne le déplace : elle a le droit de forcer une récupération
+       insuffisante, en connaissance de cause. */
+    if (!parcours.cptExplicite) parcours.cptExplicite = {};
+    if (!parcours.cptExplicite[id]) {
+      parcours.cpt[id] = sup >= minutes ? 'recuperation'
+                       : (cpCouvre ? 'conges_payes' : 'sans_solde');
+    } else if (parcours.cpt[id] === 'conges_payes' && !cpCouvre) {
+      /* Même un choix explicite ne peut pas faire passer les congés payés en
+         négatif : ils ne le font JAMAIS, par aucun chemin (A4). */
+      parcours.cpt[id] = 'sans_solde';
+    }
+    var choisi = parcours.cpt[id];
+
+    var bloc = Kit.ce('div', 'issue');
+    var rangee = Kit.ce('div', 'row');
+    [['recuperation', 'Récupération'], ['conges_payes', 'Congés payés'],
+     ['sans_solde', 'Sans solde']].forEach(function (x) {
+      var inactif = x[0] === 'conges_payes' && !cpCouvre;
+      var b = Kit.bouton('btn sm' + (choisi === x[0] ? '' : ' nt') + (inactif ? ' off' : ''),
+        inactif ? null : function () {
+          parcours.cpt[id] = x[0];
+          parcours.cptExplicite[id] = true;
+          apres();
+        });
+      b.textContent = x[1];
+      b.disabled = inactif;
+      rangee.appendChild(b);
+    });
+    bloc.appendChild(rangee);
+
+    /* L'EFFET CHIFFRÉ, rejoué par le moteur — jamais écrit en dur (B.0-4). */
+    if (choisi === 'recuperation') {
+      /* La dette annoncée part du solde SIGNÉ : sur un compteur déjà à
+         − 3 h 00, annoncer « vous devrez 1 h 30 » au lieu de 4 h 30 serait
+         faux de toute la dette déjà accumulée (même défaut que B5 du lot 17). */
+      var apresRecup = soldeSup - minutes;
+      bloc.appendChild(apresRecup >= 0
+        ? Kit.ce('div', 'sb', '→ récupération : ' + Kit.heures(apresRecup))
+        : Kit.warnbox('Vous devrez ' + Kit.heures(-apresRecup) + ' à cette famille',
+            ' Votre récupération passera en négatif sur ce contrat. C’est possible, ' +
+            'et c’est du temps que vous rendrez.'));
+    } else if (choisi === 'conges_payes') {
+      bloc.appendChild(Kit.ce('div', 'sb',
+        '→ congés payés : ' + Kit.joursCp(cp - minutes, mpjc(cond))));
+    } else {
+      var brut = brutDe(f);
+      bloc.appendChild(Kit.ce('div', 'sb', brut != null
+        ? '→ sans solde : − ' + Kit.eur(Engine.montantCentimes(brut, minutes)) +
+          ' sur son mois'
+        : '→ sans solde : la retenue ne peut pas être chiffrée, la rémunération ' +
+          'de ce mois n’est pas renseignée'));
+    }
+    if (!cpCouvre) {
+      bloc.appendChild(Kit.ce('div', 'sb q',
+        'Congés payés : plus assez — reste ' + Kit.joursCp(cp, mpjc(cond)) + '.'));
+    }
+    return bloc;
+  }
+
+  /* §21.2 — L'ÉCRITURE. Une journée par contrat retenu, et rien d'autre.
+
+     La journée GARDE SON TYPE : elle reste travaillée, l'indemnité d'entretien
+     reste due, les minutes du contrat restent dues (RG-01, RG-02). Seules les
+     minutes posées sortent du compteur choisi — c'est exactement la mécanique
+     d'un écart d'horaire déclaré (§17.5), et c'est pourquoi le congé à l'heure
+     l'emprunte plutôt que d'en inventer une seconde.
+
+     DÉCISION D'ADRIEN, 23 août 2026 : le jour reste un jour de présence, en
+     durée libre comme en demi-journée. */
+  function poserHoraire(bouton, msg) {
+    var minutes = parcours.format === 'demi' ? demiJournee().minutes : parcours.minutes;
+    var jour = parcours.jour;
+    var retenus = fichesDuJour(jour).filter(function (f) {
+      return parcours.qui[f.contrat.id] !== false && !obstacleDuJour(f, jour);
+    });
+    if (!retenus.length || minutes <= 0) return;
+
+    function echec(texte) {
+      bouton.disabled = false;
+      msg.className = 'msg ko';
+      msg.textContent = texte;
+    }
+
+    bouton.disabled = true;
+    msg.className = 'msg';
+    msg.textContent = 'Enregistrement…';
+
+    var m = Chaine.moisDeDate(jour);
+    /* LE MOIS CLÔTURÉ EST REFUSÉ, ET LE REFUS LE NOMME. Contrairement au
+       parcours en journées, on ne propose pas de rouvrir : poser vingt-trois
+       minutes ne justifie pas de faire diverger un document déjà remis à une
+       famille. Le chemin de réouverture existe, il est ailleurs, et il est
+       tracé. Le contrôle ÉCHOUE FERMÉ : sans les récapitulatifs, on refuse. */
+    global.App.recapsDuMois(m.annee, m.mois).then(function (parId) {
+      var clos = retenus.filter(function (f) {
+        return global.App.estClos(parId, f.contrat.id);
+      });
+      if (clos.length) {
+        return echec(Kit.moisCapitale(m.annee, m.mois) + ' est déjà clôturé pour ' +
+          liste(clos.map(function (f) { return f.contrat.prenom_enfant; })) +
+          '. Un mois clôturé ne se recalcule pas : rouvrez-le depuis son ' +
+          'récapitulatif si vous devez vraiment y poser ce congé. Rien n’a été enregistré.');
+      }
+
+      return Promise.all(retenus.map(function (f) {
+        var l = (f.journeesPose || {})[jour] || {};
+        return global.DB.enregistrerJournee({
+          contrat_id: f.contrat.id,
+          jour: jour,
+          /* Le type ne change pas : la journée reste ce qu'elle était. */
+          type: l.type || 'presence',
+          minutes_reelles: l.minutes_reelles == null ? null : l.minutes_reelles,
+          entretien_centimes: l.entretien_centimes == null ? null : l.entretien_centimes,
+          commentaire: l.commentaire == null ? null : l.commentaire,
+          ecart_minutes: -minutes,
+          ecart_evenement: 'conge_horaire',
+          ecart_heure_reelle: null,
+          ecart_impute_sur: parcours.cpt[f.contrat.id] || 'recuperation'
+        });
+      })).then(function () {
+        global.App.invalider();
+        Kit.fermerFeuille();
+        Kit.toast(Kit.heures(minutes) + ' posées sur ' +
+          liste(retenus.map(function (f) { return f.contrat.prenom_enfant; })));
+        global.App.remplacer('conges', { annee: vue.annee, mois: vue.mois });
+      });
+    }).catch(function (e) {
+      /* La feuille RESTE ouverte : la saisie en cours ne disparaît jamais en
+         silence (B.0-9). */
+      echec('Rien n’a été enregistré — ' + Kit.messageErreur(e));
+    });
+  }
+
+  function minutesEnIso(m) {
+    var n = Math.max(0, m || 0);
+    return String(Math.floor(n / 60)).padStart(2, '0') + ':' +
+           String(n % 60).padStart(2, '0');
+  }
+  function isoEnMinutes(t) {
+    var p = String(t || '').split(':');
+    var h = Number(p[0]), mn = Number(p[1]);
+    if (!isFinite(h) || !isFinite(mn)) return 0;
+    return h * 60 + mn;
   }
 
   /* --- Étape 1 : les dates ------------------------------------------- */
@@ -1334,9 +1943,31 @@
     return f;
   }
 
+  /* CORRECTION C2 DE LA RELECTURE — `brutDe` NE RENDAIT JAMAIS `null`.
+
+     `(r && r.salaireBrutCentimes) || 0` rendait zéro dans les deux cas : brut
+     inconnu, et brut réellement nul. Les trois garde-fous qui testent
+     `brut != null` étaient donc STRUCTURELLEMENT INATTEIGNABLES, et l'écran
+     annonçait « − 0,00 € sur son mois » sur un mois dont la rémunération n'est
+     pas renseignée (§17.2 point 3). Un zéro crédible et faux est exactement ce
+     que ce projet refuse.
+
+     `null` désigne maintenant « inconnu », et lui seul. Les appelants qui
+     testaient la valeur en booléen continuent de fonctionner : `null` est
+     faux, comme `0` l'était.
+
+     OÙ LIRE « INCONNU ». Pas dans le résultat du moteur : `js/chaine-mois.js`
+     calcule un mois sans barème AVEC UN BARÈME NUL — c'est voulu, les heures
+     sup et les congés doivent continuer de s'accumuler — et le résultat porte
+     donc `salaireBrutCentimes = 0`, indiscernable d'un brut réellement nul.
+     Le maillon, lui, porte `salaireManquant` : c'est le seul endroit où
+     l'information survit. C'est lui qu'on lit. */
   function brutDe(fiche) {
-    var r = fiche.entree && fiche.entree.resultat;
-    return (r && r.salaireBrutCentimes) || 0;
+    var e = entreeDuJour(fiche) || fiche.entree;
+    if (!e || e.salaireManquant) return null;
+    var r = e.resultat;
+    if (!r || r.salaireBrutCentimes == null) return null;
+    return r.salaireBrutCentimes;
   }
 
   /* LOT 16 §16.1 d) — « Vos réserves ne couvrent pas toute la période ».
@@ -1613,7 +2244,8 @@
           corps.removeChild(attente);
           var periodes = regrouperParPeriode(parContrat);
 
-          if (!periodes.length) {
+          var horaires = congesHoraires();
+          if (!periodes.length && !horaires.length) {
             corps.appendChild(Kit.ce('p', 'vide',
               'Aucune période de congé enregistrée. Les congés posés avant la refonte ' +
               'se retirent depuis le calendrier d’un enfant.'));
@@ -1626,6 +2258,26 @@
             }), Kit.jours(p.jours) + ' décomptés · ' +
               liste(p.entrees.map(function (e) { return e.fiche.contrat.prenom_enfant; })),
               function () { confirmerRetrait(p); });
+          });
+
+          /* §21.3 — LES CONGÉS À L'HEURE SE RETIRENT ICI AUSSI. Ils ne sont pas
+             des périodes : ils vivent sur les journées, et se retirent en
+             effaçant la déclaration. Le retrait rend EXACTEMENT ce qui avait
+             été déduit, enfant par enfant — le sans solde, lui, ne rend rien,
+             parce que ce n'est pas un compteur mais une retenue qui disparaît
+             avec la déclaration. */
+          horaires.forEach(function (h) {
+            var demi = demiJournee();
+            var titre = (demi.minutes > 0 && h.minutes === demi.minutes)
+              ? '½ journée' : Kit.heures(h.minutes);
+            Kit.choix(corps, 'c1', '−',
+              (titre + ' ' + libellePlage(h.jour, h.jour)).replace(/^./, function (c) {
+                return c.toUpperCase();
+              }),
+              h.parts.map(function (x) {
+                return x.prenom + ' : ' + (LIBELLE_ISSUE[x.issue] || x.issue);
+              }).join(' · '),
+              function () { confirmerRetraitHoraire(h); });
           });
         }).catch(function (e) {
           if (attente.parentNode) corps.removeChild(attente);
@@ -1658,6 +2310,84 @@
     });
     return Object.keys(index).map(function (k) { return index[k]; })
       .sort(function (a, b) { return a.debut < b.debut ? 1 : -1; });
+  }
+
+  function confirmerRetraitHoraire(h) {
+    Kit.ouvrirFeuille('Retirer ce congé ?', libellePlage(h.jour, h.jour),
+      function (corps) {
+        corps.appendChild(Kit.note('Ce que ce retrait rend',
+          'Les ' + Kit.heures(h.minutes) + ' posées reviennent au compteur qui les ' +
+          'avait fournies, enfant par enfant. Une retenue de sans solde disparaît ' +
+          'avec la déclaration : ce n’est pas un compteur, il n’y a rien à rendre. ' +
+          'La journée, elle, n’a jamais cessé d’être travaillée.'));
+        corps.appendChild(Kit.ce('div', 'sb q', h.parts.map(function (x) {
+          return x.prenom + ' : ' + (LIBELLE_ISSUE[x.issue] || x.issue);
+        }).join(' · ')));
+
+        var msg = Kit.ce('div', 'msg');
+        corps.appendChild(msg);
+        var b = Kit.bouton('btn dg', function () { retirerHoraire(h, b, msg); });
+        b.textContent = 'Retirer ce congé';
+        corps.appendChild(b);
+      });
+  }
+
+  function retirerHoraire(h, bouton, msg) {
+    bouton.disabled = true;
+    msg.className = 'msg';
+    msg.textContent = 'Retrait…';
+
+    var m = Chaine.moisDeDate(h.jour);
+    /* Les contrats de CETTE pose, et d'elle seule : même jour ET même durée.
+       Une autre pose du même jour ne doit pas partir avec. */
+    var concernes = (vue.fiches || []).filter(function (f) {
+      var l = !f.erreur && (f.journees || {})[h.jour];
+      return !!(l && l.ecart_evenement === 'conge_horaire' &&
+                -(l.ecart_minutes || 0) === h.minutes);
+    });
+
+    /* MÊME GARDE QU'À LA POSE, et pour la même raison : retirer un congé d'un
+       mois clôturé le ferait diverger d'un document déjà remis. Échoue fermé. */
+    global.App.recapsDuMois(m.annee, m.mois).then(function (parId) {
+      var clos = concernes.filter(function (f) {
+        return global.App.estClos(parId, f.contrat.id);
+      });
+      if (clos.length) {
+        bouton.disabled = false;
+        msg.className = 'msg ko';
+        msg.textContent = Kit.moisCapitale(m.annee, m.mois) + ' est déjà clôturé pour ' +
+          liste(clos.map(function (f) { return f.contrat.prenom_enfant; })) +
+          '. Rien n’a été retiré.';
+        return;
+      }
+      return Promise.all(concernes.map(function (f) {
+        var l = f.journees[h.jour];
+        /* Les quatre colonnes de la déclaration repartent à `null` ENSEMBLE :
+           une ligne à demi effacée serait refusée par la contrainte
+           `journee_ecart_coherent`, et surtout elle se relirait de travers. */
+        return global.DB.enregistrerJournee({
+          contrat_id: f.contrat.id,
+          jour: h.jour,
+          type: l.type || 'presence',
+          minutes_reelles: l.minutes_reelles == null ? null : l.minutes_reelles,
+          entretien_centimes: l.entretien_centimes == null ? null : l.entretien_centimes,
+          commentaire: l.commentaire == null ? null : l.commentaire,
+          ecart_minutes: null,
+          ecart_evenement: null,
+          ecart_heure_reelle: null,
+          ecart_impute_sur: null
+        });
+      })).then(function () {
+        global.App.invalider();
+        Kit.fermerFeuille();
+        Kit.toast('Congé retiré — les minutes sont rendues à vos compteurs');
+        global.App.remplacer('conges', { annee: vue.annee, mois: vue.mois });
+      });
+    }).catch(function (e) {
+      bouton.disabled = false;
+      msg.className = 'msg ko';
+      msg.textContent = 'Rien n’a été retiré — ' + Kit.messageErreur(e);
+    });
   }
 
   function confirmerRetrait(p) {

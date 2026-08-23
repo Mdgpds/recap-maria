@@ -188,6 +188,11 @@ var DB = {
   getNoteMensuelle: function () { return Promise.resolve(null); },
   enregistrerNoteMensuelle: function (c, a, m, t) { return Promise.resolve({ texte: t }); },
   listRecapsPeriode: function () { return Promise.resolve([]); },
+  /* LOT 20 — les périodes de familiarisation (§20.2). Le décor les rend
+     vides : ces écrans-là n'en ont aucune, et la fiche du contrat doit
+     l'afficher comme telle plutôt que d'échouer. */
+  listPeriodesFamiliarisation: function () { return Promise.resolve([]); },
+  listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
   listRecapsContrat: function () { return Promise.resolve([]); },
   getRecap: function () { return Promise.resolve(null); },
   enregistrerJournee: function (l) { return Promise.resolve(l); },
@@ -207,6 +212,7 @@ require('../js/ui-document.js');
 require('../js/ui-conges.js');
 require('../js/ui-historique.js');
 require('../js/ui-contrat.js');
+require('../js/ui-familiarisation.js');
 require('../js/ui-menu.js');
 require('../js/ui-periode.js');
 require('../js/app.js');
@@ -347,8 +353,14 @@ var sheet = document.getElementById('sheet');
     '§16.4 : la ligne des rappels affiche son VRAI réglage, lu en base');
   assert(!!parTexte(corps, '.menu', 'Mon nom sur les documents'),
     '§16.2 : le Menu propose la saisie du nom');
-  assert(txt(corps).indexOf('Papillon') !== -1,
-    '§16.4 : et la ligne des familles est bien renseignée, elle aussi');
+  /* LOT 22 §22.1 — la ligne « Familles » est devenue « Mes enfants », et son
+     sous-titre porte les DEUX comptes calculés au lieu des noms de foyers. La
+     garde du §16.4 vaut toujours : une ligne qui part sur « Chargement… » doit
+     être levée par quelqu'un qui sait la lever. */
+  var ligneEnfants = parTexte(corps, '.menu', 'Mes enfants');
+  assert(!!ligneEnfants, '§22.1 : le Menu porte l’entrée « Mes enfants »');
+  assert(txt(ligneEnfants).indexOf('en garde') !== -1,
+    '§16.4 : et son sous-titre est bien renseigné, lui aussi');
 
   /* ==================================================================== */
   console.log('');

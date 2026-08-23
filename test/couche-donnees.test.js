@@ -74,9 +74,18 @@ var COLONNES_ATTENDUES = {
             /* Lot 17 — l'écart d'horaire déclaré (§17.5). Les quatre colonnes
                vont ensemble : les minutes font le calcul, l'événement et
                l'heure réelle font l'explication sur le document. */
-            'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur'],
+            'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur',
+            /* Lot 20 — l'indemnité d'entretien du jour (§20.6). Le moteur la
+               lit ; oubliée du select, elle arriverait `undefined`, ne serait
+               donc jamais `false`, et l'indemnité serait payée sur une
+               journée dont Maria l'a explicitement retirée. */
+            'entretien_du'],
   imputation_conge: ['id', 'contrat_id', 'date_debut', 'date_fin', 'jours_ouvrables',
                      'jours_sur_cp', 'jours_sur_sup', 'jours_sans_solde'],
+  /* Lot 20 — la période de familiarisation (§20.2). Quatre colonnes, et les
+     quatre servent : les bornes décident du sort de chaque jour du mois,
+     l'identifiant sert à corriger et à retirer. */
+  periode_familiarisation: ['id', 'contrat_id', 'date_debut', 'date_fin'],
   evenement_recap: ['id', 'recap_id', 'type', 'survenu_le', 'motif'],
   /* Lot 17 — les congés payés passent en MINUTES (§17.6). Les colonnes en
      dixièmes existent toujours en base mais ne sont plus lues : les demander
@@ -114,6 +123,7 @@ var COLONNE_PIVOT = {
   recap_mensuel: 'donnees',
   journee: 'type',
   imputation_conge: 'jours_ouvrables',
+  periode_familiarisation: 'date_fin',
   evenement_recap: 'type',
   compteur_initial: 'minutes_cp_acquis',
   /* La projection étroite de `supprimerAvenant`, qui ne lit que `contrat_id`

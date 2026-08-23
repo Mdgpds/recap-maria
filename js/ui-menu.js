@@ -24,6 +24,7 @@
   var Engine = global.Engine;
 
   function afficher(ctx) {
+    if (ctx.vue === 'enfants') return afficherEnfants(ctx);
     if (ctx.vue === 'familles') return afficherFamilles(ctx);
     if (ctx.vue === 'modeles') return afficherModeles(ctx);
     if (ctx.vue === 'modifGroupee') return afficherModifGroupee(ctx);
@@ -55,6 +56,38 @@
 
        Chaque ligne est désormais tenue par sa propre référence, et un
        sous-titre en attente n'est posé que là où quelqu'un sait le lever. */
+    /* LOT 22 §22.1 — « MES ENFANTS » REMPLACE « FAMILLES » DANS LE MENU.
+
+       Maria pense par ENFANT : c'est un enfant qu'elle garde, un enfant dont
+       elle tient les compteurs, un enfant dont elle remet le récapitulatif.
+       Le foyer sert aux documents et aux échanges avec les parents, pas au
+       geste quotidien.
+
+       L'entrée par famille ne DISPARAÎT pas — rien ne se supprime jamais
+       (B.0-7) : elle est reprise en bas de la page « Mes enfants », d'où un
+       foyer à deux enfants reste consultable d'un geste. Un seul chemin
+       change, aucune vue n'est perdue.
+
+       Le sous-titre porte les deux comptes du §22.1 (« 4 en garde · 3 contrats
+       terminés »), et ils sont CALCULÉS : un historique peut compter quatorze
+       enfants, et un compte écrit en dur mentirait dès le quinzième. */
+    var ligneEnfants = entree('Mes enfants', 'Chargement…',
+      function () { global.App.aller('enfants', {}); });
+    corps.appendChild(ligneEnfants);
+
+    /* CORRECTION C5 DE LA RELECTURE — « FAMILLES » REVIENT DANS LE MENU.
+
+       Le §22.1 demande une entrée unique « Mes enfants » et une page dédiée.
+       Il ne demande NULLE PART de supprimer l'accès par famille : c'est un
+       changement de navigation que personne n'a réclamé, sur un écran que
+       Maria connaît, et la grille du lot 22 dit « rien d'autre n'a bougé ».
+       L'entrée est donc rétablie telle qu'elle était.
+
+       Le raccourci « Voir par famille » reste en bas de la page « Mes
+       enfants » : deux portes vers le même écran ne coûtent rien, et la
+       seconde est utile là où l'on vient de lire la liste des enfants.
+       Question remontée à Adrien : s'il préfère l'entrée unique, c'est cette
+       ligne-ci qui repart. */
     var ligneFamilles = entree('Familles', 'Chargement…',
       function () { global.App.aller('familles', {}); });
     corps.appendChild(ligneFamilles);
@@ -106,6 +139,17 @@
 
     /* Les deux lectures sont indépendantes : l'échec de l'une ne doit pas
        laisser l'autre ligne dans son état d'attente. */
+    /* LOT 22 §22.1 — LES DEUX COMPTES, CALCULÉS. « En garde » : les contrats
+       ni rangés ni terminés. « Contrats terminés » : tous les autres, rangés
+       comme terminés — c'est la section où ils atterrissent, et la ligne doit
+       annoncer ce qu'elle ouvre. */
+    var pEnfants = global.DB.listContratsTous().then(function (tous) {
+      var parts = partagerContrats(tous || []);
+      poserSousTitre(ligneEnfants, phraseComptes(parts));
+    }).catch(function () {
+      poserSousTitre(ligneEnfants, 'Liste indisponible pour l’instant');
+    });
+
     var pFamilles = global.DB.listFamillesAvecContrats().then(function (familles) {
       var enCours = (familles || []).filter(function (f) { return !f.archive; });
       poserSousTitre(ligneFamilles, enCours.length
@@ -124,7 +168,7 @@
       poserSousTitre(ligneRappels, null);
     });
 
-    return Promise.all([pFamilles, pRappels]);
+    return Promise.all([pEnfants, pFamilles, pRappels]);
   }
 
   function poserSousTitre(ligne, texte) {
@@ -262,6 +306,20 @@
       Kit.ouvrirFeuille('Ajouter un enfant',
         'La famille, l’enfant, la date de début, puis ses conditions.',
         function (corps) {
+          /* LOT 22 §22.2 — « L'ÉCRAN AJOUTER UN ENFANT COMMENCE PAR ELLE. »
+
+             Ce n'est pas de la décoration. Quatre cartes d'accueil se
+             distinguaient par une seule lettre dans quatre ronds ; la photo
+             est ce qui les rend reconnaissables d'un coup d'œil, debout,
+             entre deux enfants. La poser au moment de la création est le seul
+             moment où Maria l'a sous la main — après, il faut y penser.
+
+             Elle part avec le contrat, dans le même `creerContrat` : aucune
+             écriture séparée, donc aucun état à moitié créé si le réseau
+             lâche. */
+          var photo = { valeur: null };
+          corps.appendChild(global.UiContrat.blocPhoto(photo, { grand: true }));
+
           var options = [['', '➕ Nouvelle famille']].concat(
             (familles || []).filter(function (f) { return !f.archive; })
               .map(function (f) { return [f.id, f.nom]; }));
@@ -341,7 +399,10 @@
                   famille_id: famille.id,
                   prenom_enfant: p,
                   date_debut: debut.valeur(),
-                  statut: 'actif'
+                  statut: 'actif',
+                  /* §22.2 — la photo part AVEC le contrat, dans la même
+                     écriture : `null` quand Maria n'en a pas choisi. */
+                  photo: photo.valeur || null
                 };
                 Object.keys(REGLAGES_PAR_DEFAUT).forEach(function (k) {
                   champsContrat[k] = vals[k] == null ? REGLAGES_PAR_DEFAUT[k] : vals[k];
@@ -465,6 +526,120 @@
       b.textContent = 'Réessayer';
       ctx.corps.appendChild(b);
     });
+  }
+
+  /* ================================================================== */
+  /* LOT 22 §22.1 — LA PAGE « MES ENFANTS »                              */
+  /*                                                                     */
+  /* Le Menu ne peut pas porter l'historique : quatorze enfants sur       */
+  /* quatre ans en feraient une liste à faire défiler avant d'atteindre   */
+  /* « Se déconnecter ». Une entrée unique, et une page à eux.            */
+  /* ================================================================== */
+
+  /* Un contrat est « en garde » s'il n'est ni rangé ni terminé. Les deux
+     drapeaux existent et ne veulent pas dire la même chose — `archive` est un
+     rangement, `statut` est l'état du contrat — mais ils atterrissent dans la
+     même section, parce que c'est la même chose pour Maria : cet enfant, elle
+     ne le garde plus. */
+  function partagerContrats(tous) {
+    var enGarde = [], termines = [];
+    (tous || []).forEach(function (c) {
+      if (c.archive || c.statut === 'termine') termines.push(c);
+      else enGarde.push(c);
+    });
+    return { enGarde: enGarde, termines: termines };
+  }
+
+  /* REMARQUE 5 DE LA RELECTURE — le ternaire portait deux branches
+     identiques : un accord au pluriel prévu puis oublié. « en garde » ne
+     s'accorde pas, il n'avait rien à faire là. */
+  function phraseComptes(parts) {
+    var g = parts.enGarde.length;
+    var t = parts.termines.length;
+    if (!g && !t) return 'Aucun enfant pour l’instant';
+    var gauche = g + ' en garde';
+    if (!t) return gauche;
+    return gauche + ' · ' + t + ' contrat' + (t > 1 ? 's terminés' : ' terminé');
+  }
+
+  function afficherEnfants(ctx) {
+    global.App.barreRetour(ctx.barre, 'Mes enfants');
+    ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture de vos contrats…'));
+
+    return global.DB.listContratsTous().then(function (tous) {
+      Kit.vider(ctx.corps);
+      var parts = partagerContrats(tous || []);
+      var corps = ctx.corps;
+
+      if (!parts.enGarde.length && !parts.termines.length) {
+        corps.appendChild(Kit.ce('p', 'vide',
+          'Aucun enfant pour l’instant. Ajoutez-en un pour commencer.'));
+        corps.appendChild(boutonAjouter());
+        return;
+      }
+
+      corps.appendChild(Kit.section('En garde'));
+      if (parts.enGarde.length) {
+        parts.enGarde.forEach(function (c) { corps.appendChild(carteEnfant(c, false)); });
+      } else {
+        corps.appendChild(Kit.ce('p', 'vide', 'Aucun contrat en cours.'));
+      }
+      corps.appendChild(boutonAjouter());
+
+      if (parts.termines.length) {
+        corps.appendChild(Kit.section('Contrats terminés'));
+        parts.termines.forEach(function (c) { corps.appendChild(carteEnfant(c, true)); });
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Un contrat terminé garde tout son historique et reste consultable. ' +
+          'Il peut être remis en cours à tout moment.'));
+      }
+
+      /* La vue PAR FAMILLE n'est pas perdue, elle change de porte. Un foyer à
+         deux enfants gardés reste consultable d'un geste (B.0-1). */
+      var bFamilles = Kit.bouton('btn nt', function () { global.App.aller('familles', {}); });
+      bFamilles.textContent = 'Voir par famille';
+      corps.appendChild(bFamilles);
+    }).catch(function (e) {
+      Kit.vider(ctx.corps);
+      ctx.corps.appendChild(Kit.warnbox('Impossible de charger vos contrats.',
+        ' ' + Kit.messageErreur(e) + ' Vérifiez votre connexion, puis réessayez.'));
+      var b = Kit.bouton('btn pr', function () { global.App.rafraichir(); });
+      b.textContent = 'Réessayer';
+      ctx.corps.appendChild(b);
+    });
+  }
+
+  function boutonAjouter() {
+    var b = Kit.bouton('btn nt', function () { feuilleNouvelEnfant(); });
+    b.textContent = 'Ajouter un enfant';
+    return b;
+  }
+
+  /* La carte d'un enfant. Elle mène à sa FICHE — pas à son espace mensuel :
+     depuis cette page, on vient gérer un contrat, pas consulter un mois. Un
+     contrat terminé est atténué, et sa carte dit depuis quand il l'est. */
+  function carteEnfant(c, termine) {
+    var b = Kit.bouton('big' + (termine ? ' off' : ''), function () {
+      global.App.aller('fiche', { contratId: c.id });
+    });
+    var top = Kit.ce('div', 'top');
+    top.appendChild(Kit.avatar(c));
+    var ident = Kit.ce('div');
+    ident.appendChild(Kit.ce('div', 'nm', Kit.nomComplet(c)));
+    ident.appendChild(Kit.ce('div', 'fm', termine
+      ? periodeDuContrat(c) + ' · historique conservé'
+      : 'famille ' + ((c.famille && c.famille.nom) || '—')));
+    top.appendChild(ident);
+    top.appendChild(Kit.ce('div', 'ar', '›'));
+    b.appendChild(top);
+    return b;
+  }
+
+  /* La même phrase que le bandeau de la fiche, demandée à `UiContrat` plutôt
+     que réécrite : deux formulations pour une même période finiraient par
+     diverger, et la carte dirait autre chose que l'écran qu'elle ouvre. */
+  function periodeDuContrat(c) {
+    return global.UiContrat.periodeDuContrat(c);
   }
 
   /* Un foyer est TITRÉ PAR LES PRÉNOMS DE SES ENFANTS, le nom de famille en

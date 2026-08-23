@@ -195,16 +195,29 @@ body {
    marge. D'où les trois précautions ci-dessous — police légèrement réduite,
    marges internes resserrées, et interdiction absolue de couper un mot. Une
    étiquette tronquée en « Mes cong… » serait pire que pas d'étiquette. */
+/* LOT 22 §22.3 — la barre est un peu plus aérée : chaque bouton fait au moins
+   44 px de haut, seuil en dessous duquel une cible tactile se rate une fois
+   sur trois sur un téléphone tenu d'une main. */
 .tabbar button {
-  flex: 1; text-align: center; padding: 11px 2px 13px;
+  flex: 1; text-align: center; padding: 7px 2px 8px;
+  min-height: 44px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px;
   font: inherit; font-size: 11.5px; color: var(--ink3); font-weight: 600;
   background: none; border: none; cursor: pointer;
   white-space: nowrap; overflow: visible; letter-spacing: -.1px;
-  min-width: 0;
+  min-width: 0; position: relative;
+  border-radius: 11px; margin: 3px 2px;
 }
-.tabbar button .i { display: block; font-size: 20px; margin-bottom: 1px; opacity: .55; }
-.tabbar button.on { color: var(--ac); }
-.tabbar button.on .i { opacity: 1; }
+.tabbar button .i { display: block; line-height: 0; }
+.tabbar button .i svg { width: 22px; height: 22px; display: block; }
+
+/* LOT 22 §22.3 — L'ONGLET ACTIF EST UNE PASTILLE PLEINE, pas un simple
+   changement de couleur. Une teinte seule se perd au soleil, sur un écran
+   baissé, ou pour qui distingue mal les couleurs : le fond dit la même chose
+   sans elle. La graisse renforcée la redit une troisième fois. */
+.tabbar button.on {
+  color: var(--acd); background: var(--acs); font-weight: 700;
+}
 
 /* ------------------------------------------------------------------------ */
 /* Titres de section, boutons                                                */
@@ -486,6 +499,25 @@ table.cal td.futur:active { transform: none; }
 .choice.c3 .ic { background: var(--bls); color: var(--bl); }
 .choice .tx { flex: 1; }
 .choice .why { display: block; font-size: 12px; color: var(--ink3); font-weight: 400; margin-top: 1px; }
+/* Lot 20 — un choix RETENU parmi plusieurs (l'indemnité d'entretien du jour,
+   §20.6). La bordure et le fond, jamais la couleur seule : la pastille pleine
+   « ● » dans l'icône dit la même chose sans elle. */
+.choice.on { border-color: var(--acl); background: var(--acs); }
+/* Lot 20 — « aujourd'hui : heures à déclarer » sur la carte de l'Accueil.
+   Le seul endroit de l'Accueil qui RÉCLAME quelque chose. */
+/* Lot 21 — l'issue choisie pour un enfant, sous sa ligne dans la pose à
+   l'heure : les trois boutons, puis l'effet chiffré. Décalé sous le choix
+   auquel il se rapporte, pour qu'on ne le lise pas comme celui du suivant. */
+.issue { margin: -4px 0 10px 30px; }
+.issue .row { gap: 6px; margin-bottom: 5px; }
+.issue .row .btn { margin-bottom: 0; }
+.issue .warnbox { margin-top: 6px; }
+.choice.off { opacity: .55; cursor: default; }
+/* Lot 22 §22.2 — la photo en tête de la fiche : l'aperçu passe en grand,
+   parce que c'est le portrait de l'enfant et non une vignette de formulaire. */
+.photo-fld.grand .apercu-photo { width: 96px; height: 96px; }
+.rappel-jour { color: var(--wa); margin-top: 6px; }
+.rappel-jour b { font-weight: 700; }
 
 .toast {
   position: fixed; left: 14px; right: 14px; bottom: calc(84px + env(safe-area-inset-bottom));
@@ -866,6 +898,10 @@ button.coche:active { transform: scale(.99); }
 }
 .rp { font-size: 9px; color: var(--ink3); }
 .rp.heures { font-size: 7px; }
+/* Lot 21/22, correction B2 — un congé posé à l'heure sur une journée
+   travaillée. Troisième repère, jamais une couleur de plus : le calendrier a
+   déjà quatre états codés par la teinte. */
+.rp.conge { font-size: 9px; color: var(--ac); }
 .lg i.gnote, .lg i.gheures {
   border: none; background: none; width: auto; height: auto;
   color: var(--ink3); font-size: 10px; line-height: 1;
@@ -942,7 +978,7 @@ button.coche:active { transform: scale(.99); }
    pas, et « il y a quelque chose » sans dire combien n'aide personne. */
 .tabbar button { position: relative; }
 .pastille-onglet {
-  position: absolute; top: 6px; left: 50%; margin-left: 4px;
+  position: absolute; top: 2px; left: 50%; margin-left: 4px;
   min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
   border-radius: 999px; background: var(--wa); color: #fff;
   font-size: 10.5px; font-weight: 800; line-height: 17px; text-align: center;

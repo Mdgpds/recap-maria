@@ -187,6 +187,15 @@ var ECRITURES = [
     table: 'contrat',
     geste: 'DB.creerContrat',
     fournies: function () { return listeDe('CHAMPS_CONTRAT_MODIFIABLES'); }
+  },
+  /* LOT 20 — la table neuve du cycle. `owner` a un défaut (`auth.uid()`),
+     `id` et `cree_le` aussi : il ne reste que les trois colonnes que l'écran
+     doit fournir. Le contrôle le vérifie plutôt que de le supposer — c'est
+     exactement l'oubli qui a fait échouer « faire un avenant » en production. */
+  {
+    table: 'periode_familiarisation',
+    geste: 'DB.enregistrerPeriodeFamiliarisation',
+    fournies: function () { return ['contrat_id', 'date_debut', 'date_fin']; }
   }
 ];
 

@@ -68,7 +68,29 @@
    resté en arrière. La règle `.phr` existerait, mais aucune ligne ne porterait
    la classe — et l'écran continuerait de glisser exactement comme avant, en
    donnant l'impression que le correctif ne marche pas. */
-var CACHE = 'recap-conges-encadre-v1';
+/* LOT 20 — NOM DE CACHE CHANGÉ, ET UN FICHIER AJOUTÉ.
+
+   `js/ui-familiarisation.js` entre dans `index.html` ET dans la liste
+   ci-dessous. Un fichier absent de la liste n'est rafraîchi qu'au hasard des
+   requêtes : l'application servirait un `app.js` qui route vers un écran que
+   le cache ne connaît pas — un mélange de deux versions, et l'écran de la
+   période introuvable une fois sur deux. */
+/* LOT 22 — NOM DE CACHE CHANGÉ. Aucun fichier n'est ajouté par ce lot (la
+   page « Mes enfants » vit dans `js/ui-menu.js`, déjà pré-caché), mais
+   `index.html`, `css/style.css`, `js/app.js`, `js/ui-menu.js` et
+   `js/ui-contrat.js` changent tous : les icônes SVG de la barre d'onglets sont
+   dans la page elle-même. Sans incrément, le service worker servirait
+   l'ancienne page avec le nouveau CSS — une barre stylée pour des SVG, avec
+   des caractères Unicode dedans. */
+/* CORRECTIONS DE LA RELECTURE DES LOTS 20 À 22 — NOM DE CACHE CHANGÉ.
+
+   Aucun fichier ajouté, mais cinq fichiers servis changent : `js/app.js`,
+   `js/ui-conges.js`, `js/ui-contrat.js`, `js/ui-enfant.js`, `js/ui-menu.js`,
+   et `css/style.css`. Deux d'entre eux se répondent — la correction B2 fait
+   dire la MÊME chose à l'espace enfant et à « Mes congés » — et servir l'un
+   sans l'autre rendrait exactement le défaut corrigé : un congé posé visible
+   d'un côté, écrasable de l'autre. */
+var CACHE = 'recap-mes-enfants-v2';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
@@ -94,6 +116,7 @@ var FICHIERS = [
   './js/ui-conges.js',
   './js/ui-historique.js',
   './js/ui-contrat.js',
+  './js/ui-familiarisation.js',
   './js/ui-menu.js',
   './js/ui-periode.js',
   './js/app.js'

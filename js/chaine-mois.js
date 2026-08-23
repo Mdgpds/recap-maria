@@ -128,6 +128,51 @@
     return DB.listImputations(contratId, debut, fin).then(function (l) { return l || []; });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 20 (§20.1) — les périodes de familiarisation                     */
+  /*                                                                     */
+  /* Même branchement, même fenêtre débordante et même raison que pour   */
+  /* les imputations : une période du 28 août au 10 septembre concerne   */
+  /* les DEUX mois, et septembre doit la voir alors qu'elle commence en  */
+  /* août. Sans ce chargement, le moteur retomberait sur le comportement */
+  /* d'avant le lot 20 — chaque jour non déclaré de la période présumé   */
+  /* « présence », donc payé une journée mensualisée pleine. C'est       */
+  /* exactement la panne du lot 10, où l'écran écrivait et où personne   */
+  /* ne lisait.                                                          */
+  /* ------------------------------------------------------------------ */
+  function chargerPeriodesFamiliarisation(DB, contratId, debut, fin) {
+    /* CORRECTION C3 DE LA RELECTURE — LE REPLI MUET EST RETIRÉ.
+
+       Ce chargement commençait par un contrôle de capacité :
+       `if (typeof DB.listPeriodesFamiliarisation !== 'function') return []`.
+       Il se justifiait par les décors de test antérieurs au lot 20 — or le
+       lot 20 les a TOUS mis à jour. Le repli ne protégeait donc plus rien, et
+       il ne pouvait plus que masquer une panne réelle : sans périodes, chaque
+       jour non déclaré redevient une présence mensualisée, et un mois de
+       433,82 € s'affiche à 1 193,00 € sans un mot à l'écran.
+
+       C'est ce que le moteur écrit lui-même à propos de `minutesSaisies` : un
+       repli muet sur une valeur exprimée est toujours pire qu'un refus. Une
+       erreur remonte donc, et les écrans la disent en français.
+
+       Si un décor de test manque encore cette fonction, c'est le décor qu'il
+       faut corriger, pas la chaîne. */
+    return DB.listPeriodesFamiliarisation(contratId, debut, fin)
+      .then(function (l) { return l || []; });
+  }
+
+  /* Les périodes dont les bornes RECOUPENT le mois. Le moteur veut la ligne
+     ENTIÈRE : c'est lui qui décide, jour par jour, ce qui tombe dedans. On ne
+     découpe rien ici — un découpage mois par mois est exactement ce qui a fait
+     diverger deux décomptes au lot 9. */
+  function periodesFamiliarisationDuMois(periodes, annee, mois) {
+    var d = premierJour(annee, mois);
+    var f = dernierJour(annee, mois);
+    return (periodes || []).filter(function (p) {
+      return p.date_debut <= f && p.date_fin >= d;
+    });
+  }
+
   /* Les imputations dont la période RECOUPE le mois. Le moteur veut la ligne
      ENTIÈRE — bornes comprises — pour décompter la période d'un seul tenant
      (RG-06) et n'en retenir que la part du mois. On ne découpe rien ici. */
@@ -205,7 +250,13 @@
     return {
       contrat: params.contrat, conditions: params.conditions, journees: params.journees,
       compteurEntree: params.compteurEntree, annee: params.annee, mois: params.mois,
-      imputations: imputations
+      imputations: imputations,
+      /* LOT 20 — LA PÉRIODE SUIT LE REPLI. Ce qui est écarté par le repli du
+         §16.1, ce sont les IMPUTATIONS, et elles seules. Oublier la période
+         ici recalculerait le mois de repli sans elle : chaque jour non
+         déclaré redeviendrait une présence mensualisée, et le mois affiché
+         après un repli n'aurait plus rien à voir avec le mois réel. */
+      periodesFamiliarisation: params.periodesFamiliarisation
     };
   }
 
@@ -619,11 +670,13 @@
       return Promise.all([
         chargerJournees(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
         chargerRecaps(DB, contrat.id, debutChaine.annee, cible.annee),
-        chargerImputations(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois))
+        chargerImputations(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
+        chargerPeriodesFamiliarisation(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois))
       ]).then(function (charge) {
         var journeesParMois = charge[0] || {};
         var recapsParMois = charge[1];
         var imputations = charge[2] || [];
+        var periodesFam = charge[3] || [];
 
         var entrees = [];
         var cur = { annee: debutChaine.annee, mois: debutChaine.mois };
@@ -727,7 +780,11 @@
                     compteurEntree: compteurEntree, annee: mm.annee, mois: mm.mois,
                     /* Correctif B1 : la ventilation choisie par Maria entre
                        ici, ou elle n'entre nulle part. */
-                    imputations: imputationsDuMois(imputations, mm.annee, mm.mois)
+                    imputations: imputationsDuMois(imputations, mm.annee, mm.mois),
+                    /* §20.1 — la période entre dans le moteur COMME DONNÉE, et
+                       par ici seul. */
+                    periodesFamiliarisation:
+                      periodesFamiliarisationDuMois(periodesFam, mm.annee, mm.mois)
                   });
                   var r = rep.resultat;
                   compteur = r.compteurSortie;
