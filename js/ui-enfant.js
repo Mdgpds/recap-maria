@@ -166,6 +166,13 @@
         /* Lot 10 — les périodes de congé ventilées qui touchent ce mois. */
         imputations: r[4] || [],
         note: r[5] || null,
+        /* LOT 20 (§20.4) — LA FAMILIARISATION DU MOIS, TELLE QUE LE MOTEUR LA
+           VOIT. On ne la recalcule pas ici : `resultat.familiarisation.jours`
+           porte, pour chaque jour du planning compris dans une période, ce qui
+           est déclaré et si l'indemnité est comptée. L'écran n'ajoute qu'une
+           chose, la seule que le moteur ne peut pas savoir : quel jour on est.
+           `null` quand aucune période ne touche ce mois. */
+        famJours: famJoursDe(entree),
         /* LOT 18 §18.1 — le mode « marquer plusieurs jours ». `null` = mode
            ordinaire. L'écran se redessine sans repasser par le réseau : entrer
            et sortir du mode ne doit rien recharger. */
@@ -175,7 +182,70 @@
       vue.lectureSeule = vue.range || vue.clos;
       Kit.vider(ctx.corps);
       rendre(ctx.corps);
+
+      /* LOT 20 (§20.4 d) — ARRIVÉE DEPUIS L'ÉCRAN DE LA PÉRIODE. Toucher un
+         jour là-bas ouvre sa feuille ICI, dans le mois du jour : la feuille de
+         saisie vit à un seul endroit, et Maria voit l'effet de sa déclaration
+         sur le mois au moment où elle la fait. Le paramètre est ignoré si le
+         jour n'est pas (ou plus) dans une période : un jour qu'on aurait sorti
+         de la période entre-temps ne doit pas ouvrir une feuille qui ne
+         correspond plus à rien. */
+      if (ctx.params.jour && !vue.lectureSeule && enFamiliarisation(ctx.params.jour)) {
+        feuilleFamiliarisation(ctx.params.jour);
+      }
     });
+  }
+
+  /* LOT 20 (§20.4 b) — « DÉCLAREZ LES HEURES D'AUJOURD'HUI ».
+
+     Ne s'affiche que si AUJOURD'HUI tombe dans la période et que le mois
+     affiché est bien celui d'aujourd'hui : sur un mois passé, l'encart
+     réclamerait une déclaration pour un jour qui n'est pas dans l'écran, et le
+     bouton ouvrirait une feuille sur une case invisible. */
+  function encartFamiliarisationDuJour() {
+    if (!vue || vue.lectureSeule) return null;
+    var d = vue.aujourdhui;
+    if (!d || d.slice(0, 7) !== vue.annee + '-' + String(vue.mois).padStart(2, '0')) return null;
+    var etat = vue.famJours && vue.famJours[d];
+    if (!etat) return null;
+
+    /* `note` pour l'état paisible, `warnbox` pour l'orange qui réclame : ce
+       sont les deux boîtes de l'application, et l'orange n'apparaît que là où
+       Maria a quelque chose à faire. */
+    var boite = Kit.ce('div', etat.declare ? 'note' : 'warnbox');
+    if (etat.declare) {
+      boite.appendChild(Kit.ce('b', null, 'Aujourd’hui — ' + Kit.heures(etat.minutes) +
+        ' déclarées' + (etat.entretien ? ' · entretien compté' : ' · sans entretien')));
+      var bc = Kit.bouton('btn sm nt', function () { feuilleFamiliarisation(d); });
+      bc.textContent = 'Corriger';
+      boite.appendChild(bc);
+      return boite;
+    }
+    boite.appendChild(Kit.ce('b', null, 'Déclarez les heures d’aujourd’hui'));
+    boite.appendChild(Kit.ce('div', null,
+      'Pendant la familiarisation, seules les heures déclarées sont payées.'));
+    var b = Kit.bouton('btn sm', function () { feuilleFamiliarisation(d); });
+    b.textContent = 'Déclarer maintenant';
+    boite.appendChild(b);
+    return boite;
+  }
+
+  /* Le détail jour par jour de la familiarisation du mois, indexé par date.
+     Rendu `null` — et non un objet vide — quand aucune période ne touche le
+     mois : `null` dit « il n'y a pas de familiarisation ici », un objet vide
+     dirait « il y en a une, et elle est vide ». Les deux ne s'affichent pas
+     pareil. */
+  function famJoursDe(entree) {
+    var f = entree && entree.resultat && entree.resultat.familiarisation;
+    if (!f || !f.actif) return null;
+    var parJour = {};
+    (f.jours || []).forEach(function (x) { parJour[x.jour] = x; });
+    return parJour;
+  }
+
+  /* Ce jour tombe-t-il dans une période de familiarisation ? */
+  function enFamiliarisation(d) {
+    return !!(vue && vue.famJours && vue.famJours[d]);
   }
 
   /* Redessine l'écran à partir de ce qui est DÉJÀ en mémoire. Aucun appel
@@ -278,6 +348,12 @@
     } else {
       corps.appendChild(bandeauEtat());
     }
+
+    /* LOT 20 (§20.4 b) — L'ENCART DU JOUR, TOUT EN HAUT.
+       Pendant la familiarisation, la seule chose qui compte est de déclarer
+       les heures du jour : elle est donc au-dessus des chiffres. */
+    var encartFam = encartFamiliarisationDuJour();
+    if (encartFam) corps.appendChild(encartFam);
 
     /* LOT 16 §16.1 b) — EN TÊTE DE L'ÉCRAN. C'est le premier chose que Maria
        doit lire quand une répartition ne tient plus : avant, l'écran entier
@@ -748,6 +824,35 @@
 
   function cellVide() { return Kit.ce('td', 'we no'); }
 
+  /* LOT 20 (§20.4) — la case d'un jour de familiarisation. Elle ne passe pas
+     par le mode sélection : « marquer plusieurs jours » sert à poser des
+     absences d'enfant, et une journée de familiarisation se déclare heure par
+     heure, jamais en lot. Un jour passé non déclaré porte l'orange — c'est le
+     seul endroit du calendrier où l'application RÉCLAME quelque chose. */
+  function celluleFamiliarisation(d, jour, classe, mini, aDeclarer) {
+    var td = Kit.ce('td', classe +
+      (aDeclarer ? ' warn' : '') +
+      (d > vue.aujourdhui ? ' futur' : '') +
+      (d === vue.aujourdhui ? ' auj' : '') +
+      (vue.lectureSeule ? ' no' : ''));
+    td.appendChild(Kit.ce('div', 'num', String(jour)));
+    td.appendChild(Kit.ce('div', 'mini', mini));
+    if (d === vue.aujourdhui) td.setAttribute('aria-current', 'date');
+    if (vue.selection || vue.lectureSeule) {
+      if (vue.selection) td.className += ' hors-sel';
+      return td;
+    }
+    td.setAttribute('role', 'button');
+    td.setAttribute('tabindex', '0');
+    td.setAttribute('aria-label', Kit.jourLong(d) + ' — familiarisation, ' +
+      (aDeclarer ? 'heures à déclarer' : mini));
+    td.addEventListener('click', function () { feuilleFamiliarisation(d); });
+    td.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); feuilleFamiliarisation(d); }
+    });
+    return td;
+  }
+
   function cellule(d, planning) {
     var c = vue.contrat;
     var jour = Number(d.slice(8, 10));
@@ -762,6 +867,21 @@
     var aVenir = d > vue.aujourdhui;
 
     var classe, mini = null, touchable = false;
+    /* LOT 20 (§20.4) — LA PÉRIODE PRIME, ICI AUSSI. Le moteur traite un jour
+       de la période en familiarisation quoi que porte sa ligne : le calendrier
+       doit montrer la même chose, sinon Maria lit un « férié » sur une case
+       que le récapitulatif compte autrement. Les bornes du contrat et le
+       planning restent au-dessus — un jour hors contrat n'existe pas. */
+    var fam = enFamiliarisation(d);
+    if (fam && !horsBornes && !horsPlanning) {
+      var etatFam = vue.famJours[d];
+      classe = 'ok';
+      mini = etatFam.declare ? Kit.heures(etatFam.minutes)
+           : (d > vue.aujourdhui ? 'à venir' : 'à décl.');
+      var td0 = celluleFamiliarisation(d, jour, classe, mini,
+        !etatFam.declare && d <= vue.aujourdhui);
+      return td0;
+    }
     if (horsBornes) { classe = 'we no'; }
     else if (type === 'ferie') { classe = 'fe no'; mini = 'férié'; }
     else if (horsPlanning) { classe = 'we no'; }
@@ -1118,6 +1238,10 @@
 
   function ouvrirJour(d) {
     if (vue.lectureSeule) return;
+    /* §20.4 — un jour de la période n'a qu'un seul geste : déclarer ses
+       heures. Lui proposer « était là / était absent / écart d'horaire »
+       offrirait des choix que le moteur ignore à l'intérieur de la période. */
+    if (enFamiliarisation(d)) return feuilleFamiliarisation(d);
     var c = vue.contrat;
     var type = Kit.typeDuJour(vue.journees, d);
     var servis = contratsServis(d);
@@ -1543,7 +1667,9 @@
     var etat = {
       evenement: ligne.ecart_evenement || '',
       heure: String(ligne.ecart_heure_reelle || '').slice(0, 5) || null,
-      destination: ligne.ecart_impute_sur || 'recuperation'
+      destination: ligne.ecart_impute_sur || 'recuperation',
+      /* §20.6 — l'indemnité du jour. Due par défaut : retirer est un choix. */
+      entretien: ligne.entretien_du !== false
     };
 
     var det = Kit.ce('details', 'ajuster');
@@ -1569,9 +1695,30 @@
     corps.appendChild(blocDest);
     var effet = Kit.ce('div', 'effet-heures');
     corps.appendChild(effet);
+    /* §20.6 — L'INTERRUPTEUR D'ENTRETIEN, ET SEULEMENT HORS DU CADRE.
+       Il vit ici, sous l'effet chiffré, et n'apparaît que lorsqu'un écart est
+       effectivement déclaré : « Maria ne retire jamais l'entretien d'une
+       journée complète ». Sur une journée ordinaire, ce bloc reste vide. */
+    var blocEntretien = Kit.ce('div');
+    corps.appendChild(blocEntretien);
 
     var champHeure = null;
     var selDest = null;
+
+    function majEntretien(visible) {
+      Kit.vider(blocEntretien);
+      if (!visible) return;
+      blocEntretien.appendChild(Kit.section('Indemnité d’entretien du jour'));
+      blocEntretien.appendChild(Kit.ce('p', 'sb q',
+        'La journée sort du cadre. Elle reste comptée présente : votre salaire ' +
+        'et vos minutes ne bougent pas.'));
+      var plein = (conditions.entretien_centimes_jour != null)
+        ? Kit.eur(conditions.entretien_centimes_jour) : '—';
+      poserOption(blocEntretien, etat.entretien, 'Comptée', plein,
+        function () { etat.entretien = true; majEntretien(true); });
+      poserOption(blocEntretien, !etat.entretien, 'Non comptée', '0,00 €',
+        function () { etat.entretien = false; majEntretien(true); });
+    }
 
     function evenementChoisi() { return selEvt.select.value; }
 
@@ -1599,6 +1746,7 @@
           'Vos ' + Kit.duree(conditions.minutes_sup_jour) + ' restent dues. ' +
           'Un parent qui vient chercher son enfant plus tôt de lui-même n’est pas ' +
           'un événement : vous étiez disponible.'));
+        majEntretien(false);
         majBouton();
         return;
       }
@@ -1643,6 +1791,7 @@
 
       if (minutes === null) {
         effet.appendChild(Kit.ce('div', 'sb q', 'Heure illisible.'));
+        majEntretien(false);
         majBouton();
         return;
       }
@@ -1652,6 +1801,7 @@
            contrainte `journee_ecart_coherent` refuserait de toute façon. */
         effet.appendChild(Kit.ce('div', 'sb q',
           'Cette heure est exactement celle prévue : il n’y a rien à déclarer.'));
+        majEntretien(false);
         majBouton();
         return;
       }
@@ -1677,6 +1827,7 @@
               'l’heure, ou changez ce que vous déclarez.'
             : ' Un retard à la reprise se saisit APRÈS l’heure de fin habituelle. ' +
               'Vérifiez l’heure, ou changez ce que vous déclarez.'));
+        majEntretien(false);
         majBouton(true);
         return;
       }
@@ -1746,6 +1897,10 @@
             : 'La retenue ne peut pas être chiffrée, la rémunération de ce mois ' +
               'n’est pas renseignée.'));
       }
+      /* L'écart est réel et cohérent : c'est LÀ que la journée sort du
+         cadre, et donc là que l'interrupteur apparaît. */
+      majEntretien(true);
+
       if (detail.ecartSurRecuperation < 0) {
         /* CORRECTION B5 — la dette annoncée partait d'un solde BORNÉ à zéro :
            sur un compteur déjà à −9 h, l'écran annonçait « vous devrez 1h00 »
@@ -1764,7 +1919,7 @@
     var b = Kit.bouton('btn nt', function () {
       enregistrerEcart(d, evenementChoisi(),
         champHeure ? champHeure.valeur() : null,
-        minutesDeclarees(), etat.destination, b);
+        minutesDeclarees(), etat.destination, b, etat.entretien);
     });
     corps.appendChild(b);
 
@@ -1797,7 +1952,7 @@
            String(minutes % 60).padStart(2, '0');
   }
 
-  function enregistrerEcart(d, evenement, heure, minutes, destination, bouton) {
+  function enregistrerEcart(d, evenement, heure, minutes, destination, bouton, entretienDu) {
     var c = vue.contrat;
     var ligne = (vue.journees || {})[d] || {};
     var type = Kit.typeDuJour(vue.journees, d);
@@ -1815,7 +1970,12 @@
       ecart_minutes: evenement ? minutes : null,
       ecart_evenement: evenement || null,
       ecart_heure_reelle: evenement ? heure : null,
-      ecart_impute_sur: (evenement && minutes < 0) ? destination : null
+      ecart_impute_sur: (evenement && minutes < 0) ? destination : null,
+      /* §20.6 — retirer une déclaration REND l'indemnité. Une journée sans
+         écart est une journée dans le cadre, et l'interrupteur n'y existe
+         plus : laisser `false` derrière soi retirerait une indemnité sans
+         aucun écran pour la remettre. */
+      entretien_du: evenement ? (entretienDu !== false) : true
     };
     ecrire(global.DB.enregistrerJournee(champs), bouton,
       evenement ? 'Journée enregistrée' : 'Déclaration retirée',
@@ -2077,10 +2237,19 @@
     var c = vue.contrat;
     Kit.ouvrirFeuille(Kit.jourLong(d), 'Cas particuliers — ' + c.prenom_enfant,
       function (corps) {
-        Kit.choix(corps, 'c1', '⏱', 'Journée de familiarisation',
-          'Rémunérée au réel, à l’heure (RG-14). Heures et indemnité saisies à la main. ' +
-          'Ne concerne que ' + c.prenom_enfant + '.',
-          function () { feuilleFamiliarisation(d); });
+        /* LOT 20 (§20.1) — « JOURNÉE DE FAMILIARISATION » DISPARAÎT D'ICI.
+
+           Elle ouvrait une saisie libre — des heures, un montant d'indemnité —
+           sur une journée isolée, sans période. Depuis ce lot, la
+           familiarisation est une PÉRIODE : c'est elle qui décide du sort d'un
+           jour, elle qui borne le prorata du mois, et elle qui rend les heures
+           déclarées payables. Une journée de familiarisation posée hors de
+           toute période ne serait payée par rien.
+           On ne supprime pas la possibilité : on dit où elle vit maintenant. */
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'La familiarisation se règle par période, sur la fiche de ' +
+          c.prenom_enfant + ' : deux dates, puis les heures déclarées jour par ' +
+          'jour. Une journée isolée ne serait payée par rien.'));
 
         Kit.choix(corps, 'c3', '⊘', 'Je n’étais pas demandée, sans poser de congé',
           'La famille était fermée. Journée neutre : ni entretien, ni heures sup, ' +
@@ -2099,53 +2268,209 @@
       });
   }
 
-  /* Durée saisie -> minutes entières. « 3h30 », « 3h », « 3 », « 3,5 ». Un
-     nombre nu se lit en HEURES, conformément au libellé du champ. */
-  function parseHeures(txt) {
-    if (!txt) return null;
-    var t = String(txt).trim().toLowerCase().replace(',', '.');
-    var m = t.match(/^(\d+)\s*h\s*(\d{0,2})$/);
-    if (m) return parseInt(m[1], 10) * 60 + (m[2] ? parseInt(m[2], 10) : 0);
-    if (/^\d+(\.\d+)?$/.test(t)) return Math.round(parseFloat(t) * 60);
-    return null;
-  }
+  /* ------------------------------------------------------------------ */
+  /* LOT 20 (§20.4 c) — LA FEUILLE DU JOUR DE FAMILIARISATION            */
+  /*                                                                     */
+  /* Deux gestes, et deux seulement : les heures faites, et si           */
+  /* l'indemnité d'entretien est comptée. Le montant du jour s'affiche   */
+  /* au fur et à mesure, REJOUÉ PAR LE MOTEUR — jamais recomposé ici :   */
+  /* si le taux change par un avenant, la phrase change toute seule.     */
+  /* ------------------------------------------------------------------ */
+
+  /* Les raccourcis de la maquette. Ce sont des durées de familiarisation
+     usuelles (RG-14 : 5 à 10 jours, horaires variables), pas une règle : Maria
+     peut toujours saisir l'arrivée et le départ à la minute. */
+  var RACCOURCIS_FAMILIARISATION = [150, 180, 270];
 
   function feuilleFamiliarisation(d) {
-    var ligne = vue.journees[d] || {};
+    var c = vue.contrat;
+    var conditions = cond();
+    var ligne = (vue.journees || {})[d] || {};
+    var etatJour = (vue.famJours && vue.famJours[d]) || null;
+
+    /* État local de la feuille. `entretien` suit le défaut de la base : dû,
+       sauf si Maria l'a explicitement retiré (§20.6 — retirer est un choix). */
+    var etat = {
+      minutes: (ligne.minutes_reelles != null && ligne.minutes_reelles > 0)
+        ? ligne.minutes_reelles : null,
+      entretien: ligne.entretien_du !== false,
+      arrivee: (conditions && String(conditions.heure_arrivee || '').slice(0, 5)) || '09:00',
+      depart: ''
+    };
+
     Kit.ouvrirFeuille('Familiarisation — ' + Kit.jourLong(d),
-      'Rémunération au réel, hors mensualisation (RG-14).',
+      c.prenom_enfant + ' — seules les heures déclarées sont payées.',
       function (corps) {
-        var h = Kit.champ('Heures réelles',
-          ligne.minutes_reelles != null ? Kit.heures(ligne.minutes_reelles) : '',
-          { placeholder: '3h30' });
-        corps.appendChild(h.bloc);
-        var e = Kit.champ('Indemnité d’entretien du jour',
-          ligne.entretien_centimes != null
-            ? (ligne.entretien_centimes / 100).toFixed(2).replace('.', ',') : '',
-          { placeholder: '5,00', inputmode: 'decimal' });
-        corps.appendChild(e.bloc);
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Rémunération à l’heure, au taux du contrat. Pas de minutes ' +
+          'supplémentaires. Vos congés s’acquièrent normalement.'));
+
+        /* --- les heures faites ---------------------------------------- */
+        var blocRaccourcis = Kit.ce('div', 'fld');
+        blocRaccourcis.appendChild(Kit.ce('span', 'lb', 'Heures faites'));
+        var rangee = Kit.ce('div', 'row');
+        var boutons = [];
+        RACCOURCIS_FAMILIARISATION.forEach(function (m) {
+          var bt = Kit.bouton('btn sm nt', function () {
+            etat.minutes = m;
+            etat.depart = '';
+            majTout();
+          });
+          bt.textContent = Kit.heures(m);
+          boutons.push({ el: bt, minutes: m });
+          rangee.appendChild(bt);
+        });
+        blocRaccourcis.appendChild(rangee);
+        corps.appendChild(blocRaccourcis);
+
+        var arr = Kit.champHeureMinute('Arrivée', etat.arrivee);
+        var dep = Kit.champHeureMinute('Départ', etat.depart);
+        var paire = Kit.ce('div', 'row');
+        paire.appendChild(arr.bloc);
+        paire.appendChild(dep.bloc);
+        corps.appendChild(paire);
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Ou saisissez l’arrivée et le départ, à la minute près.'));
+
+        var msgHeures = Kit.ce('div', 'msg');
+        corps.appendChild(msgHeures);
+
+        function lireLesDeuxHeures() {
+          var a = arr.valeur();
+          var b2 = dep.valeur();
+          if (!a || !b2) return;
+          try {
+            /* La durée est une RÈGLE : le moteur, et lui seul (B.0-5). */
+            etat.minutes = Engine.dureeEntreHeures(a, b2);
+            msgHeures.className = 'msg';
+            msgHeures.textContent = '';
+          } catch (e) {
+            etat.minutes = null;
+            msgHeures.className = 'msg ko';
+            msgHeures.textContent = Kit.messageErreur(e);
+          }
+        }
+        arr.input.addEventListener('change', function () {
+          etat.arrivee = arr.valeur(); lireLesDeuxHeures(); majTout();
+        });
+        dep.input.addEventListener('change', function () {
+          etat.depart = dep.valeur(); lireLesDeuxHeures(); majTout();
+        });
+
+        /* --- le montant du jour, rejoué par le moteur ------------------ */
+        var effet = Kit.ce('div', 'effet-heures');
+        corps.appendChild(effet);
+
+        /* --- l'indemnité d'entretien ---------------------------------- */
+        corps.appendChild(Kit.section('Indemnité d’entretien du jour'));
+        var choixEntretien = Kit.ce('div');
+        corps.appendChild(choixEntretien);
 
         var msg = Kit.ce('div', 'msg');
         corps.appendChild(msg);
-        var b = Kit.bouton('btn', function () {
-          var minutes = parseHeures(h.input.value);
-          if (minutes == null || minutes <= 0) {
+
+        var bEnr = Kit.bouton('btn', function () { enregistrer(); });
+        corps.appendChild(bEnr);
+
+        /* Retirer une déclaration faite par erreur. Sans ce bouton, une
+           journée déclarée à 4 h au lieu de 40 min ne pourrait que se
+           corriger, jamais s'effacer — et un jour non venu resterait payé. */
+        if (etatJour && etatJour.declare) {
+          var bRetirer = Kit.bouton('btn nt', function () { retirer(bRetirer); });
+          bRetirer.textContent = 'Retirer cette déclaration';
+          corps.appendChild(bRetirer);
+          corps.appendChild(Kit.ce('p', 'sb q',
+            'La journée redevient « à déclarer » : rien ne sera payé pour ce jour.'));
+        }
+
+        avertirClos(corps, d);
+
+        function majTout() {
+          boutons.forEach(function (x) {
+            x.el.className = 'btn sm' + (etat.minutes === x.minutes ? '' : ' nt');
+          });
+
+          Kit.vider(effet);
+          if (etat.minutes && conditions && conditions.brut_mensuel_centimes != null) {
+            var brut = Engine.montantCentimes(conditions.brut_mensuel_centimes, etat.minutes);
+            var p = Kit.ce('div');
+            p.appendChild(Kit.ce('b', null, 'Rémunération du jour : ' + Kit.eur(brut)));
+            p.appendChild(document.createTextNode(' — ' + Kit.heures(etat.minutes) + ' déclarées.'));
+            effet.appendChild(p);
+          } else if (etat.minutes) {
+            effet.appendChild(Kit.ce('div', 'sb q',
+              'La rémunération ne peut pas être chiffrée : les conditions de ce ' +
+              'mois ne portent pas de salaire.'));
+          } else {
+            effet.appendChild(Kit.ce('div', 'sb q',
+              'Tant que rien n’est déclaré, ce jour ne paie rien.'));
+          }
+
+          Kit.vider(choixEntretien);
+          var plein = (conditions && conditions.entretien_centimes_jour != null)
+            ? Kit.eur(conditions.entretien_centimes_jour) : '—';
+          poserOption(choixEntretien, etat.entretien, 'Comptée',
+            'Montant plein du jour, jamais un prorata des heures — ' + plein,
+            function () { etat.entretien = true; majTout(); });
+          poserOption(choixEntretien, !etat.entretien, 'Non comptée', '0,00 €',
+            function () { etat.entretien = false; majTout(); });
+
+          bEnr.textContent = 'Enregistrer';
+          bEnr.disabled = !etat.minutes;
+        }
+
+        function enregistrer() {
+          if (!etat.minutes) {
             msg.className = 'msg ko';
-            msg.textContent = 'Saisissez les heures réelles (exemple : 3h30).';
+            msg.textContent = 'Déclarez les heures faites : choisissez une durée, ' +
+              'ou saisissez l’arrivée et le départ.';
             return;
           }
-          var centimes = Kit.parseEuros(e.input.value);
           ecrire(global.DB.enregistrerJournee({
-            contrat_id: vue.contrat.id, jour: d, type: 'familiarisation',
-            minutes_reelles: minutes,
-            entretien_centimes: centimes == null ? null : centimes,
-            commentaire: null
-          }), b, 'Journée de familiarisation enregistrée',
-            { contrats: [vue.contrat.id], jours: [d] });
-        });
-        b.textContent = 'Enregistrer';
-        corps.appendChild(b);
+            contrat_id: c.id, jour: d, type: 'familiarisation',
+            minutes_reelles: etat.minutes,
+            /* Le MONTANT de l'indemnité n'est pas surchargé ici : c'est
+               l'avenant qui le porte (§7 des instructions). `entretien_du`
+               répond à l'autre question — est-elle due. */
+            entretien_centimes: null,
+            entretien_du: etat.entretien,
+            commentaire: ligne.commentaire == null ? null : ligne.commentaire,
+            /* Une journée de la période ne porte aucun écart d'horaire :
+               le moteur les ignore, les laisser en base les rendrait
+               visibles le jour où la période serait raccourcie. */
+            ecart_minutes: null, ecart_evenement: null,
+            ecart_heure_reelle: null, ecart_impute_sur: null
+          }), bEnr, 'Journée déclarée', { contrats: [c.id], jours: [d] });
+        }
+
+        function retirer(bouton) {
+          ecrire(global.DB.enregistrerJournee({
+            contrat_id: c.id, jour: d, type: 'familiarisation',
+            minutes_reelles: null,
+            entretien_centimes: null,
+            entretien_du: true,
+            commentaire: ligne.commentaire == null ? null : ligne.commentaire
+          }), bouton, 'Déclaration retirée', { contrats: [c.id], jours: [d] });
+        }
+
+        majTout();
       });
+  }
+
+  /* Une option à cocher, sur le modèle des trois choix de la feuille du jour.
+     Un bouton radio dessiné, pas une case à cocher : le §20.6 parle d'un
+     interrupteur « coché par défaut », et la maquette montre deux lignes
+     « Comptée / Non comptée ». Le comportement est le même, la lecture est
+     plus simple debout, entre deux enfants. */
+  function poserOption(parent, actif, titre, sous, onClic) {
+    /* Le choix coché porte la PASTILLE PLEINE en plus de sa teinte : une
+       couleur seule ne dit rien à qui ne la voit pas, et l'état est aussi
+       annoncé aux lecteurs d'écran (V8-01, V8-05). */
+    var b = Kit.choix(parent, 'c1', actif ? '●' : '○', titre, sous, onClic);
+    if (actif) b.className += ' on';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', actif ? 'true' : 'false');
+    return b;
   }
 
   /* ------------------------------------------------------------------ */

@@ -401,6 +401,17 @@
     }
 
     var r = f.entree.resultat;
+
+    /* LOT 20 (§20.4 a) — L'ÉTAT DU JOUR, SUR LA CARTE.
+
+       Pendant la familiarisation, la carte ne dit plus « 12 jours de présence,
+       tant à verser » : elle dit ce qu'il reste à faire aujourd'hui. C'est le
+       seul endroit que Maria ouvre plusieurs fois par jour, et une journée non
+       déclarée n'est payée par rien — la réclamer ailleurs reviendrait à ne
+       pas la réclamer. */
+    var ligneFam = etatFamiliarisationDuJour(r, m);
+    if (ligneFam) b.appendChild(ligneFam);
+
     var stats = Kit.ce('div', 'stats');
     stat(stats, Kit.jours(r.joursPresence), 'présence');
     /* §2.1 : pas de montant d'entretien isolé sur l'accueil — le total seul.
@@ -434,6 +445,33 @@
         : f.retards.length + ' mois antérieurs ne sont pas clôturés.'));
     }
     return b;
+  }
+
+  /* La ligne d'état du jour, ou `null` s'il n'y a rien à dire : le mois affiché
+     n'est pas celui d'aujourd'hui, ou aujourd'hui ne tombe dans aucune période.
+
+     Le moteur ne connaît pas la date du jour (module pur) : c'est ici qu'on
+     croise son détail jour par jour avec l'horloge, lue une seule fois par
+     `App.aujourdhui()`. */
+  function etatFamiliarisationDuJour(r, m) {
+    var fam = r && r.familiarisation;
+    if (!fam || !fam.actif) return null;
+    var auj = global.App.aujourdhui();
+    if (!auj || auj.slice(0, 7) !== m.annee + '-' + String(m.mois).padStart(2, '0')) return null;
+
+    var duJour = null;
+    (fam.jours || []).forEach(function (x) { if (x.jour === auj) duJour = x; });
+    if (!duJour) return null;
+
+    if (duJour.declare) {
+      return Kit.ce('div', 'sb q', Kit.heures(duJour.minutes) + ' déclarées aujourd’hui' +
+        (duJour.entretien ? ' · entretien compté' : ' · sans entretien'));
+    }
+    /* L'orange, et le mot : une couleur seule ne dit rien à qui ne la voit
+       pas (V8-01). */
+    var l = Kit.ce('div', 'sb rappel-jour');
+    l.appendChild(Kit.ce('b', null, 'Aujourd’hui : heures à déclarer'));
+    return l;
   }
 
   function stat(parent, valeur, cle) {

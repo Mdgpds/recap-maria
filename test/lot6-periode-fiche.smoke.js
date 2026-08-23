@@ -141,6 +141,11 @@ var DB = {
      sur l'agrégation et sur le garde-fou, pas sur l'immuabilité (couverte par
      les tests du moteur et de la chaîne). */
   listRecapsPeriode: function () { return Promise.resolve([]); },
+  /* LOT 20 — les périodes de familiarisation (§20.2). Le décor les rend
+     vides : ces écrans-là n'en ont aucune, et la fiche du contrat doit
+     l'afficher comme telle plutôt que d'échouer. */
+  listPeriodesFamiliarisation: function () { return Promise.resolve([]); },
+  listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
   listRecapsContrat: function () { return Promise.resolve(RECAPS); },
   getRecap: function () { return Promise.resolve(null); },
   ajouterAvenant: function (id, champs) {
@@ -161,6 +166,7 @@ require('../js/ui-document.js');
 require('../js/ui-conges.js');
 require('../js/ui-historique.js');
 require('../js/ui-contrat.js');
+require('../js/ui-familiarisation.js');
 require('../js/ui-menu.js');
 require('../js/ui-periode.js');
 require('../js/app.js');

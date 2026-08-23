@@ -175,6 +175,16 @@
          précisément ce qui rendait faux un juillet qui traînait. */
       corps.appendChild(blocConditions(contrat, avenants, recaps));
 
+      /* LOT 20 (§20.4 d) — LA PORTE DE LA PÉRIODE DE FAMILIARISATION.
+
+         Elle est sur la fiche, sous les conditions, parce que la période est
+         un CADRE du contrat au même titre qu'elles : elle décide de la règle
+         de rémunération d'une partie du mois. Le nombre de périodes est lu
+         ici pour que la ligne dise ce qu'elle ouvre — une entrée muette qui
+         mène parfois à un écran vide n'apprend rien. Un échec de lecture ne
+         cache pas la ligne : il le dit et laisse entrer. */
+      corps.appendChild(ligneFamiliarisation(contrat));
+
       if (contrat.archive) {
         corps.appendChild(Kit.note('Contrat rangé',
           'Il n’apparaît plus sur l’Accueil. Tout son historique reste consultable ' +
@@ -1715,6 +1725,41 @@
       if (applicable && applicable.id === bareme.id) out.push(r);
     });
     return out;
+  }
+
+  /* La ligne « Familiarisation » de la fiche. Elle se remplit après coup : la
+     fiche ne doit pas attendre une lecture de plus pour s'afficher. Le
+     sous-titre part sur « Chargement… » et est levé par CELUI QUI SAIT le
+     lever — jamais repéré par sa position dans la liste (correction §16.4). */
+  function ligneFamiliarisation(contrat) {
+    var ligne = Kit.ce('div', 'menu');
+    var tx = Kit.ce('div');
+    tx.appendChild(Kit.ce('div', null, 'Familiarisation'));
+    var sous = Kit.ce('div', 'd', 'Chargement…');
+    tx.appendChild(sous);
+    ligne.appendChild(tx);
+    ligne.appendChild(Kit.ce('span', 'ar', '›'));
+    ligne.setAttribute('role', 'button');
+    ligne.setAttribute('tabindex', '0');
+    function ouvrir() {
+      global.App.aller('familiarisation', { contratId: contrat.id });
+    }
+    ligne.addEventListener('click', ouvrir);
+    ligne.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrir(); }
+    });
+
+    global.DB.listPeriodesFamiliarisationContrat(contrat.id).then(function (l) {
+      var p = (l || [])[0];
+      sous.textContent = p
+        ? 'Du ' + Kit.dateLongue(p.date_debut) + ' au ' + Kit.dateLongue(p.date_fin) +
+          ' — seules les heures déclarées sont payées'
+        : 'Aucune période — les heures déclarées y sont payées à l’heure';
+    }).catch(function (e) {
+      sous.textContent = 'Périodes illisibles pour l’instant (' +
+        Kit.messageErreur(e) + ')';
+    });
+    return ligne;
   }
 
   function listeMois(rs) {

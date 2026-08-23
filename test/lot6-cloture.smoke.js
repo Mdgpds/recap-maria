@@ -189,6 +189,11 @@ var DB = {
     return Promise.resolve([{ id: 'r-lea', contrat_id: 'c-lea', annee: 2026, mois: 5,
       statut: 'fige', donnees: SNAPSHOT_LEA_MAI, fige_le: '2026-05-31T18:00:00Z' }]);
   },
+  /* LOT 20 — les périodes de familiarisation (§20.2). Le décor les rend
+     vides : ces écrans-là n'en ont aucune, et la fiche du contrat doit
+     l'afficher comme telle plutôt que d'échouer. */
+  listPeriodesFamiliarisation: function () { return Promise.resolve([]); },
+  listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
   listRecapsContrat: function (id) { return DB.listRecapsPeriode(id); },
   getRecap: function (id, a, m) {
     if (id === 'c-lea' && a === 2026 && m === 5) {
@@ -224,6 +229,7 @@ require('../js/ui-document.js');
 require('../js/ui-conges.js');
 require('../js/ui-historique.js');
 require('../js/ui-contrat.js');
+require('../js/ui-familiarisation.js');
 require('../js/ui-menu.js');
 require('../js/ui-periode.js');
 require('../js/app.js');

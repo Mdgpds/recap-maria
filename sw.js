@@ -68,7 +68,14 @@
    resté en arrière. La règle `.phr` existerait, mais aucune ligne ne porterait
    la classe — et l'écran continuerait de glisser exactement comme avant, en
    donnant l'impression que le correctif ne marche pas. */
-var CACHE = 'recap-conges-encadre-v1';
+/* LOT 20 — NOM DE CACHE CHANGÉ, ET UN FICHIER AJOUTÉ.
+
+   `js/ui-familiarisation.js` entre dans `index.html` ET dans la liste
+   ci-dessous. Un fichier absent de la liste n'est rafraîchi qu'au hasard des
+   requêtes : l'application servirait un `app.js` qui route vers un écran que
+   le cache ne connaît pas — un mélange de deux versions, et l'écran de la
+   période introuvable une fois sur deux. */
+var CACHE = 'recap-familiarisation-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
@@ -94,6 +101,7 @@ var FICHIERS = [
   './js/ui-conges.js',
   './js/ui-historique.js',
   './js/ui-contrat.js',
+  './js/ui-familiarisation.js',
   './js/ui-menu.js',
   './js/ui-periode.js',
   './js/app.js'

@@ -523,6 +523,33 @@
              valeur: function () { return ch.select.value; } };
   }
 
+  /* LOT 20 (§20.4 c) — L'HEURE À LA MINUTE PRÈS.
+
+     `champHeure` propose des quarts d'heure : c'est ce qu'il faut pour un
+     horaire d'accueil, qui est un réglage rond. Mais une journée de
+     familiarisation se déclare « 9 h 05 → 11 h 47 » : le quart d'heure y
+     perdrait jusqu'à quatorze minutes payées, à chaque jour, dans un sens ou
+     dans l'autre.
+
+     On passe donc par le sélecteur d'heure natif du téléphone (`type="time"`,
+     `step="60"`), qui ouvre une molette et ne se tape pas au clavier — le
+     principe B.0-3 est tenu. Sur un navigateur qui l'ignorerait, le champ
+     retombe en texte : la valeur reste lisible et le moteur refuse en français
+     ce qui n'est pas une heure (`HEURE_INVALIDE`). */
+  function champHeureMinute(libelle, valeur) {
+    var f = ce('div', 'fld');
+    f.appendChild(ce('span', 'lb', libelle));
+    var i = ce('input');
+    i.type = 'time';
+    i.step = '60';
+    if (valeur) i.value = String(valeur).slice(0, 5);
+    f.appendChild(i);
+    return {
+      bloc: f, input: i,
+      valeur: function () { return String(i.value || '').slice(0, 5); }
+    };
+  }
+
   /* Les jours de garde, en cases à cocher du lundi au dimanche. Le samedi et
      le dimanche sont proposés comme les autres : certains contrats en ont, et
      surtout RG-06 compte le samedi que Maria travaille ou non. */
@@ -1258,7 +1285,8 @@
        création d'un contrat et « Faire un avenant ». */
     champsConditions: champsConditions, champDuree: champDuree,
     champMoisListe: champMoisListe,
-    champHeure: champHeure, champPlanning: champPlanning,
+    champHeure: champHeure,
+    champHeureMinute: champHeureMinute, champPlanning: champPlanning,
     centimesEnSaisie: centimesEnSaisie,
     accord: accord, accordDe: accordDe, avatar: avatar, nomComplet: nomComplet,
     COULEURS_IDENTITE: COULEURS_IDENTITE, couleurIdentite: couleurIdentite

@@ -226,6 +226,11 @@ var DB = {
   getNoteMensuelle: function () { return Promise.resolve(null); },
   enregistrerNoteMensuelle: function (id, a, m, t) { return Promise.resolve({ texte: t }); },
   listRecapsPeriode: function (id) { return Promise.resolve(recapsDe(id)); },
+  /* LOT 20 — les périodes de familiarisation (§20.2). Le décor les rend
+     vides : ces écrans-là n'en ont aucune, et la fiche du contrat doit
+     l'afficher comme telle plutôt que d'échouer. */
+  listPeriodesFamiliarisation: function () { return Promise.resolve([]); },
+  listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
   listRecapsContrat: function (id) { return Promise.resolve(recapsDe(id)); },
   getRecap: function (id, a, m) { return Promise.resolve(scene.recaps[cleR(id, a, m)] || null); },
   estMoisCloture: function (id, a, m) {
@@ -286,6 +291,7 @@ require('../js/ui-document.js');
 require('../js/ui-conges.js');
 require('../js/ui-historique.js');
 require('../js/ui-contrat.js');
+require('../js/ui-familiarisation.js');
 require('../js/ui-menu.js');
 require('../js/ui-periode.js');
 require('../js/app.js');

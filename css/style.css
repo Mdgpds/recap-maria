@@ -486,6 +486,14 @@ table.cal td.futur:active { transform: none; }
 .choice.c3 .ic { background: var(--bls); color: var(--bl); }
 .choice .tx { flex: 1; }
 .choice .why { display: block; font-size: 12px; color: var(--ink3); font-weight: 400; margin-top: 1px; }
+/* Lot 20 — un choix RETENU parmi plusieurs (l'indemnité d'entretien du jour,
+   §20.6). La bordure et le fond, jamais la couleur seule : la pastille pleine
+   « ● » dans l'icône dit la même chose sans elle. */
+.choice.on { border-color: var(--acl); background: var(--acs); }
+/* Lot 20 — « aujourd'hui : heures à déclarer » sur la carte de l'Accueil.
+   Le seul endroit de l'Accueil qui RÉCLAME quelque chose. */
+.rappel-jour { color: var(--wa); margin-top: 6px; }
+.rappel-jour b { font-weight: 700; }
 
 .toast {
   position: fixed; left: 14px; right: 14px; bottom: calc(84px + env(safe-area-inset-bottom));

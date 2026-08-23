@@ -38,6 +38,16 @@
        explicable. Elles précèdent les règles générales sur les contraintes,
        qui sont moins précises.
        Aucun code, aucun nom de table, aucun mot d'anglais ne sort d'ici. */
+    /* LOT 20 — LA MÊME CONTRAINTE POSTGRES, DEUX PÉRIODES DIFFÉRENTES.
+       `periode_familiarisation` et `imputation_conge` lèvent toutes les deux
+       un 23P01. La règle générique ci-dessous parle d'une « période de congé »
+       — elle enverrait Maria chercher un congé qui n'existe pas. La règle
+       NOMMÉE passe donc en premier ; le repli générique reste derrière, pour
+       toute contrainte d'exclusion future. */
+    [/periode_familiarisation_sans_chevauchement/,
+      'cette période de familiarisation en chevauche une autre, déjà ' +
+      'enregistrée pour cet enfant. Corrigez celle qui existe plutôt que d’en ' +
+      'poser une seconde.'],
     [/exclusion constraint|23P01/i,
       'cette période chevauche une période de congé déjà enregistrée. ' +
       'Vérifiez vos dates, ou modifiez la période existante.'],
@@ -75,6 +85,15 @@
     [/HEURE_INVALIDE/,
       'cette heure n’est pas lisible. Choisissez-la dans la liste plutôt que ' +
       'de la taper.'],
+    /* LOT 20 (§20.4) — les trois refus de la familiarisation. Chacun nomme le
+       geste qui corrige : une phrase qui ne dit pas quoi faire laisse Maria
+       dehors, la feuille ouverte et la journée non déclarée. */
+    [/DUREE_NON_POSITIVE/,
+      'le départ doit être après l’arrivée. Corrigez l’une des deux heures, ou ' +
+      'choisissez une durée toute faite.'],
+    [/periode_familiarisation_periode_valide/,
+      'la fin de la familiarisation doit être après son début. Reprenez les ' +
+      'deux dates.'],
     /* Le refus d'un écran retiré au lot 17 (§17.9). Il ne devrait jamais
        s'afficher — plus rien n'y mène — mais un message technique sur un
        chemin oublié serait pire que rien. */

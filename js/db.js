@@ -139,10 +139,18 @@
 
   /* LOT 17 — les journées portent désormais l'écart d'horaire déclaré
      (§17.5). Une seule définition, pour les trois selects qui les lisent. */
+  /* LOT 20 — `entretien_du` s'ajoute (§20.2). Elle décide si l'indemnité du
+     jour est due, et le moteur la lit : oubliée du select, elle arriverait
+     `undefined`, le moteur la lirait comme « non fausse », et l'indemnité
+     serait payée sur une journée dont Maria l'a retirée. */
   var CHAMPS_JOURNEE =
     'id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
     'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override, ' +
-    'ecart_minutes, ecart_evenement, ecart_heure_reelle, ecart_impute_sur';
+    'ecart_minutes, ecart_evenement, ecart_heure_reelle, ecart_impute_sur, ' +
+    'entretien_du';
+
+  /* LOT 20 (§20.2) — les périodes de familiarisation. */
+  var CHAMPS_PERIODE_FAM = 'id, contrat_id, date_debut, date_fin';
 
   /* Familles non archivées. */
   function listFamilles() {
@@ -912,8 +920,14 @@
        à `null`, elles EFFACENT la déclaration. C'est ce qui permet à Maria de
        revenir sur un événement déclaré par erreur — un écart qu'on ne pourrait
        pas retirer serait pire que pas d'écart du tout. */
+    /* LOT 20 — `entretien_du` suit exactement la même règle : absente, elle
+       n'est pas touchée ; présente, elle est écrite telle quelle. Elle n'est
+       jamais transmise à `null` — la colonne est `not null` en base, et
+       « je ne me prononce pas » n'existe pas pour elle : l'indemnité est due
+       ou elle ne l'est pas. */
     ['minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',
-     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur']
+     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur',
+     'entretien_du']
       .forEach(function (champ) {
         if (Object.prototype.hasOwnProperty.call(ligne, champ) && ligne[champ] !== undefined) {
           payload[champ] = ligne[champ];
@@ -981,14 +995,20 @@
         type: type,
         minutes_reelles: null,
         entretien_centimes: null,
-        /* Les sept colonnes qu'un changement de type doit remettre à plat. */
+        /* Les huit colonnes qu'un changement de type doit remettre à plat.
+           LOT 20 — `entretien_du` en fait partie : l'interrupteur du §20.6
+           n'existe que sur une journée qui SORT DU CADRE. Changer le type
+           d'une journée la fait rentrer dans le cadre — la garder à `false`
+           laisserait une indemnité retirée sur une journée ordinaire, sans
+           aucun écran pour la remettre. Retour au défaut : due. */
         minutes_sup_exceptionnelles: 0,
         minutes_sup_renoncees: 0,
         sup_dues_override: null,
         ecart_minutes: null,
         ecart_evenement: null,
         ecart_heure_reelle: null,
-        ecart_impute_sur: null
+        ecart_impute_sur: null,
+        entretien_du: true
       };
     });
     return client.from('journee')
@@ -1176,6 +1196,77 @@
      la ventilation d'une période de congé, qui disparaît avec elle (lot 10). */
   function supprimerImputation(id) {
     return client.from('imputation_conge')
+      .delete()
+      .eq('id', id)
+      .then(function (r) { if (r.error) throw r.error; return true; });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Périodes de familiarisation (lot 20, §20.2)                         */
+  /*                                                                     */
+  /* Aucun calcul ici : db.js transmet, le moteur calcule. La période est */
+  /* une DONNÉE saisie par Maria — deux dates — et c'est `chaine-mois.js` */
+  /* qui la porte jusqu'au moteur, comme il porte les imputations.       */
+  /* ------------------------------------------------------------------ */
+
+  /* Périodes d'un contrat dont les bornes RECOUPENT l'intervalle demandé,
+     triées par date de début. Le recouvrement, et non l'inclusion : une
+     période du 28 août au 10 septembre concerne les deux mois, et le mois de
+     septembre doit la voir alors qu'elle commence en août. */
+  function listPeriodesFamiliarisation(contratId, debutIso, finIso) {
+    var q = client.from('periode_familiarisation')
+      .select(CHAMPS_PERIODE_FAM)
+      .eq('contrat_id', contratId);
+    if (debutIso) q = q.gte('date_fin', debutIso);
+    if (finIso) q = q.lte('date_debut', finIso);
+    return q.order('date_debut', { ascending: true }).then(deballer);
+  }
+
+  /* Toutes les périodes d'un contrat, sans borne : c'est ce que lit la fiche
+     du contrat et l'écran de la période (§20.4 d). */
+  function listPeriodesFamiliarisationContrat(contratId) {
+    return listPeriodesFamiliarisation(contratId, null, null);
+  }
+
+  /* Insère une période et rend la ligne créée, avec son id.
+
+     Un chevauchement avec une période déjà enregistrée fait échouer
+     l'écriture, et l'erreur REMONTE telle quelle : `js/messages.js` la traduit
+     par son nom de contrainte, avant la règle générique qui, elle, parle
+     d'une « période de congé » et enverrait Maria chercher le mauvais objet.
+     On ne l'avale surtout pas — deux périodes qui se chevauchent paieraient
+     deux fois les mêmes minutes. */
+  function enregistrerPeriodeFamiliarisation(periode) {
+    return client.from('periode_familiarisation')
+      .insert({
+        contrat_id: periode.contrat_id,
+        date_debut: periode.date_debut,
+        date_fin: periode.date_fin
+      })
+      .select(CHAMPS_PERIODE_FAM)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* Corrige les bornes d'une période existante. Le refus sur un mois clôturé
+     n'est pas ici : il appartient à l'écran, qui seul sait NOMMER les mois en
+     cause (§20.4, même règle et même message que les avenants). db.js ne
+     décide de rien, il écrit. */
+  function majPeriodeFamiliarisation(id, bornes) {
+    return client.from('periode_familiarisation')
+      .update({ date_debut: bornes.date_debut, date_fin: bornes.date_fin })
+      .eq('id', id)
+      .select(CHAMPS_PERIODE_FAM)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
+  /* Supprime une période. Comme une imputation, ce n'est pas une donnée
+     d'histoire : c'est un cadre de calcul, qui disparaît si Maria s'est
+     trompée de contrat. Les journées déclarées, elles, RESTENT — leurs
+     minutes sont des faits, et « rien ne se supprime jamais » (B.0-7). */
+  function supprimerPeriodeFamiliarisation(id) {
+    return client.from('periode_familiarisation')
       .delete()
       .eq('id', id)
       .then(function (r) { if (r.error) throw r.error; return true; });
@@ -1424,6 +1515,12 @@
     enregistrerImputation: enregistrerImputation,
     majVentilationImputation: majVentilationImputation,
     supprimerImputation: supprimerImputation,
+    /* Lot 20 — les périodes de familiarisation (§20.2). */
+    listPeriodesFamiliarisation: listPeriodesFamiliarisation,
+    listPeriodesFamiliarisationContrat: listPeriodesFamiliarisationContrat,
+    enregistrerPeriodeFamiliarisation: enregistrerPeriodeFamiliarisation,
+    majPeriodeFamiliarisation: majPeriodeFamiliarisation,
+    supprimerPeriodeFamiliarisation: supprimerPeriodeFamiliarisation,
     getRecap: getRecap,
     listRecapsContrat: listRecapsContrat,
     listRecapsPeriode: listRecapsPeriode,

@@ -26,6 +26,16 @@
      3. §17.5, l'écart d'horaire — il n'existe pas dans l'ancien moteur, donc
         aucune journée du différentiel n'en porte. Il a ses propres cas.
 
+   LOT 20 — UNE QUATRIÈME DIFFÉRENCE ATTENDUE S'AJOUTE, et elle est vérifiée
+   comme les trois autres : positivement. Le §20.3 retire le terme
+   `joursFamiliarisation === 0` de « mois entièrement travaillé ». Un mois
+   contenant une journée de familiarisation (le motif n° 5) n'acquérait rien
+   et acquiert désormais ses 2,5 jours. On n'ignore pas l'écart : on exige
+   qu'il vaille EXACTEMENT l'acquisition d'un mois plein, et que tout le reste
+   du mois — salaire, entretien, minutes, imputation — reste identique au
+   centime. Le différentiel du lot 20 lui-même, qui prouve le critère A1, est
+   dans `test/lot20-differentiel.test.js`.
+
    POURQUOI UN FACTEUR MULTIPLE DE 10. Avec `minutes_par_jour_conge` multiple
    de 10, la conversion dixièmes → minutes est une bijection entière : les
    deux moteurs font rigoureusement la même arithmétique à un facteur près.
@@ -242,6 +252,38 @@ var IDENTIQUES = [
   'salaireBrutCentimes', 'salaireNetCentimes'
 ];
 
+/* Le motif n° 5 est le seul à poser une journée `familiarisation`. C'est LUI,
+   et lui seul, que le §20.3 fait diverger. On le nomme au lieu de tester le
+   numéro à la volée : le jour où un motif s'ajoute, l'oubli se verra ici. */
+var MOTIF_FAMILIARISATION = 5;
+var JOUR_DU_MOTIF_FAMILIARISATION = 2;
+
+/* Encore faut-il que cette journée soit RÉELLEMENT traitée par le moteur : sur
+   un planning lundi-jeudi, le 2 janvier 2026 est un vendredi et la ligne n'est
+   jamais lue. Hors des bornes du contrat non plus. Dans ces cas, les deux
+   moteurs acquièrent la même chose et il n'y a rien à distinguer. */
+function aDeLaFamiliarisation(v) {
+  if (v.motif !== MOTIF_FAMILIARISATION) return false;
+  var derniers = Apres.joursDuMois(v.annee, v.mois).length;
+  var jour = cle(v.annee, v.mois) + '-' +
+    String(Math.min(JOUR_DU_MOTIF_FAMILIARISATION, derniers)).padStart(2, '0');
+  if (v.planning.indexOf(Apres.jourSemaine(jour)) === -1) return false;
+  if (v.dateDebut && jour < v.dateDebut) return false;
+  if (v.dateFin && jour > v.dateFin) return false;
+  return true;
+}
+
+/* Le contrat couvre-t-il le mois entier ? Sans cela, `moisEntierementTravaille`
+   reste faux pour une autre raison que la familiarisation, et l'acquisition
+   reste nulle des deux côtés. */
+function moisCouvertEntierement(v) {
+  var dernier = Apres.joursDuMois(v.annee, v.mois).slice(-1)[0];
+  var premier = cle(v.annee, v.mois) + '-01';
+  if (v.dateDebut && v.dateDebut > premier) return false;
+  if (v.dateFin && v.dateFin < dernier) return false;
+  return true;
+}
+
 function comparer(av, ap, facteur, etiquette, moisEntier, v, part) {
   var i;
   for (i = 0; i < IDENTIQUES.length; i++) {
@@ -265,14 +307,29 @@ function comparer(av, ap, facteur, etiquette, moisEntier, v, part) {
   assert(av.imputation.dixiemesCpConsommes * facteur === ap.imputation.minutesCpConsommees,
     etiquette + ' — CP consommés : ' + av.imputation.dixiemesCpConsommes +
     ' dixièmes × ' + facteur + ' ≠ ' + ap.imputation.minutesCpConsommees + ' min');
-  assert(av.dixiemesCpAcquis * facteur === ap.minutesCpAcquis,
-    etiquette + ' — CP acquis du mois : ' + av.dixiemesCpAcquis + ' × ' + facteur +
-    ' ≠ ' + ap.minutesCpAcquis);
+  /* LOT 20 (§20.3) — la familiarisation ne prive plus de l'acquisition. Sur
+     un mois qui en contient, l'ancien moteur acquérait 0 et le nouveau
+     acquiert un mois plein : on vérifie les DEUX bornes, pas seulement que
+     « ça a changé ». Partout ailleurs, l'égalité au facteur près tient. */
+  if (aDeLaFamiliarisation(v)) {
+    assert(av.dixiemesCpAcquis === 0,
+      etiquette + ' — l’ancien moteur devrait n’acquérir aucun CP : ' + av.dixiemesCpAcquis);
+    var attenduCp = ap.compteurSortie.minutesCpAcquis === undefined ? null
+      : Math.round(25 * v.mpjc / 10);
+    assert(ap.minutesCpAcquis === (moisCouvertEntierement(v) ? attenduCp : 0),
+      etiquette + ' — CP acquis du mois après le lot 20 : ' + ap.minutesCpAcquis +
+      ' ≠ ' + (moisCouvertEntierement(v) ? attenduCp : 0));
+  } else {
+    assert(av.dixiemesCpAcquis * facteur === ap.minutesCpAcquis,
+      etiquette + ' — CP acquis du mois : ' + av.dixiemesCpAcquis + ' × ' + facteur +
+      ' ≠ ' + ap.minutesCpAcquis);
+  }
 
   /* Les compteurs de sortie — ceux qui se propagent sur des années. */
   assert(av.compteurSortie.minutesSup === ap.compteurSortie.minutesSup,
     etiquette + ' — compteurSortie.minutesSup');
-  assert(av.compteurSortie.dixiemesCpAcquis * facteur === ap.compteurSortie.minutesCpAcquis,
+  assert(av.compteurSortie.dixiemesCpAcquis * facteur + ap.minutesCpAcquis
+           - av.dixiemesCpAcquis * facteur === ap.compteurSortie.minutesCpAcquis,
     etiquette + ' — compteurSortie CP acquis');
   assert(av.compteurSortie.dixiemesCpPris * facteur === ap.compteurSortie.minutesCpPris,
     etiquette + ' — compteurSortie CP pris');

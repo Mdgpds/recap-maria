@@ -44,6 +44,10 @@
     bilan: 'UiHistorique',       // le bilan annuel est rendu par le même module
     fiche: 'UiContrat',
     periode: 'UiPeriode',
+    /* LOT 20 (§20.4 d) — l'écran de la période de familiarisation, atteint
+       depuis la fiche du contrat. Sous-écran : la barre d'onglets reste
+       masquée, et le retour ramène à la fiche. */
+    familiarisation: 'UiFamiliarisation',
     /* Lot 7 — la fin de mois guidée est rendue par le module d'accueil, qui
        distingue les deux vues. La spécification réserve au lot une liste de
        fichiers close : plutôt que d'y ajouter `ui-fin-de-mois.js` de ma propre
