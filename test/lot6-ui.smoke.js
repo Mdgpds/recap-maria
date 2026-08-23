@@ -327,28 +327,87 @@ var sheet = document.getElementById('sheet');
 
   assert(document.getElementById('sheetwrap').hidden === false, 'la feuille s’ouvre');
   assert(txt(sheet).indexOf('Mardi 19 mai') !== -1, 'la feuille annonce le jour');
-  var choix = sheet.querySelectorAll('.choice');
-  /* LOT 10 (V8-09) — DEUX choix, plus trois. « Je ne travaillais pas » a été
-     retiré : il posait la journée mais laissait la VENTILATION au moteur,
-     identique pour les quatre enfants. Or les réserves diffèrent d'un contrat
-     à l'autre, et c'est précisément l'arbitrage que le lot 10 rend à Maria.
-     Les congés passent désormais par l'onglet « Mes congés ». */
-  assert(choix.length === 2, 'V8-09 : deux marquages seulement (obtenu ' + choix.length + ')');
-  assert(txt(choix[0]).indexOf('était là') !== -1, 'choix 1 : l’enfant était là');
-  var pourquoiAbsence = txt(choix[1].querySelector('.why'));
-  assert(pourquoiAbsence.indexOf('5,00') !== -1,
-    'effet de l’absence calculé par le moteur : −5,00 € (obtenu « ' + pourquoiAbsence + ' »)');
-  assert(sansInsecable(pourquoiAbsence).indexOf('30 min') !== -1 &&
-         pourquoiAbsence.indexOf('restent dues') !== -1,
-    'RG-09 : « vos 30 min restent dues »');
-  assert(!parTexte(sheet, '.choice', 'Je ne travaillais pas'),
-    'V8-09 : le pinceau « Mon congé » a disparu de la feuille de journée');
-  assert(txt(sheet).indexOf('Mes congés') !== -1,
-    'V8-09 : la phrase qui dit où poser un congé est présente');
+  /* EXIGENCE CHANGÉE — LA FEUILLE DU JOUR EST REFAITE COMME LA MAQUETTE
+     (retour d'Adrien du 23 août 2026 : « trop de trucs, c'est le bazar »).
+
+     CE QUI DISPARAÎT, ET POURQUOI, assertion par assertion :
+       - « deux marquages seulement » : il y a maintenant SEPT choix, tous du
+         même style. Ce n'est pas un choix de congé qui revient (V8-09 tient,
+         vérifié plus bas) : ce sont les gestes qui vivaient jusqu'ici dans
+         trois volets repliés et un bouton à part.
+       - « choix 1 : l'enfant était là » : la carte « était là — rien à faire »
+         a été retirée. La présence est l'état par défaut, le calendrier le dit
+         déjà ; le retour en présence est le sixième choix.
+       - « la phrase qui dit où poser un congé est présente » : le paragraphe
+         permanent sur les congés a été retiré de cette feuille (décision
+         d'Adrien du 23 août). La RÈGLE, elle, ne change pas — aucun choix de
+         congé ici — et c'est ce que vérifie l'assertion conservée ci-dessous.
+
+     AUCUNE ASSERTION DE COMPORTEMENT N'EST AFFAIBLIE : l'effet chiffré de
+     l'absence, rejoué par le moteur, et « vos 30 min restent dues » sont
+     toujours exigés — sur le choix qui les porte désormais. */
+  var choix = sheet.querySelectorAll('.liste-choix .choice');
+  var libelles = Array.prototype.map.call(choix, function (x) {
+    return txt(x.querySelector('.tx')).split('\n')[0].trim();
+  });
+  assert(choix.length === 7,
+    'la feuille propose SEPT choix, tous du même style (obtenu ' + choix.length + ')');
+  var attendus = ['Un parent est venu en retard', 'J’ai libéré plus tôt',
+    'J’ai demandé une arrivée plus tardive', 'Absence de Léa',
+    'Une note sur la journée', 'Finalement, rien de particulier ce jour-là',
+    'Autre cas…'];
+  attendus.forEach(function (lib, i) {
+    assert(libelles[i] && libelles[i].indexOf(lib) === 0,
+      'choix ' + (i + 1) + ' dans l’ordre de la maquette : « ' + lib + ' » (obtenu « ' +
+      (libelles[i] || '') + ' »)');
+  });
+  /* Un seul style : le même composant de choix pour les sept lignes. Les six
+     premières se cochent et sont annoncées comme des pastilles radio ;
+     « Autre cas… » ouvre une autre feuille, il reste un bouton — dire « case
+     non cochée » sur un geste qui change d'écran serait faux. */
+  assert(Array.prototype.every.call(choix, function (x) {
+    return x.className.indexOf('choice c1') !== -1;
+  }), 'les sept lignes partagent le même composant de choix');
+  assert(Array.prototype.filter.call(choix, function (x) {
+    return x.getAttribute('role') === 'radio';
+  }).length === 6, 'les six choix qui se cochent portent la pastille radio');
+  assert(txt(sheet).indexOf('Ce jour-là…') !== -1,
+    'la phrase d’amorce de la maquette ouvre la liste');
+  assert(!parTexte(sheet, '.choice', 'était là'),
+    'la carte « Léa était là — rien à faire » a disparu : la présence est l’état par défaut');
+  assert(!parTexte(sheet, 'details', 'Que s’est-il passé') &&
+         !parTexte(sheet, 'details', 'Un mot sur cette journée') &&
+         !parTexte(sheet, 'details', 'Ajuster mes heures'),
+    'plus aucun volet replié : les trois gestes sont des choix de la liste');
+  assert(txt(sheet).indexOf('Pour vos congés, passez par') === -1,
+    'le paragraphe permanent sur les congés a été retiré de la feuille');
+  assert(!parTexte(sheet, '.choice', 'Je ne travaillais pas') &&
+         !parTexte(sheet, '.choice', 'congé'),
+    'V8-09 : aucun choix « congé » dans cette liste — les congés se posent ' +
+    'depuis « Mes congés », qui les ventile contrat par contrat');
 
   /* ---------- 4. Une absence d’enfant s’écrit ---------- */
-  choix[1].click();
-  await pause(80);
+  var choixAbsence = parTexte(sheet, '.choice', 'Absence de Léa');
+  assert(!!choixAbsence, 'le choix « Absence de Léa » est offert');
+  assert(txt(choixAbsence).indexOf('absent·e') === -1,
+    'l’accord en genre passe par « Absence de Léa » — jamais de point médian');
+  var boutonAvant = boutonExact(sheet, 'Enregistrer');
+  assert(!!boutonAvant && boutonAvant.disabled === true,
+    'un seul bouton « Enregistrer », inactif tant qu’aucun choix n’est fait');
+  choixAbsence.click();
+  await pause(120);
+
+  var apercu = sansInsecable(txt(sheet));
+  assert(apercu.indexOf('5,00') !== -1,
+    'effet de l’absence calculé par le moteur : −5,00 € (obtenu « ' + apercu + ' »)');
+  assert(apercu.indexOf('30 min') !== -1 && apercu.indexOf('restent dues') !== -1,
+    'RG-09 : « vos 30 min restent dues »');
+
+  var boutonApres = boutonExact(sheet, 'Enregistrer');
+  assert(!!boutonApres && boutonApres.disabled === false,
+    'le bouton s’active une fois le choix complet');
+  boutonApres.click();
+  await pause(120);
   assert(document.getElementById('sheetwrap').hidden === true,
     'la feuille se referme après un enregistrement réussi');
 

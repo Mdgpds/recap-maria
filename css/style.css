@@ -513,6 +513,17 @@ table.cal td.futur:active { transform: none; }
 .issue .row .btn { margin-bottom: 0; }
 .issue .warnbox { margin-top: 6px; }
 .choice.off { opacity: .55; cursor: default; }
+/* FEUILLE DU JOUR REFAITE COMME LA MAQUETTE — LA LISTE UNIQUE DE CHOIX.
+
+   Tous les choix d'une journée ont désormais la même allure : une pastille
+   radio et un libellé. Ce qui se déplie une fois le choix fait vit dans
+   `.detail-choix`, JUSTE SOUS la liste — et non dans le choix lui-même : la
+   liste ne bouge pas sous le doigt de Maria quand elle change d'avis. */
+.amorce { margin: 2px 0 9px; font-weight: 600; color: var(--ink2); }
+.liste-choix .choice { margin-bottom: 8px; }
+.detail-choix:not(:empty) { margin: 4px 0 2px; }
+.detail-choix .sec:first-child { margin-top: 14px; }
+.detail-choix .effet-heures { margin-top: 2px; }
 /* Lot 22 §22.2 — la photo en tête de la fiche : l'aperçu passe en grand,
    parce que c'est le portrait de l'enfant et non une vignette de formulaire. */
 .photo-fld.grand .apercu-photo { width: 96px; height: 96px; }

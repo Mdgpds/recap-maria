@@ -403,15 +403,21 @@ function celluleDu(numero) {
   absent(sheet, 'Indemnité d’entretien du jour',
     '§20.6 A1 : aucun interrupteur sur une journée sans écart déclaré');
 
-  /* On déclare une libération anticipée : la journée sort du cadre. */
-  var recap = sheet.querySelector('details.ajuster');
-  assert(!!recap, 'le bloc « que s’est-il passé » est là');
-  var selEvt = sheet.querySelector('details.ajuster select');
-  selEvt.value = 'liberation_anticipee';
-  selEvt.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  /* EXIGENCE CHANGÉE — la feuille du jour est refaite comme la maquette
+     (23 août) : le volet replié `details.ajuster` a disparu, l'événement se
+     choisit dans la liste et l'heure se saisit à la minute. Le COMPORTEMENT
+     vérifié ci-dessous — l'interrupteur d'entretien n'existe que hors du
+     cadre, « Comptée » par défaut, le retrait écrit en base — ne change pas
+     d'un mot. */
+  var choixLib = Array.prototype.filter.call(sheet.querySelectorAll('.choice'),
+    function (x) { return txt(x).indexOf('J’ai libéré plus tôt') !== -1; })[0];
+  assert(!!choixLib, 'le choix « j’ai libéré plus tôt » est dans la liste');
+  choixLib.click();
   await pause(200);
-  var champH = sheet.querySelectorAll('details.ajuster select')[1];
+  var champH = sheet.querySelector('.detail-choix input[type="time"]');
+  assert(!!champH, 'l’heure de départ se saisit à la minute près');
   champH.value = '17:00';
+  champH.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   champH.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await pause(200);
   contient(sheet, 'Indemnité d’entretien du jour',
@@ -473,6 +479,15 @@ function celluleDu(numero) {
   /* AVANT LA CORRECTION : « + 82,50 € ». Le rejeu ne recevait pas la période,
      voyait quinze journées mensualisées de plus que la réalité, et l'écart
      annoncé était celui de l'oubli, pas celui du geste. */
+  /* EXIGENCE DÉPLACÉE, PAS AFFAIBLIE — l'aperçu du retour en présence était
+     porté par la carte « Noah était là », retirée le 23 août. Il est
+     maintenant sous le choix qui fait ce geste. Le chiffre exigé est le même,
+     et il vient du même rejeu. */
+  var choixRetour = Array.prototype.filter.call(sheet.querySelectorAll('.choice'),
+    function (x) { return txt(x).indexOf('Finalement, rien de particulier') !== -1; })[0];
+  assert(!!choixRetour, 'B3 : le geste de retour en journée ordinaire est offert');
+  choixRetour.click();
+  await pause(200);
   contient(sheet, 'Entretien de la journée rétabli (+5,50 €)',
     'B3 : l’aperçu annonce l’entretien d’UNE journée, pas celui de quinze');
   absent(sheet, '82,50 €', 'B3 : et surtout pas le montant de l’oubli');

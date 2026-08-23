@@ -1264,80 +1264,506 @@
   /* Feuille de saisie d'une journée (§2.3)                              */
   /* ------------------------------------------------------------------ */
 
+  /* ------------------------------------------------------------------ */
+  /* LA FEUILLE DU JOUR — UNE SEULE LISTE DE CHOIX                       */
+  /*                                                                     */
+  /* RETOUR D'ADRIEN, 23 AOÛT 2026 : « TROP DE TRUCS, C'EST LE BAZAR ».  */
+  /*                                                                     */
+  /* Cette feuille avait empilé les couches de quatre lots : deux grosses */
+  /* cartes « était là / était absente », un paragraphe permanent sur les */
+  /* congés, trois `<details>` repliés, puis un bouton « Autre cas… ».    */
+  /* Quatre styles de présentation pour des choix de même nature, dans    */
+  /* une seule feuille.                                                   */
+  /*                                                                     */
+  /* La cible est la maquette : UNE liste, tous les choix du même style,  */
+  /* ce qui se déplie apparaît sous la liste, UN bouton « Enregistrer ».  */
+  /*                                                                     */
+  /* C'EST UNE RÉORGANISATION, PAS UN RETRAIT. Tout ce que la feuille     */
+  /* savait faire se fait encore : la déclaration d'horaire du lot 17 et  */
+  /* sa destination (§17.6), l'interrupteur d'entretien du lot 20         */
+  /* (§20.6), l'absence de l'enfant, la note du lot 12, l'ajustement      */
+  /* manuel des heures (rangé dans « Autre cas… »), et tous les           */
+  /* avertissements conditionnels. Les aperçus chiffrés restent REJOUÉS   */
+  /* PAR LE MOTEUR — aucun n'est recomposé ici (§4, B.0-5).              */
+  /* ------------------------------------------------------------------ */
+
+  /* Les trois déclarations d'horaire, dans l'ordre et avec les libellés de la
+     maquette. Le SENS de chacune — quelle heure est demandée, quel signe est
+     attendu — reste celui du lot 17, `SIGNE_ATTENDU` fait foi. */
+  var CHOIX_ECART = [
+    { cle: 'retard_parent', libelle: 'Un parent est venu en retard' },
+    { cle: 'liberation_anticipee', libelle: 'J’ai libéré plus tôt' },
+    { cle: 'arrivee_decalee', libelle: 'J’ai demandé une arrivée plus tardive' }
+  ];
+
   function ouvrirJour(d) {
     if (vue.lectureSeule) return;
     /* §20.4 — un jour de la période n'a qu'un seul geste : déclarer ses
-       heures. Lui proposer « était là / était absent / écart d'horaire »
-       offrirait des choix que le moteur ignore à l'intérieur de la période. */
+       heures. Lui proposer la liste ci-dessous offrirait des choix que le
+       moteur ignore à l'intérieur de la période. */
     if (enFamiliarisation(d)) return feuilleFamiliarisation(d);
+
     var c = vue.contrat;
+    var conditions = cond();
+    var ligne = (vue.journees || {})[d] || {};
     var type = Kit.typeDuJour(vue.journees, d);
     var servis = contratsServis(d);
 
-    Kit.ouvrirFeuille(Kit.jourLong(d), c.prenom_enfant + ' — famille ' + ((c.famille && c.famille.nom) || '—'),
+    /* CORRECTION B2 DE LA RELECTURE DES LOTS 20 À 22, CONSERVÉE. Le lot 21
+       écrit un congé posé à l'heure sur les colonnes `ecart_*`. Les deux ne
+       peuvent pas coexister : ce sont les mêmes colonnes. La feuille nomme
+       donc le congé et renvoie là où il se retire, au lieu d'offrir une
+       déclaration qui le ferait disparaître sans un mot. */
+    var congeHoraire = ligne.ecart_evenement === 'conge_horaire';
+    var absenceMaria = TYPES_ABSENCE_MARIA.indexOf(type) !== -1;
+    /* RG-04 : ces journées ne portent aucune minute, écart compris. Proposer
+       la déclaration dessus laisserait croire à un effet qui n'existe pas. */
+    var ecartsPossibles = !!conditions && !congeHoraire &&
+      TYPES_SANS_ECART.indexOf(type) === -1;
+
+    var etat = {
+      choix: null,
+      heure: null,
+      minutes: null,
+      destination: ligne.ecart_impute_sur || 'recuperation',
+      /* §20.6 — l'indemnité du jour. Due par défaut : retirer est un choix. */
+      entretien: ligne.entretien_du !== false,
+      texte: ligne.commentaire == null ? '' : String(ligne.commentaire),
+      pret: false
+    };
+    /* UNE JOURNÉE QUI PORTE DÉJÀ UNE DÉCLARATION S'OUVRE DESSUS.
+       « Il faut qu'elle puisse corriger » (Adrien, 23 août) : Maria retrouve
+       son choix coché et son heure dans le champ, elle change l'heure, elle
+       enregistre. Sans cela, corriger un retard demanderait de le retirer
+       d'abord, puis de le redéclarer. */
+    if (ecartsPossibles && SIGNE_ATTENDU[ligne.ecart_evenement]) {
+      etat.choix = ligne.ecart_evenement;
+      etat.heure = String(ligne.ecart_heure_reelle || '').slice(0, 5) || null;
+    } else if (type === 'absence_enfant') {
+      etat.choix = 'absence_enfant';
+    }
+
+    Kit.ouvrirFeuille(Kit.jourLong(d),
+      c.prenom_enfant + ' — famille ' + ((c.famille && c.famille.nom) || '—'),
       function (corps) {
-        if (TYPES_ABSENCE_MARIA.indexOf(type) !== -1) {
-          Kit.choix(corps, 'c1', '✓', 'Finalement, je travaillais',
-            'Le jour redevient normal pour ' + libelleServis(servis),
-            function (ev) { retirerAbsence(d, servis, ev.currentTarget); });
-          avertirVentilation(corps, d);
-          avertirClos(corps, d);
-          return;
-        }
+        /* LES AVERTISSEMENTS CONDITIONNELS D'ABORD. Ils ne s'affichent que
+           quand leur condition est vraie — c'est pour ça que la feuille peut
+           être courte — et ils disent ce que le geste va coûter AVANT qu'il
+           soit fait, pas après. */
+        avertirVentilation(corps, d);
+        avertirClos(corps, d);
+        avertirEcrasement(corps, d, servis);
+
+        if (congeHoraire) corps.appendChild(blocCongeHorairePose(d, ligne));
 
         if (type === 'familiarisation') {
           corps.appendChild(Kit.ce('p', 'sb q',
-            'Journée de familiarisation, saisie à la main (heures réelles et indemnité). ' +
-            'La modifier ci-dessous effacera ces valeurs.'));
+            'Journée de familiarisation, saisie à la main (heures réelles et ' +
+            'indemnité). La modifier ci-dessous effacera ces valeurs.'));
         }
 
-        var apercus = apercuDesChoix(d, servis);
+        /* LE PARAGRAPHE PERMANENT SUR LES CONGÉS A DISPARU (décision d'Adrien
+           du 23 août). La règle V8-09, elle, ne change pas : il n'y a toujours
+           AUCUN choix « congé » dans cette liste, et un jour couvert par un
+           congé posé garde son encart d'information (correction B2 ci-dessus).
+           Le paragraphe expliquait où poser un congé sur une feuille où Maria
+           n'était pas venue en poser un. */
+        corps.appendChild(Kit.ce('p', 'sb amorce', 'Ce jour-là…'));
 
-        Kit.choix(corps, 'c1', '✓', c.prenom_enfant + ' était là',
-          apercus.presence, function (ev) { poserPresence(d, ev.currentTarget); });
+        var liste = Kit.ce('div', 'liste-choix');
+        liste.setAttribute('role', 'radiogroup');
+        corps.appendChild(liste);
 
-        Kit.choix(corps, 'c2', '−', c.prenom_enfant + ' était ' + Kit.accordDe(c, 'absent'),
-          apercus.absence, function (ev) { poserAbsenceEnfant(d, ev.currentTarget); });
+        var detail = Kit.ce('div', 'detail-choix');
+        corps.appendChild(detail);
 
-        /* LOT 10 (V8-09) — LE CHOIX « JE NE TRAVAILLAIS PAS » A ÉTÉ RETIRÉ.
-           Il posait un `conge_maria` sur la journée, et seulement cela : la
-           VENTILATION — combien sur les congés payés, combien sur la
-           récupération, combien sans solde — restait décidée par le moteur,
-           la même pour les quatre enfants. Or les réserves diffèrent d'un
-           contrat à l'autre, et c'est justement l'arbitrage que Maria
-           réclame. Un congé posé d'un doigt depuis un calendrier ne peut pas
-           le lui rendre.
-           Il reste deux marquages ici — présence et absence de l'enfant —, et
-           les congés passent par l'onglet « Mes congés », qui les décompte
-           (RG-06) et les ventile contrat par contrat. */
-        corps.appendChild(Kit.ce('p', 'sb q',
-          'Pour vos congés, passez par l’onglet « Mes congés » : ils valent pour ' +
-          'tous vos contrats, et vous choisissez pour chacun comment ils sont décomptés.'));
+        /* UN SEUL BOUTON, inactif tant que le choix n'est pas complet. */
+        var bouton = Kit.bouton('btn', function () { enregistrer(bouton); });
+        bouton.textContent = 'Enregistrer';
+        corps.appendChild(bouton);
 
-        /* LOT 12 — l'ajustement des heures et la note de la journée. Repliés
-           par défaut : ce sont des cas particuliers, et l'écran d'une journée
-           ordinaire ne doit pas ressembler à un formulaire. */
-        /* LOT 17 §17.5 — ce que Maria DÉCLARE, avant l'ajustement manuel des
-           minutes : c'est le geste le plus fréquent, et celui qui porte le
-           sens. L'ajustement du lot 12 reste dessous, pour les cas que la
-           déclaration ne couvre pas. */
-        corps.appendChild(blocEcartHoraire(d));
-        corps.appendChild(blocAjusterHeures(d));
-        corps.appendChild(blocNoteJournee(d));
+        dessinerListe();
 
-        /* Familiarisation, jour non travaillé et sans solde : rangés derrière
-           une entrée discrète plutôt que supprimés. Le moteur les traite tous
-           les trois (RG-14, RG-04, RG-08) et ils existent en base ; les retirer
-           de l'interface obligeait à poser un congé — donc à consommer des
-           congés payés — pour une journée où Maria n'était simplement pas
-           demandée (relecture lot 6, R5). */
-        var autre = Kit.bouton('btn nt', function () { feuilleAutresCas(d, servis); });
-        autre.textContent = 'Autre cas — familiarisation, jour non travaillé…';
-        corps.appendChild(autre);
+        /* ---------------------------------------------------------- */
 
-        avertirClos(corps, d);
-        avertirEcrasement(corps, d, servis);
+        function poser(cle, libelle, sous) {
+          poserOption(liste, etat.choix === cle, libelle, sous || null, function () {
+            if (etat.choix === cle) return;
+            etat.choix = cle;
+            etat.minutes = null;
+            /* L'heure ne se traîne pas d'un événement à l'autre : une heure de
+               départ recopiée dans « arrivée plus tardive » afficherait un
+               refus de signe que Maria n'a pas provoqué. */
+            etat.heure = (cle === ligne.ecart_evenement)
+              ? (String(ligne.ecart_heure_reelle || '').slice(0, 5) || null) : null;
+            dessinerListe();
+          });
+        }
+
+        function dessinerListe() {
+          Kit.vider(liste);
+          if (absenceMaria) {
+            /* Un jour où Maria ne travaillait pas : les trois déclarations
+               d'horaire et l'absence de l'enfant n'y produiraient rien
+               (RG-04). Le geste de retour garde le libellé qui le nomme le
+               mieux ici, dans le style de la liste et non plus en carte. */
+            poser('retour', 'Finalement, je travaillais');
+          } else {
+            if (ecartsPossibles) {
+              CHOIX_ECART.forEach(function (x) { poser(x.cle, x.libelle); });
+            }
+            poser('absence_enfant', 'Absence de ' + c.prenom_enfant);
+          }
+          poser('note', 'Une note sur la journée');
+          if (!absenceMaria && !congeHoraire) {
+            /* « Présence (annuler les écarts) » de la maquette a été renommé :
+               un enfant peut être présent ET un parent en retard, les deux ne
+               s'opposent pas (remarque d'Adrien, 23 août). Ce choix ne sert
+               qu'à défaire. */
+            poser('retour', 'Finalement, rien de particulier ce jour-là');
+          }
+          /* « Autre cas… » ENTRE DANS LA LISTE, EN DERNIER (décision d'Adrien
+             du 23 août) — même style que les autres choix, plus un bouton à
+             part. Il ouvre une feuille au lieu de déplier : il ne se coche
+             jamais, et il n'est donc PAS annoncé comme une pastille radio.
+             Un lecteur d'écran qui lirait « case non cochée » sur un geste qui
+             ouvre un autre écran dirait faux (V8-01, V8-05) : le chevron et le
+             rôle de bouton disent ce qu'il fait. La ligne, elle, est la même. */
+          Kit.choix(liste, 'c1', '›', 'Autre cas…',
+            'Jour non travaillé, sans solde, ajustement de vos heures',
+            function () { feuilleAutresCas(d, servis); });
+          dessinerDetail();
+        }
+
+        function dessinerDetail() {
+          Kit.vider(detail);
+          etat.pret = false;
+          if (SIGNE_ATTENDU[etat.choix]) dessinerEcart(etat.choix);
+          else if (etat.choix === 'absence_enfant') dessinerAbsence();
+          else if (etat.choix === 'note') dessinerNote();
+          else if (etat.choix === 'retour') dessinerRetour();
+          else if (ecartsPossibles) {
+            /* §17.5 A3 — SANS DÉCLARATION, RIEN NE CHANGE. C'est la règle la
+               plus facile à perdre, parce qu'elle est une ABSENCE : un parent
+               qui vient chercher son enfant plus tôt DE LUI-MÊME n'est aucun
+               des trois événements, Maria était disponible, et elle ne déclare
+               rien. Une ligne, sous la liste, tant que rien n'est choisi. */
+            detail.appendChild(Kit.ce('p', 'sb q',
+              'Sans rien déclarer, vos ' + Kit.duree(conditions.minutes_sup_jour) +
+              ' restent dues. Un parent qui vient chercher son enfant plus tôt ' +
+              'de lui-même n’est pas un événement : vous étiez disponible.'));
+          }
+          majBouton();
+        }
+
+        function majBouton() { bouton.disabled = !etat.pret; }
+
+        /* --- 1 à 3 : les déclarations d'horaire --------------------- */
+
+        function dessinerEcart(evt) {
+          var matin = evt === 'arrivee_decalee';
+          var reference = Engine.heureDeReference(conditions);
+          var arrivee = Engine.heureEnMinutes(conditions.heure_arrivee);
+
+          /* DÉCISION D'ADRIEN, 23 AOÛT : PAS DE RACCOURCIS D'HEURE.
+             La maquette en proposait trois (18 h 01 · 18 h 15 · 18 h 30), et
+             le brief les demandait. « Les raccourcis ne servent à rien si
+             l'heure de fin habituelle est à 18 h, mais Maria doit pouvoir
+             modifier à la minute l'heure et la minute de fin de la journée. »
+             Ils auraient de toute façon été faux ailleurs : ces heures ne
+             valent que pour un contrat dont la journée finit à 18 h 00.
+
+             Le champ est celui du lot 20 (`champHeureMinute`, molette native
+             du téléphone, pas de saisie au clavier — B.0-3), et non plus le
+             sélecteur au quart d'heure : un départ à 18 h 01 ne s'y saisit
+             pas. */
+          var champ = Kit.champHeureMinute(
+            (matin ? 'L’enfant est arrivé à' : 'L’enfant est parti à') +
+            ' — à la minute près',
+            etat.heure || heureIso(matin ? arrivee : reference));
+          detail.appendChild(champ.bloc);
+
+          /* La journée de référence vient du MOTEUR : fin d'accueil plus les
+             minutes supplémentaires du contrat. Un écran qui l'écrirait en dur
+             serait faux le jour où un avenant déplace les horaires (A6). */
+          detail.appendChild(Kit.ce('p', 'sb q',
+            'La journée de ' + c.prenom_enfant + ' va de ' + heureLisible(arrivee) +
+            ' à ' + heureLisible(reference) + ' — la fin d’accueil plus vos ' +
+            Kit.duree(conditions.minutes_sup_jour) + '.'));
+
+          var effet = Kit.ce('div', 'effet-heures');
+          detail.appendChild(effet);
+
+          /* §17.6 — LE SÉLECTEUR DE DESTINATION EST CONSTRUIT UNE SEULE FOIS,
+             puis montré ou caché. Le reconstruire à chaque changement d'heure
+             ferait perdre le choix de Maria sans rien dire. */
+          var blocDest = Kit.ce('div');
+          detail.appendChild(blocDest);
+          var selDest = Kit.champSelect('Ces minutes se déduisent de',
+            DESTINATIONS_ECART, etat.destination);
+          selDest.select.addEventListener('change', function () {
+            etat.destination = selDest.select.value;
+            majEffet();
+          });
+          blocDest.appendChild(selDest.bloc);
+          blocDest.appendChild(Kit.ce('p', 'sb q',
+            'Votre récupération peut passer sous zéro : c’est du temps que vous rendrez.'));
+          blocDest.hidden = true;
+
+          var blocEntretien = Kit.ce('div');
+          detail.appendChild(blocEntretien);
+
+          champ.input.addEventListener('change', majEffet);
+          champ.input.addEventListener('input', majEffet);
+          majEffet();
+
+          function lireHeure() {
+            var v = champ.valeur();
+            return /^\d{1,2}:\d{2}$/.test(v) ? v : null;
+          }
+
+          function majEntretien(visible) {
+            Kit.vider(blocEntretien);
+            if (!visible) return;
+            /* §20.6 — L'INTERRUPTEUR D'ENTRETIEN, ET SEULEMENT HORS DU CADRE.
+               Il n'apparaît que lorsqu'un écart est effectivement déclaré :
+               « Maria ne retire jamais l'entretien d'une journée complète ». */
+            blocEntretien.appendChild(Kit.section('Indemnité d’entretien du jour'));
+            blocEntretien.appendChild(Kit.ce('p', 'sb q',
+              'La journée sort du cadre. Elle reste comptée présente : votre salaire ' +
+              'et vos minutes ne bougent pas.'));
+            var plein = (conditions.entretien_centimes_jour != null)
+              ? Kit.eur(conditions.entretien_centimes_jour) : '—';
+            poserOption(blocEntretien, etat.entretien, 'Comptée', plein,
+              function () { etat.entretien = true; majEntretien(true); });
+            poserOption(blocEntretien, !etat.entretien, 'Non comptée', '0,00 €',
+              function () { etat.entretien = false; majEntretien(true); });
+          }
+
+          function majEffet() {
+            Kit.vider(effet);
+            blocDest.hidden = true;
+            etat.minutes = null;
+            etat.pret = false;
+
+            var heure = lireHeure();
+            etat.heure = heure;
+            var minutes = null;
+            if (heure) {
+              try {
+                minutes = Engine.ecartDepuisHeureReelle(conditions, evt, heure);
+              } catch (e) { minutes = null; }
+            }
+
+            if (minutes === null) {
+              effet.appendChild(Kit.note('Heure illisible',
+                ' Choisissez une heure pour que cette journée puisse être enregistrée.'));
+              majEntretien(false);
+              majBouton();
+              return;
+            }
+
+            /* « RIEN À ENREGISTRER » — LES DEUX CAS RÉUNIS.
+               Une heure égale à la référence n'est pas un événement ; et un
+               signe qui ne correspond pas à ce que Maria déclare est refusé
+               ici, en français, avant que la contrainte
+               `journee_ecart_signe_coherent` ne le refuse en fin de course
+               (remarque 5 de la relecture du lot 17). Les deux produisent la
+               même chose à l'écran : un encart qui dit quoi faire, et un
+               bouton inactif. */
+            var attendu = SIGNE_ATTENDU[evt];
+            if (minutes === 0 ||
+                (attendu > 0 && minutes < 0) || (attendu < 0 && minutes > 0)) {
+              effet.appendChild(Kit.note('Rien à enregistrer',
+                ' ' + phraseRienADeclarer(evt, reference, arrivee)));
+              majEntretien(false);
+              majBouton();
+              return;
+            }
+
+            if (minutes < 0) {
+              blocDest.hidden = false;
+              var lb = selDest.bloc.querySelector('.lb');
+              if (lb) lb.textContent = 'Ces ' + Kit.duree(minutes) + ' se déduisent de';
+            }
+
+            /* L'EFFET CHIFFRÉ, REJOUÉ PAR LE MOTEUR — jamais recomposé ici
+               (B.0-5). On lui donne la journée telle qu'elle sera enregistrée.
+               CORRECTION C1 DE LA RELECTURE DU LOT 17 conservée :
+               `minutesSupDuJour` vient du moteur, elle n'est pas recopiée. */
+            var simule = {
+              type: type,
+              minutes_sup_exceptionnelles: ligne.minutes_sup_exceptionnelles || 0,
+              minutes_sup_renoncees: ligne.minutes_sup_renoncees || 0,
+              sup_dues_override: ligne.sup_dues_override === undefined
+                ? null : ligne.sup_dues_override,
+              ecart_minutes: minutes,
+              ecart_impute_sur: etat.destination
+            };
+            var detailSup = Engine.detailSupDuJour(simule, conditions);
+            var totalJour = Engine.minutesSupDuJour(simule, conditions);
+
+            var titre = minutes > 0
+              ? '+ ' + Kit.heures(totalJour) + ' ce jour-là'
+              : Kit.heures(totalJour) + ' sur votre cumul du mois';
+            var explication = minutes > 0
+              ? ' Vos ' + Kit.duree(conditions.minutes_sup_jour) + ' habituelles, ' +
+                'plus le retard — départ à ' + heureLisible(Engine.heureEnMinutes(heure)) +
+                ' au lieu de ' + heureLisible(reference) + '.'
+              : ' Vos ' + Kit.duree(conditions.minutes_sup_jour) + ' du jour, ' +
+                'moins le temps rendu — ' +
+                (matin
+                  ? 'arrivée à ' + heureLisible(Engine.heureEnMinutes(heure)) +
+                    ' au lieu de ' + heureLisible(arrivee)
+                  : 'départ à ' + heureLisible(Engine.heureEnMinutes(heure)) +
+                    ' au lieu de ' + heureLisible(reference)) + '.';
+            effet.appendChild(minutes > 0 ? Kit.note(titre, explication)
+                                          : Kit.warnbox(titre, explication));
+            effet.appendChild(Kit.ce('div', 'sb',
+              'Ce jour : ' + Kit.heures(totalJour) + ' au lieu de ' +
+              Kit.duree(conditions.minutes_sup_jour) + '.'));
+
+            if (detailSup.minutesSurCp > 0) {
+              effet.appendChild(Kit.ce('div', 'sb',
+                Kit.duree(detailSup.minutesSurCp) + ' seront retirées de vos congés payés.'));
+              /* CORRECTION C5 DE LA RELECTURE DU LOT 17 — CE QUI EST RETIRÉ
+                 PEUT NE PAS EXISTER. L'application ne décide pas à la place de
+                 Maria, mais elle ne se tait pas non plus : elle DIT ce qui va
+                 se passer, avant qu'elle n'appuie. */
+              var dispoCp = Kit.cpSolde(vue.entree.resultat.compteurSortie);
+              if (detailSup.minutesSurCp > dispoCp) {
+                effet.appendChild(Kit.warnbox('Vos congés payés ne couvrent pas ces minutes',
+                  ' Il vous en reste ' + Kit.duree(Math.max(0, dispoCp)) + ' sur ce contrat, ' +
+                  'et ' + Kit.duree(detailSup.minutesSurCp) + ' seraient retirées. Le solde ' +
+                  'passerait en négatif. Choisissez plutôt votre récupération ou le sans ' +
+                  'solde si ce n’est pas ce que vous voulez.'));
+              }
+            }
+            if (detailSup.minutesSansSolde > 0) {
+              var retenue = (conditions.brut_mensuel_centimes != null)
+                ? Engine.montantCentimes(conditions.brut_mensuel_centimes,
+                    detailSup.minutesSansSolde)
+                : null;
+              effet.appendChild(Kit.ce('div', 'sb',
+                retenue != null
+                  ? 'Retenue sur le salaire : ' + Kit.eur(retenue) + '.'
+                  : 'La retenue ne peut pas être chiffrée, la rémunération de ce mois ' +
+                    'n’est pas renseignée.'));
+            }
+            if (detailSup.ecartSurRecuperation < 0) {
+              /* CORRECTION B5 — la dette annoncée part du solde RÉEL, jamais
+                 d'un solde borné à zéro. */
+              var apres = Kit.supSolde(vue.entree.resultat.compteurSortie) +
+                detailSup.ecartSurRecuperation;
+              if (apres < 0) {
+                effet.appendChild(Kit.ce('div', 'sb',
+                  'Votre récupération passera en négatif : vous devrez ' +
+                  Kit.heures(-apres) + '.'));
+              }
+            }
+
+            /* L'écart est réel et cohérent : c'est LÀ que la journée sort du
+               cadre, et donc là que l'interrupteur apparaît. */
+            majEntretien(true);
+            etat.minutes = minutes;
+            etat.pret = true;
+            majBouton();
+          }
+        }
+
+        /* --- 4 : l'absence de l'enfant ------------------------------ */
+
+        function dessinerAbsence() {
+          detail.appendChild(Kit.note('Absence de ' + c.prenom_enfant,
+            ' ' + apercuAbsence(d)));
+          etat.pret = true;
+        }
+
+        /* --- 5 : la note de la journée ------------------------------ */
+
+        function dessinerNote() {
+          var champ = Kit.champ('Note', etat.texte,
+            { placeholder: 'Retard des parents, sortie au parc…' });
+          champ.input.addEventListener('input', function () {
+            etat.texte = champ.input.value;
+          });
+          detail.appendChild(champ.bloc);
+          detail.appendChild(Kit.ce('p', 'sb q',
+            'Facultatif, pour vous seule. Jamais sur le document remis à la famille.'));
+          etat.pret = true;
+        }
+
+        /* --- 6 : défaire ------------------------------------------- */
+
+        function dessinerRetour() {
+          var aDefaire = absenceMaria || type === 'absence_enfant' ||
+            !!ligne.ecart_evenement;
+          if (!aDefaire) {
+            detail.appendChild(Kit.ce('p', 'sb q',
+              'Cette journée est déjà une journée ordinaire : il n’y a rien à annuler.'));
+            etat.pret = false;
+            return;
+          }
+          if (absenceMaria) {
+            detail.appendChild(Kit.note('Le jour redevient normal pour ' +
+              libelleServis(servis),
+              ' Vos minutes et l’indemnité d’entretien reprennent leur cours.'));
+            etat.pret = true;
+            return;
+          }
+          /* L'aperçu vient du MOTEUR : on rejoue le mois avec cette journée
+             remise en présence et on annonce l'écart du GESTE (correction B3
+             de la relecture du lot 20). */
+          detail.appendChild(Kit.note('Ce que vous aviez déclaré sera retiré',
+            ' ' + phraseEcart(simuler(d, 'presence'), vue.entree.resultat)));
+          var restent = [];
+          if (ligne.commentaire) restent.push('votre note sur cette journée');
+          if ((ligne.minutes_sup_exceptionnelles || 0) > 0 ||
+              (ligne.minutes_sup_renoncees || 0) > 0 ||
+              (ligne.sup_dues_override !== undefined && ligne.sup_dues_override !== null)) {
+            restent.push('l’ajustement de vos heures');
+          }
+          if (restent.length) {
+            /* DÉCISION D'ADRIEN, 23 août : « chaque choix ne touche que son
+               domaine ». Ce geste défait ce que cette liste a posé — la
+               déclaration d'horaire et l'absence. Ce qui se retire ailleurs
+               reste, et l'écran le dit plutôt que de le faire disparaître. */
+            detail.appendChild(Kit.ce('p', 'sb q',
+              'Ce qui reste : ' + restent.join(' et ') + '. Cela se retire depuis ' +
+              (restent.length > 1 ? 'ses propres écrans.' : 'son propre écran.')));
+          }
+          etat.pret = true;
+        }
+
+        /* ---------------------------------------------------------- */
+
+        function enregistrer(bt) {
+          if (!etat.pret) return;
+          if (SIGNE_ATTENDU[etat.choix]) {
+            return enregistrerEcart(d, etat.choix, etat.heure, etat.minutes,
+              etat.destination, bt, etat.entretien);
+          }
+          if (etat.choix === 'absence_enfant') return poserAbsenceEnfant(d, bt);
+          if (etat.choix === 'note') return enregistrerNote(d, etat.texte, bt);
+          if (etat.choix === 'retour') return remettreEnJourneeOrdinaire(d, servis, bt);
+        }
       });
+  }
+
+  /* Les phrases de refus de la maquette, mais avec les heures DU CONTRAT :
+     « à 18 h 00 » n'est vrai que d'un contrat dont la journée finit à 18 h 00. */
+  function phraseRienADeclarer(evt, reference, arrivee) {
+    if (evt === 'retard_parent') {
+      return 'À ' + heureLisible(reference) + ' ou avant, il n’y a rien à ' +
+        'déclarer : vos ' + Kit.duree(reg('minutes_sup_jour', 0)) + ' restent dues.';
+    }
+    if (evt === 'liberation_anticipee') {
+      return 'À ' + heureLisible(reference) + ' ou après, ce n’est pas une ' +
+        'libération anticipée. Pour un parent qui vient plus tard que prévu, ' +
+        'choisissez « Un parent est venu en retard ».';
+    }
+    return 'À ' + heureLisible(arrivee) + ' ou avant, rien ne change : la ' +
+      'journée commence à son heure habituelle.';
   }
 
   /* LOT 10 — retirer une journée qui appartient à une PÉRIODE VENTILÉE.
@@ -1664,12 +2090,10 @@
     arrivee_decalee: -1
   };
 
-  var EVENEMENTS_ECART = [
-    ['', 'Rien à signaler'],
-    ['retard_parent', 'Un parent est venu en retard'],
-    ['liberation_anticipee', 'J’ai libéré plus tôt'],
-    ['arrivee_decalee', 'J’ai demandé qu’on me l’amène plus tard']
-  ];
+  /* `EVENEMENTS_ECART` — le sélecteur déroulant « Ce qui s'est passé » — a
+     disparu : les trois événements sont devenus les trois premiers choix de la
+     liste (`CHOIX_ECART`, plus haut). « Rien à signaler » n'a plus besoin
+     d'être une option : ne rien choisir, c'est déjà lui. */
 
   var DESTINATIONS_ECART = [
     ['recuperation', 'Ma récupération'],
@@ -1683,314 +2107,6 @@
   var TYPES_SANS_ECART = ['ferie', 'conge_maria', 'sans_solde',
                           'familiarisation', 'hors_planning'];
 
-  function blocEcartHoraire(d) {
-    var c = vue.contrat;
-    var ligne = (vue.journees || {})[d] || {};
-    var type = Kit.typeDuJour(vue.journees, d);
-    var conditions = cond();
-
-    if (TYPES_SANS_ECART.indexOf(type) !== -1) return Kit.ce('div');
-    if (!conditions) return Kit.ce('div');
-
-    /* CORRECTION B2 DE LA RELECTURE DES LOTS 20 À 22 — UN CONGÉ POSÉ À L'HEURE
-       N'EXISTAIT PAS DANS CET ÉCRAN, ET S'Y ÉCRASAIT SANS UN MOT.
-
-       Le lot 21 écrit le congé sur `journee.ecart_*`, avec l'événement
-       `conge_horaire`. Ce fichier n'a pas été touché, et `EVENEMENTS_ECART`
-       n'en connaît toujours que trois : le sélecteur s'ouvrait sur une valeur
-       qui ne correspond à aucune option, ne sélectionnait RIEN, et rien nulle
-       part ne disait qu'un congé était posé. Deux gestes le détruisaient — le
-       bouton « Retirer ce que j'avais déclaré », et le simple fait de déclarer
-       un vrai événement, qui écrasait les quatre colonnes.
-
-       La feuille de pose, elle, REFUSE d'écrire par-dessus un congé existant :
-       « un congé est déjà posé sur cette journée — retirez-le d'abord ». Les
-       deux écrans doivent dire la même chose. Celui-ci nomme donc le congé et
-       renvoie là où il se retire, plutôt que d'offrir une déclaration qui le
-       ferait disparaître (B.0-7, B.0-9). */
-    if (ligne.ecart_evenement === 'conge_horaire') {
-      return blocCongeHorairePose(d, ligne);
-    }
-
-    var etat = {
-      evenement: ligne.ecart_evenement || '',
-      heure: String(ligne.ecart_heure_reelle || '').slice(0, 5) || null,
-      destination: ligne.ecart_impute_sur || 'recuperation',
-      /* §20.6 — l'indemnité du jour. Due par défaut : retirer est un choix. */
-      entretien: ligne.entretien_du !== false
-    };
-
-    var det = Kit.ce('details', 'ajuster');
-    det.appendChild(Kit.ce('summary', null, 'Que s’est-il passé ce jour-là ?'));
-    if (etat.evenement) det.open = true;
-
-    var corps = Kit.ce('div', 'ajuster-corps');
-    det.appendChild(corps);
-
-    var reference = Engine.heureDeReference(conditions);
-    corps.appendChild(Kit.ce('p', 'sb q',
-      'La journée de ' + c.prenom_enfant + ' va de ' +
-      heureLisible(Engine.heureEnMinutes(conditions.heure_arrivee)) + ' à ' +
-      heureLisible(reference) + ' — la fin d’accueil plus vos ' +
-      Kit.duree(conditions.minutes_sup_jour) + '.'));
-
-    var selEvt = Kit.champSelect('Ce qui s’est passé', EVENEMENTS_ECART, etat.evenement);
-    corps.appendChild(selEvt.bloc);
-
-    var blocHeure = Kit.ce('div');
-    corps.appendChild(blocHeure);
-    var blocDest = Kit.ce('div');
-    corps.appendChild(blocDest);
-    var effet = Kit.ce('div', 'effet-heures');
-    corps.appendChild(effet);
-    /* §20.6 — L'INTERRUPTEUR D'ENTRETIEN, ET SEULEMENT HORS DU CADRE.
-       Il vit ici, sous l'effet chiffré, et n'apparaît que lorsqu'un écart est
-       effectivement déclaré : « Maria ne retire jamais l'entretien d'une
-       journée complète ». Sur une journée ordinaire, ce bloc reste vide. */
-    var blocEntretien = Kit.ce('div');
-    corps.appendChild(blocEntretien);
-
-    var champHeure = null;
-    var selDest = null;
-
-    function majEntretien(visible) {
-      Kit.vider(blocEntretien);
-      if (!visible) return;
-      blocEntretien.appendChild(Kit.section('Indemnité d’entretien du jour'));
-      blocEntretien.appendChild(Kit.ce('p', 'sb q',
-        'La journée sort du cadre. Elle reste comptée présente : votre salaire ' +
-        'et vos minutes ne bougent pas.'));
-      var plein = (conditions.entretien_centimes_jour != null)
-        ? Kit.eur(conditions.entretien_centimes_jour) : '—';
-      poserOption(blocEntretien, etat.entretien, 'Comptée', plein,
-        function () { etat.entretien = true; majEntretien(true); });
-      poserOption(blocEntretien, !etat.entretien, 'Non comptée', '0,00 €',
-        function () { etat.entretien = false; majEntretien(true); });
-    }
-
-    function evenementChoisi() { return selEvt.select.value; }
-
-    function minutesDeclarees() {
-      var evt = evenementChoisi();
-      if (!evt || !champHeure) return null;
-      try {
-        return Engine.ecartDepuisHeureReelle(conditions, evt, champHeure.valeur());
-      } catch (e) {
-        return null;
-      }
-    }
-
-    function redessiner() {
-      var evt = evenementChoisi();
-      Kit.vider(blocHeure);
-      Kit.vider(blocDest);
-      Kit.vider(effet);
-      champHeure = null;
-      selDest = null;
-      blocDest.hidden = true;
-
-      if (!evt) {
-        effet.appendChild(Kit.ce('div', 'sb q',
-          'Vos ' + Kit.duree(conditions.minutes_sup_jour) + ' restent dues. ' +
-          'Un parent qui vient chercher son enfant plus tôt de lui-même n’est pas ' +
-          'un événement : vous étiez disponible.'));
-        majEntretien(false);
-        majBouton();
-        return;
-      }
-
-      /* L'heure demandée dépend de l'événement : celle du MATIN pour une
-         arrivée décalée, celle du SOIR pour les deux autres. Demander « heure
-         de départ » sur une arrivée décalée ferait saisir n'importe quoi. */
-      var matin = evt === 'arrivee_decalee';
-      var defaut = etat.heure ||
-        heureIso(matin ? Engine.heureEnMinutes(conditions.heure_arrivee) : reference);
-      champHeure = Kit.champHeure(matin ? 'Heure d’arrivée réelle' : 'Heure de départ réelle',
-        defaut);
-      blocHeure.appendChild(champHeure.bloc);
-      champHeure.select.addEventListener('change', function () { majEffet(); });
-
-      poserDestination();
-      majEffet();
-    }
-
-    /* LE SÉLECTEUR DE DESTINATION EST CONSTRUIT UNE SEULE FOIS, puis montré ou
-       caché. Le reconstruire à chaque changement d'heure ferait perdre le
-       choix de Maria — elle prend ses congés payés, elle change l'heure, et
-       l'écran est revenu à la récupération sans rien dire. C'est le genre de
-       remise à zéro silencieuse qu'on ne voit qu'en cliquant. */
-    function poserDestination() {
-      selDest = Kit.champSelect('Ces minutes se déduisent de',
-        DESTINATIONS_ECART, etat.destination);
-      selDest.select.addEventListener('change', function () {
-        etat.destination = selDest.select.value;
-        majEffet();
-      });
-      blocDest.appendChild(selDest.bloc);
-      blocDest.appendChild(Kit.ce('p', 'sb q',
-        'Votre récupération peut passer sous zéro : c’est du temps que vous rendrez.'));
-      blocDest.hidden = true;
-    }
-
-    function majEffet() {
-      var minutes = minutesDeclarees();
-      Kit.vider(effet);
-      blocDest.hidden = true;
-
-      if (minutes === null) {
-        effet.appendChild(Kit.ce('div', 'sb q', 'Heure illisible.'));
-        majEntretien(false);
-        majBouton();
-        return;
-      }
-      if (minutes === 0) {
-        /* Une heure réelle égale à la référence n'est pas un événement. On le
-           dit plutôt que d'enregistrer une déclaration sans effet, que la
-           contrainte `journee_ecart_coherent` refuserait de toute façon. */
-        effet.appendChild(Kit.ce('div', 'sb q',
-          'Cette heure est exactement celle prévue : il n’y a rien à déclarer.'));
-        majEntretien(false);
-        majBouton();
-        return;
-      }
-
-      /* CORRECTION DE LA REMARQUE 5 DE LA RELECTURE DU LOT 17 — UN ÉVÉNEMENT
-         DONT LE SIGNE NE CORRESPOND PAS EST REFUSÉ ICI, EN FRANÇAIS.
-
-         Le sélecteur propose tous les quarts d'heure de 5h00 à 22h00. Une
-         « arrivée décalée » saisie AVANT le début d'accueil produit un écart
-         POSITIF, qui alimenterait la récupération sous le libellé « j'ai
-         demandé qu'on me l'amène plus tard » — l'inverse de ce que Maria
-         déclare. Le cas est atteignable par simple erreur de saisie.
-
-         La base le refuse déjà (`journee_ecart_signe_coherent`), mais elle le
-         refuse en fin de course, avec un message de contrainte. L'écran doit
-         le dire AVANT, et dire quoi corriger. */
-      var attendu = SIGNE_ATTENDU[evenementChoisi()];
-      if (attendu && ((attendu > 0 && minutes < 0) || (attendu < 0 && minutes > 0))) {
-        effet.appendChild(Kit.warnbox('Cette heure ne correspond pas à ce que vous déclarez',
-          attendu < 0
-            ? ' Une arrivée décalée à votre demande se saisit APRÈS l’heure d’arrivée ' +
-              'habituelle, et une libération anticipée AVANT l’heure de fin. Vérifiez ' +
-              'l’heure, ou changez ce que vous déclarez.'
-            : ' Un retard à la reprise se saisit APRÈS l’heure de fin habituelle. ' +
-              'Vérifiez l’heure, ou changez ce que vous déclarez.'));
-        majEntretien(false);
-        majBouton(true);
-        return;
-      }
-
-      /* §17.6 — LA DESTINATION, seulement pour un écart NÉGATIF. Un retard de
-         parent va toujours à la récupération : il n'y a rien à choisir. */
-      if (minutes < 0) {
-        blocDest.hidden = false;
-        var lb = selDest.bloc.querySelector('.lb');
-        if (lb) lb.textContent = 'Ces ' + Kit.duree(minutes) + ' se déduisent de';
-      }
-
-      /* L'effet CHIFFRÉ, rejoué par le moteur — jamais recomposé ici (B.0-5).
-         On lui donne la journée telle qu'elle sera enregistrée. */
-      var simule = {
-        type: type,
-        minutes_sup_exceptionnelles: ligne.minutes_sup_exceptionnelles || 0,
-        minutes_sup_renoncees: ligne.minutes_sup_renoncees || 0,
-        sup_dues_override: ligne.sup_dues_override === undefined ? null : ligne.sup_dues_override,
-        ecart_minutes: minutes,
-        ecart_impute_sur: etat.destination
-      };
-      var detail = Engine.detailSupDuJour(simule, conditions);
-      /* CORRECTION C1 DE LA RELECTURE — c'était `minutesSupDuJour` recopiée
-         mot pour mot dans un écran, alors que le moteur l'exporte. Une règle
-         écrite deux fois est une règle qui divergera. */
-      var totalJour = Engine.minutesSupDuJour(simule, conditions);
-
-      var phrase = Kit.ce('div');
-      phrase.appendChild(Kit.ce('b', null, 'Ce jour : ' + Kit.heures(totalJour)));
-      phrase.appendChild(document.createTextNode(
-        ' au lieu de ' + Kit.duree(conditions.minutes_sup_jour) + '.'));
-      effet.appendChild(phrase);
-
-      if (detail.minutesSurCp > 0) {
-        effet.appendChild(Kit.ce('div', 'sb',
-          Kit.duree(detail.minutesSurCp) + ' seront retirées de vos congés payés.'));
-        /* CORRECTION C5 DE LA RELECTURE DU LOT 17 — CE QUI EST RETIRÉ PEUT NE
-           PAS EXISTER.
-
-           `minutesEcartSurCp` s'ajoute inconditionnellement à `minutesCpPris` :
-           rien, ni dans le moteur ni ici, ne le confronte au disponible. Le
-           solde passait sous zéro, et le bornage d'affichage le rendait
-           indétectable — « 0 j » là où il manquait 1h45.
-
-           LE §17.6 NE TRANCHE PAS ce qui doit arriver dans ce cas : refuser,
-           basculer le surplus en sans solde, ou l'autoriser en négatif comme
-           la récupération. La question est remontée à Maria. En attendant,
-           l'application ne décide pas à sa place — mais elle ne se tait pas
-           non plus : elle DIT ce qui va se passer, avant qu'elle n'appuie. */
-        var dispoCp = Kit.cpSolde(vue.entree.resultat.compteurSortie);
-        if (detail.minutesSurCp > dispoCp) {
-          effet.appendChild(Kit.warnbox('Vos congés payés ne couvrent pas ces minutes',
-            ' Il vous en reste ' + Kit.duree(Math.max(0, dispoCp)) + ' sur ce contrat, ' +
-            'et ' + Kit.duree(detail.minutesSurCp) + ' seraient retirées. Le solde ' +
-            'passerait en négatif. Choisissez plutôt votre récupération ou le sans ' +
-            'solde si ce n’est pas ce que vous voulez.'));
-        }
-      }
-      if (detail.minutesSansSolde > 0) {
-        var retenue = (conditions.brut_mensuel_centimes != null)
-          ? Engine.montantCentimes(conditions.brut_mensuel_centimes, detail.minutesSansSolde)
-          : null;
-        effet.appendChild(Kit.ce('div', 'sb',
-          retenue != null
-            ? 'Retenue sur le salaire : ' + Kit.eur(retenue) + '.'
-            : 'La retenue ne peut pas être chiffrée, la rémunération de ce mois ' +
-              'n’est pas renseignée.'));
-      }
-      /* L'écart est réel et cohérent : c'est LÀ que la journée sort du
-         cadre, et donc là que l'interrupteur apparaît. */
-      majEntretien(true);
-
-      if (detail.ecartSurRecuperation < 0) {
-        /* CORRECTION B5 — la dette annoncée partait d'un solde BORNÉ à zéro :
-           sur un compteur déjà à −9 h, l'écran annonçait « vous devrez 1h00 »
-           au lieu de 10h00. L'erreur valait exactement la dette déjà
-           accumulée, et elle n'était pas bornée. */
-        var apres = Kit.supSolde(vue.entree.resultat.compteurSortie) + detail.ecartSurRecuperation;
-        if (apres < 0) {
-          effet.appendChild(Kit.ce('div', 'sb',
-            'Votre récupération passera en négatif : vous devrez ' +
-            Kit.heures(-apres) + '.'));
-        }
-      }
-      majBouton();
-    }
-
-    var b = Kit.bouton('btn nt', function () {
-      enregistrerEcart(d, evenementChoisi(),
-        champHeure ? champHeure.valeur() : null,
-        minutesDeclarees(), etat.destination, b, etat.entretien);
-    });
-    corps.appendChild(b);
-
-    /* `incoherent` : le signe déclaré ne correspond pas à l'événement
-       (remarque 5). L'enregistrement est refusé, et la phrase au-dessus dit
-       quoi corriger — un bouton mort sans explication ferait croire à une
-       panne. */
-    function majBouton(incoherent) {
-      var evt = evenementChoisi();
-      var minutes = minutesDeclarees();
-      if (!evt) {
-        b.textContent = etat.evenement ? 'Retirer ce que j’avais déclaré' : 'Rien à enregistrer';
-        b.disabled = !etat.evenement;
-        return;
-      }
-      b.textContent = 'Enregistrer';
-      b.disabled = (minutes === null || minutes === 0 || incoherent === true);
-    }
-
-    selEvt.select.addEventListener('change', redessiner);
-    redessiner();
-    return det;
-  }
 
   /* §21.3 — CE QUE LA JOURNÉE PORTE, ET OÙ IL SE RETIRE. Une note, pas un
      formulaire : un congé se pose et se retire depuis « Mes congés », parce
@@ -2064,38 +2180,26 @@
 
   /* --- LOT 12 : la note d'une journée --------------------------------- */
 
-  function blocNoteJournee(d) {
+  /* --- LOT 12 : la note d'une journée ---------------------------------
+
+     Le `<details>` « Un mot sur cette journée ? » a disparu : la note est
+     devenue un choix de la liste (le cinquième), au même style que les autres.
+     L'écriture, elle, n'a pas bougé — et elle ne touche toujours QUE le
+     commentaire : les colonnes de l'écart d'horaire et de l'ajustement des
+     heures ne sont pas transmises, donc la base les conserve. */
+  function enregistrerNote(d, texte, bouton) {
     var c = vue.contrat;
     var ligne = (vue.journees || {})[d] || {};
-    var det = Kit.ce('details', 'ajuster');
-    det.appendChild(Kit.ce('summary', null, 'Un mot sur cette journée ?'));
-    if (ligne.commentaire) det.open = true;
-
-    var corps = Kit.ce('div', 'ajuster-corps');
-    corps.appendChild(Kit.ce('p', 'sb q', 'Facultatif, pour vous seule.'));
-
-    var champ = Kit.champ('Note', ligne.commentaire || '',
-      { placeholder: 'Retard des parents, sortie au parc…' });
-    corps.appendChild(champ.bloc);
-
-    var b = Kit.bouton('btn nt', function () {
-      var type = Kit.typeDuJour(vue.journees, d);
-      ecrire(global.DB.enregistrerJournee({
-        contrat_id: c.id, jour: d,
-        type: ligne.type || 'presence',
-        minutes_reelles: ligne.minutes_reelles == null ? null : ligne.minutes_reelles,
-        entretien_centimes: ligne.entretien_centimes == null ? null : ligne.entretien_centimes,
-        commentaire: String(champ.input.value || '').trim() || null,
-        minutes_sup_exceptionnelles: ligne.minutes_sup_exceptionnelles || 0,
-        minutes_sup_renoncees: ligne.minutes_sup_renoncees || 0,
-        sup_dues_override: ligne.sup_dues_override === undefined ? null : ligne.sup_dues_override
-      }), b, 'Note enregistrée', { contrats: [c.id], jours: [d] });
-    });
-    b.textContent = 'Enregistrer la note';
-    corps.appendChild(b);
-
-    det.appendChild(corps);
-    return det;
+    ecrire(global.DB.enregistrerJournee({
+      contrat_id: c.id, jour: d,
+      type: ligne.type || 'presence',
+      minutes_reelles: ligne.minutes_reelles == null ? null : ligne.minutes_reelles,
+      entretien_centimes: ligne.entretien_centimes == null ? null : ligne.entretien_centimes,
+      commentaire: String(texte || '').trim() || null,
+      minutes_sup_exceptionnelles: ligne.minutes_sup_exceptionnelles || 0,
+      minutes_sup_renoncees: ligne.minutes_sup_renoncees || 0,
+      sup_dues_override: ligne.sup_dues_override === undefined ? null : ligne.sup_dues_override
+    }), bouton, 'Note enregistrée', { contrats: [c.id], jours: [d] });
   }
 
   /* Contrats qui recevront réellement une absence de Maria posée ce jour-là :
@@ -2178,33 +2282,10 @@
   }
 
   /* Les effets annoncés sont CALCULÉS PAR LE MOTEUR (§4 des specs). */
-  function apercuDesChoix(d, servis) {
-    var actuel = vue.entree.resultat;
-    var typeActuel = Kit.typeDuJour(vue.journees, d);
-
-    var presence = typeActuel === 'presence'
-      ? 'C’est déjà le cas — rien à faire'
-      : phraseEcart(simuler(d, 'presence'), actuel);
-
-    var absence = phraseAbsence(simuler(d, 'absence_enfant'), actuel);
-
-    /* Correction A2 : le décompte d'un même jour n'est PAS le même pour tous
-       les contrats — un contrat du lundi au jeudi voit un jeudi compter 3 jours
-       ouvrables (jeudi, vendredi, samedi ; reprise le lundi, RG-06) là où un
-       contrat du lundi au vendredi n'en compte qu'un. On interroge le moteur
-       pour chacun et on annonce l'étendue réelle plutôt qu'un chiffre unique. */
-    var decomptes = servis.map(function (c) {
-      return Engine.decompterJoursOuvrables(d, d, planningDuMois());
-    });
-    var mini = decomptes.length ? Math.min.apply(null, decomptes) : 0;
-    var maxi = decomptes.length ? Math.max.apply(null, decomptes) : 0;
-    var conge = servis.length
-      ? 'Congé posé pour ' + libelleServis(servis) + ', ' +
-        (mini === maxi ? '−' + mini + ' jour' + (mini > 1 ? 's' : '')
-                       : 'de −' + mini + ' à −' + maxi + ' jours selon les plannings')
-      : 'Aucun contrat ne peut recevoir ce congé';
-
-    return { presence: presence, absence: absence, conge: conge };
+  /* L'effet annoncé d'une absence est CALCULÉ PAR LE MOTEUR (§4 des specs) :
+     on rejoue le mois avec la journée forcée en absence et on compare. */
+  function apercuAbsence(d) {
+    return phraseAbsence(simuler(d, 'absence_enfant'), vue.entree.resultat);
   }
 
   /* Rejoue le mois avec la journée `d` forcée au type `type`. Fonction pure. */
@@ -2379,6 +2460,25 @@
           'S’applique ' + libelleServisA(servis) + '.',
           function (ev) { poserTypeGroupe(d, servis, 'sans_solde', ev.currentTarget,
             'Journée notée sans solde'); });
+
+        /* L'AJUSTEMENT MANUEL DES HEURES (LOT 12, V8-18) A ÉTÉ DÉPLACÉ ICI.
+
+           Il occupait un `<details>` permanent sur la feuille du jour, à côté
+           de la déclaration d'horaire qui couvre les mêmes minutes par un
+           chemin plus sûr — Maria déclarait un événement, ou bien elle
+           bricolait un compteur, sans savoir lequel des deux faisait foi.
+
+           IL N'EST PAS SUPPRIMÉ (brief du 23 août, §4) : il se range dans les
+           cas particuliers, avec la phrase qui dit quand s'en servir. Les trois
+           gestes du lot 12 sont intacts : ajouter des minutes, renoncer aux
+           siennes, et décider au cas par cas si elles restent dues quand
+           l'enfant est absent (A8). */
+        corps.appendChild(Kit.section('Ajuster mes heures ce jour-là'));
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Pour les cas que la déclaration d’horaire ne couvre pas : ajouter des ' +
+          'minutes travaillées au-delà du contrat, ou renoncer à celles qui vous ' +
+          'sont dues.'));
+        corps.appendChild(blocAjusterHeures(d));
 
         avertirClos(corps, d);
         avertirEcrasement(corps, d, servis);
@@ -2704,10 +2804,73 @@
       { contrats: [vue.contrat.id], jours: [d] });
   }
 
+  /* LE SIXIÈME CHOIX : DÉFAIRE.
+
+     « Il faut qu'elle puisse corriger » (Adrien, 23 août). Ce geste retire ce
+     que la liste a posé — une déclaration d'horaire, une absence — et rend la
+     journée ordinaire. Il ne touche pas à ce qui se retire ailleurs : la note
+     de la journée et l'ajustement manuel des heures ont chacun leur écran, et
+     les effacer ici les ferait disparaître sans que Maria l'ait demandé
+     (décision d'Adrien du 23 août : « chaque choix ne touche que son domaine »).
+
+     Quand la journée ne porte QUE ce qui est retiré, on supprime la ligne :
+     l'absence de ligne est l'état « journée ordinaire » (saisie par exception,
+     B.0-2). Sinon on la réécrit, ce qui reste et ce qui part explicitement. */
+  function remettreEnJourneeOrdinaire(d, servis, bouton) {
+    var c = vue.contrat;
+    var type = Kit.typeDuJour(vue.journees, d);
+    if (TYPES_ABSENCE_MARIA.indexOf(type) !== -1) {
+      return retirerAbsence(d, servis, bouton);
+    }
+    var ligne = (vue.journees || {})[d] || {};
+    /* GARDE-FOU B2 : un congé posé à l'heure vit sur les mêmes colonnes que
+       l'écart. Il ne se retire que depuis « Mes congés », où il vaut peut-être
+       pour d'autres enfants. Ce choix n'est pas offert sur une telle journée ;
+       le refus est répété ici pour que le chemin n'existe nulle part. */
+    if (ligne.ecart_evenement === 'conge_horaire') {
+      Kit.toast('Un congé est posé sur cette journée : il se retire depuis ' +
+        '« Mes congés ».', true);
+      return;
+    }
+    var garde = (ligne.commentaire != null && String(ligne.commentaire) !== '') ||
+      (ligne.minutes_sup_exceptionnelles || 0) > 0 ||
+      (ligne.minutes_sup_renoncees || 0) > 0 ||
+      (ligne.sup_dues_override !== undefined && ligne.sup_dues_override !== null) ||
+      ligne.minutes_reelles != null || ligne.entretien_centimes != null;
+
+    if (!garde) return poserPresence(d, bouton);
+
+    ecrire(global.DB.enregistrerJournee({
+      contrat_id: c.id, jour: d, type: 'presence',
+      minutes_reelles: ligne.minutes_reelles == null ? null : ligne.minutes_reelles,
+      entretien_centimes: ligne.entretien_centimes == null ? null : ligne.entretien_centimes,
+      commentaire: ligne.commentaire == null ? null : ligne.commentaire,
+      minutes_sup_exceptionnelles: ligne.minutes_sup_exceptionnelles || 0,
+      minutes_sup_renoncees: ligne.minutes_sup_renoncees || 0,
+      sup_dues_override: ligne.sup_dues_override === undefined
+        ? null : ligne.sup_dues_override,
+      /* Les quatre colonnes de l'écart repartent à `null` ENSEMBLE : une ligne
+         à demi effacée serait refusée par `journee_ecart_coherent`, et surtout
+         elle se relirait de travers. */
+      ecart_minutes: null, ecart_evenement: null,
+      ecart_heure_reelle: null, ecart_impute_sur: null,
+      /* §20.6 — retirer une déclaration REND l'indemnité. */
+      entretien_du: true
+    }), bouton, 'Journée remise comme les autres',
+      { contrats: [c.id], jours: [d] });
+  }
+
   function poserAbsenceEnfant(d, bouton) {
+    var ligne = (vue.journees || {})[d] || {};
+    /* DÉCISION D'ADRIEN, 23 AOÛT : « CHAQUE CHOIX NE TOUCHE QUE SON DOMAINE ».
+       Cette écriture transmettait `commentaire: null` : marquer une absence
+       EFFAÇAIT la note que Maria avait écrite sur la journée, sans un mot,
+       alors que poser une note, elle, préservait l'écart déclaré. Une absence
+       d'enfant ne dit rien de ce que Maria avait noté : la note reste. */
     ecrire(global.DB.enregistrerJournee({
       contrat_id: vue.contrat.id, jour: d, type: 'absence_enfant',
-      minutes_reelles: null, entretien_centimes: null, commentaire: null
+      minutes_reelles: null, entretien_centimes: null,
+      commentaire: ligne.commentaire == null ? null : ligne.commentaire
     }), bouton, vue.contrat.prenom_enfant + ' ' + Kit.accordDe(vue.contrat, 'noté') +
       ' ' + Kit.accordDe(vue.contrat, 'absent'),
       { contrats: [vue.contrat.id], jours: [d] });
