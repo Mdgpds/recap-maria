@@ -474,7 +474,11 @@ async function ouvrirFiche(id) {
      sont sortis de cette feuille, ils passent par un avenant. */
   boutonExact(corps, 'Modifier l’identité').click();
   await pause(150);
-  assert(txt(sheet).indexOf('ne figure sur aucun document remis aux familles') !== -1,
+  /* LOT 22 §22.2 — la phrase est reprise mot pour mot de la spécification :
+     « Réduite et rangée avec le contrat. Jamais sur le récapitulatif ni dans
+     l'export. » Elle dit la même chose que l'ancienne, en nommant les deux
+     endroits qui inquiètent — le document remis à la famille, et l'export. */
+  assert(txt(sheet).indexOf('Jamais sur le récapitulatif ni dans l’export') !== -1,
     'P7 : la fiche dit où la photo n’apparaît PAS');
   assert(!!boutonExact(sheet, 'Choisir une photo'), 'P7 : « Choisir une photo »');
   assert(!!boutonExact(sheet, 'Retirer la photo'), 'P7 : « Retirer la photo »');
@@ -607,7 +611,9 @@ async function ouvrirFiche(id) {
     'P10 : le récapitulatif de période n’est plus dans le Menu');
   assert(!parTexte(corps, '.menu', 'Anciens contrats'),
     'P10 : « Anciens contrats » non plus');
-  assert(!!parTexte(corps, '.menu', 'Familles'), 'P10 : « Familles » est là');
+  /* LOT 22 §22.1 — « Mes enfants » remplace « Familles » : Maria pense par
+     enfant. La vue par foyer est reprise en bas de la page « Mes enfants ». */
+  assert(!!parTexte(corps, '.menu', 'Mes enfants'), 'LOT 22 : « Mes enfants » est là');
   assert(!!parTexte(corps, '.menu', 'Ajouter un enfant'), 'P10 : « Ajouter un enfant » aussi');
 
   /* ==================================================================== */

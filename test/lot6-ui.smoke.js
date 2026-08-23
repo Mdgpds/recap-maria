@@ -235,7 +235,19 @@ var sheet = document.getElementById('sheet');
   cartes[0].click();
   await pause(80);
 
-  assert(tabbar.hidden === true, '§1 : pas de barre d’onglets hors des écrans racine');
+  /* LOT 22 §22.3 — LA BARRE SUIT DÉSORMAIS LES ÉCRANS INTÉRIEURS.
+     Elle disparaissait dès qu'on descendait d'un cran, et sur un téléphone en
+     mode installé — sans barre de navigateur — il ne restait qu'un chevron de
+     retour pour dire où l'on est. Elle reste affichée, avec l'onglet PARENT
+     actif : « Accueil » sur l'espace d'un enfant. Le §22.3 prime ici sur le
+     §B.1 du référentiel, qui parle encore de trois écrans racine. */
+  assert(tabbar.hidden === false,
+    '§22.3 : la barre d’onglets reste visible sur l’espace enfant');
+  var ongletActif = tabbar.querySelector('button.on');
+  assert(!!ongletActif && ongletActif.getAttribute('data-onglet') === 'accueil',
+    '§22.3 : et c’est « Accueil », l’onglet parent, qui est actif');
+  assert(ongletActif.getAttribute('aria-current') === 'page',
+    '§22.3 : l’état actif est annoncé, pas seulement peint');
   assert(!!barre.querySelector('.bk'), 'l’espace enfant a un bouton retour');
   assert(txt(barre).indexOf('Léa — mai 2026') !== -1, 'titre de la barre : enfant et mois');
   assert(!!corps.querySelector('table.cal'), 'calendrier présent');
@@ -424,7 +436,13 @@ var sheet = document.getElementById('sheet');
     'LOT 8 : la rubrique « Consulter » a disparu du Menu');
   assert(!parTexte(corps, '.menu', 'Anciens contrats'),
     'LOT 8 : « Anciens contrats » n’est plus une entrée du Menu');
-  assert(!!parTexte(corps, '.menu', 'Familles'), 'LOT 8 : le Menu propose « Familles »');
+  /* LOT 22 §22.1 — « Mes enfants » REMPLACE « Familles » dans le Menu. La vue
+     par famille n'est pas perdue : elle est reprise en bas de la page « Mes
+     enfants ». Maria pense par enfant, pas par foyer. */
+  assert(!parTexte(corps, '.menu', 'Familles'),
+    'LOT 22 : « Familles » n’est plus une entrée du Menu');
+  var ligneEnfants = parTexte(corps, '.menu', 'Mes enfants');
+  assert(!!ligneEnfants, 'LOT 22 : le Menu propose « Mes enfants »');
   assert(!!parTexte(corps, '.menu', 'Ajouter un enfant'), 'le Menu garde « Ajouter un enfant »');
 
   /* ---------- 7bis. Onglet Historique ---------- */

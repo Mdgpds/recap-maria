@@ -195,16 +195,29 @@ body {
    marge. D'où les trois précautions ci-dessous — police légèrement réduite,
    marges internes resserrées, et interdiction absolue de couper un mot. Une
    étiquette tronquée en « Mes cong… » serait pire que pas d'étiquette. */
+/* LOT 22 §22.3 — la barre est un peu plus aérée : chaque bouton fait au moins
+   44 px de haut, seuil en dessous duquel une cible tactile se rate une fois
+   sur trois sur un téléphone tenu d'une main. */
 .tabbar button {
-  flex: 1; text-align: center; padding: 11px 2px 13px;
+  flex: 1; text-align: center; padding: 7px 2px 8px;
+  min-height: 44px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px;
   font: inherit; font-size: 11.5px; color: var(--ink3); font-weight: 600;
   background: none; border: none; cursor: pointer;
   white-space: nowrap; overflow: visible; letter-spacing: -.1px;
-  min-width: 0;
+  min-width: 0; position: relative;
+  border-radius: 11px; margin: 3px 2px;
 }
-.tabbar button .i { display: block; font-size: 20px; margin-bottom: 1px; opacity: .55; }
-.tabbar button.on { color: var(--ac); }
-.tabbar button.on .i { opacity: 1; }
+.tabbar button .i { display: block; line-height: 0; }
+.tabbar button .i svg { width: 22px; height: 22px; display: block; }
+
+/* LOT 22 §22.3 — L'ONGLET ACTIF EST UNE PASTILLE PLEINE, pas un simple
+   changement de couleur. Une teinte seule se perd au soleil, sur un écran
+   baissé, ou pour qui distingue mal les couleurs : le fond dit la même chose
+   sans elle. La graisse renforcée la redit une troisième fois. */
+.tabbar button.on {
+  color: var(--acd); background: var(--acs); font-weight: 700;
+}
 
 /* ------------------------------------------------------------------------ */
 /* Titres de section, boutons                                                */
@@ -500,6 +513,9 @@ table.cal td.futur:active { transform: none; }
 .issue .row .btn { margin-bottom: 0; }
 .issue .warnbox { margin-top: 6px; }
 .choice.off { opacity: .55; cursor: default; }
+/* Lot 22 §22.2 — la photo en tête de la fiche : l'aperçu passe en grand,
+   parce que c'est le portrait de l'enfant et non une vignette de formulaire. */
+.photo-fld.grand .apercu-photo { width: 96px; height: 96px; }
 .rappel-jour { color: var(--wa); margin-top: 6px; }
 .rappel-jour b { font-weight: 700; }
 
@@ -958,7 +974,7 @@ button.coche:active { transform: scale(.99); }
    pas, et « il y a quelque chose » sans dire combien n'aide personne. */
 .tabbar button { position: relative; }
 .pastille-onglet {
-  position: absolute; top: 6px; left: 50%; margin-left: 4px;
+  position: absolute; top: 2px; left: 50%; margin-left: 4px;
   min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
   border-radius: 999px; background: var(--wa); color: #fff;
   font-size: 10.5px; font-weight: 800; line-height: 17px; text-align: center;

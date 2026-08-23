@@ -353,8 +353,14 @@ var sheet = document.getElementById('sheet');
     '§16.4 : la ligne des rappels affiche son VRAI réglage, lu en base');
   assert(!!parTexte(corps, '.menu', 'Mon nom sur les documents'),
     '§16.2 : le Menu propose la saisie du nom');
-  assert(txt(corps).indexOf('Papillon') !== -1,
-    '§16.4 : et la ligne des familles est bien renseignée, elle aussi');
+  /* LOT 22 §22.1 — la ligne « Familles » est devenue « Mes enfants », et son
+     sous-titre porte les DEUX comptes calculés au lieu des noms de foyers. La
+     garde du §16.4 vaut toujours : une ligne qui part sur « Chargement… » doit
+     être levée par quelqu'un qui sait la lever. */
+  var ligneEnfants = parTexte(corps, '.menu', 'Mes enfants');
+  assert(!!ligneEnfants, '§22.1 : le Menu porte l’entrée « Mes enfants »');
+  assert(txt(ligneEnfants).indexOf('en garde') !== -1,
+    '§16.4 : et son sous-titre est bien renseigné, lui aussi');
 
   /* ==================================================================== */
   console.log('');

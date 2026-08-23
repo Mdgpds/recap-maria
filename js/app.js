@@ -34,6 +34,29 @@
      c'est lui qui décide de ce qui est un écran RACINE (pile remise à zéro,
      barre visible) et de ce qui est un sous-écran atteint par un retour. */
   var ONGLETS = ['accueil', 'historique', 'conges', 'menu'];
+
+  /* LOT 22 §22.3 — LA BARRE SUIT LES ÉCRANS INTÉRIEURS.
+
+     Elle disparaissait dès qu'on descendait d'un cran : ouvrir l'espace d'un
+     enfant, une fiche, un document, et Maria n'avait plus qu'un chevron de
+     retour. Sur un téléphone en mode installé, sans barre de navigateur, c'est
+     le seul repère qui reste — et il ne dit pas où l'on est.
+
+     La barre reste donc affichée partout, avec l'onglet PARENT actif :
+     « Accueil » sur un espace enfant, « Menu » sur une fiche de contrat. Ce
+     n'est pas un raccourci de navigation de plus : c'est la réponse à « où
+     suis-je ». Le §22.3 le demande, et il prime sur le §B.1 du référentiel,
+     qui dit encore que la barre n'existe que sur trois écrans racine.
+
+     Un écran absent de cette table n'a pas de parent : la barre y reste
+     masquée. C'est le cas de la connexion et du verrou. */
+  var ONGLET_PARENT = {
+    accueil: 'accueil', enfant: 'accueil', document: 'accueil', finDeMois: 'accueil',
+    historique: 'historique', bilan: 'historique', periode: 'historique',
+    conges: 'conges',
+    menu: 'menu', fiche: 'menu', familles: 'menu', enfants: 'menu',
+    familiarisation: 'menu', reprise: 'menu', rappels: 'menu', compte: 'menu'
+  };
   var ECRANS = {
     accueil: 'UiAccueil',
     conges: 'UiConges',
@@ -54,6 +77,9 @@
        initiative, l'écran vit dans `ui-accueil.js`. Signalé en restitution. */
     finDeMois: 'UiAccueil',
     familles: 'UiMenu',         // lot 8 — rendu par le module du Menu
+    /* LOT 22 §22.1 — la page « Mes enfants », rendue par le même module que le
+       Menu dont elle est la première entrée. */
+    enfants: 'UiMenu',
     /* LOT 17 §17.9 — `modeles` et `modifGroupee` sortent du registre : plus
        aucune entrée de Menu n'y mène, et une route encore branchée serait un
        écran atteignable par un lien de retour ou une URL restée en cache.
@@ -394,9 +420,15 @@
     el.barre.className = 'bar';
     el.barre.hidden = false;
     el.corps.scrollTop = 0;
-    el.tabbar.hidden = ONGLETS.indexOf(ecran) === -1;
+    var parent = ONGLET_PARENT[ecran] || null;
+    el.tabbar.hidden = !parent;
     Array.prototype.forEach.call(el.tabbar.querySelectorAll('button'), function (b) {
-      b.classList.toggle('on', b.getAttribute('data-onglet') === ecran);
+      var actif = b.getAttribute('data-onglet') === parent;
+      b.classList.toggle('on', actif);
+      /* L'état est ANNONCÉ, pas seulement peint : une pastille de couleur ne
+         dit rien à qui ne la voit pas. */
+      if (actif) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
     });
 
     /* Barre de retour posée AVANT de déléguer : un écran qui échoue à charger

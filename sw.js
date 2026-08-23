@@ -75,7 +75,14 @@
    requêtes : l'application servirait un `app.js` qui route vers un écran que
    le cache ne connaît pas — un mélange de deux versions, et l'écran de la
    période introuvable une fois sur deux. */
-var CACHE = 'recap-familiarisation-v1';
+/* LOT 22 — NOM DE CACHE CHANGÉ. Aucun fichier n'est ajouté par ce lot (la
+   page « Mes enfants » vit dans `js/ui-menu.js`, déjà pré-caché), mais
+   `index.html`, `css/style.css`, `js/app.js`, `js/ui-menu.js` et
+   `js/ui-contrat.js` changent tous : les icônes SVG de la barre d'onglets sont
+   dans la page elle-même. Sans incrément, le service worker servirait
+   l'ancienne page avec le nouveau CSS — une barre stylée pour des SVG, avec
+   des caractères Unicode dedans. */
+var CACHE = 'recap-mes-enfants-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
