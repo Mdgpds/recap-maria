@@ -318,7 +318,15 @@ function celluleDu(numero) {
   await pause(500);
   contient(corps, 'Familiarisation', 'le document porte le bloc de familiarisation');
   contient(corps, 'Heures déclarées', 'avec les heures');
-  contient(corps, 'Taux horaire net', 'et le taux, pour que la famille vérifie');
+  /* CORRECTION C2 — le détail ne s'affiche que s'il reconstitue son total.
+     Le brut de ce décor est rond (1 404,00 € sur 195 h = 7,20 € pile) : la
+     multiplication tombe juste, et le document la montre pour que la famille
+     refasse le calcul de tête. */
+  contient(corps, '2h30 × 7,20 € de l’heure',
+    'C2 : la multiplication est affichée, et elle reconstitue le total');
+  contient(corps, '18,00 €', 'C2 : et 2,5 h × 7,20 € font bien 18,00 €');
+  absent(corps, 'ne redonne pas exactement ce total',
+    'C2 : aucune excuse affichée quand le détail tombe juste');
   contient(corps, 'Garde mensualisée', 'puis le bloc de garde');
   contient(corps, '8 jours travaillés sur 22',
     'et le quotient du prorata, hors familiarisation');
@@ -430,6 +438,100 @@ function celluleDu(numero) {
   contient(corps, '20 jours × 5,50 €',
     '§20.6 A3 : et le détail reconstitue le total — 21 jours de présence, ' +
     'moins celui dont l’indemnité a été retirée');
+
+  /* ==================================================================== */
+  /* CORRECTION B3 — LE REJEU DE L'ESPACE ENFANT VOIT LA PÉRIODE          */
+  /* ==================================================================== */
+  console.log('\n--- B3 : l’aperçu d’un geste annonce l’écart du GESTE ---');
+
+  /* On se place à la fin du mois pour que le 22 septembre soit une journée
+     passée, donc touchable — on ne saisit pas l'avenir (V8-05). */
+  window.App.aujourdhui = function () { return '2026-09-30'; };
+  journees['2026-09-22'] = {
+    id: 'j-2026-09-22', contrat_id: 'c-noah', jour: '2026-09-22',
+    type: 'absence_enfant', minutes_reelles: null, entretien_centimes: null,
+    commentaire: null, entretien_du: true,
+    minutes_sup_exceptionnelles: 0, minutes_sup_renoncees: 0, sup_dues_override: null,
+    ecart_minutes: null, ecart_evenement: null, ecart_heure_reelle: null,
+    ecart_impute_sur: null
+  };
+  window.App.invalider();
+  window.App.aller('enfant', { contratId: 'c-noah', annee: 2026, mois: 9 });
+  await pause(500);
+
+  var cell22 = celluleDu(22);
+  assert(!!(cell22 && cell22.getAttribute('role') === 'button'),
+    'le 22 septembre est touchable');
+  cell22.click();
+  await pause(250);
+
+  /* AVANT LA CORRECTION : « + 82,50 € ». Le rejeu ne recevait pas la période,
+     voyait quinze journées mensualisées de plus que la réalité, et l'écart
+     annoncé était celui de l'oubli, pas celui du geste. */
+  contient(sheet, 'Entretien de la journée rétabli (+5,50 €)',
+    'B3 : l’aperçu annonce l’entretien d’UNE journée, pas celui de quinze');
+  absent(sheet, '82,50 €', 'B3 : et surtout pas le montant de l’oubli');
+  window.Kit.fermerFeuille();
+  await pause(120);
+
+  /* Le garde-fou : `simulerLignes` et la chaîne doivent voir le même jeu de
+     clés. C'est la troisième fois que cet appel oublie un argument. */
+  console.log('\n--- B3 : le garde-fou du rejeu ---');
+  var ancien = window.ChaineMois.calculerMoisAvecRepli;
+  var vues = null;
+  window.ChaineMois.calculerMoisAvecRepli = function (params) {
+    vues = Object.keys(params).sort();
+    return ancien(params);
+  };
+  window.App.aller('enfant', { contratId: 'c-noah', annee: 2026, mois: 9 });
+  await pause(500);
+  celluleDu(22).click();
+  await pause(250);
+  window.ChaineMois.calculerMoisAvecRepli = ancien;
+  egal((vues || []).join(','),
+    'annee,compteurEntree,conditions,contrat,imputations,journees,mois,periodesFamiliarisation',
+    'B3 : le rejeu passe exactement les mêmes entrées que la chaîne');
+  window.Kit.fermerFeuille();
+  await pause(120);
+
+  /* ==================================================================== */
+  /* CORRECTION C4 — UNE PÉRIODE À CHEVAL SE TOTALISE MOIS PAR MOIS       */
+  /* ==================================================================== */
+  console.log('\n--- C4 : chaque mois est payé au taux de SON avenant ---');
+
+  /* Un second avenant au 1er septembre : 1 560,00 € brut sur 195 h, soit
+     8,00 € de l'heure pile. Août reste à 7,20 €. */
+  AVENANTS.push(Decor.avenantDe(NOAH, {
+    id: 'a2', date_effet: '2026-09-01',
+    brut_mensuel_centimes: 156000, net_mensuel_centimes: 119000
+  }));
+  AVENANTS[1].numero = 2;
+
+  periodes = [{ id: 'p2', contrat_id: 'c-noah',
+                date_debut: '2026-08-24', date_fin: '2026-09-04' }];
+  journees['2026-08-25'] = {
+    id: 'j1', contrat_id: 'c-noah', jour: '2026-08-25', type: 'familiarisation',
+    minutes_reelles: 120, entretien_centimes: null, commentaire: null, entretien_du: true
+  };
+  journees['2026-09-02'] = {
+    id: 'j2', contrat_id: 'c-noah', jour: '2026-09-02', type: 'familiarisation',
+    minutes_reelles: 120, entretien_centimes: null, commentaire: null, entretien_du: true
+  };
+  window.App.invalider();
+  window.App.aller('familiarisation', { contratId: 'c-noah' });
+  await pause(500);
+
+  contient(corps, 'traverse un changement de conditions',
+    'C4 : l’écran DIT que la période traverse un avenant, au lieu de le taire');
+  contient(corps, 'Août 2026', 'C4 : le détail est découpé par mois');
+  contient(corps, 'Septembre 2026', 'C4 : les deux mois sont nommés');
+
+  /* 2 h à 7,20 € = 14,40 € en août, 2 h à 8,00 € = 16,00 € en septembre.
+     AVANT LA CORRECTION : tout au taux d'août, soit 4 h × 7,20 € = 28,80 €. */
+  contient(corps, '4h00 — 30,40 € brut',
+    'C4 : le total additionne deux mois calculés chacun à SON taux');
+  absent(corps, '28,80 €', 'C4 : et surtout pas tout au taux du premier mois');
+  contient(corps, '2 jours déclarés sur 10', 'C4 : le compte des jours ouvrés couvre les deux mois');
 
   console.log('\n' + (echecs ? echecs + ' échec(s).' : 'Tout est conforme.'));
   process.exit(echecs ? 1 : 0);

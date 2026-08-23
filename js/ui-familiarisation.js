@@ -104,20 +104,58 @@
   /* Les conditions applicables, et le taux                              */
   /* ------------------------------------------------------------------ */
 
-  /* Les conditions du mois où la période COMMENCE. Une familiarisation ne
-     traverse pas un changement d'avenant en pratique (cinq à dix jours), mais
-     si elle le faisait, le total affiché ici resterait indicatif — le
-     récapitulatif de chaque mois, lui, est calculé avec SES conditions. La
-     phrase sous le total le dit plutôt que de laisser croire au contraire. */
-  function conditions() {
-    if (!vue.periode) return null;
-    var p = vue.periode.date_debut.split('-');
+  /* CORRECTION C4 DE LA RELECTURE DU LOT 20 — LE TOTAL EST CALCULÉ MOIS PAR
+     MOIS, PAS À UN SEUL TAUX.
+
+     Cet écran retenait l'avenant du mois où la période COMMENCE et totalisait
+     tout à ce taux-là. Un commentaire promettait qu'une phrase sous le total
+     préviendrait — cette phrase n'était pas rendue. Le code affirmait une
+     protection qu'il n'avait pas.
+
+     Le risque est faible (une familiarisation dure cinq à dix jours, RG-14),
+     mais le contrôle n° 10 du lot est clair : le taux vient de l'avenant en
+     vigueur DU MOIS. Plutôt qu'un avertissement, on fait le calcul juste — et
+     l'écran n'a plus rien à excuser. C'est aussi ce que fait le
+     récapitulatif de chaque mois : les deux ne peuvent plus diverger. */
+  function conditionsDuMois(dateStr) {
+    var p = String(dateStr).split('-');
     return Engine.conditionsApplicables(vue.avenants, Number(p[0]), Number(p[1]));
   }
 
-  function planning() {
-    var c = conditions();
-    return (c && c.jours_planning) || null;
+  /* Les conditions du premier jour de la période — pour ce qui ne dépend pas
+     d'un mois en particulier (le libellé de la règle, l'indemnité affichée). */
+  function conditionsInitiales() {
+    return vue.periode ? conditionsDuMois(vue.periode.date_debut) : null;
+  }
+
+  /* Les jours ouvrés de la période, découpés par mois, chacun avec SES
+     conditions. Le planning lui-même vient de l'avenant : un avenant qui
+     ajoute le mercredi ajoute des jours ouvrés à partir de son mois, et pas
+     avant. */
+  function tranchesParMois() {
+    if (!vue.periode) return [];
+    var out = [];
+    var d = vue.periode.date_debut;
+    var fin = vue.periode.date_fin;
+    /* Borne dure : une période aberrante ne doit pas faire tourner l'écran
+       indéfiniment. Cent vingt mois, c'est déjà mille fois trop. */
+    for (var garde = 0; garde < 120 && d <= fin; garde++) {
+      var an = Number(d.slice(0, 4));
+      var mo = Number(d.slice(5, 7));
+      var dernierDuMois = Kit.iso(an, mo, Kit.nbJoursDansMois(an, mo));
+      var borneFin = dernierDuMois < fin ? dernierDuMois : fin;
+      var cond = conditionsDuMois(d);
+      out.push({
+        annee: an, mois: mo,
+        conditions: cond,
+        jours: Engine.joursOuvresDePeriode(d, borneFin,
+          (cond && cond.jours_planning) || null)
+      });
+      if (borneFin >= fin) break;
+      var suivant = mo === 12 ? { a: an + 1, m: 1 } : { a: an, m: mo + 1 };
+      d = Kit.iso(suivant.a, suivant.m, 1);
+    }
+    return out;
   }
 
   /* ------------------------------------------------------------------ */
@@ -191,7 +229,8 @@
     corps.appendChild(Kit.section('Période'));
     corps.appendChild(Kit.fld('Du', Kit.dateLongue(vue.periode.date_debut)));
     corps.appendChild(Kit.fld('Au', Kit.dateLongue(vue.periode.date_fin)));
-    corps.appendChild(phraseDeLaRegle());
+    var tranches = tranchesParMois();
+    corps.appendChild(phraseDeLaRegle(tranches));
 
     if (verrou) {
       corps.appendChild(Kit.note('Période non modifiable', verrou));
@@ -201,7 +240,7 @@
       corps.appendChild(bModif);
     }
 
-    corps.appendChild(blocJourParJour(verrou));
+    corps.appendChild(blocJourParJour(verrou, tranches));
 
     /* Plusieurs périodes sur un même contrat restent possibles en base (elles
        ne peuvent simplement pas se chevaucher). L'écran en affiche une ; on ne
@@ -215,24 +254,47 @@
     }
   }
 
-  function phraseDeLaRegle() {
-    var cd = conditions();
-    var taux = (cd && cd.brut_mensuel_centimes != null)
-      ? Engine.montantCentimes(cd.brut_mensuel_centimes, 60) : null;
+  /* Le taux horaire d'un jeu de conditions, demandé au moteur sur soixante
+     minutes. `null` quand le mois n'a pas de rémunération connue : on
+     n'affiche alors aucun taux plutôt que d'en inventer un à zéro. */
+  function tauxHoraire(cond) {
+    if (!cond || cond.brut_mensuel_centimes == null) return null;
+    return Engine.montantCentimes(cond.brut_mensuel_centimes, 60);
+  }
+
+  function phraseDeLaRegle(tranches) {
+    /* Un seul taux sur toute la période : on le nomme. Plusieurs — la période
+       traverse un avenant : on ne choisit pas, on dit que chaque mois a le
+       sien, et le détail par mois plus bas le montre. */
+    var taux = [];
+    tranches.forEach(function (t) {
+      if (!t.jours.length) return;
+      var x = tauxHoraire(t.conditions);
+      if (x != null && taux.indexOf(x) === -1) taux.push(x);
+    });
+    var phrase;
+    if (taux.length === 1) {
+      phrase = 'Au taux du contrat : ' + Kit.eur(taux[0]) + ' brut de l’heure. ';
+    } else if (taux.length > 1) {
+      phrase = 'Cette période traverse un changement de conditions : chaque mois ' +
+        'est payé au taux de son avenant, et le détail ci-dessous le montre. ';
+    } else {
+      phrase = '';
+    }
     return Kit.note('Seules les heures déclarées sont payées',
-      (taux != null ? 'Au taux du contrat : ' + Kit.eur(taux) + ' brut de l’heure. ' : '') +
-      'Pas de minutes supplémentaires pendant cette période. ' +
+      phrase + 'Pas de minutes supplémentaires pendant cette période. ' +
       'Vos congés payés s’acquièrent normalement.');
   }
 
-  function blocJourParJour(verrou) {
+  function blocJourParJour(verrou, tranches) {
     var bloc = Kit.ce('div');
     bloc.appendChild(Kit.section('Jour par jour'));
 
-    var jours = Engine.joursOuvresDePeriode(
-      vue.periode.date_debut, vue.periode.date_fin, planning());
+    var avecJours = tranches.filter(function (t) { return t.jours.length; });
+    var nbJours = 0;
+    avecJours.forEach(function (t) { nbJours += t.jours.length; });
 
-    if (!jours.length) {
+    if (!nbJours) {
       bloc.appendChild(Kit.ce('p', 'vide',
         'Aucun jour de garde dans cette période : elle ne tombe que sur des ' +
         'jours qui ne sont pas au planning de ce contrat.'));
@@ -240,61 +302,85 @@
     }
 
     var totalMinutes = 0;
+    var totalCentimes = 0;
     var declares = 0;
     var aDeclarer = 0;
+    var chiffrable = true;
 
-    jours.forEach(function (d) {
-      var l = vue.journees[d] || null;
-      var minutes = (l && l.minutes_reelles != null && l.minutes_reelles > 0)
-        ? l.minutes_reelles : 0;
-      var entretien = !(l && l.entretien_du === false);
-      var etat;
-      if (minutes > 0) {
-        totalMinutes += minutes;
-        declares++;
-        etat = Kit.heures(minutes) + (entretien ? ' · entretien' : ' · sans entretien');
-      } else if (d > vue.aujourdhui) {
-        etat = 'à venir';
-      } else {
-        aDeclarer++;
-        etat = 'à déclarer';
+    avecJours.forEach(function (t) {
+      var minutesDuMois = 0;
+
+      /* L'intitulé du mois n'apparaît QUE si la période en traverse plusieurs :
+         sur une familiarisation de cinq jours, il n'apprendrait rien. */
+      if (avecJours.length > 1) {
+        bloc.appendChild(Kit.ce('div', 'sb q', Kit.moisCapitale(t.annee, t.mois)));
       }
 
-      var ligne = Kit.ce('div', 'fld' +
-        (minutes === 0 && d <= vue.aujourdhui ? ' a-declarer' : '') +
-        (d > vue.aujourdhui ? ' futur' : ''));
-      ligne.appendChild(Kit.ce('span', 'lb', Kit.jourLong(d)));
-      ligne.appendChild(Kit.ce('span', 'vl', etat));
-      /* Un jour à venir ne se déclare pas : on ne saisit pas l'avenir
-         (V8-05). Sur une période verrouillée, aucun jour ne s'ouvre. */
-      if (!verrou && d <= vue.aujourdhui) {
-        ligne.setAttribute('role', 'button');
-        ligne.setAttribute('tabindex', '0');
-        ligne.addEventListener('click', function () { ouvrirJour(d); });
-        ligne.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrirJour(d); }
-        });
+      t.jours.forEach(function (d) {
+        var l = vue.journees[d] || null;
+        var minutes = (l && l.minutes_reelles != null && l.minutes_reelles > 0)
+          ? l.minutes_reelles : 0;
+        var entretien = !(l && l.entretien_du === false);
+        var etat;
+        if (minutes > 0) {
+          minutesDuMois += minutes;
+          declares++;
+          etat = Kit.heures(minutes) + (entretien ? ' · entretien' : ' · sans entretien');
+        } else if (d > vue.aujourdhui) {
+          etat = 'à venir';
+        } else {
+          aDeclarer++;
+          etat = 'à déclarer';
+        }
+
+        var ligne = Kit.ce('div', 'fld' +
+          (minutes === 0 && d <= vue.aujourdhui ? ' a-declarer' : '') +
+          (d > vue.aujourdhui ? ' futur' : ''));
+        ligne.appendChild(Kit.ce('span', 'lb', Kit.jourLong(d)));
+        ligne.appendChild(Kit.ce('span', 'vl', etat));
+        /* Un jour à venir ne se déclare pas : on ne saisit pas l'avenir
+           (V8-05). Sur une période verrouillée, aucun jour ne s'ouvre. */
+        if (!verrou && d <= vue.aujourdhui) {
+          ligne.setAttribute('role', 'button');
+          ligne.setAttribute('tabindex', '0');
+          ligne.addEventListener('click', function () { ouvrirJour(d); });
+          ligne.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrirJour(d); }
+          });
+        }
+        bloc.appendChild(ligne);
+      });
+
+      /* CORRECTION C4 — LE MONTANT DU MOIS, AU TAUX DE SON AVENANT.
+         Un seul arrondi par mois, sur le total de ses minutes : c'est
+         exactement ce que fait `calculerMois`, et c'est ce qui garantit que ce
+         total et le récapitulatif du mois ne divergent jamais. */
+      totalMinutes += minutesDuMois;
+      if (minutesDuMois > 0) {
+        if (t.conditions && t.conditions.brut_mensuel_centimes != null) {
+          totalCentimes += Engine.montantCentimes(
+            t.conditions.brut_mensuel_centimes, minutesDuMois);
+        } else {
+          chiffrable = false;
+        }
       }
-      bloc.appendChild(ligne);
     });
 
-    var cd = conditions();
-    var montant = (cd && cd.brut_mensuel_centimes != null && totalMinutes > 0)
-      ? Engine.montantCentimes(cd.brut_mensuel_centimes, totalMinutes) : null;
     bloc.appendChild(Kit.fld('Total déclaré',
-      Kit.heures(totalMinutes) + (montant != null ? ' — ' + Kit.eur(montant) + ' brut' : '')));
+      Kit.heures(totalMinutes) +
+      (totalMinutes > 0 && chiffrable ? ' — ' + Kit.eur(totalCentimes) + ' brut' : '')));
     bloc.appendChild(Kit.ce('p', 'sb q',
       declares + ' jour' + (declares > 1 ? 's' : '') + ' déclaré' + (declares > 1 ? 's' : '') +
-      ' sur ' + jours.length +
+      ' sur ' + nbJours +
       (aDeclarer > 0
         ? ' — ' + aDeclarer + ' jour' + (aDeclarer > 1 ? 's' : '') + ' passé' +
           (aDeclarer > 1 ? 's' : '') + ' sans déclaration ne ' +
           (aDeclarer > 1 ? 'seront' : 'sera') + ' payé' + (aDeclarer > 1 ? 's' : '') + ' pour rien.'
         : '.')));
-    if (montant == null && totalMinutes > 0) {
+    if (!chiffrable && totalMinutes > 0) {
       bloc.appendChild(Kit.ce('p', 'sb q',
-        'Le montant ne peut pas être chiffré : les conditions de ce contrat ne ' +
-        'portent pas de rémunération.'));
+        'Le montant ne peut pas être chiffré en entier : les conditions d’au ' +
+        'moins un mois de cette période ne portent pas de rémunération.'));
     }
     return bloc;
   }

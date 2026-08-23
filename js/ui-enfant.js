@@ -132,10 +132,30 @@
       /* Lot 10 — un échec de lecture ici ne doit pas vider l'écran : sans les
          imputations on perd un AVERTISSEMENT, pas une donnée. */
       global.DB.listImputationsPourMois(contrat.id, m.annee, m.mois).catch(function () { return []; }),
+      /* CORRECTION B3 DE LA RELECTURE DU LOT 20 — LES PÉRIODES ENTRENT DANS
+         `vue`, comme les imputations, et pour exactement la même raison.
+
+         `simulerLignes` rejoue le mois pour montrer l'effet d'un geste AVANT
+         qu'il soit enregistré. Il ne recevait pas les périodes : le moteur
+         voyait une liste vide, chaque jour non déclaré redevenait une présence
+         mensualisée, et le résultat était soustrait d'un `vue.entree.resultat`
+         qui, lui, connaissait la période. On soustrayait deux mois différents,
+         et l'écran annonçait « + 82,50 € » là où le geste en vaut 5,50.
+
+         C'est mot pour mot le défaut que le correctif B1 de la PR9 avait éteint
+         pour les imputations, dans ce même appel. Contrairement à elles, un
+         échec de lecture ici n'est PAS rattrapable : sans les périodes le rejeu
+         est faux, pas incomplet. L'erreur remonte donc et l'écran la dit. */
+      global.DB.listPeriodesFamiliarisation(
+        contrat.id,
+        Kit.iso(m.annee, m.mois, 1),
+        Kit.iso(m.annee, m.mois, Kit.nbJoursDansMois(m.annee, m.mois))),
       /* Lot 12 — la note du mois. Un échec ici ne vide pas l'écran : on perd
          un espace d'écriture, pas un chiffre. */
       global.DB.getNoteMensuelle(contrat.id, m.annee, m.mois).catch(function () { return null; })
     ]).then(function (r) {
+      /* L'ordre des résultats suit celui du tableau ci-dessus. Une insertion au
+         milieu décalerait tout : les index sont donc nommés une fois, ici. */
       var chaine = r[0];
       var entree = global.App.moisDe(chaine, m.annee, m.mois);
       var journeesAutres = {};
@@ -165,7 +185,9 @@
           m.annee, m.mois, auj, r[1]),
         /* Lot 10 — les périodes de congé ventilées qui touchent ce mois. */
         imputations: r[4] || [],
-        note: r[5] || null,
+        /* Lot 20, correction B3 — les périodes de familiarisation du mois. */
+        periodesFamiliarisation: r[5] || [],
+        note: r[6] || null,
         /* LOT 20 (§20.4) — LA FAMILIARISATION DU MOIS, TELLE QUE LE MOTEUR LA
            VOIT. On ne la recalcule pas ici : `resultat.familiarisation.jours`
            porte, pour chaque jour du planning compris dans une période, ce qui
@@ -2163,6 +2185,12 @@
         contrat_id: vue.contrat.id, jour: f.jour, type: f.type,
         minutes_reelles: f.extra ? f.extra.minutes_reelles : null,
         entretien_centimes: f.extra ? f.extra.entretien_centimes : null,
+        /* CORRECTION B3 — LA PROMESSE DU COMMENTAIRE CI-DESSUS EST TENUE.
+           `marquerJournees` remet `entretien_du` à `true` (l'interrupteur du
+           §20.6 n'existe que sur une journée qui sort du cadre) ; la ligne
+           simulée l'omettait, et l'aperçu comptait une indemnité que
+           l'enregistrement allait rétablir — ou l'inverse. */
+        entretien_du: true,
         minutes_sup_exceptionnelles: 0,
         minutes_sup_renoncees: 0,
         sup_dues_override: null,
@@ -2188,7 +2216,7 @@
        toucher un jour faisait retomber cet aperçu sur l'exception : la feuille
        du jour devenait inutilisable sur le mois précisément à corriger.
        Une seule règle de repli, définie dans chaine-mois.js, appelée ici. */
-    return Chaine.calculerMoisAvecRepli({
+    var params = {
       contrat: vue.contrat,
       conditions: conditions,
       journees: lignes,
@@ -2200,8 +2228,39 @@
          que ce geste change » comparait un mois ventilé selon le choix de Maria
          à un mois ventilé selon l'ordre par défaut : l'écart affiché n'était pas
          celui du geste, mais celui de l'oubli. */
-      imputations: vue.imputations || []
-    }).resultat;
+      imputations: vue.imputations || [],
+      /* CORRECTION B3 — LES PÉRIODES DE FAMILIARISATION, par le même chemin et
+         pour la même raison que les imputations juste au-dessus. Sans elles, le
+         rejeu voit un mois entièrement mensualisé et l'écart annoncé n'est pas
+         celui du geste, mais celui de l'oubli. */
+      periodesFamiliarisation: vue.periodesFamiliarisation || []
+    };
+    /* C'EST LA TROISIÈME FOIS QUE CET APPEL OUBLIE UN ARGUMENT — les
+       imputations au lot 10, les conditions au lot 17, les périodes au lot 20.
+       Le garde-fou ne vérifie donc plus un argument en particulier : il vérifie
+       que le rejeu et la chaîne reçoivent LE MÊME JEU DE CLÉS. Une entrée
+       ajoutée à `calculerMois` sans être ajoutée ici fait échouer un test au
+       lieu de fausser un chiffre à l'écran. */
+    verifierMemesEntreesQueLaChaine(params);
+    return Chaine.calculerMoisAvecRepli(params).resultat;
+  }
+
+  /* Les clés que `Chaine.serie` passe à `calculerMoisAvecRepli`. Elles sont
+     écrites ici, en dur, plutôt que déduites : une liste déduite du même code
+     que celui qu'elle contrôle ne contrôle rien. */
+  var ENTREES_DU_REJEU = ['contrat', 'conditions', 'journees', 'compteurEntree',
+                          'annee', 'mois', 'imputations', 'periodesFamiliarisation'];
+
+  function verifierMemesEntreesQueLaChaine(params) {
+    var manquantes = ENTREES_DU_REJEU.filter(function (k) {
+      return !Object.prototype.hasOwnProperty.call(params, k);
+    });
+    if (manquantes.length) {
+      /* Une erreur, pas un avertissement en console : un rejeu incomplet
+         affiche un chiffre faux et crédible, ce qui est le pire résultat
+         possible (B.0-9). */
+      throw new Error('rejeu incomplet — entrées manquantes : ' + manquantes.join(', '));
+    }
   }
 
   function phraseEcart(apres, avant) {

@@ -141,10 +141,22 @@
   /* ne lisait.                                                          */
   /* ------------------------------------------------------------------ */
   function chargerPeriodesFamiliarisation(DB, contratId, debut, fin) {
-    /* Contrôle de CAPACITÉ, pas rattrapage d'erreur : les décors de test
-       antérieurs au lot 20 n'exposent pas cette fonction. Une erreur réelle,
-       elle, remonte. */
-    if (typeof DB.listPeriodesFamiliarisation !== 'function') return Promise.resolve([]);
+    /* CORRECTION C3 DE LA RELECTURE — LE REPLI MUET EST RETIRÉ.
+
+       Ce chargement commençait par un contrôle de capacité :
+       `if (typeof DB.listPeriodesFamiliarisation !== 'function') return []`.
+       Il se justifiait par les décors de test antérieurs au lot 20 — or le
+       lot 20 les a TOUS mis à jour. Le repli ne protégeait donc plus rien, et
+       il ne pouvait plus que masquer une panne réelle : sans périodes, chaque
+       jour non déclaré redevient une présence mensualisée, et un mois de
+       433,82 € s'affiche à 1 193,00 € sans un mot à l'écran.
+
+       C'est ce que le moteur écrit lui-même à propos de `minutesSaisies` : un
+       repli muet sur une valeur exprimée est toujours pire qu'un refus. Une
+       erreur remonte donc, et les écrans la disent en français.
+
+       Si un décor de test manque encore cette fonction, c'est le décor qu'il
+       faut corriger, pas la chaîne. */
     return DB.listPeriodesFamiliarisation(contratId, debut, fin)
       .then(function (l) { return l || []; });
   }

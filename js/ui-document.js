@@ -141,14 +141,37 @@
        demande une explication. */
     var fam = r.familiarisation;
     if (fam && fam.actif) {
+      /* CORRECTION C2 DE LA RELECTURE — LE DÉTAIL NE S'AFFICHE QUE S'IL
+         RECONSTITUE SON TOTAL.
+
+         Le document annonçait « Heures déclarées 22 h 30 », « Rémunération
+         nette 123,69 € » et « Taux horaire net 5,50 € ». Chaque chiffre était
+         juste, et pourtant la multiplication ne tombait pas : 22,5 × 5,50 fait
+         123,75 €. L'arrondi unique porte sur le MOIS, à la minute, pas sur un
+         taux horaire arrondi au centime — et une famille qui refait le calcul
+         trouve six centimes d'écart sans aucune explication.
+
+         C'est exactement la règle appliquée dix lignes plus bas à l'indemnité
+         d'entretien, et elle vaut ici pour la même raison : mieux vaut moins de
+         détail qu'un détail qui ment. On tente donc la multiplication ; si elle
+         reconstitue au centime, elle s'affiche et rend le montant vérifiable ;
+         sinon la ligne de taux disparaît, et une phrase dit pourquoi. */
       var lignesFam = [];
       lignesFam.push(['Heures déclarées', Kit.heures(fam.minutesDeclarees)]);
       lignesFam.push(['Rémunération nette', Kit.eur(fam.netCentimes || 0)]);
-      lignesFam.push(['Rémunération brute correspondante',
-        Kit.eur(fam.brutCentimes || 0), { doux: true }]);
-      var tauxNet = tauxHoraire('net_mensuel_centimes');
-      if (tauxNet != null) {
-        lignesFam.push(['Taux horaire net', Kit.eur(tauxNet), { doux: true }]);
+      /* LA MULTIPLICATION VÉRIFIABLE VA SUR LE BRUT, pas sur le net, et ce
+         n'est pas un choix esthétique. Le taux horaire est le brut mensuel
+         divisé par 195 h : sur un brut rond il tombe juste au centime, et
+         « 22 h 30 déclarées × 7,20 € — 162,00 € » — l'exemple du §20.3 — se
+         refait de tête. Le net, lui, est saisi à la main depuis une fiche de
+         paie et ne divise presque jamais rond : y accrocher la multiplication
+         produisait six centimes d'écart inexplicables. */
+      var lib = libelleBrutFamiliarisation(fam);
+      lignesFam.push([lib.libelle, Kit.eur(fam.brutCentimes || 0), { doux: true }]);
+      if (!lib.reconstitue) {
+        lignesFam.push(['Rémunération calculée à la minute sur l’ensemble du ' +
+          'mois : un taux horaire arrondi au centime ne redonne pas exactement ' +
+          'ce total.', '', { doux: true }]);
       }
       lignesFam.push([libelleEntretienFamiliarisation(r),
         Kit.eur(fam.entretienCentimes)]);
@@ -365,17 +388,45 @@
     return Engine.montantCentimes(c[champ], 60);
   }
 
+  /* Le libellé de la rémunération brute de familiarisation, avec sa
+     multiplication SI elle reconstitue le total au centime. Rend aussi le
+     verdict, pour que l'appelant puisse EXPLIQUER l'absence de détail plutôt
+     que de la laisser sans un mot. Même règle que l'indemnité d'entretien :
+     un détail qui ne redonne pas son total ne s'affiche pas. */
+  function libelleBrutFamiliarisation(fam) {
+    var minutes = fam.minutesDeclarees || 0;
+    var total = fam.brutCentimes || 0;
+    var taux = tauxHoraire('brut_mensuel_centimes');
+    var reconstitue = taux != null && minutes > 0 &&
+      Math.round(taux * minutes / 60) === total;
+    return {
+      reconstitue: reconstitue,
+      libelle: reconstitue
+        ? 'Rémunération brute — ' + Kit.heures(minutes) + ' × ' + Kit.eur(taux) +
+          ' de l’heure'
+        : 'Rémunération brute correspondante'
+    };
+  }
+
   /* Le même principe pour la part de familiarisation : le détail n'apparaît
      que s'il redonne le total. Les jours sans indemnité y sont ceux que Maria
      a déclarés sans compter l'entretien. */
   function libelleEntretienFamiliarisation(r) {
     var fam = r.familiarisation || {};
     var parJour = reg('entretien_centimes_jour', 0);
-    if (parJour > 0 && fam.joursAvecEntretien * parJour === fam.entretienCentimes) {
-      return 'Indemnité d’entretien — ' + fam.joursAvecEntretien + ' jour' +
-        (fam.joursAvecEntretien > 1 ? 's' : '') + ' × ' + Kit.eur(parJour);
+    if (parJour <= 0 || fam.joursAvecEntretien * parJour !== fam.entretienCentimes) {
+      return 'Indemnité d’entretien';
     }
-    return 'Indemnité d’entretien';
+    /* CORRECTION C1 — le bloc de familiarisation a SON propre compte de jours
+       sans indemnité, distinct de celui de la garde. Sans lui, une journée
+       déclarée sans entretien disparaissait du détail des deux blocs à la
+       fois. */
+    var sans = fam.joursSansEntretien || 0;
+    return 'Indemnité d’entretien — ' + fam.joursAvecEntretien + ' jour' +
+      (fam.joursAvecEntretien > 1 ? 's' : '') + ' × ' + Kit.eur(parJour) +
+      (sans > 0
+        ? ' + ' + sans + ' jour' + (sans > 1 ? 's' : '') + ' sans indemnité'
+        : '');
   }
 
   /* LOT 16 §16.2 — L'AUTEUR DU DOCUMENT.

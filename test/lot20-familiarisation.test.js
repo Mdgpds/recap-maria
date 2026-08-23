@@ -192,7 +192,10 @@ test('A5 bis — « non » paie zéro, et ne touche à rien d’autre', function
   });
   egal(sans.familiarisation.entretienCentimes, 0, 'entretien retiré');
   egal(sans.familiarisation.joursAvecEntretien, 0, 'aucun jour avec entretien');
-  egal(sans.joursSansEntretien, 1, 'le jour est compté, pour que le document le dise');
+  egal(sans.familiarisation.joursSansEntretien, 1,
+    'C1 — le jour est compté DANS LA PART FAMILIARISATION, pour que son bloc reconstitue');
+  egal(sans.joursSansEntretien, 0,
+    'C1 — et le compte de premier niveau reste celui de la GARDE, intact');
   egal(sans.familiarisation.brutCentimes, avec.familiarisation.brutCentimes,
     'la rémunération du jour ne bouge pas');
   egal(sans.familiarisation.minutesDeclarees, avec.familiarisation.minutesDeclarees,
@@ -300,15 +303,13 @@ test('§20.4 — un jour de la période qui portait une autre saisie est NOMMÉ'
   var r = calculer({
     periodes: PERIODE_1_19,
     journees: [
-      { jour: '2026-09-02', type: 'conge_maria' },
       { jour: '2026-09-03', type: 'absence_enfant' },
       { jour: '2026-09-04', type: 'familiarisation', minutes_reelles: 150 }
     ]
   });
-  egal(r.familiarisation.joursIgnores.join(','), '2026-09-02,2026-09-03',
-    'les jours dont la saisie a été écartée');
-  egal(r.joursCongesDecomptes, 0, 'le congé posé dans la période n’est pas décompté');
-  egal(r.minutesCpAcquis, 1350, 'et il ne prive donc pas de l’acquisition');
+  egal(r.familiarisation.joursIgnores.join(','), '2026-09-03',
+    'CORRECTION B1 — `joursIgnores` ne porte plus que ce qui est RÉELLEMENT ignoré');
+  egal(r.minutesCpAcquis, 1350, 'une absence d’enfant ne prive pas de l’acquisition');
 });
 
 test('§20.4 — hors de toute période, une journée `familiarisation` garde son ancien sort', function () {
@@ -319,6 +320,98 @@ test('§20.4 — hors de toute période, une journée `familiarisation` garde so
   egal(r.familiarisation.actif, false, 'aucune période active');
   egal(r.entretienCentimes, 21 * 550 + 300, 'l’entretien saisi à la main est conservé');
   egal(r.joursPresence, 21, 'la journée n’est pas une présence');
+});
+
+/* ------------------------------------------------------------------ */
+/* CORRECTION B1 — CE QUE LA PÉRIODE NE DOIT PLUS AVALER                */
+/*                                                                     */
+/* Un congé de Maria et un jour sans solde touchent des compteurs qui   */
+/* ne se remettent jamais à zéro (RG-12). Les avaler faussait des       */
+/* soldes en silence. Les chiffres attendus viennent du rapport de      */
+/* relecture, recalculés sur le brut fictif de ce fichier.              */
+/* ------------------------------------------------------------------ */
+
+test('B1 — un congé de Maria dans la période est décompté et imputé', function () {
+  var journees = [];
+  ['07', '08', '09', '10', '11'].forEach(function (j) {
+    journees.push({ jour: '2026-09-' + j, type: 'conge_maria' });
+  });
+  var r = Engine.calculerMois({
+    contrat: CONTRAT, conditions: conditions(), journees: journees,
+    /* Dix jours de congés payés au compteur : sans réserve, l'imputation
+       tomberait en sans solde et on ne verrait pas ce qu'on teste. */
+    compteurEntree: { minutesSup: 0, minutesCpAcquis: 5400, minutesCpPris: 0 },
+    annee: 2026, mois: 9, periodesFamiliarisation: PERIODE_1_19
+  });
+  /* RG-06 : du 7 au 11, reprise le lundi 14 — le samedi 12 est inclus. */
+  egal(r.joursCongesDecomptes, 6, 'jours ouvrables décomptés');
+  egal(r.imputation.minutesCpConsommees, 3240, 'minutes de congés payés consommées');
+  egal(r.imputation.joursSurCp, 6, 'jours imputés sur les congés payés');
+  egal(r.minutesCpAcquis, 0, 'le mois n’acquiert plus ses 2,5 jours');
+  /* Aucun double décompte : les cinq jours ouvrés du congé reviennent dans la
+     part mensualisée, puisque c'est le compteur de congés qui les paie. */
+  egal(r.prorata.joursFamiliarisation, 9, 'les jours de congé sortent de la familiarisation');
+  egal(r.prorata.joursCouverts, 13, 'et reviennent dans les jours couverts');
+  egal(r.familiarisation.joursIgnores.length, 0, 'aucun jour n’est « ignoré »');
+});
+
+test('B1 — un jour sans solde dans la période porte bien sa retenue', function () {
+  var r = calculer({
+    periodes: PERIODE_1_19,
+    journees: [{ jour: '2026-09-08', type: 'sans_solde' }]
+  });
+  egal(r.retenueSansSoldeCentimes, Engine.montantCentimes(BRUT, 540), 'retenue RG-08');
+  egal(r.retenueSansSoldeCentimes, 6480, 'retenue en centimes (540 min au taux du contrat)');
+  egal(r.minutesCpAcquis, 0, 'le mois n’acquiert plus ses 2,5 jours');
+  /* LA JOURNÉE N'EST PAS DÉDUITE DEUX FOIS. La retenue RG-08 existe pour
+     annuler la part mensualisée du jour ; la retrancher AUSSI du prorata
+     ferait payer Maria deux fois pour la même journée. */
+  egal(r.prorata.joursFamiliarisation, 13, 'le jour sans solde sort de la familiarisation');
+  egal(r.prorata.joursCouverts, 9, 'et revient dans les jours couverts');
+});
+
+test('B1 — mais tout le reste continue d’être avalé par la période', function () {
+  var r = calculer({
+    periodes: PERIODE_1_19,
+    journees: [
+      { jour: '2026-09-02', type: 'presence' },
+      { jour: '2026-09-03', type: 'absence_enfant' },
+      { jour: '2026-09-04', type: 'ferie' },
+      { jour: '2026-09-07', type: 'hors_planning' }
+    ]
+  });
+  egal(r.joursPresence, 8, 'aucun de ces quatre jours ne devient une présence mensualisée');
+  egal(r.prorata.joursFamiliarisation, 14, 'les quatorze jours de la période le restent');
+  egal(r.minutesSupAcquises, 8 * 30, 'et aucun ne porte de minutes supplémentaires');
+  egal(r.familiarisation.joursIgnores.length, 4, 'les quatre sont nommés, pas avalés en silence');
+});
+
+test('B2 — la ventilation choisie par Maria n’est plus écartée', function () {
+  /* Congé du 17 au 22 septembre, ventilé en 5 jours sans solde. La période
+     finit le 19 : deux jours du congé sont dedans, trois dehors. Avant la
+     correction B1, les deux jours dedans perdaient leur type `conge_maria`,
+     `imputationCorrespondAuxJournees` ne reconnaissait plus la période, et le
+     choix de Maria — écrit, visible, confirmé à l'écran — était écarté. */
+  var journees = [];
+  ['17', '18', '21', '22'].forEach(function (j) {
+    journees.push({ jour: '2026-09-' + j, type: 'conge_maria' });
+  });
+  var r = Engine.calculerMois({
+    contrat: CONTRAT, conditions: conditions(), journees: journees,
+    compteurEntree: { minutesSup: 0, minutesCpAcquis: 5400, minutesCpPris: 0 },
+    annee: 2026, mois: 9, periodesFamiliarisation: PERIODE_1_19,
+    imputations: [{
+      date_debut: '2026-09-17', date_fin: '2026-09-22',
+      jours_ouvrables: 5, jours_sur_cp: 0, jours_sur_sup: 0, jours_sans_solde: 5
+    }]
+  });
+  egal(r.imputationsAppliquees.length, 1, 'une seule période retenue');
+  egal(r.imputationsAppliquees[0].source, 'imposee',
+    'B2 — le choix de Maria s’applique, il n’est plus écarté');
+  egal(r.imputation.joursSansSolde, 5, 'cinq jours sans solde');
+  egal(r.imputation.minutesCpConsommees, 0, 'aucun congé payé consommé');
+  egal(r.retenueSansSoldeCentimes, Engine.montantCentimes(BRUT, 5 * 540), 'retenue RG-08');
+  egal(r.retenueSansSoldeCentimes, 32400, 'retenue en centimes, un seul arrondi');
 });
 
 /* ------------------------------------------------------------------ */

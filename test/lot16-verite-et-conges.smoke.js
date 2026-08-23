@@ -132,6 +132,11 @@ function baseSimulee(opts) {
         dixiemes_cp_pris: 0
       }));
     },
+    /* LOT 20, correction C3 — la chaîne appelle `listPeriodesFamiliarisation`
+       sans repli : un décor qui ne l'expose pas fait échouer le rejeu, et c'est
+       voulu. Ce décor n'a aucune période de familiarisation. */
+    listPeriodesFamiliarisation: function () { return Promise.resolve([]); },
+    listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
     getJourneesMois: function () { return Promise.resolve(opts.journees || {}); },
     listRecapsPeriode: function () { return Promise.resolve([]); },
     listImputations: function () { return Promise.resolve(opts.imputations || []); }
