@@ -597,8 +597,17 @@ async function ouvrirAccueil() {
   assert(!!jour10, 'P6 : le lundi 10 août est touchable');
   jour10.click();
   await pause(120);
-  var choixAbsence = parTexte(sheet, '.choice', 'absent');
-  if (choixAbsence) { choixAbsence.click(); await pause(250); }
+  /* EXIGENCE CHANGÉE — la feuille du jour est refaite comme la maquette
+     (23 août) : « Léa était absente » est devenu « Absence de Léa » dans la
+     liste (l'accord en genre passe par la tournure, jamais par un point
+     médian), et l'enregistrement passe par le bouton unique. Ce que ce cas
+     vérifie — « Annuler » après une écriture — ne change pas. */
+  var choixAbsence = parTexte(sheet, '.choice', 'Absence de');
+  assert(!!choixAbsence, 'P6 : le choix « Absence de… » est offert');
+  choixAbsence.click();
+  await pause(150);
+  var bEnr = parTexte(sheet, 'button', 'Enregistrer');
+  if (bEnr) { bEnr.click(); await pause(250); }
 
   assert(txt(toast).indexOf('Annuler') !== -1,
     'P6 : un « Annuler » est proposé après l’écriture (V8-21)');

@@ -70,6 +70,19 @@ function choisir(sel, valeur) {
   sel.value = valeur;
   sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 }
+/* Le champ d'heure à la minute (`<input type="time">`) qui suit un libellé. */
+function champHeureDe(racineEl, libelle) {
+  var bloc = Array.prototype.filter.call(racineEl.querySelectorAll('.fld'), function (f) {
+    var lb = f.querySelector('.lb');
+    return lb && txt(lb).indexOf(libelle) !== -1;
+  })[0];
+  return bloc ? bloc.querySelector('input') : null;
+}
+function poserHeure(input, valeur) {
+  input.value = valeur;
+  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+}
 
 var Feries = require('../js/feries.js');
 var Format = require('../js/format.js');
@@ -208,17 +221,38 @@ var sheet = document.getElementById('sheet');
   jour8.click();
   await pause(250);
 
-  var sommaire = parTexte(sheet, 'summary', 'Que s’est-il passé');
-  assert(!!sommaire, '§17.5 : la journée propose de déclarer un événement');
-  sommaire.parentNode.open = true;
+  /* EXIGENCE CHANGÉE — LA FEUILLE DU JOUR EST REFAITE COMME LA MAQUETTE
+     (retour d'Adrien du 23 août 2026). Ce qui change ici, assertion par
+     assertion :
+       - « la journée propose de déclarer un événement » portait sur le volet
+         replié `<summary>Que s'est-il passé ce jour-là ?</summary>` : il
+         n'existe plus. Les trois événements sont devenus les TROIS PREMIERS
+         CHOIX de la liste unique, ce que l'assertion remplaçante exige.
+       - « le choix de l'événement est offert » / « trois événements, plus
+         rien à signaler » portaient sur un `<select>` : il n'y en a plus.
+         « Rien à signaler » n'a plus à être une option — ne rien choisir,
+         c'est déjà lui. Le contenu exigé, lui, est le même : trois événements
+         et pas un quatrième.
+       - « l'heure réelle est demandée » portait sur un sélecteur au quart
+         d'heure. Le brief demande la minute près, et Adrien a tranché le
+         23 août : un champ d'heure à la minute, sans raccourcis.
+     AUCUNE assertion de comportement n'est affaiblie : la référence produite
+     par le moteur, A3, le refus du départ anticipé du parent, le calcul de
+     l'écart, la destination et ce qui part en base sont tous conservés. */
+  assert(!parTexte(sheet, 'summary', 'Que s’est-il passé'),
+    '§17.5 : l’ancien volet replié a disparu');
+  var choixListe = sheet.querySelectorAll('.liste-choix .choice');
+  assert(choixListe.length > 0, '§17.5 : la journée propose une liste de choix');
 
   /* LA RÉFÉRENCE EST DITE, et elle vient du moteur : fin d'accueil + minutes
      supplémentaires du contrat = 18h00. Un écran qui l'écrirait en dur serait
      faux le jour où un avenant déplace les horaires. */
   egal(Engine.heureDeReference(AVENANTS[1]), 18 * 60,
     'décor : la référence d’une journée vaut 18h00');
-  assert(sansInsecable(txt(sheet)).indexOf('8h30 à 18h00') !== -1,
-    '§17.5 : l’écran annonce la journée de référence, produite par le moteur');
+  /* EXIGENCE DÉPLACÉE, PAS AFFAIBLIE — la journée de référence était annoncée
+     dans un volet permanent ; elle s'affiche maintenant sous le champ d'heure,
+     donc une fois l'événement choisi. Elle vient toujours du moteur, et le
+     test l'exige toujours : voir plus bas, après le choix. */
 
   /* A3 — SANS DÉCLARATION, RIEN NE CHANGE. C'est la règle la plus facile à
      perdre : elle est une ABSENCE. */
@@ -227,24 +261,34 @@ var sheet = document.getElementById('sheet');
   assert(txt(sheet).indexOf('de lui-même n’est pas un événement') !== -1,
     '§17.5 A3 : un départ anticipé du parent est explicitement écarté');
 
-  var selEvt = selectApresLibelle(sheet, 'Ce qui s’est passé');
-  assert(!!selEvt, '§17.5 : le choix de l’événement est offert');
-  var libelles = Array.prototype.map.call(selEvt.querySelectorAll('option'), function (o) {
-    return txt(o);
+  var libelles = Array.prototype.map.call(choixListe, function (x) {
+    return txt(x.querySelector('.tx')).split('\n')[0].trim();
   });
-  egal(libelles.length, 4, '§17.5 : trois événements, plus « rien à signaler »');
+  var evenements = libelles.filter(function (l) {
+    return ['Un parent est venu en retard', 'J’ai libéré plus tôt',
+            'J’ai demandé une arrivée plus tardive'].indexOf(l) !== -1;
+  });
+  egal(evenements.length, 3, '§17.5 : trois événements, et pas un quatrième');
   assert(libelles.indexOf('J’ai libéré plus tôt') !== -1,
     '§17.5 : « j’ai libéré plus tôt » est proposé');
   assert(!libelles.some(function (l) { return l.indexOf('parent est parti plus tôt') !== -1; }),
     '§17.5 A3 : aucun choix ne permet de déclarer un départ anticipé du parent');
 
   /* A2 — « J'ai libéré plus tôt », départ 17h00 : 30 − 60 = − 30 minutes. */
-  choisir(selEvt, 'liberation_anticipee');
-  await pause(80);
-  var selHeure = selectApresLibelle(sheet, 'Heure de départ réelle');
-  assert(!!selHeure, '§17.5 : l’heure réelle est demandée');
-  choisir(selHeure, '17:00');
-  await pause(80);
+  var choixLib = parTexte(sheet, '.choice', 'J’ai libéré plus tôt');
+  choixLib.click();
+  await pause(120);
+  var champHeure = champHeureDe(sheet, 'L’enfant est parti à');
+  assert(!!champHeure, '§17.5 : l’heure réelle est demandée, à la minute près');
+  egal(champHeure.getAttribute('type'), 'time',
+    '§17.5 : c’est le champ d’heure à la minute, pas le sélecteur au quart d’heure');
+  assert(!parTexte(sheet, 'button', '18h01') && !parTexte(sheet, 'button', '17h00'),
+    'DÉCISION D’ADRIEN (23 août) : aucun raccourci d’heure — ils ne vaudraient ' +
+    'que pour un contrat dont la journée finit à 18 h 00');
+  assert(sansInsecable(txt(sheet)).indexOf('8h30 à 18h00') !== -1,
+    '§17.5 : l’écran annonce la journée de référence, produite par le moteur');
+  poserHeure(champHeure, '17:00');
+  await pause(120);
 
   assert(sansInsecable(txt(sheet)).indexOf('Ce jour : -0h30') !== -1,
     '§17.5 A2 : l’écran annonce − 30 min pour ce jour (obtenu « ' +
@@ -274,12 +318,12 @@ var sheet = document.getElementById('sheet');
   /* LE CHOIX SURVIT À UN CHANGEMENT D'HEURE. Un sélecteur reconstruit à chaque
      passage remettrait « Ma récupération » sans rien dire — Maria choisirait
      ses congés payés et l'écran lui répondrait autre chose. */
-  choisir(selHeure, '16:30');
-  await pause(80);
+  poserHeure(champHeureDe(sheet, 'L’enfant est parti à'), '16:30');
+  await pause(120);
   egal(selectApresLibelle(sheet, 'se déduisent de').value, 'conges_payes',
     '§17.6 : le choix de destination survit à un changement d’heure');
-  choisir(selHeure, '17:00');
-  await pause(80);
+  poserHeure(champHeureDe(sheet, 'L’enfant est parti à'), '17:00');
+  await pause(120);
 
   /* Sans solde : la retenue en euros est affichée AVANT validation. */
   choisir(selectApresLibelle(sheet, 'se déduisent de'), 'sans_solde');

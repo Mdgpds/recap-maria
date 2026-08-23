@@ -762,12 +762,28 @@ function cliquer(libelle, signe, fois) {
   assert(!!jour, 'le 1er juillet est touchable');
   jour.click();
   await pause(150);
-  var choix = sheet.querySelectorAll('.choice');
-  assert(choix.length === 2, 'A8 : DEUX marquages seulement (obtenu ' + choix.length + ')');
+  var choix = sheet.querySelectorAll('.liste-choix .choice');
+  /* EXIGENCE CHANGÉE — LA FEUILLE DU JOUR EST REFAITE COMME LA MAQUETTE
+     (23 août 2026). Deux assertions changent parce que l'écran change ; la
+     règle A8, elle, ne change pas d'un mot.
+       - « DEUX marquages seulement » comptait les deux cartes de l'ancienne
+         feuille. Il y a maintenant sept choix du même style, dont aucun n'est
+         un congé — c'est CELA que A8 exige, et c'est ce que vérifie
+         l'assertion remplaçante, plus stricte que le simple décompte.
+       - « la phrase renvoie vers l'onglet Mes congés » portait sur le
+         paragraphe permanent, retiré sur décision d'Adrien du 23 août : il
+         expliquait où poser un congé sur une feuille où l'on ne vient pas en
+         poser un. Le chemin unique des congés est inchangé, et il reste dit
+         là où il sert — sur une journée qui PORTE un congé (correction B2,
+         vérifiée dans lot21-conges-heure.smoke.js). */
+  assert(choix.length === 7, 'A8 : la liste unique de la maquette (obtenu ' +
+    choix.length + ')');
   assert(!parTexte(sheet, '.choice', 'Je ne travaillais pas'),
     'A8 : « Mon congé » a disparu du calendrier');
-  assert(txt(sheet).indexOf('Mes congés') !== -1,
-    'A8 : la phrase renvoie vers l’onglet « Mes congés »');
+  assert(!Array.prototype.some.call(choix, function (x) {
+    return txt(x).toLowerCase().indexOf('congé') !== -1;
+  }), 'A8 : AUCUN choix de congé dans la feuille du jour — la ventilation ' +
+    'contrat par contrat appartient à « Mes congés »');
   window.Kit.fermerFeuille();
   await pause(50);
 

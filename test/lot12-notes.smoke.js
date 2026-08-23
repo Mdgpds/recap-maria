@@ -259,6 +259,22 @@ async function ouvrirJour(numero) {
   return td;
 }
 function zoneNote() { return corps.querySelector('textarea.note-mois'); }
+/* FEUILLE DU JOUR REFAITE (23 août) — L'AJUSTEMENT MANUEL DES HEURES A
+   DÉMÉNAGÉ. Il n'est plus un `<details>` permanent de la feuille du jour : il
+   se range dans « Autre cas… », comme le demande le brief. Il n'est pas
+   supprimé — c'est tout l'objet de cette aide, qui va le chercher là où il
+   vit maintenant. */
+async function ouvrirAutresCas() {
+  var b = parTexte(sheet, 'button', 'Autre cas');
+  if (!b) return null;
+  b.click();
+  await pause(150);
+  return b;
+}
+/* Le choix d'une liste, désigné par son libellé. */
+function choixParLibelle(morceau) {
+  return parTexte(sheet, '.choice', morceau);
+}
 
 (async function () {
   document.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
@@ -357,15 +373,28 @@ function zoneNote() { return corps.querySelector('textarea.note-mois'); }
   await ouvrirEnfant();
   await ouvrirJour(6);
 
-  assert(txt(sheet).indexOf('Un mot sur cette journée ?') !== -1,
-    'P2 : la feuille propose une note de journée');
+  /* EXIGENCE CHANGÉE (brief du 23 août) — le `<details>` « Un mot sur cette
+     journée ? » n'existe plus : la note est le CINQUIÈME CHOIX de la liste
+     unique, au même style que les autres. Le comportement, lui, ne bouge pas :
+     le champ, la phrase qui dit à qui la note appartient, et l'écriture. */
+  assert(!parTexte(sheet, 'details', 'Un mot sur cette journée'),
+    'P2 : l’ancien volet repliable a disparu — la note est un choix de la liste');
+  var choixNote = choixParLibelle('Une note sur la journée');
+  assert(!!choixNote, 'P2 : la feuille propose une note de journée, dans la liste');
+  choixNote.click();
+  await pause(120);
   assert(txt(sheet).indexOf('pour vous seule') !== -1 || txt(sheet).indexOf('Pour vous seule') !== -1,
     'P2 : facultative, et pour Maria seule');
+  assert(txt(sheet).indexOf('Jamais sur le document remis à la famille') !== -1,
+    'P2 : et jamais sur le document remis à la famille');
 
   var champNote = parTexte(sheet, '.fld', 'Note');
   assert(!!champNote, 'P2 : le champ est là');
-  champNote.querySelector('input').value = 'Sortie au parc';
-  boutonExact(sheet, 'Enregistrer la note').click();
+  var inputNote = champNote.querySelector('input');
+  inputNote.value = 'Sortie au parc';
+  inputNote.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await pause(60);
+  boutonExact(sheet, 'Enregistrer').click();
   await pause(350);
 
   var ecrite = appels.journee.filter(function (j) { return j.commentaire === 'Sortie au parc'; })[0];
@@ -395,8 +424,16 @@ function zoneNote() { return corps.querySelector('textarea.note-mois'); }
   await ouvrirEnfant();
   await ouvrirJour(7);
 
+  /* EXIGENCE CHANGÉE (brief du 23 août) — l'ajustement manuel n'est plus un
+     volet permanent de la feuille du jour : il se range dans « Autre cas… ».
+     Il n'est PAS supprimé, et ses trois gestes ne changent pas. */
+  assert(!parTexte(sheet, 'details', 'Ajuster mes heures'),
+    'P3 : la feuille du jour ne porte plus le volet d’ajustement');
+  await ouvrirAutresCas();
   assert(txt(sheet).indexOf('Ajuster mes heures ce jour-là') !== -1,
-    'P3 : la section d’ajustement est proposée');
+    'P3 : la section d’ajustement est proposée dans « Autre cas… »');
+  assert(txt(sheet).indexOf('que la déclaration d’horaire ne couvre pas') !== -1,
+    'P3 : et la phrase dit quand s’en servir');
   var det = parTexte(sheet, 'details', 'Ajuster mes heures');
   assert(!!det && det.open === false,
     'P3 : repliée par défaut — une journée ordinaire n’est pas un formulaire');
@@ -446,6 +483,7 @@ function zoneNote() { return corps.querySelector('textarea.note-mois'); }
   console.log('\n--- P4/P5 : renoncer, puis revenir dessus ---');
   await ouvrirEnfant();
   await ouvrirJour(8);
+  await ouvrirAutresCas();
   var det4 = parTexte(sheet, 'details', 'Ajuster mes heures');
   det4.open = true;
   await pause(60);
@@ -479,6 +517,7 @@ function zoneNote() { return corps.querySelector('textarea.note-mois'); }
   /* P5 — on décoche : le renoncement est annulé. */
   await ouvrirEnfant();
   await ouvrirJour(8);
+  await ouvrirAutresCas();
   var det5 = parTexte(sheet, 'details', 'Ajuster mes heures');
   assert(det5.open === true,
     'P5 : la section s’ouvre d’elle-même quand un ajustement existe — sinon ' +
@@ -504,6 +543,7 @@ function zoneNote() { return corps.querySelector('textarea.note-mois'); }
   scene.journees['c-lea']['2026-07-09'] = { jour: '2026-07-09', type: 'absence_enfant' };
   await ouvrirEnfant();
   await ouvrirJour(9);
+  await ouvrirAutresCas();
   var det6 = parTexte(sheet, 'details', 'Ajuster mes heures');
   det6.open = true;
   await pause(60);
@@ -591,6 +631,7 @@ function zoneNote() { return corps.querySelector('textarea.note-mois'); }
   console.log('\n--- P9 : un contrat à 45 minutes ---');
   await ouvrirEnfant('c-zoe');
   await ouvrirJour(10);
+  await ouvrirAutresCas();
   var det9 = parTexte(sheet, 'details', 'Ajuster mes heures');
   det9.open = true;
   await pause(60);

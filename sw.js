@@ -90,7 +90,13 @@
    dire la MÊME chose à l'espace enfant et à « Mes congés » — et servir l'un
    sans l'autre rendrait exactement le défaut corrigé : un congé posé visible
    d'un côté, écrasable de l'autre. */
-var CACHE = 'recap-mes-enfants-v2';
+/* FEUILLE DU JOUR REFAITE COMME LA MAQUETTE — NOM DE CACHE CHANGÉ.
+
+   Aucun fichier ajouté, deux fichiers servis changent : `js/ui-enfant.js` et
+   `css/style.css`. Ils se répondent — la liste de choix est écrite dans l'un
+   et habillée par l'autre — et servir le script neuf avec l'ancienne feuille
+   de style donnerait une liste sans son espacement ni sa pastille. */
+var CACHE = 'recap-mes-enfants-v3';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
