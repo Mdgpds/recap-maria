@@ -336,6 +336,10 @@ function cliquer(libelle, signe, fois) {
   /* ==================================================================== */
   console.log('\n--- P1 : semaine du lundi 6 au vendredi 10 juillet ---');
   boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
+     le parcours en journées, lui, est inchangé à partir d'ici. */
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
 
   assert(txt(sheet).indexOf('Quand serez-vous absente ?') !== -1, 'P1 : l’étape des dates');
@@ -533,6 +537,10 @@ function cliquer(libelle, signe, fois) {
   appels.imputations = []; appels.poser = [];
   await ouvrirConges();
   boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
+     le parcours en journées, lui, est inchangé à partir d'ici. */
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
   var ch2 = champsDates();
   poserDate(ch2.du, '2026-07-15');
@@ -553,6 +561,10 @@ function cliquer(libelle, signe, fois) {
   console.log('\n--- P3 : période à cheval sur deux mois ---');
   await ouvrirConges();
   boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
+     le parcours en journées, lui, est inchangé à partir d'ici. */
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
   var ch3 = champsDates();
   poserDate(ch3.du, '2026-07-29');
@@ -576,6 +588,10 @@ function cliquer(libelle, signe, fois) {
     statut: 'fige', donnees: {}, fige_le: '2026-07-31T18:00:00Z', transmis_le: null };
   await ouvrirConges();
   boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
+     le parcours en journées, lui, est inchangé à partir d'ici. */
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
   var ch4 = champsDates();
   poserDate(ch4.du, '2026-07-20');
@@ -613,6 +629,10 @@ function cliquer(libelle, signe, fois) {
     statut: 'fige', donnees: {}, fige_le: '2026-07-31T18:00:00Z', transmis_le: null };
   await ouvrirConges();
   boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
+     le parcours en journées, lui, est inchangé à partir d'ici. */
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
   var ch5 = champsDates();
   poserDate(ch5.du, '2026-07-20');
@@ -678,6 +698,10 @@ function cliquer(libelle, signe, fois) {
   appels.imputations = []; appels.poser = [];
   await ouvrirConges();
   boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
+     le parcours en journées, lui, est inchangé à partir d'ici. */
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
   var ch6 = champsDates();
   poserDate(ch6.du, '2026-07-13');

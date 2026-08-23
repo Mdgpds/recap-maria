@@ -417,6 +417,9 @@ var sheet = document.getElementById('sheet');
     '§18.6 : et elle est lue AVANT les boutons, pas après');
 
   boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format. */
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
   /* Du 1er au 5 juin : la période contient le 3, jour de familiarisation
      saisi à la main. C'est lui qui doit déclencher la garde du §18.4. */

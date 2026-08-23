@@ -381,8 +381,22 @@ var toast = document.getElementById('toast');
   parTexte(corps, 'button', 'Poser des congés').click();
   await pause(200);
 
+  /* LOT 21 §21.1 — LE PARCOURS COMMENCE DÉSORMAIS PAR LE FORMAT.
+     Maria ne pose plus seulement des journées : elle choisit d'abord entre
+     journées, demi-journée et durée libre. Le parcours en journées, lui, ne
+     change pas d'une ligne — c'est ce que la suite de ce test vérifie. */
+  assert(txt(sheet).indexOf('Je pose…') !== -1,
+    'LOT 21 : le parcours commence par le choix du format');
+  assert(txt(sheet).indexOf('Une ou plusieurs journées') !== -1 &&
+         txt(sheet).indexOf('Une demi-journée') !== -1 &&
+         txt(sheet).indexOf('Une durée libre') !== -1,
+    'LOT 21 : les trois formats sont proposés');
+
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
+  await pause(200);
+
   assert(txt(sheet).indexOf('Quand serez-vous absente ?') !== -1,
-    'LOT 10 : le parcours commence par les DATES');
+    'LOT 10 : le parcours en journées commence toujours par les DATES');
   assert(txt(sheet).indexOf('ouvrables décomptés') !== -1,
     'LOT 10 : le décompte s’affiche sous les dates');
   assert(txt(sheet).indexOf('samedi inclus') !== -1,

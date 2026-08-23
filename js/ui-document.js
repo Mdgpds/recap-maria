@@ -327,7 +327,13 @@
   var LIBELLE_EVENEMENT_ECART = {
     liberation_anticipee: 'libération anticipée',
     arrivee_decalee: 'arrivée décalée à ma demande',
-    retard_parent: 'retard à la reprise'
+    retard_parent: 'retard à la reprise',
+    /* LOT 21 (§21.3) — le congé posé à l'heure emprunte la mécanique de
+       l'écart d'horaire, mais ce n'est PAS une libération anticipée : c'est un
+       congé, et le document doit le dire. C'est toute la raison d'être de la
+       migration `017` — sans elle, cette ligne aurait menti sur une pièce
+       opposable des années plus tard. */
+    conge_horaire: 'congé posé sur cette journée'
   };
 
   function libelleEcartHoraire(e) {

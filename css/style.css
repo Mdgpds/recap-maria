@@ -492,6 +492,14 @@ table.cal td.futur:active { transform: none; }
 .choice.on { border-color: var(--acl); background: var(--acs); }
 /* Lot 20 — « aujourd'hui : heures à déclarer » sur la carte de l'Accueil.
    Le seul endroit de l'Accueil qui RÉCLAME quelque chose. */
+/* Lot 21 — l'issue choisie pour un enfant, sous sa ligne dans la pose à
+   l'heure : les trois boutons, puis l'effet chiffré. Décalé sous le choix
+   auquel il se rapporte, pour qu'on ne le lise pas comme celui du suivant. */
+.issue { margin: -4px 0 10px 30px; }
+.issue .row { gap: 6px; margin-bottom: 5px; }
+.issue .row .btn { margin-bottom: 0; }
+.issue .warnbox { margin-top: 6px; }
+.choice.off { opacity: .55; cursor: default; }
 .rappel-jour { color: var(--wa); margin-top: 6px; }
 .rappel-jour b { font-weight: 700; }
 
