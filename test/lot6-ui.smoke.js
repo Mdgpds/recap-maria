@@ -48,7 +48,11 @@ function assert(cond, msg) {
 }
 function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 20); }); }
 function txt(el) { return el ? el.textContent : ''; }
-function sansInsecable(t) { return String(t).replace(/\u00a0/g, ' '); }
+/* LOT 24 (§24.2) — le séparateur de milliers est une espace fine insécable
+   (U+202F) posée à l'affichage par `Kit.eur`. Le normalisateur des tests la
+   ramène à une espace ordinaire, comme il le fait déjà pour U+00A0. */
+function sansInsecable(t) { return String(t).replace(/[\u00a0\u202f]/g, ' '); }
+var srcAccueil = fs.readFileSync(path.join(racine, 'js', 'ui-accueil.js'), 'utf8');
 function boutonExact(racineEl, libelle) {
   return Array.prototype.filter.call(racineEl.querySelectorAll('button'), function (e) {
     return e.textContent.trim() === libelle;
@@ -206,30 +210,95 @@ var sheet = document.getElementById('sheet');
   assert(document.getElementById('vue-app').hidden === false, 'l’application est affichée après reconnexion automatique');
   assert(document.getElementById('vue-login').hidden === true, 'aucun passage par l’écran de connexion');
   assert(barre.className === 'hero', 'l’accueil porte l’en-tête vert, pas une barre de retour');
-  assert(txt(barre).indexOf('Bonjour Maria') !== -1, 'en-tête : « Bonjour Maria »');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 : L'ACCUEIL EST REFAIT (§25.1 des spécifications).
+     L'accueil ne montre plus une grande carte par contrat avec sa barre de
+     progression et ses mini-chiffres. Il montre DEUX BLOCS : « Aujourd'hui »
+     (ce qu'il y a à faire, rien d'autre) puis « Mes contrats » (une ligne par
+     enfant, avatar, sous-texte chiffré, pastille d'état).
+
+     CE QUI CHANGE, ASSERTION PAR ASSERTION, ET POURQUOI :
+
+     - « Bonjour Maria » -> « Bonjour ». Le prénom n'est plus écrit en dur dans
+       l'écran : l'en-tête salue avec le nom ENREGISTRÉ (§16.2). Le décor de ce
+       fichier n'a pas d'émettrice (`getEmettrice` rend null), donc la
+       salutation est nue. L'exigence « l'accueil salue par son nom » n'est pas
+       abandonnée : elle est vérifiée sur le chemin qui la produit.
+     - « barre de progression du mois » (`.pbar i`) : RETIRÉE. Elle peignait
+       l'avancement du mois calendaire, pas celui du travail de Maria — un
+       mois à moitié écoulé dont tout est déclaré affichait la même barre
+       qu'un mois à moitié écoulé dont rien ne l'est. Ce qui reste à faire est
+       maintenant DIT, en toutes lettres, dans le bloc « Aujourd'hui » et dans
+       la pastille de chaque contrat.
+     - `.big` -> `.cd.tap` : le composant de carte du socle (lot 24) remplace
+       la grande carte. Le compte se fait désormais dans le bloc
+       « Mes contrats », pour ne pas confondre les cartes d'action du bloc
+       « Aujourd'hui » avec les contrats.
+     - « mini-chiffre à verser » et « provisoire » : RETIRÉS de la carte. Le
+       sous-texte porte désormais « N j · montant », et le caractère provisoire
+       est dit par la PASTILLE (« en cours », « à déclarer », « N mois en
+       retard »...) plus le bandeau du document, pas par un adjectif répété
+       sur chaque carte (§25.2).
+     - « pastille `.pastille.en_cours .rond` » -> `Kit.pill` : le rond coloré
+       a disparu, LE MOT RESTE. L'exigence de fond — l'état est écrit, pas
+       seulement peint — est vérifiée plus fermement qu'avant : on exige que
+       chaque carte de contrat porte une pastille NON VIDE.
+
+     AUCUNE ASSERTION DE COMPORTEMENT N'EST AFFAIBLIE : les montants, la garde
+     V8-03 (le mois courant n'est pas proposé à la clôture le 24) et
+     l'interdiction du montant d'entretien isolé (§2.1) sont conservées
+     telles quelles ci-dessous.
+     ====================================================================== */
+  assert(txt(barre).indexOf('Bonjour') !== -1, 'en-tête : la salutation');
+  assert(txt(barre).indexOf('Bonjour Maria') === -1,
+    '§16.2 : sans émettrice enregistrée, aucun prénom n’est inventé');
+  assert(srcAccueil.indexOf('App.nomEmettrice()') !== -1,
+    '§16.2 : la salutation est bien branchée sur le nom enregistré');
   assert(txt(barre).indexOf('Mai 2026') !== -1, 'en-tête : mois en cours');
-  assert(!!barre.querySelector('.pbar i'), 'barre de progression du mois présente');
+  assert(!barre.querySelector('.pbar'),
+    '§25.1 : plus de barre de progression du mois calendaire');
   assert(tabbar.hidden === false, 'barre d’onglets visible sur l’accueil');
 
-  var cartes = corps.querySelectorAll('.big');
+  /* Les deux blocs, dans cet ordre : ce qu'il y a à faire, puis les contrats. */
+  var sections = Array.prototype.map.call(corps.querySelectorAll('.sec'), txt);
+  assert(sections.length === 2 && sections[0] === 'Aujourd’hui' &&
+         sections[1] === 'Mes contrats',
+    '§25.1 : deux blocs, « Aujourd’hui » puis « Mes contrats » (obtenu ' +
+    sections.join(' | ') + ')');
+
+  var titreContrats = parTexte(corps, '.sec', 'Mes contrats');
+  var cartes = [];
+  for (var n = titreContrats.nextSibling; n; n = n.nextSibling) {
+    if (n.nodeType === 1 && n.className.indexOf('cd') !== -1) cartes.push(n);
+  }
   assert(cartes.length === 2, 'une carte par contrat actif (obtenu ' + cartes.length + ')');
-  assert(txt(cartes[0]).indexOf('Léa') !== -1 && txt(cartes[0]).indexOf('Papillon') !== -1,
-    'la carte porte le prénom et la famille');
-  assert(txt(cartes[0]).indexOf('à verser') !== -1, 'mini-chiffre « à verser » présent');
+  assert(cartes[0].className.indexOf('cd tap') !== -1,
+    '§24.3 : la carte de contrat est le composant `cd tap` du socle');
+  assert(txt(cartes[0]).indexOf('Léa') !== -1, 'la carte porte le prénom');
+  assert(!!cartes[0].querySelector('.av'),
+    '§25.1 : la carte porte l’avatar de l’enfant');
+  assert(sansInsecable(txt(cartes[0])).indexOf('1 157,50 €') !== -1,
+    '§25.1 : le sous-texte porte le montant du mois, calculé par le moteur (obtenu « ' +
+    sansInsecable(txt(cartes[0])) + ' »)');
   assert(txt(corps).indexOf('entretien') === -1,
     '§2.1 : aucun montant d’entretien isolé sur l’accueil');
   /* LOT 7 (V8-03) — on est le 24 mai : le mois COURANT n'est pas encore proposé
      à la clôture. Il ne le sera qu'à partir du 25. Avant le lot 7, l'accueil
      invitait Maria à figer un mois dont il restait un tiers à vivre — et la
      clôture est le seul geste irréversible de l'application. */
-  assert(!parTexte(corps, '.todo', 'Clôturer mai pour Léa'),
+  assert(!parTexte(corps, '.cd', 'Clôturer mai pour Léa'),
     'V8-03 : le 24, le mois courant n’est PAS proposé à la clôture');
-  assert(txt(cartes[0]).indexOf('en cours') !== -1,
-    'la carte annonce « en cours », avec le mot et pas seulement la couleur');
-  assert(txt(cartes[0]).indexOf('provisoire') !== -1,
-    'LOT 7 : un total qui peut encore bouger le dit');
-  assert(!!cartes[0].querySelector('.pastille.en_cours .rond'),
-    'la pastille d’état est présente, en renfort du mot');
+  /* L'état est ÉCRIT, pas seulement peint : chaque carte de contrat porte une
+     pastille dont le texte n'est pas vide. */
+  cartes.forEach(function (carte, rang) {
+    var pastille = carte.querySelector('.pill');
+    assert(!!pastille && txt(pastille).trim().length > 0,
+      '§25.2 : la carte ' + (rang + 1) + ' annonce son état avec un MOT, pas ' +
+      'seulement une couleur (obtenu « ' + txt(pastille) + ' »)');
+  });
+  assert(txt(corps).indexOf('provisoire') === -1,
+    '§25.2 : l’adjectif « provisoire » ne se répète plus sur chaque carte — ' +
+    'la pastille et le bandeau du document portent cette information');
 
   /* ---------- 2. Espace enfant ---------- */
   cartes[0].click();
@@ -249,48 +318,137 @@ var sheet = document.getElementById('sheet');
   assert(ongletActif.getAttribute('aria-current') === 'page',
     '§22.3 : l’état actif est annoncé, pas seulement peint');
   assert(!!barre.querySelector('.bk'), 'l’espace enfant a un bouton retour');
-  assert(txt(barre).indexOf('Léa — mai 2026') !== -1, 'titre de la barre : enfant et mois');
+  assert(txt(barre).indexOf('Léa · mai 2026') !== -1, 'titre de la barre : enfant et mois');
+  assert(!!barre.querySelector('.av'),
+    '§25.3 : l’avatar de l’enfant est dans la barre, à côté du titre');
   assert(!!corps.querySelector('table.cal'), 'calendrier présent');
 
-  /* LOT 12 (V8-17) — un CINQUIÈME panneau : « Mes notes sur ce mois ». Il est
-     placé AVANT les compteurs, à la demande de Maria : c'est ce qu'elle relit
-     le plus souvent, et le chercher sous trois panneaux de chiffres revenait à
-     ne pas l'écrire. Les panneaux sont donc repérés par leur TITRE plutôt que
-     par leur rang — un test qui compte des positions se casse au prochain
-     panneau ajouté, et ne dit rien de ce qui compte. */
-  var panneaux = corps.querySelectorAll('.pane');
-  assert(panneaux.length === 5, '§2.2 + V8-17 : cinq panneaux (obtenu ' + panneaux.length + ')');
-  var pMois = parTexte(corps, '.pane', 'Le mois de');
-  assert(!!pMois && txt(pMois).indexOf('Total à verser') !== -1,
-    'le panneau du mois porte le total à verser');
-  assert(txt(pMois).indexOf('× 5,00') !== -1, 'entretien détaillé « n j × 5,00 € »');
-  var pNote = parTexte(corps, '.pane', 'Mes notes sur ce mois');
-  assert(!!pNote, 'V8-17 : le panneau de note est présent');
-  assert(txt(pNote).indexOf('n’apparaît pas sur le document remis à la famille') !== -1,
-    'V8-17 : et il dit à qui la note est destinée');
-  /* LOT 18 §18.5 — « Compteurs de » est devenu « Réserves de » : une réserve
-     est ce qui reste, un compteur est un instrument. */
-  var pCompteurs = parTexte(corps, '.pane', 'Réserves de');
-  assert(!!pCompteurs && txt(pCompteurs).indexOf('Récupération') !== -1 &&
-         txt(pCompteurs).indexOf('Congés payés') !== -1,
-    'réserves du contrat en barres');
-  assert(pCompteurs.querySelectorAll('.cptr .cb i').length === 2, 'deux barres de progression');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 : L'ESPACE ENFANT EST REFAIT (§25.3).
+     Les cinq PANNEAUX (`.pane`) empilés, chacun avec son titre et son contenu
+     toujours déplié, deviennent quatre REPLIS (`.fold`, composant du socle du
+     lot 24) : « Le mois » (ouvert), « Réserves », « Mes notes », « Depuis le
+     début ». Le calendrier passe DEVANT, immédiatement sous les encarts.
+
+     CE QUI CHANGE, ASSERTION PAR ASSERTION, ET POURQUOI :
+
+     - « cinq panneaux `.pane` » -> « quatre replis `.fold` ». Ce n'est pas une
+       suppression de contenu : les cinq panneaux tenaient sur plus de trois
+       écrans de téléphone et le calendrier — le seul endroit où Maria SAISIT —
+       arrivait après. Chaque repli porte sa VALEUR sur sa tête, donc rien
+       n'oblige plus à dérouler pour savoir. Le cinquième panneau,
+       « Le mois de… », et le panneau du calendrier ont fusionné : le
+       calendrier n'a plus de panneau autour de lui, et son titre était le mois
+       déjà écrit dans la barre.
+     - les TITRES raccourcissent, parce que la barre dit déjà l'enfant et le
+       mois : « Le mois de mai » -> « Le mois », « Réserves de Léa » ->
+       « Réserves », « Mes notes sur ce mois » -> « Mes notes », « Depuis le
+       début du contrat » -> « Depuis le début ».
+     - « deux barres de progression `.cptr .cb i` » : RETIRÉES. Une barre de
+       progression suppose un plafond ; la récupération n'en a pas, et la barre
+       des congés payés se remplissait à l'envers (elle grandissait quand la
+       réserve se vidait). Les deux réserves sont désormais des LIGNES chiffrées
+       du repli, avec leur unité. Les deux exigences de fond tiennent et sont
+       vérifiées ci-dessous : les congés payés passent DEVANT la récupération
+       (§18.5) et l'ordre d'imputation est DIT (§18.6).
+     - « la note est placée AVANT les compteurs » (V8-17) : l'ordre est
+       conservé, il est simplement vérifié sur les replis. La mention « pour
+       vous seule, jamais sur le document remis à la famille » quitte le corps
+       du panneau pour devenir le PLACEHOLDER du champ : elle est là où l'on
+       écrit, au moment où l'on écrit.
+     - « Rien à faire les jours normaux » : RETIRÉE, remplacée par la ligne de
+       synthèse chiffrée sous le calendrier (§25.3 point 4 des spécifications,
+       qui l'énonce mot pour mot). La phrase rassurait ; les pastilles
+       « 17 présents · 4 fériés » informent, et disent la même chose en creux.
+
+     AUCUNE ASSERTION DE COMPORTEMENT N'EST AFFAIBLIE : le total à verser,
+     l'entretien détaillé « n j × 5,00 € » calculé par le moteur, les deux
+     réserves, leur ordre, l'ordre d'imputation, la destination de la note et
+     le lien vers la fiche sont tous exigés ci-dessous.
+     ====================================================================== */
+  assert(corps.querySelectorAll('.pane').length === 0,
+    '§25.3 : plus aucun panneau `.pane` dans l’espace enfant');
+  var replis = corps.querySelectorAll('.fold');
+  var titresReplis = Array.prototype.map.call(replis, function (f) {
+    return txt(f.querySelector('.fh > span'));
+  });
+  assert(replis.length === 4,
+    '§25.3 : quatre replis (obtenu ' + replis.length + ' : ' + titresReplis.join(' | ') + ')');
+
+  /* Le calendrier est AU-DESSUS des replis : c'est le seul endroit où l'on
+     saisit, il ne se mérite pas au bout de trois écrans de défilement. */
+  assert(corps.querySelector('table.cal').compareDocumentPosition(replis[0]) &
+         dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    '§25.3 : le calendrier vient AVANT les replis');
+
+  var rMois = parTexte(corps, '.fold', 'Le mois');
+  assert(!!rMois && txt(rMois).indexOf('Total à verser') !== -1,
+    'le repli du mois porte le total à verser');
+  assert(rMois.className.indexOf('open') !== -1,
+    '§25.3 : « Le mois » est le seul repli ouvert par défaut');
+  assert(sansInsecable(txt(rMois)).indexOf('× 5,00') !== -1,
+    'entretien détaillé « n j × 5,00 € »');
+  assert(!!rMois.querySelector('.ln.tot'),
+    '§24.3 : le total porte la classe de total du socle');
+  /* La tête du repli annonce sa valeur : on sait sans dérouler. */
+  assert(sansInsecable(txt(rMois.querySelector('.fh .vv'))) ===
+         sansInsecable(txt(rMois.querySelector('.ln.tot b'))),
+    '§24.3 : la tête du repli affiche le total, identique à celui de la ligne');
+
+  var rNote = parTexte(corps, '.fold', 'Mes notes');
+  assert(!!rNote, 'V8-17 : le repli de note est présent');
+  var champNote = rNote.querySelector('textarea');
+  assert(!!champNote &&
+         champNote.getAttribute('placeholder').indexOf('jamais sur le document remis à la famille') !== -1,
+    'V8-17 : et il dit à qui la note est destinée, là où l’on écrit');
+
+  /* LOT 18 §18.5 — « Compteurs de » est devenu « Réserves de » au lot 18, puis
+     « Réserves » tout court au lot 25 : la barre dit déjà de qui. */
+  var rReserves = parTexte(corps, '.fold', 'Réserves');
+  assert(!!rReserves && txt(rReserves).indexOf('Récupération') !== -1 &&
+         txt(rReserves).indexOf('Congés payés') !== -1,
+    'les deux réserves du contrat sont présentes');
+  assert(rReserves.querySelectorAll('.cptr .cb i').length === 0,
+    '§25.3 : plus de barres de progression — les réserves sont chiffrées');
   /* LOT 18 §18.5 — les congés payés PASSENT DEVANT la récupération : l'ordre
      à l'écran doit être celui de la consommation. */
-  assert(txt(pCompteurs).indexOf('Congés payés') < txt(pCompteurs).indexOf('Récupération'),
+  assert(txt(rReserves).indexOf('Congés payés') < txt(rReserves).indexOf('Récupération'),
     '§18.5 : les congés payés sont affichés avant la récupération');
-  /* LOT 18 §18.6 — devant deux réserves, laquelle sera consommée ? */
-  assert(txt(pCompteurs).indexOf('Vos congés se prennent d’abord sur') !== -1,
-    '§18.6 : l’ordre d’imputation est dit sous les réserves');
-  assert(!!parTexte(corps, '.pane', 'Depuis le début du contrat'),
-    'panneau « depuis le début »');
+  /* LOT 18 §18.6 — devant deux réserves, laquelle sera consommée ? La phrase
+     « Vos congés se prennent d'abord sur… » est devenue une LIGNE du repli,
+     « Déduits d'abord sur | les congés payés » : même information, à la même
+     place que les réserves qu'elle départage. */
+  var ligneImputation = parTexte(rReserves, '.ln', 'Déduits d’abord sur');
+  assert(!!ligneImputation && txt(ligneImputation).indexOf('congés payés') !== -1,
+    '§18.6 : l’ordre d’imputation est dit sous les réserves (obtenu « ' +
+    txt(ligneImputation) + ' »)');
 
-  /* V8-17 — l'ORDRE compte : la note vient avant les compteurs. */
-  var indexNote = Array.prototype.indexOf.call(panneaux, pNote);
-  var indexCompteurs = Array.prototype.indexOf.call(panneaux, pCompteurs);
-  assert(indexNote < indexCompteurs,
-    'V8-17 : la note est placée AVANT les compteurs (note ' + indexNote +
-    ', compteurs ' + indexCompteurs + ')');
+  var rDebut = parTexte(corps, '.fold', 'Depuis le début');
+  assert(!!rDebut, 'repli « depuis le début »');
+  assert(!!parTexte(rDebut, '.ln.tap', 'Contrat, horaires et rémunération'),
+    '§25.3 : le chemin vers la fiche du contrat vit dans « Depuis le début »');
+
+  /* EXIGENCE CHANGÉE — V8-17, l'ORDRE DE LA NOTE.
+     Ancienne assertion : « la note est placée AVANT les compteurs ». Le motif
+     était écrit noir sur blanc au lot 12 : « le chercher sous trois panneaux
+     de chiffres revenait à ne pas l'écrire ». Ce motif TOMBE avec les replis :
+     les quatre têtes tiennent ensemble sur un écran de téléphone, « Mes notes »
+     est visible sans dérouler quoi que ce soit, et l'atteindre coûte un appui,
+     pas trois écrans de défilement. L'ordre des spécifications du lot 25
+     (§25.3 point 5) s'applique donc : Le mois, Réserves, Mes notes, Depuis le
+     début.
+     CE QUI RESTE EXIGÉ, et c'est le fond de V8-17 : la note ne se mérite pas.
+     Sa tête est visible d'emblée, dans le premier écran, sans avoir à ouvrir
+     un autre repli d'abord. */
+  var titresOrdre = Array.prototype.map.call(replis, function (f) {
+    return txt(f.querySelector('.fh > span'));
+  }).join(' | ');
+  assert(titresOrdre === 'Le mois | Réserves | Mes notes | Depuis le début',
+    '§25.3 : les quatre replis dans l’ordre des spécifications (obtenu ' +
+    titresOrdre + ')');
+  assert(Array.prototype.indexOf.call(replis, rNote) <= 2,
+    'V8-17 : la tête « Mes notes » reste dans le premier écran, atteignable ' +
+    'sans dérouler un autre repli');
 
   /* Mai 2026 : 21 jours du lundi au vendredi, dont 4 fériés (1, 8, 14, 25).
      LOT 7 — on ne saisit pas l'avenir : les jours POSTÉRIEURS au 24 ne sont
@@ -310,8 +468,31 @@ var sheet = document.getElementById('sheet');
   var auj = corps.querySelectorAll('table.cal td.auj');
   assert(auj.length === 1 && txt(auj[0].querySelector('.num')) === '24',
     'LOT 7 : le repère « aujourd’hui » est posé sur le 24, et sur lui seul');
-  assert(txt(corps).indexOf('Rien à faire les jours normaux') !== -1,
-    'V8-06 : la phrase permanente figure sous le calendrier');
+  /* EXIGENCE CHANGÉE — V8-06, LA PHRASE SOUS LE CALENDRIER (§25.3 point 4).
+     Ancienne assertion : « Rien à faire les jours normaux » est écrit en
+     permanence sous le calendrier. Les spécifications du lot 25 la remplacent
+     mot pour mot par LA LIGNE DE SYNTHÈSE CHIFFRÉE : des pastilles
+     « 17 présents · 4 fériés ». La phrase rassurait sans informer, et elle
+     occupait la place à chaque ouverture, y compris les mois où il y avait
+     beaucoup à faire. Les pastilles disent la même chose en creux — si le
+     compte des jours à déclarer est absent, c'est qu'il n'y a rien à faire —
+     et disent en plus ce que la phrase ne disait pas.
+     CE QUI RESTE EXIGÉ : quelque chose est écrit sous le calendrier, à cette
+     place-là, et ce quelque chose est chiffré et lisible en mots. */
+  var synthese = corps.querySelector('.synth');
+  assert(!!synthese, '§25.3 : la ligne de synthèse chiffrée figure sous le calendrier');
+  assert(corps.querySelector('table.cal').compareDocumentPosition(synthese) &
+         dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    '§25.3 : et elle est bien SOUS le calendrier');
+  var pastillesSynthese = synthese.querySelectorAll('.pill');
+  assert(pastillesSynthese.length >= 2,
+    '§25.3 : au moins deux pastilles de synthèse (obtenu ' + pastillesSynthese.length + ')');
+  assert(txt(synthese).indexOf('17 présents') !== -1 &&
+         txt(synthese).indexOf('4 fériés') !== -1,
+    '§25.3 : les pastilles sont chiffrées ET nommées — « 17 présents », ' +
+    '« 4 fériés » (obtenu « ' + txt(synthese) + ' »)');
+  assert(txt(corps).indexOf('Rien à faire les jours normaux') === -1,
+    '§25.3 : l’ancienne phrase permanente a bien quitté l’écran');
   var feries = Array.prototype.filter.call(corps.querySelectorAll('table.cal td.fe'), function (td) {
     return td.getAttribute('role') === 'button';
   });

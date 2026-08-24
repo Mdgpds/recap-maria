@@ -240,8 +240,21 @@ async function ouvrirDocumentDeMai() {
   assert(txt(corps).indexOf('Mois clôturé') !== -1, 'P1 : le document porte le bandeau « Mois clôturé »');
   assert(txt(corps).indexOf('ne bougeront plus') !== -1,
     'P1 : le bandeau promet la stabilité des chiffres, pas l’impossibilité de modifier');
-  assert(txt(corps).indexOf('transmis à la famille') === -1,
-    'P1 : aucune mention de transmission sur un mois non transmis');
+  /* EXIGENCE CHANGÉE — LOT 25 (A.2) : LE CAS NÉGATIF EST DIT, LUI AUSSI.
+     L'ancienne assertion exigeait le SILENCE sur un mois non transmis. Ce
+     silence était tenable tant que l'espace enfant portait, sur son bandeau de
+     mois clôturé, la mention « Il n'a pas encore été transmis » ; ce bandeau a
+     quitté l'espace enfant au lot 25 (§25.2), et l'information est venue ici,
+     juste au-dessus de la porte de réouverture.
+
+     CE QUE L'ANCIENNE ASSERTION PROTÉGEAIT — ne jamais laisser croire qu'un
+     récapitulatif est parti alors qu'il ne l'est pas — EST RENFORCÉ : au lieu
+     d'exiger l'absence d'une phrase, on exige la phrase JUSTE, et on interdit
+     explicitement la phrase fausse. */
+  assert(txt(corps).indexOf('n’a pas encore été transmis à la famille') !== -1,
+    'P1 : le document DIT qu’aucun récapitulatif n’est parti');
+  assert(!/transmis à la famille le /.test(txt(corps)),
+    'P1 : et il ne prétend à aucun moment qu’il l’a été');
 
   var bRouvrir = parTexte(corps, 'button', 'Rouvrir pour corriger');
   assert(bRouvrir !== null, 'P1 : le bandeau propose « Rouvrir pour corriger »');

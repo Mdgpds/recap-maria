@@ -257,18 +257,41 @@ var sheet = document.getElementById('sheet');
   assert(txt(corps).indexOf('ne correspond plus à vos réserves') !== -1,
     'A1 : l’écran de l’enfant s’affiche, et porte l’encart en tête');
 
-  /* L'ENCART NE DIT PLUS QUE 5 NE COUVRE PAS 5. */
-  assert(txt(corps).indexOf('couvre 5 j') !== -1 && txt(corps).indexOf('en compte 6 j') !== -1,
-    'B1 : l’encart oppose les DEUX nombres — ce qui est réparti, et ce que la ' +
-    'période compte réellement');
-  /* EXIGENCE CHANGÉE — « samedis inclus » n'est plus vrai : ils ne le sont
-     plus d'office. L'assertion garde son objet — l'encart doit DIRE pourquoi
-     le second nombre est plus grand — et la phrase dit maintenant que les
-     samedis COMPTÉS y sont compris. */
-  assert(txt(corps).indexOf('samedis comptés compris') !== -1,
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.2 : L'ESPACE ENFANT N'A PLUS QU'UN ENCART,
+     ET IL TIENT SUR UNE LIGNE. Les 43 mots de cet avertissement s'affichaient
+     en tête de l'écran, sous forme de pavé, à chaque ouverture du mois.
+
+     RIEN NE SE PERD (A.2) : l'encart d'une ligne NOMME le problème et OUVRE
+     une feuille qui porte le texte complet — les deux nombres opposés, la
+     raison de l'écart, et le bouton « Corriger la répartition ». Le §25.2 le
+     demande explicitement : « leur texte complet s'affiche sur la feuille
+     qu'ouvre l'encart, avec le bouton Corriger la répartition ».
+
+     L'ASSERTION NE S'AFFAIBLIT PAS : les trois exigences — les deux nombres,
+     la raison, le bouton — sont vérifiées mot pour mot, sur la feuille où
+     elles vivent désormais. On vérifie EN PLUS que l'encart est bien une
+     porte, c'est-à-dire qu'il mène quelque part.
+     ====================================================================== */
+  var encartReserves = parTexte(corps, '.enc', 'ne correspond plus à vos réserves');
+  var porteReserves = encartReserves.tagName === 'BUTTON'
+    ? encartReserves : encartReserves.querySelector('button');
+  assert(!!porteReserves, 'B1 : l’encart est une porte — il ouvre le texte complet');
+  porteReserves.click();
+  await pause(250);
+
+  /* L'AVERTISSEMENT NE DIT PLUS QUE 5 NE COUVRE PAS 5. */
+  assert(txt(sheet).indexOf('couvre 5 j') !== -1 && txt(sheet).indexOf('en compte 6 j') !== -1,
+    'B1 : l’avertissement oppose les DEUX nombres — ce qui est réparti, et ce ' +
+    'que la période compte réellement');
+  /* EXIGENCE CHANGÉE (lot 23) — « samedis inclus » n'est plus vrai : ils ne le
+     sont plus d'office. L'assertion garde son objet — l'avertissement doit
+     DIRE pourquoi le second nombre est plus grand — et la phrase dit
+     maintenant que les samedis COMPTÉS y sont compris. */
+  assert(txt(sheet).indexOf('samedis comptés compris') !== -1,
     'B1 : et il dit pourquoi le second est plus grand');
 
-  var bCorriger = boutonExact(corps, 'Corriger la répartition');
+  var bCorriger = boutonExact(sheet, 'Corriger la répartition');
   assert(!!bCorriger, 'B1 : le bouton de correction est offert');
   bCorriger.click();
   await pause(300);

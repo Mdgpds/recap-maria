@@ -119,7 +119,16 @@
    est immédiat : la feuille de style neuve servie avec l'ancien
    `js/ui-kit.js` — des classes stylées que personne ne pose, et des
    montants dont le séparateur change d'un écran à l'autre. */
-var CACHE = 'recap-redesign-socle-v1';
+/* LOT 25 (L'ACCUEIL ET L'ESPACE ENFANT) — NOM DE CACHE CHANGÉ.
+
+   Deux fichiers servis changent : `js/ui-accueil.js` (deux blocs, une carte
+   par geste) et `js/ui-enfant.js` (encart unique et sa file, synthèse
+   chiffrée, replis, barre fixe, ⋯ de multi-sélection). Ils se RÉPONDENT :
+   la carte « heures à déclarer » de l'Accueil appelle
+   `UiEnfant.declarerFamiliarisation`, exportée par le second. Servir
+   l'accueil neuf avec l'ancien espace enfant ferait échouer le geste le plus
+   fréquent de la période d'adaptation, sans un mot pour l'expliquer. */
+var CACHE = 'recap-redesign-accueil-enfant-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

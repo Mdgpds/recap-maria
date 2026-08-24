@@ -445,7 +445,7 @@
      chevron ou pastille à droite. opts : { avatar, droite }. */
   function carteTap(titre, sous, onclick, opts) {
     opts = opts || {};
-    var b = bouton('cd tap', onclick);
+    var b = bouton('cd tap' + (opts.classe ? ' ' + opts.classe : ''), onclick);
     if (opts.avatar) b.appendChild(opts.avatar);
     var g = ce('span', 'gr');
     g.appendChild(ce('span', 'n', titre));

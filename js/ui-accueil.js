@@ -1,37 +1,25 @@
 /* ============================================================================
-   ui-accueil.js — Écran d'accueil (§2.1 des specs) et, depuis le lot 7, la
+   ui-accueil.js — Écran d'accueil (§25.1 du redesign) et, depuis le lot 7, la
    fin de mois guidée (§6.7).
 
-   Le principe directeur du lot 6 : l'application s'organise par FAMILLE, pas
-   par mois. L'accueil est donc une liste de contrats — « le dossier de Léa » —
-   et non un tableau du mois de mai.
+   LE GESTE DU JOUR D'ABORD. Deux blocs, et deux seulement :
 
-   CE QUE LE LOT 7 CHANGE ICI.
+     « Aujourd'hui » — ce qui est attendu aujourd'hui, une carte par geste, un
+     appui pour le faire : des heures de familiarisation à déclarer, un mois à
+     clôturer, un empêchement à lever. Rien à faire ? Une carte le dit.
 
-   L'accueil présentait une PROJECTION COMME UN FAIT. Le 11 août il annonçait
-   « 1 142,50 € à verser » et proposait de clôturer le mois, alors qu'il restait
-   quatorze jours travaillés. Deux défauts en un : un chiffre provisoire donné
-   pour définitif, et une invitation à poser le seul geste IRRÉVERSIBLE de
-   l'application au pire moment.
+     « Mes contrats » — une carte par contrat : avatar, prénom, un sous-texte,
+     une pastille d'état. Ni statistiques à trois colonnes, ni barre de
+     progression du mois : elles mesuraient le temps qui passe, pas ce qu'il y
+     a à faire.
 
-   Désormais :
-     - un mois a trois états — en cours, à clôturer, clôturé — et le mot est
-       toujours écrit à côté de la pastille, jamais porté par la couleur seule ;
-     - « À faire » montre D'ABORD les mois passés non clôturés, toujours, quelle
-       que soit la date : ce sont eux qui coûtent cher, pas le mois courant ;
-     - le mois courant n'est proposé à la clôture qu'à partir du 25 ;
-     - un montant provisoire le dit.
-
-   POURQUOI LA FIN DE MOIS GUIDÉE VIT DANS CE FICHIER. La spécification réserve
-   au lot 7 une liste de fichiers close, et `ui-fin-de-mois.js` n'en fait pas
-   partie. Plutôt que d'élargir le périmètre de ma propre initiative, l'écran
-   est rendu ici, sous la vue `finDeMois`. Signalé dans les points d'alerte :
-   ce fichier en devient long.
+   POURQUOI LA FIN DE MOIS GUIDÉE VIT DANS CE FICHIER. La spécification du
+   lot 7 réservait une liste de fichiers close, et `ui-fin-de-mois.js` n'en
+   faisait pas partie. L'écran est donc rendu ici, sous la vue `finDeMois`.
+   Signalé depuis, et toujours vrai : ce fichier en est long.
 
    Aucun calcul ici. Les chiffres viennent tous de la chaîne des mois
-   (chaine-mois.js -> Engine.calculerMois). Les montants d'entretien
-   n'apparaissent PAS isolément sur cet écran (§2.1) : seulement le total à
-   verser, qui est le chiffre que Maria attend.
+   (chaine-mois.js -> Engine.calculerMois).
    ========================================================================= */
 (function (global) {
   'use strict';
@@ -49,14 +37,10 @@
     return b;
   }
 
-  /* Correction A3 (relecture lot 6) : le seuil de « compteur bas » vit
-     désormais à un seul endroit, dans Kit. Trois écrans en portaient trois
-     valeurs différentes — à 7 jours restants, l'espace enfant affichait
-     « compteur bas » en orange pendant que l'accueil annonçait « tout est à
-     jour » et que « Mes congés » affichait le même chiffre en noir. */
-
   /* Au-delà de ce nombre de mois à clôturer, l'accueil propose le parcours
-     guidé plutôt que de laisser Maria ouvrir chaque enfant à la main. */
+     guidé plutôt que de laisser Maria ouvrir chaque enfant à la main. C'est
+     aussi le seuil du §25.1 : « la carte "N mois à clôturer" l'ouvre quand il
+     y a plus d'un mois en retard ». */
   var SEUIL_PARCOURS_GUIDE = 2;
 
   function afficher(ctx) {
@@ -68,29 +52,46 @@
      résolues pour ce mois-là, jamais de `contrat`. Les jours de garde sont
      datés : un avenant peut les changer au 1er d'un mois, et compter les jours
      travaillés d'un mois passé sur le planning d'aujourd'hui afficherait
-     « 20 j sur 22 » là où le contrat n'en prévoyait que 18.
-
-     `null` quand la chaîne n'a pas répondu : `Kit.joursPlanning` retombe alors
-     sur lundi-vendredi, ce qui est un défaut d'affichage sur un écran déjà en
-     erreur — jamais un chiffre transmis à une famille. */
+     « 20 j sur 22 » là où le contrat n'en prévoyait que 18. */
   function planningDe(entree) {
     return (entree && entree.conditions && entree.conditions.jours_planning) || null;
   }
 
-  /* §17.6 — le facteur d'affichage des congés payés, celui du mois montré. */
-  function mpjcDe(entree) {
-    return (entree && entree.conditions && entree.conditions.minutes_par_jour_conge) || 0;
-  }
-
   /* ------------------------------------------------------------------ */
-  /* 1. Accueil                                                          */
+  /* 1. L'ACCUEIL — LE GESTE DU JOUR D'ABORD (§25.1)                     */
+  /*                                                                     */
+  /* CE QUE LE LOT 25 CHANGE ICI, ET POURQUOI.                           */
+  /*                                                                     */
+  /* L'accueil montrait, pour chaque contrat, une carte à trois colonnes  */
+  /* de statistiques (présence, total à verser, congés payés), une barre  */
+  /* de progression du mois dans l'en-tête, et une rubrique « À faire »   */
+  /* qui mêlait six sortes de choses — retards, empêchements, clôtures,   */
+  /* compteurs bas, parcours guidé. Beaucoup de chiffres, et aucun geste. */
+  /*                                                                     */
+  /* Il y a maintenant DEUX blocs, et deux seulement :                    */
+  /*                                                                     */
+  /*   « Aujourd'hui » — ce qui est attendu AUJOURD'HUI, une carte par    */
+  /*   geste, UN APPUI POUR LE FAIRE. Rien à faire : une carte le dit.    */
+  /*                                                                     */
+  /*   « Mes contrats » — une carte par contrat : avatar, prénom, un      */
+  /*   sous-texte, une pastille d'état. Rien d'autre.                     */
+  /*                                                                     */
+  /* CE QUI NE SE PERD PAS (A.2). Les tuiles d'empêchement — rémunération */
+  /* manquante, net manquant, erreur de calcul — deviennent des cartes du */
+  /* bloc « Aujourd'hui », même ton orange, même destination (la fiche).  */
+  /* Le parcours guidé de fin de mois reste, ouvert par la carte « N mois */
+  /* à clôturer ». La pastille de l'onglet Accueil garde le compte réel.  */
+  /* Seul le compteur bas quitte cet écran : il vit désormais dans le     */
+  /* repli « Réserves » de l'espace enfant, et se lit aussi dans « Vos    */
+  /* réserves » de Mes congés et sur l'écran de pose, chiffré             */
+  /* (décision d'Adrien du 24 août 2026).                                 */
   /* ------------------------------------------------------------------ */
 
   function afficherAccueil(ctx) {
     var m = global.App.moisCourant();
     var contrats = global.App.contrats();
 
-    enTete(ctx.barre, m, null);
+    enTete(ctx.barre, m);
 
     if (!contrats.length) {
       etatVide(ctx.corps);
@@ -108,19 +109,16 @@
            quatre fois la même phrase ne fait qu'affoler. */
         var enEchec = fiches.filter(function (f) { return f.erreur; });
         if (enEchec.length === fiches.length) {
-          enTete(ctx.barre, m, null);
           /* Rien n'a pu être lu : la pastille est retirée plutôt que laissée
              à une valeur périmée. Un chiffre faux vaut moins que pas de
-             chiffre — et l'écran des rappels ne promet plus l'inverse
-             (correctif A4 de la relecture PR9). */
+             chiffre — et l'écran des rappels ne promet plus l'inverse. */
           global.App.majPastilleAccueil(0);
           etatDePanne(ctx.corps, enEchec[0].erreur, function () { global.App.rafraichir(); });
           return;
         }
 
-        enTete(ctx.barre, m, fiches);
-        rendreAFaire(ctx.corps, fiches, m);
-        rendreCartes(ctx.corps, fiches, m);
+        rendreAujourdhui(ctx.corps, fiches, m);
+        rendreContrats(ctx.corps, fiches, m);
 
         /* LOT 15 (A5) — la pastille est posée à partir de ce que l'accueil
            VIENT DE CALCULER : les mois en retard, plus le mois courant s'il
@@ -132,11 +130,7 @@
   }
 
   /* Une fiche = tout ce que l'accueil doit savoir d'un contrat pour ce mois.
-     Un contrat qui échoue n'efface pas les autres : il porte son erreur.
-
-     Lot 7 : la fiche porte aussi l'état du mois affiché et la liste des mois
-     PASSÉS restés en brouillon. Ces derniers se lisent dans la chaîne, qui
-     remonte jusqu'au début du contrat — aucun appel supplémentaire. */
+     Un contrat qui échoue n'efface pas les autres : il porte son erreur. */
   function charger(contrat, m) {
     var auj = global.App.aujourdhui();
     return Promise.all([
@@ -150,22 +144,51 @@
         contrat: contrat,
         entree: entree,
         journees: journees,
-        /* LOT 17 §17.2 — le planning vient des CONDITIONS du mois, résolues
-           par la chaîne. Un avenant peut le changer, et compter les jours
-           travaillés d'un mois passé sur le planning d'aujourd'hui donnerait
-           « 20 j sur 22 » là où le contrat n'en prévoyait que 18. */
         travailles: Kit.joursTravailles(contrat, planningDe(entree), m.annee, m.mois, journees),
         etat: entree ? Kit.etatDuMois(m.annee, m.mois, entree.recap, auj) : null,
         restants: Kit.joursTravaillesRestants(contrat, planningDe(entree), m.annee, m.mois, auj, journees),
         retards: moisEnRetard(chaine, m, auj),
+        /* §25.1 — LA FAMILIARISATION DU JOUR. Le moteur ne connaît pas la
+           date du jour (module pur) : c'est ici, et ici seulement, qu'on
+           croise son détail jour par jour avec l'horloge, lue une fois par
+           `App.aujourdhui()`. */
+        famDuJour: famDuJour(entree, m, auj),
         erreur: null
       };
     }).catch(function (e) {
       return {
         contrat: contrat, entree: null, journees: {}, travailles: [],
-        etat: null, restants: 0, retards: [], erreur: e
+        etat: null, restants: 0, retards: [], famDuJour: null, erreur: e
       };
     });
+  }
+
+  /* Ce que la période de familiarisation attend AUJOURD'HUI, ou `null` :
+     `{ jour, declare, minutes, rang, total }`. `rang` est la position du jour
+     dans les jours ouvrés de la période — « jour 6 sur 10 » : c'est ce qui
+     dit à Maria où elle en est de l'adaptation. */
+  function famDuJour(entree, m, auj) {
+    var fam = entree && entree.resultat && entree.resultat.familiarisation;
+    if (!fam || !fam.actif) return null;
+    if (!auj || auj.slice(0, 7) !== m.annee + '-' + String(m.mois).padStart(2, '0')) return null;
+
+    var jours = fam.jours || [];
+    var rang = 0;
+    var trouve = null;
+    for (var i = 0; i < jours.length; i++) {
+      if (jours[i].jour === auj) { trouve = jours[i]; rang = i + 1; break; }
+    }
+    if (!trouve) return null;
+    return {
+      jour: auj,
+      declare: !!trouve.declare,
+      minutes: trouve.minutes || 0,
+      entretien: !!trouve.entretien,
+      rang: rang,
+      total: jours.length,
+      joursDeclares: fam.joursDeclares,
+      minutesDeclarees: fam.minutesDeclarees
+    };
   }
 
   /* Les mois ANTÉRIEURS au mois affiché qui ne sont pas clôturés, du plus
@@ -186,151 +209,162 @@
   /* En-tête                                                             */
   /* ------------------------------------------------------------------ */
 
-  function enTete(barre, m, fiches) {
+  /* §25.1 — « Bonjour Maria », puis LE MOIS EN TITRE D'ÉCRAN. La barre de
+     progression du mois disparaît : elle mesurait le temps qui passe, pas ce
+     qu'il y a à faire — et l'accueil ne parle plus que de ça.
+
+     Le prénom vient du nom qui signe les documents (§16.2), jamais d'une
+     constante : c'est le seul endroit où Maria l'a écrit. Sans lui, la barre
+     dit simplement « Bonjour ». */
+  function enTete(barre, m) {
     Kit.vider(barre);
     barre.className = 'hero';
-    barre.appendChild(Kit.ce('div', 'hi', 'Bonjour Maria'));
+    var nom = (global.App.nomEmettrice && global.App.nomEmettrice()) || null;
+    barre.appendChild(Kit.ce('div', 'hi', nom ? 'Bonjour ' + nom : 'Bonjour'));
     barre.appendChild(Kit.ce('div', 'mo', Kit.moisCapitale(m.annee, m.mois)));
-
-    if (!fiches) return;
-
-    /* Avancement du mois : jours travaillés écoulés sur jours travaillés du
-       mois, tous contrats confondus (l'union, parce que les quatre contrats
-       partagent le même planning mais pas les mêmes dates de début). C'est une
-       lecture d'almanach, pas un calcul métier — voir ui-kit.js. */
-    var toutes = {};
-    fiches.forEach(function (f) { f.travailles.forEach(function (d) { toutes[d] = true; }); });
-    var jours = Object.keys(toutes).sort();
-    if (!jours.length) return;
-
-    var auj = global.App.aujourdhui();
-    var ecoules = jours.filter(function (d) { return d <= auj; }).length;
-    var pct = Math.round(ecoules * 100 / jours.length);
-
-    var wrap = Kit.ce('div', 'pwrap');
-    var lab = Kit.ce('div', 'plab');
-    lab.appendChild(Kit.ce('span', null, 'Le mois avance'));
-    var droite = auj >= jours[0] && auj <= jours[jours.length - 1]
-      ? Kit.jourLong(auj).replace(/^\S+\s/, '') + ' — j. ' + ecoules + ' sur ' + jours.length + ' travaillés'
-      : ecoules + ' jours travaillés sur ' + jours.length;
-    lab.appendChild(Kit.ce('span', null, droite));
-    wrap.appendChild(lab);
-    var bar = Kit.ce('div', 'pbar');
-    var i = Kit.ce('i');
-    i.style.width = pct + '%';
-    bar.appendChild(i);
-    wrap.appendChild(bar);
-    barre.appendChild(wrap);
   }
 
   /* ------------------------------------------------------------------ */
-  /* « À faire » — ordre strict (§6.2)                                   */
+  /* « Aujourd'hui » — une carte par geste, un appui pour le faire       */
   /* ------------------------------------------------------------------ */
 
-  function rendreAFaire(corps, fiches, m) {
-    corps.appendChild(Kit.section('À faire'));
-    var aCloturer = [];      // pour le parcours guidé
+  function rendreAujourdhui(corps, fiches, m) {
+    corps.appendChild(Kit.section('Aujourd’hui'));
     var nb = 0;
 
-    /* --- 1. Les mois PASSÉS non clôturés, d'abord, toujours ------------
-       Quelle que soit la date. C'est le renversement du lot 7 : jusqu'ici
-       l'accueil ne parlait que du mois courant, et un juillet oublié pouvait
-       le rester indéfiniment sans que rien ne le dise. */
-    var retards = [];
+    /* --- 1. LA FAMILIARISATION DU JOUR -------------------------------
+       Elle passe en premier : c'est le seul geste qui ne peut pas être fait
+       demain. Une journée non déclarée n'est payée par rien.
+
+       §25.1 — la carte OUVRE LA FEUILLE DE DÉCLARATION DIRECTEMENT, sans
+       passer par l'espace enfant. Une déclaration se corrige aussi : la
+       carte reste tant qu'on est dans la période, en ton neutre une fois les
+       heures posées. (ÉCART ASSUMÉ AU TEXTE du §25.1, conforme à la
+       maquette : « présent seulement quand un geste est attendu » ferait
+       disparaître la carte à la seconde où Maria a déclaré, et corriger une
+       durée saisie de travers redemanderait quatre appuis.) */
     fiches.forEach(function (f) {
-      if (f.erreur) return;
-      f.retards.forEach(function (e) { retards.push({ fiche: f, entree: e }); });
-    });
-    retards.sort(function (a, b) {
-      return (a.entree.annee * 12 + a.entree.mois) - (b.entree.annee * 12 + b.entree.mois);
-    });
-    retards.forEach(function (x) {
+      if (f.erreur || !f.famDuJour) return;
       nb++;
-      aCloturer.push({ contrat: x.fiche.contrat, annee: x.entree.annee, mois: x.entree.mois });
-      tuile(corps, '!',
-        Kit.moisCapitale(x.entree.annee, x.entree.mois).split(' ')[0] +
-          ' n’est pas clôturé pour ' + x.fiche.contrat.prenom_enfant,
-        'Le mois est terminé depuis le ' + Kit.dateLongue(dernierJourDuMois(x.entree.annee, x.entree.mois)) + '.',
-        function () { ouvrirEnfant(x.fiche.contrat, { annee: x.entree.annee, mois: x.entree.mois }); });
+      var fd = f.famDuJour;
+      var c = f.contrat;
+      corps.appendChild(Kit.carteTap(
+        fd.declare
+          ? c.prenom_enfant + ' — ' + Kit.heures(fd.minutes) + ' déclarées'
+          : c.prenom_enfant + ' — heures à déclarer',
+        'Familiarisation · jour ' + fd.rang + ' sur ' + fd.total,
+        function () { global.UiEnfant.declarerFamiliarisation(c, fd.jour); },
+        { avatar: Kit.avatar(c), classe: fd.declare ? '' : 'w' }));
     });
 
-    /* --- 2. Les empêchements du mois courant --------------------------
-       Ils passent avant la proposition de clôture : proposer de clôturer un
-       mois dont le salaire est inconnu, c'est proposer de figer un total
-       amputé. */
+    /* --- 2. LES EMPÊCHEMENTS -----------------------------------------
+       Ils passent avant toute proposition de clôture : proposer de clôturer
+       un mois dont le salaire est inconnu, c'est proposer de figer un total
+       amputé. Même ton orange qu'hier, même destination — la fiche. */
     fiches.forEach(function (f) {
+      var c = f.contrat;
       if (f.erreur) {
         nb++;
-        tuile(corps, '!', 'Le mois de ' + f.contrat.prenom_enfant + ' n’a pas pu être calculé',
-          Kit.messageErreur(f.erreur), null);
+        corps.appendChild(carteAujourdhui('!',
+          'Le mois de ' + c.prenom_enfant + ' n’a pas pu être calculé',
+          Kit.messageErreur(f.erreur), null));
         return;
       }
-      if (!f.entree) return;                 // contrat hors de ce mois : rien à faire
+      if (!f.entree) return;                 // contrat hors de ce mois
       if (f.entree.salaireManquant) {
         nb++;
-        tuile(corps, '!', 'Aucune rémunération connue pour ' + f.contrat.prenom_enfant,
-          'Renseignez son barème dans sa fiche contrat, sinon le mois ne peut pas être clôturé.',
-          function () { ouvrirFiche(f.contrat); });
+        corps.appendChild(carteAujourdhui('!',
+          'Aucune rémunération connue pour ' + c.prenom_enfant,
+          'Sans elle, le mois ne peut pas être clôturé.',
+          function () { ouvrirFiche(c); }));
         return;
       }
-      /* Correction B2 : un barème sans net n'est pas un barème manquant, et
-         personne ne le signalait — le mois se clôturait avec un total amputé
-         du salaire entier, définitivement. */
+      /* Un barème sans net n'est pas un barème manquant, et le mois se
+         clôturerait avec un total amputé du salaire entier, définitivement. */
       if (!f.entree.resultat.salaireNetCentimes) {
         nb++;
-        tuile(corps, '!', 'Le net de ' + f.contrat.prenom_enfant + ' n’est pas renseigné',
-          'Son récapitulatif est incomplet et ne peut pas être clôturé tant qu’il manque.',
-          function () { ouvrirFiche(f.contrat); });
+        corps.appendChild(carteAujourdhui('!',
+          'Le net de ' + c.prenom_enfant + ' n’est pas renseigné',
+          'Son récapitulatif est incomplet tant qu’il manque.',
+          function () { ouvrirFiche(c); }));
       }
     });
 
-    /* --- 3. Le mois COURANT, seulement à partir du 25 (V8-03) ---------
-       Avant le 25, proposer la clôture reviendrait à inviter Maria à figer un
-       mois dont elle ignore encore un tiers. Le geste est irréversible. */
+    /* --- 3. LES MOIS À CLÔTURER --------------------------------------
+       Les mois échus non clôturés, puis le mois courant à partir du 25
+       (V8-03 : avant, proposer la clôture reviendrait à inviter Maria à
+       figer un mois dont elle ignore encore un tiers).
+
+       AU-DELÀ D'UN SEUL MOIS, UNE SEULE CARTE : « N mois à clôturer »,
+       qui ouvre le parcours guidé. Quatre contrats en retard de trois mois
+       feraient douze cartes ; le §25.1 demande le parcours guidé dès qu'il y
+       a plus d'un mois en retard, et c'est exactement pour ça. */
+    var aCloturer = [];
+    fiches.forEach(function (f) {
+      if (f.erreur) return;
+      f.retards.forEach(function (e) {
+        aCloturer.push({ contrat: f.contrat, annee: e.annee, mois: e.mois, echu: true });
+      });
+    });
     fiches.forEach(function (f) {
       if (f.erreur || !f.entree) return;
       if (f.entree.salaireManquant || !f.entree.resultat.salaireNetCentimes) return;
       if (f.etat !== 'a_cloturer') return;
-      nb++;
-      aCloturer.push({ contrat: f.contrat, annee: m.annee, mois: m.mois });
-      tuile(corps, '!',
-        'Clôturer ' + Kit.libelleMois(m.mois) + ' pour ' + f.contrat.prenom_enfant,
-        'Vérifiez les journées, puis clôturez le mois.',
-        function () { ouvrirEnfant(f.contrat, m); });
+      aCloturer.push({ contrat: f.contrat, annee: m.annee, mois: m.mois, echu: false });
+    });
+    aCloturer.sort(function (a, b) {
+      return (a.annee * 12 + a.mois) - (b.annee * 12 + b.mois);
     });
 
-    /* --- 4. Les compteurs bas ----------------------------------------- */
-    fiches.forEach(function (f) {
-      if (f.erreur || !f.entree) return;
-      var cp = cpDisponible(f.entree);
-      var parJour = mpjcDe(f.entree);
-      if (!Kit.cpEstBas(cp, f.entree && f.entree.conditions)) return;
-      nb++;
-      tuile(corps, '⚠',
-        f.contrat.prenom_enfant + ' n’a plus que ' + Kit.joursCp(cp, parJour) +
-          ' de congés payés',
-        'Un congé passerait en partie sans solde sur ce contrat',
-        function () { ouvrirEnfant(f.contrat, m); });
-    });
-
-    /* --- 5. Le parcours guidé, quand il y a plusieurs mois à clôturer -- */
     if (aCloturer.length >= SEUIL_PARCOURS_GUIDE) {
-      var t = tuile(corps, '→',
-        aCloturer.length + ' mois sont à clôturer',
+      nb++;
+      corps.appendChild(carteAujourdhui('→',
+        aCloturer.length + ' mois à clôturer',
         'Les passer en revue un par un, sans en oublier.',
-        function () { global.App.aller('finDeMois', { liste: aCloturer }); });
-      t.classList.add('act');
+        function () { global.App.aller('finDeMois', { liste: aCloturer }); }));
+    } else if (aCloturer.length === 1) {
+      nb++;
+      var x = aCloturer[0];
+      /* §25.1 — la carte OUVRE LE DOCUMENT : c'est là que la clôture se
+         fait, et le document est ce qu'il faut relire avant de figer. */
+      corps.appendChild(carteAujourdhui('!',
+        Kit.moisCapitale(x.annee, x.mois).split(' ')[0] +
+          ' à clôturer pour ' + x.contrat.prenom_enfant,
+        x.echu
+          ? 'Terminé depuis le ' + Kit.dateLongue(dernierJourDuMois(x.annee, x.mois)) + '.'
+          : 'Vérifiez les journées, puis clôturez le mois.',
+        function () {
+          global.App.aller('document', {
+            contratId: x.contrat.id, annee: x.annee, mois: x.mois
+          });
+        }));
     }
 
-    /* --- 6. Rien à faire ---------------------------------------------- */
+    /* --- 4. RIEN À FAIRE --------------------------------------------- */
     if (nb === 0) {
-      var r = Kit.ce('div', 'todo act');
-      r.appendChild(Kit.ce('div', 'ic', '✓'));
-      var tx = Kit.ce('div', 'tx', 'Rien à clôturer pour l’instant');
-      tx.appendChild(Kit.ce('small', null, 'Les mois terminés sont tous clôturés.'));
-      r.appendChild(tx);
+      var r = Kit.ce('div', 'cd tap inerte');
+      r.appendChild(Kit.ce('span', 'ic', '✓'));
+      var g = Kit.ce('span', 'gr');
+      g.appendChild(Kit.ce('span', 'n', 'Rien à clôturer'));
+      g.appendChild(Kit.ce('span', 'd', 'Les mois terminés sont tous clôturés.'));
+      r.appendChild(g);
       corps.appendChild(r);
     }
+  }
+
+  /* Une carte du bloc « Aujourd'hui » : une pastille de ton, un titre, un
+     sous-texte, un chevron. Le ton orange dit qu'il y a quelque chose à
+     faire ; le mot du titre le dit aussi, jamais la couleur seule (V8-01). */
+  function carteAujourdhui(icone, titre, sous, onclick) {
+    var classe = 'cd tap w' + (onclick ? '' : ' inerte');
+    var b = onclick ? Kit.bouton(classe, onclick) : Kit.ce('div', classe);
+    b.appendChild(Kit.ce('span', 'ic', icone));
+    var g = Kit.ce('span', 'gr');
+    g.appendChild(Kit.ce('span', 'n', titre));
+    if (sous) g.appendChild(Kit.ce('span', 'd', sous));
+    b.appendChild(g);
+    if (onclick) b.appendChild(Kit.ce('span', 'ch', '›'));
+    return b;
   }
 
   /* Le nombre de mois à clôturer, tous contrats confondus : les retards, plus
@@ -351,138 +385,57 @@
     return Kit.iso(annee, mois, Kit.nbJoursDansMois(annee, mois));
   }
 
-  function tuile(corps, icone, titre, sous, onclick) {
-    var t = onclick ? Kit.bouton('todo', onclick) : Kit.ce('div', 'todo');
-    t.appendChild(Kit.ce('div', 'ic', icone));
-    var tx = Kit.ce('div', 'tx', titre);
-    if (sous) tx.appendChild(Kit.ce('small', null, sous));
-    t.appendChild(tx);
-    if (onclick) t.appendChild(Kit.ce('div', 'ar', '›'));
-    corps.appendChild(t);
-    return t;
-  }
-
   /* ------------------------------------------------------------------ */
-  /* Cartes contrat                                                      */
+  /* « Mes contrats » — une carte par contrat, RIEN D'AUTRE              */
   /* ------------------------------------------------------------------ */
 
-  function rendreCartes(corps, fiches, m) {
+  function rendreContrats(corps, fiches, m) {
     corps.appendChild(Kit.section('Mes contrats'));
-    fiches.forEach(function (f) {
-      corps.appendChild(carte(f, m));
-    });
+    fiches.forEach(function (f) { corps.appendChild(carteContrat(f, m)); });
   }
 
-  function carte(f, m) {
+  function carteContrat(f, m) {
     var c = f.contrat;
-    var clos = f.etat === 'cloture';
-    var b = Kit.bouton('big' + (clos ? '' : ' warn'), function () { ouvrirEnfant(c, m); });
+    return Kit.carteTap(c.prenom_enfant, sousTexte(f, m),
+      function () { ouvrirEnfant(c, m); },
+      { avatar: Kit.avatar(c), droite: pastilleContrat(f) });
+  }
 
-    var top = Kit.ce('div', 'top');
-    /* Lot 8 — photo si elle existe, initiale sinon, dans la couleur de
-       l'enfant. Quatre cartes se distinguaient jusqu'ici par une seule lettre
-       dans quatre ronds verts identiques. */
-    top.appendChild(Kit.avatar(c));
-    var ident = Kit.ce('div');
-    ident.appendChild(Kit.ce('div', 'nm', Kit.nomComplet(c)));
-    ident.appendChild(Kit.ce('div', 'fm', 'Famille ' + ((c.famille && c.famille.nom) || '—')));
-    top.appendChild(ident);
-    top.appendChild(Kit.ce('div', 'ar', '›'));
-    b.appendChild(top);
-
-    if (f.erreur) {
-      b.appendChild(Kit.ce('div', 'sb q', 'Chiffres indisponibles : ' + Kit.messageErreur(f.erreur)));
-      return b;
-    }
+  /* Le sous-texte : « 14 j · 1 142,00 € » en garde ordinaire,
+     « familiarisation · 8 h 30 déclarées » pendant l'adaptation. */
+  function sousTexte(f, m) {
+    if (f.erreur) return 'Chiffres indisponibles : ' + Kit.messageErreur(f.erreur);
     if (!f.entree) {
-      b.appendChild(Kit.ce('div', 'sb q',
-        'Ce contrat ne couvre pas ' + Kit.libelleMoisAnnee(m.annee, m.mois) + '.'));
-      return b;
+      return 'Ce contrat ne couvre pas ' + Kit.libelleMoisAnnee(m.annee, m.mois) + '.';
     }
-
     var r = f.entree.resultat;
+    var fam = r.familiarisation;
+    if (fam && fam.actif) {
+      return 'familiarisation · ' + Kit.heures(fam.minutesDeclarees) + ' déclarées';
+    }
+    return Kit.jours(r.joursPresence) + ' · ' + Kit.eur(r.totalAVerserCentimes);
+  }
 
-    /* LOT 20 (§20.4 a) — L'ÉTAT DU JOUR, SUR LA CARTE.
+  /* LA PASTILLE D'ÉTAT. Quatre états au lieu de trois : le §25.1 ajoute
+     « à déclarer » (une journée de familiarisation attend) et « N mois en
+     retard » (des mois échus ne sont pas clôturés) aux trois mots
+     historiques — en cours, à clôturer, clôturé (V8-01).
 
-       Pendant la familiarisation, la carte ne dit plus « 12 jours de présence,
-       tant à verser » : elle dit ce qu'il reste à faire aujourd'hui. C'est le
-       seul endroit que Maria ouvre plusieurs fois par jour, et une journée non
-       déclarée n'est payée par rien — la réclamer ailleurs reviendrait à ne
-       pas la réclamer. */
-    var ligneFam = etatFamiliarisationDuJour(r, m);
-    if (ligneFam) b.appendChild(ligneFam);
-
-    var stats = Kit.ce('div', 'stats');
-    stat(stats, Kit.jours(r.joursPresence), 'présence');
-    /* §2.1 : pas de montant d'entretien isolé sur l'accueil — le total seul.
-       Lot 7 : sur un mois en cours, le total est SUIVI de « provisoire ». Un
-       chiffre qui va encore bouger ne se présente pas comme un fait. */
-    /* CORRECTIF A6 (lot 7) DE LA RELECTURE PR9 — `restants` était calculé puis
-       JAMAIS AFFICHÉ. V8-02 demande « provisoire » ET le nombre de jours
-       travaillés restants : sans lui, Maria ne sait pas de combien le montant
-       peut encore bouger, sur l'écran qu'elle ouvre le plus souvent. */
-    stat(stats, Kit.eurCourt(r.totalAVerserCentimes),
-      f.etat === 'en_cours'
-        ? (f.restants > 0
-            ? 'à verser · provisoire, ' + f.restants + ' j restants'
-            : 'à verser · provisoire')
-        : 'à verser');
-    stat(stats, Kit.joursCp(cpDisponible(f.entree), mpjcDe(f.entree)), 'congés payés');
-    b.appendChild(stats);
-
-    /* La pastille porte le mot, jamais la couleur seule (V8-01, V8-05). */
-    var etat = Kit.ce('div', 'etat ' + f.etat);
-    etat.appendChild(Kit.pastilleEtat(f.etat));
-    etat.appendChild(Kit.ce('span', 'quand',
-      Kit.moisCapitale(m.annee, m.mois).split(' ')[0]));
-    b.appendChild(etat);
-
-    /* Un mois en retard sur ce contrat se voit depuis sa carte, pas seulement
-       depuis « À faire » : Maria descend souvent directement aux cartes. */
+     L'ordre est celui de l'urgence : un retard prime sur tout, une
+     déclaration du jour prime sur l'état du mois courant. Le MOT est toujours
+     écrit : la couleur ne porte jamais le sens toute seule (V8-05). */
+  function pastilleContrat(f) {
+    if (f.erreur) return Kit.pill('g', 'indisponible');
+    if (!f.entree) return Kit.pill('g', 'hors contrat');
     if (f.retards.length) {
-      b.appendChild(Kit.ce('div', 'sb q', f.retards.length === 1
-        ? Kit.moisCapitale(f.retards[0].annee, f.retards[0].mois) + ' n’est pas clôturé.'
-        : f.retards.length + ' mois antérieurs ne sont pas clôturés.'));
+      return Kit.pill('w', f.retards.length === 1
+        ? '1 mois en retard'
+        : f.retards.length + ' mois en retard');
     }
-    return b;
-  }
-
-  /* La ligne d'état du jour, ou `null` s'il n'y a rien à dire : le mois affiché
-     n'est pas celui d'aujourd'hui, ou aujourd'hui ne tombe dans aucune période.
-
-     Le moteur ne connaît pas la date du jour (module pur) : c'est ici qu'on
-     croise son détail jour par jour avec l'horloge, lue une seule fois par
-     `App.aujourdhui()`. */
-  function etatFamiliarisationDuJour(r, m) {
-    var fam = r && r.familiarisation;
-    if (!fam || !fam.actif) return null;
-    var auj = global.App.aujourdhui();
-    if (!auj || auj.slice(0, 7) !== m.annee + '-' + String(m.mois).padStart(2, '0')) return null;
-
-    var duJour = null;
-    (fam.jours || []).forEach(function (x) { if (x.jour === auj) duJour = x; });
-    if (!duJour) return null;
-
-    if (duJour.declare) {
-      return Kit.ce('div', 'sb q', Kit.heures(duJour.minutes) + ' déclarées aujourd’hui' +
-        (duJour.entretien ? ' · entretien compté' : ' · sans entretien'));
-    }
-    /* L'orange, et le mot : une couleur seule ne dit rien à qui ne la voit
-       pas (V8-01). */
-    var l = Kit.ce('div', 'sb rappel-jour');
-    l.appendChild(Kit.ce('b', null, 'Aujourd’hui : heures à déclarer'));
-    return l;
-  }
-
-  function stat(parent, valeur, cle) {
-    var s = Kit.ce('div', 'st');
-    s.appendChild(Kit.ce('div', 'v', valeur));
-    s.appendChild(Kit.ce('div', 'k', cle));
-    parent.appendChild(s);
-  }
-
-  function cpDisponible(entree) {
-    return Kit.cpDisponible(entree && entree.resultat && entree.resultat.compteurSortie);
+    if (f.famDuJour && !f.famDuJour.declare) return Kit.pill('w', 'à déclarer');
+    if (f.etat === 'cloture') return Kit.pill('', 'clôturé');
+    if (f.etat === 'a_cloturer') return Kit.pill('w', 'à clôturer');
+    return Kit.pill('', 'en cours');
   }
 
   /* ------------------------------------------------------------------ */
@@ -498,7 +451,7 @@
       'enfant que vous gardez.'));
     b.appendChild(Kit.ce('p', null,
       'À la fin de chaque mois, elle prépare le récapitulatif à remettre aux familles.'));
-    b.appendChild(boutonTexte('btn pr plein', 'Ajouter mon premier enfant', function () {
+    b.appendChild(boutonTexte('btn', 'Ajouter mon premier enfant', function () {
       /* B5 : la feuille de création, pas la fiche d'un contrat qui n'existe
          pas encore. `aller('fiche', {})` menait à « contrat introuvable ». */
       global.UiMenu.nouvelEnfant();
@@ -517,12 +470,12 @@
     /* La cause technique reste lisible pour qui la cherche, en petit, sous la
        phrase simple. On ne la cache pas : « ne jamais avaler une erreur ». */
     b.appendChild(Kit.ce('p', 'q', Kit.messageErreur(erreur)));
-    b.appendChild(boutonTexte('btn pr', 'Réessayer', reessayer));
+    b.appendChild(boutonTexte('btn', 'Réessayer', reessayer));
     corps.appendChild(b);
   }
 
   /* ------------------------------------------------------------------ */
-  /* 2. Fin de mois guidée (§6.7, V8-32)                                 */
+  /* 2. Fin de mois guidée (§6.7, V8-32) — inchangée par le lot 25                                 */
   /*                                                                     */
   /* Les clôtures s'enchaînent, UNE PAR ÉCRAN, avec une décision          */
   /* unitaire à chaque fois. Aucune clôture en lot, aucune case « tout    */
