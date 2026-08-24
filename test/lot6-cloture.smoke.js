@@ -49,6 +49,19 @@ function norm(t) { return t == null ? t : String(t).replace(/\u00A0/g, ' '); }
    porte la classe `.ln` du socle, et non plus `.l`. Les deux sont acceptées
    ici, le temps que les écrans finissent de migrer : le test lit une ligne,
    il n'a pas à savoir de quel lot vient son composant. */
+/* LOT 26 — poser une date sur un champ `Kit.champDate` : trois `select`
+   (jour, mois, année) dans l'ordre. On change l'ANNÉE et le MOIS d'abord —
+   le champ recompose sa liste de jours à chaque fois — puis le jour. */
+function poserDate(fld, annee, mois, jour) {
+  var sels = fld.querySelectorAll('select');
+  sels[2].value = String(annee);
+  sels[2].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  sels[1].value = String(mois);
+  sels[1].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  sels[0].value = String(jour);
+  sels[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+}
+
 function ligneDe(racineEl, libelle) {
   var l = Array.prototype.filter.call(racineEl.querySelectorAll('.l, .ln'), function (e) {
     return e.firstChild && e.firstChild.textContent.indexOf(libelle) !== -1;
@@ -415,26 +428,68 @@ var toast = document.getElementById('toast');
     '§16.8 : et sans répartition enregistrée, la ligne le dit au lieu de mentir');
 
   parTexte(corps, 'button', 'Poser des congés').click();
-  await pause(200);
+  /* LOT 26 — l'écran de pose CHARGE avant d'annoncer : les conditions du mois
+     visé, les journées déjà saisies sur la période et le quota réel de
+     samedis. Il ne devine rien, donc il attend. */
+  await pause(500);
 
-  /* LOT 21 §21.1 — LE PARCOURS COMMENCE DÉSORMAIS PAR LE FORMAT.
-     Maria ne pose plus seulement des journées : elle choisit d'abord entre
-     journées, demi-journée et durée libre. Le parcours en journées, lui, ne
-     change pas d'une ligne — c'est ce que la suite de ce test vérifie. */
-  assert(txt(sheet).indexOf('Je pose…') !== -1,
-    'LOT 21 : le parcours commence par le choix du format');
-  assert(txt(sheet).indexOf('Une ou plusieurs journées') !== -1 &&
-         txt(sheet).indexOf('Une demi-journée') !== -1 &&
-         txt(sheet).indexOf('Une durée libre') !== -1,
-    'LOT 21 : les trois formats sont proposés');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 26 §26.1 : HUIT ÉCRANS DEVIENNENT UN.
 
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
-  await pause(200);
+     - « Je pose… », la feuille de choix du format (lot 21), DISPARAÎT. Les
+       trois formats sont un SEGMENTÉ en tête de l'écran de pose : ils sont
+       toujours proposés, toujours les trois, mais ils ne coûtent plus un
+       écran ni un appui — et on peut changer d'avis sans revenir en arrière.
+       LES LIBELLÉS RACCOURCISSENT, comme la maquette : « Une ou plusieurs
+       journées » -> « Des journées », « Une demi-journée » -> « ½ journée »,
+       « Une durée libre » -> « Durée libre ». Un segmenté à trois cases sur
+       320 px ne tient pas autrement, et les trois mots suffisent.
+     - « Quand serez-vous absente ? », la feuille des dates, DISPARAÎT aussi :
+       les deux champs Du/Au sont sur le même écran, sous le segmenté. Ce que
+       cette assertion protégeait — le parcours en journées commence par les
+       DATES — est vérifié ci-dessous sur les champs eux-mêmes.
+     - « ouvrables décomptés » -> « ouvrables », dans le BLOC VERT de la
+       maquette. Le mot « décomptés » quitte le gros chiffre parce que la
+       phrase juste en dessous dit la règle du décompte en entier ; le chiffre,
+       lui, reste rejoué par le moteur.
 
-  assert(txt(sheet).indexOf('Quand serez-vous absente ?') !== -1,
+     AUCUNE GARANTIE N'EST AFFAIBLIE : les trois formats, les deux dates, le
+     décompte en direct et la règle RG-06 dite depuis la constante partagée
+     sont tous exigés ci-dessous.
+     ====================================================================== */
+  assert(txt(sheet).indexOf('Poser un congé') !== -1,
+    'LOT 26 : la pose tient sur UN écran');
+  assert(txt(sheet).indexOf('Je pose…') === -1,
+    'LOT 26 : la feuille de choix du format a disparu');
+  var segFormat = sheet.querySelector('.seg');
+  assert(!!segFormat, 'LOT 26 : le format est un segmenté, en tête de l’écran');
+  var formats = Array.prototype.map.call(segFormat.querySelectorAll('button'), txt);
+  assert(formats.join(' | ') === 'Des journées | ½ journée | Durée libre',
+    'LOT 21 : les trois formats sont toujours proposés (obtenu ' +
+    formats.join(' | ') + ')');
+  assert(txt(segFormat.querySelector('button.on')) === 'Des journées',
+    'LOT 26 : « des journées » est le format par défaut — le cas le plus fréquent');
+
+  assert(!!parTexte(sheet, '.fld', 'Du') && !!parTexte(sheet, '.fld', 'Au'),
     'LOT 10 : le parcours en journées commence toujours par les DATES');
-  assert(txt(sheet).indexOf('ouvrables décomptés') !== -1,
+
+  /* Le décor ouvre la pose sur AUJOURD'HUI — le dimanche 24 mai — et l'écran
+     dit la vérité : aucun jour ouvrable. On pose une vraie semaine, du lundi
+     18 au vendredi 22 mai, et le décompte apparaît. */
+  assert(txt(sheet).indexOf('Aucun jour ouvrable sur ces dates') !== -1,
+    'LOT 26 : sur un dimanche, l’écran dit qu’il n’y a rien à décompter — ' +
+    'il n’invente pas une période');
+  poserDate(parTexte(sheet, '.fld', 'Du'), 2026, 5, 18);
+  poserDate(parTexte(sheet, '.fld', 'Au'), 2026, 5, 22);
+  await pause(500);
+
+  assert(txt(sheet).indexOf('ouvrables') !== -1,
     'LOT 10 : le décompte s’affiche sous les dates');
+  assert(!!sheet.querySelector('.res .big2'),
+    '§26.1 : et il est le gros chiffre du bloc vert de la maquette');
+  assert(norm(txt(sheet.querySelector('.res .big2'))).indexOf('5 j') !== -1,
+    'RG-06 : lundi→vendredi sans samedi coché vaut 5 jours ouvrables (obtenu « ' +
+    txt(sheet.querySelector('.res .big2')) + ' »)');
   /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
      « Samedi inclus » n'est plus vrai : le samedi ne compte que s'il est
      choisi. L'assertion ne disparaît pas, elle change de cible — l'écran doit

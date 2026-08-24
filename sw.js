@@ -128,7 +128,16 @@
    `UiEnfant.declarerFamiliarisation`, exportée par le second. Servir
    l'accueil neuf avec l'ancien espace enfant ferait échouer le geste le plus
    fréquent de la période d'adaptation, sans un mot pour l'expliquer. */
-var CACHE = 'recap-redesign-accueil-enfant-v1';
+/* LOT 26 (POSER UN CONGÉ EN UN ÉCRAN) — NOM DE CACHE CHANGÉ.
+
+   Trois fichiers servis changent : `js/ui-conges.js` (huit écrans deviennent
+   un), `js/ui-kit.js` (`champDate` gagne `poser`, dont l'écran de pose a
+   besoin pour que le « Au » suive le « Du ») et `css/style.css` (le décompte
+   vert pâle et le « reste à répartir » sont retirés). Ils se RÉPONDENT : le
+   nouvel écran de pose appelle `champDate().poser()`. Servi avec l'ancien
+   `js/ui-kit.js`, le choix des dates lèverait au premier changement de
+   date — c'est-à-dire au premier geste. */
+var CACHE = 'recap-redesign-conges-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

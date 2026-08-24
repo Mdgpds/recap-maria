@@ -647,11 +647,48 @@ var sheet = document.getElementById('sheet');
      récupération. Sans la seconde, Maria ne pouvait pas savoir, avant de
      poser, si sa récupération lui éviterait le sans-solde — c'est-à-dire une
      retenue sur salaire. */
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 26 §26.2 : « MES CONGÉS » S'ALLÈGE.
+
+     - « 22,5 j DE CONGÉS PAYÉS · 93h30 DE RÉCUPÉRATION » -> « 22,5 j ·
+       93h30 ». La valeur d'une ligne redevient une VALEUR : elle était une
+       phrase de trois membres posée dans la colonne des montants, qu'il avait
+       fallu forcer à passer à la ligne pour qu'elle ne pousse pas l'écran de
+       côté. Le titre de la section dit déjà « Vos réserves », et l'ordre —
+       congés payés d'abord, récupération ensuite — est celui de la
+       consommation (§18.5), le même partout dans l'application.
+       CE QUE LOT 10 EXIGE NE BOUGE PAS, et c'est vérifié plus haut ET plus
+       bas : les DEUX réserves sont affichées, contrat par contrat, pour que
+       Maria sache avant de poser si sa récupération lui évitera le sans-solde.
+     - « Les compteurs diffèrent car les contrats n'ont pas commencé en même
+       temps. » : RETIRÉE de cet écran. C'est une RÈGLE, pas un état ; elle va
+       dans « Comment l'application compte » (lot 27). Ce qu'elle expliquait —
+       pourquoi les chiffres ne sont pas les mêmes d'un enfant à l'autre — est
+       dit par la structure elle-même : une ligne par enfant, chacune avec ses
+       propres nombres. La phrase commentait ce que l'écran montrait déjà.
+     - la règle du décompte RG-06 (28 mots) et la note de 46 mots quittent
+       aussi l'écran. RIEN NE SE PERD : la règle reste écrite là où le NOMBRE
+       est produit — le bloc vert de l'écran de pose — et sur l'encart RG-06
+       de chaque document qui porte des congés. Vérifié ci-dessous.
+     ====================================================================== */
   assert(txt(corps).indexOf('Vos réserves') !== -1, '§2.5 : les réserves, contrat par contrat');
-  assert(txt(corps).indexOf('de congés payés') !== -1 && txt(corps).indexOf('de récupération') !== -1,
-    'LOT 10 : congés payés ET récupération sont affichés');
-  assert(txt(corps).indexOf('Les compteurs diffèrent') !== -1, 'la phrase d’explication est présente');
+  var lignesReserves = Array.prototype.filter.call(corps.querySelectorAll('.ln'), function (l) {
+    return txt(l).indexOf('Léa') === 0 || txt(l).indexOf('Tom') === 0;
+  });
+  assert(lignesReserves.length >= 2,
+    '§2.5 : une ligne par contrat (obtenu ' + lignesReserves.length + ')');
+  assert(sansInsecable(txt(lignesReserves[0])).indexOf('j') !== -1 &&
+         /\d+h\d\d/.test(txt(lignesReserves[0])),
+    'LOT 10 : congés payés (en jours) ET récupération (en heures) sont affichés ' +
+    'sur la même ligne (obtenu « ' + txt(lignesReserves[0]) + ' »)');
+  assert(txt(lignesReserves[0]).indexOf('samedis') !== -1,
+    '§7 : et le reste du quota de samedis, visible HORS de la pose');
+  assert(txt(corps).indexOf('Les compteurs diffèrent') === -1,
+    '§26.2 : la phrase d’explication a quitté l’écran — c’est une règle, elle ' +
+    'vit désormais dans « Comment l’application compte »');
   assert(txt(corps).indexOf('Total des congés payés') === -1, '§2.5 : jamais de compteur global');
+  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats.') !== -1,
+    '§26.2 : les six mots qui restent — et ils passent DEVANT le bouton (§18.6)');
 
   /* V8-08 — UN SEUL bouton de pose. */
   assert(!!boutonExact(corps, 'Poser des congés'), 'V8-08 : « Poser des congés »');
