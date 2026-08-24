@@ -54,7 +54,7 @@ function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 60); 
    ordinaire ne trouverait jamais rien. L'échappement est explicite :
    écrit littéralement, ce caractère est invisible dans le fichier et la
    normalisation devient un remplacement d'espace par lui-même. */
-function txt(el) { return el ? String(el.textContent).replace(/\u00a0/g, ' ') : ''; }
+function txt(el) { return el ? String(el.textContent).replace(/[\u00a0\u202f]/g, ' ') : ''; }
 function contient(el, morceau, msg) {
   /* Le détail n'est composé QU'EN CAS D'ÉCHEC : une ligne « ok » suivie de
      « introuvable dans… » se relit de travers, et c'est le genre de sortie qui

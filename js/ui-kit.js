@@ -54,8 +54,19 @@
   /* Mise en forme (déléguée à format.js, jamais réécrite)               */
   /* ------------------------------------------------------------------ */
 
+  /* LOT 24 (§24.3) — LE SÉPARATEUR DE MILLIERS EST UNE ESPACE FINE INSÉCABLE.
+     « 1 142,00 € », partout : écran, document, texte copié, image. Le moteur
+     est FERMÉ sur ce cycle (`js/format.js`, diff vide) : la conversion se fait
+     donc ici, à l'affichage, et uniquement sur le séparateur de milliers —
+     l'espace insécable devant « € » ne bouge pas. Tous les écrans passent par
+     `Kit.eur` : une seule ligne, aucun rendu ne peut diverger. */
+  var ESPACE_FINE = '\u202f';
+
   function eur(centimes) {
-    return Format ? Format.centimesEnEuros(centimes || 0) : ((centimes || 0) / 100) + ' €';
+    var t = Format ? Format.centimesEnEuros(centimes || 0) : ((centimes || 0) / 100) + ' €';
+    /* Une espace insécable SUIVIE d'un chiffre est un séparateur de milliers ;
+       celle qui précède « € » n'en est pas un. */
+    return t.replace(/\u00a0(?=\d)/g, ESPACE_FINE);
   }
   /* Montant sans les centimes quand ils sont nuls — l'accueil affiche des
      mini-chiffres, « 1 340 € » y tient là où « 1 340,00 € » déborde. */
@@ -385,6 +396,176 @@
     return n;
   }
   function section(titre) { return ce('div', 'sec', titre); }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 24 (§24.2) — LES COMPOSANTS UNIQUES DU SOCLE                    */
+  /*                                                                     */
+  /* Chaque écran passe sur ces briques aux lots 25 à 27. Elles vivent    */
+  /* ici, en un seul exemplaire : dix encarts, huit lignes et sept cartes */
+  /* qui divergent est très exactement la dette que ce lot rembourse.     */
+  /* AUCUN calcul ici — que du DOM.                                       */
+  /* ------------------------------------------------------------------ */
+
+  /* ENCART — trois tons : '' (info, vert), 'w' (attention, orange),
+     'k' (blocage, rouge). `titre` en gras, `texte` facultatif. */
+  function enc(ton, titre, texte) {
+    var e = ce('div', 'enc' + (ton ? ' ' + ton : ''));
+    if (titre) e.appendChild(ce('b', null, titre));
+    if (texte) e.appendChild(document.createTextNode(texte));
+    return e;
+  }
+
+  /* ENCART UNE LIGNE — cliquable, chevron. Un vrai <button> : une carte qui
+     agit reste atteignable au clavier et annoncée comme un bouton. */
+  function encOne(ton, titre, onclick) {
+    var e = bouton('enc one' + (ton ? ' ' + ton : ''), onclick);
+    e.appendChild(ce('b', null, titre));
+    e.appendChild(ce('span', 'ch', '›'));
+    return e;
+  }
+
+  /* LIGNE « libellé · valeur » (`ln`). opts : { sous, total, alerte, phrase,
+     onclick }. `sous` est le sous-texte à 3 px du libellé. */
+  function ligneLn(parent, libelle, valeur, opts) {
+    opts = opts || {};
+    var l = opts.onclick
+      ? bouton('ln tap', opts.onclick)
+      : ce('div', 'ln' + (opts.total ? ' tot' : ''));
+    var g = ce('span', null, libelle);
+    if (opts.sous) g.appendChild(ce('span', 'sb2', opts.sous));
+    l.appendChild(g);
+    var v = ce('b', opts.alerte ? 'wa' : null, valeur == null ? '' : valeur);
+    if (opts.phrase) v.style.whiteSpace = 'normal';
+    l.appendChild(v);
+    if (parent) parent.appendChild(l);
+    return l;
+  }
+
+  /* CARTE cliquable (`cd tap`) : avatar facultatif, titre, sous-texte,
+     chevron ou pastille à droite. opts : { avatar, droite }. */
+  function carteTap(titre, sous, onclick, opts) {
+    opts = opts || {};
+    var b = bouton('cd tap', onclick);
+    if (opts.avatar) b.appendChild(opts.avatar);
+    var g = ce('span', 'gr');
+    g.appendChild(ce('span', 'n', titre));
+    if (sous) g.appendChild(ce('span', 'd', sous));
+    b.appendChild(g);
+    b.appendChild(opts.droite || ce('span', 'ch', '›'));
+    return b;
+  }
+
+  /* REPLI (`fold`) — en-tête (titre · valeur · chevron), corps replié.
+     Rend { bloc, corps, majValeur(txt), ouvrir() }. */
+  function fold(titre, valeur, opts) {
+    opts = opts || {};
+    var f = ce('div', 'fold' + (opts.ouvert ? ' open' : ''));
+    var h = bouton('fh', function () {
+      f.classList.toggle('open');
+      h.setAttribute('aria-expanded', f.classList.contains('open') ? 'true' : 'false');
+    });
+    h.appendChild(ce('span', null, titre));
+    var vv = ce('span', 'vv', valeur == null ? '' : valeur);
+    h.appendChild(vv);
+    h.appendChild(ce('span', 'ch', '›'));
+    h.setAttribute('aria-expanded', opts.ouvert ? 'true' : 'false');
+    f.appendChild(h);
+    var corps = ce('div', 'fb');
+    f.appendChild(corps);
+    return {
+      bloc: f, corps: corps,
+      majValeur: function (txt) { vv.textContent = txt == null ? '' : txt; },
+      ouvrir: function () { f.classList.add('open'); h.setAttribute('aria-expanded', 'true'); }
+    };
+  }
+
+  /* SEGMENTÉ (`seg`) — choix exclusif horizontal. `options` = [[valeur,
+     libellé], …] ; [valeur, libellé, false] rend l'option visible mais
+     inactive. Rend { bloc, valeur(), poser(v), boutons }. */
+  function seg(options, valeurInitiale, onchange, opts) {
+    opts = opts || {};
+    var bloc = ce('div', 'seg' + (opts.mini ? ' mini' : ''));
+    var courante = valeurInitiale;
+    var boutons = {};
+    (options || []).forEach(function (o) {
+      var b = bouton(null, function () {
+        if (b.disabled || courante === o[0]) return;
+        courante = o[0];
+        peindre();
+        if (onchange) onchange(o[0]);
+      });
+      b.textContent = o[1];
+      if (o[2] === false) b.disabled = true;
+      boutons[o[0]] = b;
+      bloc.appendChild(b);
+    });
+    function peindre() {
+      Object.keys(boutons).forEach(function (k) {
+        var on = k === String(courante);
+        boutons[k].classList.toggle('on', on);
+        boutons[k].setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    peindre();
+    return {
+      bloc: bloc, boutons: boutons,
+      valeur: function () { return courante; },
+      poser: function (v) { courante = v; peindre(); }
+    };
+  }
+
+  /* STEPPER (`stp`) — boutons désactivés aux bornes. Les bornes peuvent être
+     des FONCTIONS, relues à chaque appui : sur l'écran de pose, la borne
+     d'une ligne dépend des autres. Rend { bloc, valeur(), poser(v) }. */
+  function stepper(valeurInitiale, opts) {
+    opts = opts || {};
+    var v = valeurInitiale || 0;
+    function borne(x, defaut) { return typeof x === 'function' ? x() : (x == null ? defaut : x); }
+    var bloc = ce('span', 'stp');
+    var moins = bouton(null, function () { pas(-1); });
+    moins.textContent = '−';
+    moins.setAttribute('aria-label', opts.libelle ? 'Retirer — ' + opts.libelle : 'Retirer');
+    var champ = ce('span', null, String(v));
+    var plus = bouton(null, function () { pas(1); });
+    plus.textContent = '+';
+    plus.setAttribute('aria-label', opts.libelle ? 'Ajouter — ' + opts.libelle : 'Ajouter');
+    bloc.appendChild(moins);
+    bloc.appendChild(champ);
+    bloc.appendChild(plus);
+    function peindre() {
+      champ.textContent = String(v);
+      moins.disabled = v <= borne(opts.min, 0);
+      plus.disabled = v >= borne(opts.max, Infinity);
+    }
+    function pas(d) {
+      var nv = v + d;
+      if (nv < borne(opts.min, 0) || nv > borne(opts.max, Infinity)) return;
+      v = nv;
+      peindre();
+      if (opts.onchange) opts.onchange(v);
+    }
+    peindre();
+    return {
+      bloc: bloc,
+      valeur: function () { return v; },
+      poser: function (nv) { v = nv; peindre(); }
+    };
+  }
+
+  /* PASTILLE (`pill`) — 4 tons : '' vert, 'w' orange, 'b' bleu, 'g' gris. */
+  function pill(ton, texte) {
+    return ce('span', 'pill' + (ton ? ' ' + ton : ''), texte);
+  }
+
+  /* BARRE FIXE (`stick`) — l'action principale de l'écran, collée en bas du
+     corps défilant, au-dessus de la barre d'onglets. À AJOUTER EN DERNIER
+     dans le corps : `margin-top: auto` la pousse au fond quand le contenu
+     est court, `position: sticky` la garde visible quand il est long. */
+  function stick(parent) {
+    var s = ce('div', 'stick');
+    if (parent) parent.appendChild(s);
+    return s;
+  }
 
   /* Champ en lecture seule (libellé à gauche, valeur à droite). */
   function fld(libelle, valeur) {
@@ -959,7 +1140,10 @@
     vider(sheet);
     if (titre) sheet.appendChild(ce('div', 'h', titre));
     if (sousTitre) sheet.appendChild(ce('div', 's', sousTitre));
-    var corps = ce('div');
+    /* LOT 24 (§24.3) — le corps d'une feuille est une colonne flex qui peut
+       défiler avec elle : il porte la garde Safari (`> * { flex: none }`)
+       posée dans le composant, pas au cas par cas. */
+    var corps = ce('div', 'corps-feuille');
     sheet.appendChild(corps);
     remplir(corps, fermerFeuille);
     var annuler = bouton('btn nt', fermerFeuille);
@@ -1339,6 +1523,9 @@
     jourLong: jourLong, dateLongue: dateLongue,
     MOIS: MOIS, MOIS_COURT: MOIS_COURT, JOURS_SEMAINE: JOURS_SEMAINE, NBSP: NBSP,
     pane: pane, lines: lines, ligne: ligne, note: note, warnbox: warnbox, section: section,
+    /* LOT 24 (§24.2) — les composants uniques du socle. */
+    enc: enc, encOne: encOne, ligneLn: ligneLn, carteTap: carteTap,
+    fold: fold, seg: seg, stepper: stepper, pill: pill, stick: stick,
     fld: fld, fldModifiable: fldModifiable, champ: champ, champSelect: champSelect, selectSimple: selectSimple,
     champDate: champDate, champMois: champMois, nbJoursDansMois: nbJoursDansMois, iso: iso,
     ouvrirFeuille: ouvrirFeuille, fermerFeuille: fermerFeuille, feuilleEstOuverte: feuilleEstOuverte,

@@ -55,7 +55,7 @@ function egal(obtenu, attendu, msg) {
 }
 function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 40); }); }
 function txt(el) { return el ? String(el.textContent) : ''; }
-function sansInsecable(t) { return String(t).replace(/ /g, ' '); }
+function sansInsecable(t) { return String(t).replace(/[\u00a0\u202f]/g, ' '); }
 function parTexte(racineEl, selecteur, morceau) {
   return Array.prototype.filter.call(racineEl.querySelectorAll(selecteur), function (e) {
     return txt(e).indexOf(morceau) !== -1;

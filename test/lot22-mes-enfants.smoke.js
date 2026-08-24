@@ -48,7 +48,7 @@ function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 80); 
 /* Les espaces INSÉCABLES sont normalisés — la typographie française en sème
    partout. L'échappement est explicite : écrit littéralement, ce caractère est
    invisible dans le fichier. */
-function txt(el) { return el ? String(el.textContent).replace(/ /g, ' ') : ''; }
+function txt(el) { return el ? String(el.textContent).replace(/[\u00a0\u202f]/g, ' ') : ''; }
 function contient(el, morceau, msg) {
   if (txt(el).indexOf(morceau) !== -1) { assert(true, msg); return; }
   assert(false, msg + ' — « ' + morceau + ' » introuvable dans : ' + txt(el).slice(0, 360));

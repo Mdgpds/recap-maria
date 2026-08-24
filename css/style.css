@@ -1,62 +1,122 @@
 /* ============================================================================
-   style.css — Récap (lot 6, refonte de l'interface).
+   style.css — Récap Maria. LE SOCLE (lot 24 du redesign).
 
-   Cette feuille reprend TELLE QUELLE l'apparence de la maquette de référence
-   `prototype-v4-recap-maria.html` : couleurs, typographies, espacements, rayons
-   et noms de classes courts (.bar, .bd, .pane, .lines, .cptr, .doc…). Garder
-   les noms de la maquette n'est pas de la paresse : c'est ce qui rend la
-   comparaison écran par écran vérifiable d'un coup d'œil au moment de la
-   relecture.
+   Cette feuille remplace « 24 tailles, ~100 couleurs, 10 encarts, 16 rayons »
+   par UN SYSTÈME, celui de `maquette-v2-cliquable.html` (validée par Adrien,
+   itération par itération). Les quatre lois, contrôlées par test :
 
-   Deux écarts assumés avec la maquette, et seulement deux :
-   - la maquette dessine un téléphone (.device, 390 × 820) au milieu d'une page
-     grise ; ici l'application OCCUPE l'écran (100dvh) — c'est le même écran,
-     sans le cadre ;
-   - la maquette n'a pas d'écran de connexion : il est ajouté ici dans le même
-     langage visuel (carte blanche, bouton vert, rayons identiques).
+   1. QUATRE TAILLES DE POLICE, TROIS GRAISSES — 22/700 (titre d'écran),
+      17/600 (titre de bloc, barre haute, bouton plein), 15/400 ou 600 (corps,
+      libellés, valeurs), 13/400 (secondaire, sous-textes, pastilles). Aucune
+      autre taille dans tout le fichier, hors la section papier du document,
+      qui a sa propre échelle réduite à quatre valeurs (17/15/13/11).
+      ÉCART ASSUMÉ À LA MAQUETTE, le document de spécification prime : la
+      maquette portait encore des 8/9/10/12/14 px (mini-libellés du
+      calendrier, media query 374) — ils sont ramenés aux quatre tailles.
+   2. DEUX RAYONS — 12 px pour tout ce qui est rectangulaire, 999 px pour les
+      pastilles et boutons ronds. (La feuille en bas d'écran arrondit ses deux
+      coins hauts à 12 px, même rayon.)
+   3. UNE ÉPAISSEUR DE TRAIT — 1,5 px, couleur --ln pour la bordure neutre ;
+      les encarts prennent leur teinte de bordure (--acl/--wal/--dgl) à la
+      même épaisseur. Les filets INTÉRIEURS des listes de lignes restent des
+      filets (1 px --ln2), et la variante `tot` porte son trait de 2 px : ce
+      sont des règles du composant Ligne (§24.2), pas des bordures.
+   4. UNE AMPLITUDE AU TOUCHER — scale(.985) sur tout ce qui s'appuie ; le
+      calendrier garde .94 (exception écrite de la spécification).
 
-   Mobile d'abord. Aucune dépendance, aucune police chargée, aucun framework.
+   ZÉRO COULEUR EN DUR hors `:root` — l'identité papier du document garde ses
+   couleurs propres, rassemblées EN TÊTE de sa section, entre les repères
+   `<papier>` et `</papier>` que le test de socle lit.
+
+   LA CORRECTION SAFARI, POSÉE DANS LE COMPOSANT : tout conteneur
+   `display:flex` qui défile porte `> * { flex: none }`. C'est le bug des
+   « menus aplatis » vu par Adrien sur iPhone — impossible à réintroduire ici,
+   puisque les deux conteneurs défilants de l'application (.bd, .sheet et le
+   corps de feuille .corps-feuille) portent la garde à la source.
+
+   SOMMAIRE
+   --------
+    1. Jetons (:root)
+    2. Base, ossature (appli, corps défilant, barre fixe)
+    3. Barres hautes (bar, hero) et barre d'onglets
+    4. Titres de section, boutons, liens
+    5. Encart (enc) — les 3 tons, la variante une-ligne
+    6. Ligne (ln) et listes de lignes héritées (lines, fld, menu, card)
+    7. Carte (cd, big, todo, choice, opt, kid, aligne, coche-ligne)
+    8. Repli (fold, ajuster, ventil-detail)
+    9. Segmenté (seg), stepper (stp), compteurs hérités
+   10. Pastilles (pill, pastille, badge, synth, av — identité)
+   11. Calendrier
+   12. Bloc résultat vert (res), décompte, reste
+   13. Champs (fld saisies, textarea, nuancier, photo)
+   14. Feuille en bas d'écran, options, toast
+   15. Étapes (etapes, wsteps), frise, sélection multiple (selbar)
+   16. Document — identité papier (palette propre)
+   17. Connexion, états vides et de panne, divers
+   18. Responsive (≤ 374 px)
    ========================================================================= */
 
-:root {
-  /* Palette de la maquette, à l'identique. */
-  --ac: #0d5c46;   /* vert d'accent (couleur de thème de l'app installable) */
-  --acs: #dcefe8;  /* vert clair (fonds) */
-  --acl: #7bb9a4;  /* vert moyen (bordures) */
-  --acd: #0b4635;  /* vert foncé (texte sur fond clair) */
+/* ------------------------------------------------------------------------ */
+/* 1. JETONS — le :root de la maquette fait foi                              */
+/* ------------------------------------------------------------------------ */
 
-  --ink: #0f1419;
+:root {
+  /* Vert d'accent (thème de l'application installable). */
+  --ac:  #0d5c46;
+  --ac2: #0a4a38;   /* le second arrêt du dégradé (connexion) */
+  --acs: #dcefe8;
+  --acl: #7bb9a4;
+  --acd: #0b4635;
+
+  /* Encres. */
+  --ink:  #0f1419;
   --ink2: #3d4852;
   --ink3: #5a6672;
 
-  --ln: #cfd6dd;
+  /* Traits. */
+  --ln:  #cfd6dd;
   --ln2: #e6eaee;
 
-  --wa: #a34e00;   /* orange (alerte, absence) */
+  /* Orange — attention. */
+  --wa:  #a34e00;
   --was: #fde9cf;
   --wal: #dda44f;
+  --wad: #7a3b00;
 
-  --bl: #39428a;   /* bleu (congé de Maria) */
+  /* Bleu — congé de Maria. */
+  --bl:  #39428a;
   --bls: #e6e9f5;
   --bll: #b9c3e8;
 
-  --danger: #8f2d2d;
-  --danger-l: #e0a0a0;
+  /* Rouge — blocage, gestes destructifs. */
+  --dg:  #8f2d2d;
+  --dgs: #f9ecec;
+  --dgl: #e0a0a0;
 
-  /* CORRECTIF D'UN DÉFAUT DU LOT 17, signalé en restitution.
-     Le lot 17 a écrit `var(--bg2)`, `var(--bd)` et `var(--bg)` dans les styles
-     des champs de durée et des jours de garde. Ces trois variables n'ont
-     jamais été définies : une propriété personnalisée absente rend la
-     déclaration entière invalide, et les cases du planning se sont retrouvées
-     sans fond ni bordure sur l'écran de création d'un contrat.
-     Ce n'est pas une correction de confort glissée dans un autre lot : c'est
-     une feuille de style cassée, que le lot 18 hériterait telle quelle. Les
-     valeurs reprennent la palette existante, à l'identique. */
-  --bg:  #f4f6f8;  /* fond de page */
-  --bg2: #ffffff;  /* fond des surfaces */
-  --bd:  #cfd6dd;  /* bordure — même valeur que --ln */
-  --wad: #7a3b00;  /* orange foncé, pour du texte d'alerte sur fond clair */
+  /* Fonds. */
+  --bg:  #f4f6f8;   /* fond de page */
+  --bg2: #ffffff;   /* surfaces */
+  --bg3: #eef1f3;   /* fond neutre : rails, boutons inactifs, tuiles grises */
+  --bg4: #fbfcfd;   /* fond à peine teinté : corps dépliés, aperçus */
+
+  /* Gris de service. */
+  --ch:  #9aa3ad;   /* chevrons, éléments inactifs */
+
+  /* Palette d'identité des enfants — SIX teintes + la neutre. Jetons, jamais
+     une couleur libre (V8-31) : elles ne servent qu'à reconnaître un enfant
+     et n'entrent jamais dans le codage des états du calendrier. */
+  --id-vert-f: #dcefe8;       --id-vert-t: #2f6b56;       --id-vert-x: #1d4436;
+  --id-bleu-f: #dee6f4;       --id-bleu-t: #3a5a8c;       --id-bleu-x: #24395a;
+  --id-prune-f: #eee0ec;      --id-prune-t: #7a4370;      --id-prune-x: #4e2b48;
+  --id-terracotta-f: #f6e2da; --id-terracotta-t: #9c4f33; --id-terracotta-x: #63321f;
+  --id-ocre-f: #f3ead2;       --id-ocre-t: #87682a;       --id-ocre-x: #55411a;
+  --id-ardoise-f: #e4e8ea;    --id-ardoise-t: #4d5a61;    --id-ardoise-x: #30393e;
+  --id-neutre-f: #e9edf0;     --id-neutre-t: #5a666e;     --id-neutre-x: #39434a;
 }
+
+/* ------------------------------------------------------------------------ */
+/* 2. BASE, OSSATURE                                                         */
+/* ------------------------------------------------------------------------ */
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -65,33 +125,24 @@ html, body {
   height: 100%;
   /* §3 des specs : pas de rafraîchissement par glissement vers le bas. */
   overscroll-behavior: none;
-
-  /* LE DOUBLE-APPUI NE ZOOME PLUS.
-     Signalé par Adrien sur le téléphone. `touch-action` valait `auto`, le
-     réglage par défaut du navigateur : deux appuis rapprochés déclenchent un
-     zoom. Sur un calendrier dont les cases font 44 px et que Maria touche
-     debout, un enfant dans les bras, deux jours voisins marqués coup sur coup
-     zooment l'écran au lieu d'enregistrer deux journées.
-
-     `manipulation` désactive le double-tap ET le délai de 300 ms qui va avec —
-     l'application répond plus vite au premier appui. Le PINCEMENT pour zoomer
-     reste possible : on ne retire pas l'accessibilité, on retire un geste
-     accidentel. C'est aussi pour ça qu'on n'écrit pas `user-scalable=no` dans
-     la balise viewport, qui, lui, l'interdirait pour de bon. */
+  /* Le double-appui ne zoome plus (retour d'Adrien) ; le pincement reste. */
   touch-action: manipulation;
 }
 
 body {
-  background: #f4f6f8;
+  background: var(--bg);
   color: var(--ink);
-  font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* ------------------------------------------------------------------------ */
-/* Ossature : un écran, une barre haute, un corps qui défile, une barre       */
-/* d'onglets qui n'apparaît que sur les trois écrans racine (§1 des specs).   */
-/* ------------------------------------------------------------------------ */
+/* Les quatre tailles ont chacune leur classe utilitaire ; tout le reste du
+   fichier ne fait que les répéter. */
+.t-ecran { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+.t-bloc  { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.small   { font-size: 13px; color: var(--ink3); line-height: 1.45; }
+
+:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
 
 .appli {
   position: fixed;
@@ -99,24 +150,8 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #f4f6f8;
-
-  /* LA BANDE DE L'ENCOCHE EST PEINTE, ELLE AUSSI.
-     Signalé par Adrien : sur l'application installée depuis l'écran d'accueil,
-     un coin du haut de l'écran restait clair au lieu d'être vert. Le défaut est
-     antérieur aux lots 17 et 18.
-
-     La barre haute et l'en-tête de l'accueil réservent déjà la hauteur de
-     l'encoche (`env(safe-area-inset-top)` dans leur `padding-top`), mais rien
-     ne garantissait que la zone soit PEINTE sur toute sa largeur : selon
-     l'appareil et la version du système, le conteneur pouvait laisser
-     apparaître son propre fond.
-
-     Ce dégradé peint le haut en vert accent sur exactement la hauteur de
-     l'encoche, DERRIÈRE tout le reste. Là où la barre couvrait déjà la zone,
-     rien ne change — on superpose deux fois la même couleur. Là où elle ne la
-     couvrait pas, le trou disparaît. Sur un appareil sans encoche, la hauteur
-     vaut zéro et le dégradé n'existe pas. */
+  background: var(--bg);
+  /* La bande de l'encoche est peinte (retour d'Adrien, conservé). */
   background-image: linear-gradient(
     180deg,
     var(--ac) 0,
@@ -124,22 +159,56 @@ body {
     transparent env(safe-area-inset-top, 0px));
 }
 
+/* LE CORPS QUI DÉFILE. Colonne flex + garde Safari : un conteneur flex qui
+   défile écrase ses enfants sur iPhone si on le laisse faire — c'est le bug
+   des « menus aplatis ». La garde vit ICI, dans le composant, pas au cas par
+   cas (§24.3).
+   Tous les espacements verticaux du corps se font par margin-bottom : en
+   colonne flex, les marges ne fusionnent pas, une seule direction suffit. */
 .bd {
-  padding: 15px 14px 26px;
-  padding-bottom: calc(26px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 14px 14px 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
   overflow-y: auto;
   flex: 1;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
+.bd > * { flex: none; }
+.bd > p { margin-top: 0; }
 
-/* Barre haute des écrans en navigation par bouton retour. */
+/* LA BARRE FIXE (`stick`) — l'action principale de l'écran, toujours
+   visible : collée au bas du corps défilant, au-dessus de la barre d'onglets.
+   `margin-top: auto` la pousse en bas quand le contenu est court ;
+   `position: sticky` la garde visible quand il est long. Les marges
+   négatives recouvrent le padding du corps pour qu'elle fasse toute la
+   largeur. */
+.stick {
+  position: sticky;
+  bottom: calc(-24px - env(safe-area-inset-bottom));
+  z-index: 5;
+  margin: auto -14px calc(-24px - env(safe-area-inset-bottom));
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: var(--bg2);
+  border-top: 1px solid var(--ln2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stick > * { margin-bottom: 0 !important; }
+.stick .btn { margin: 0; }
+
+/* ------------------------------------------------------------------------ */
+/* 3. BARRES HAUTES ET BARRE D'ONGLETS                                       */
+/* ------------------------------------------------------------------------ */
+
 .bar {
   background: var(--ac);
-  color: #fff;
-  padding: 15px 14px;
-  padding-top: calc(15px + env(safe-area-inset-top));
-  /* Les marges latérales de l'encoche : en paysage, le titre passerait sinon
-     sous le coin arrondi de l'écran. */
+  color: var(--bg2);
+  padding: 12px 14px 11px;
+  padding-top: calc(12px + env(safe-area-inset-top));
   padding-left: calc(14px + env(safe-area-inset-left, 0px));
   padding-right: calc(14px + env(safe-area-inset-right, 0px));
   display: flex;
@@ -147,291 +216,696 @@ body {
   gap: 10px;
   font-weight: 600;
   font-size: 17px;
+  letter-spacing: -.01em;
   flex: 0 0 auto;
 }
 .bar .bk {
-  width: 32px; height: 32px;
-  border: none; background: rgba(255, 255, 255, .16); color: #fff;
-  border-radius: 9px; font-size: 17px; line-height: 1; cursor: pointer; flex: 0 0 auto;
+  width: 31px; height: 31px;
+  border: none; background: rgba(255, 255, 255, .17); color: var(--bg2);
+  border-radius: 999px; font-size: 15px; line-height: 1; cursor: pointer; flex: 0 0 auto;
+  font-family: inherit;
 }
-.bar .ti { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar .r { margin-left: auto; font-weight: 400; font-size: 13px; opacity: .88; }
-.bar .nav { margin-left: auto; display: flex; gap: 6px; }
+.bar .bk:active { transform: scale(.985); }
+.bar .ti { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.bar .r { font-weight: 400; font-size: 13px; opacity: .88; flex: none; }
+.bar .nav { display: flex; gap: 6px; flex: none; }
 .bar .nav button {
-  width: 32px; height: 32px; border: none;
-  background: rgba(255, 255, 255, .16); color: #fff;
-  border-radius: 9px; font-size: 15px; cursor: pointer;
+  width: 31px; height: 31px; border: none;
+  background: rgba(255, 255, 255, .17); color: var(--bg2);
+  border-radius: 999px; font-size: 15px; cursor: pointer; font-family: inherit;
 }
+.bar .nav button:active:not([disabled]) { transform: scale(.985); }
 .bar .nav button[disabled] { opacity: .35; cursor: default; }
+.bar .av.pt { border: none; }
 
-/* En-tête de l'accueil (dégradé), à la place de la barre. */
+/* En-tête de l'accueil : la salutation, puis le mois en titre d'écran. */
 .hero {
-  background: linear-gradient(160deg, #0d5c46, #0a4a38);
-  color: #fff;
-  padding: 20px 16px 18px;
-  padding-top: calc(20px + env(safe-area-inset-top));
+  background: var(--ac);
+  color: var(--bg2);
+  padding: 12px 14px 16px;
+  padding-top: calc(12px + env(safe-area-inset-top));
   padding-left: calc(16px + env(safe-area-inset-left, 0px));
   padding-right: calc(16px + env(safe-area-inset-right, 0px));
   flex: 0 0 auto;
 }
-.hero .hi { font-size: 14px; opacity: .85; }
-.hero .mo { font-size: 25px; font-weight: 700; letter-spacing: -.015em; margin-top: 2px; }
-.hero .pwrap { margin-top: 13px; }
-.hero .plab { display: flex; font-size: 12.5px; opacity: .92; margin-bottom: 5px; gap: 10px; }
+.hero .hi { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.hero .mo { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; margin-top: 2px; }
+/* La barre de progression du mois disparaît au lot 25 ; ses classes restent
+   stylées d'ici là pour que l'écran actuel ne casse pas. */
+.hero .pwrap { margin-top: 12px; }
+.hero .plab { display: flex; font-size: 13px; opacity: .92; margin-bottom: 5px; gap: 10px; }
 .hero .plab span:last-child { margin-left: auto; text-align: right; }
-.hero .pbar { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .22); overflow: hidden; }
-.hero .pbar i { display: block; height: 100%; background: #fff; border-radius: 4px; }
+.hero .pbar { height: 7px; border-radius: 999px; background: rgba(255, 255, 255, .22); overflow: hidden; }
+.hero .pbar i { display: block; height: 100%; background: var(--bg2); border-radius: 999px; }
 
-/* Barre d'onglets — Accueil, Historique, Mes congés, Menu (lot 8). */
+/* Barre d'onglets — quatre onglets, icônes SVG embarquées (lot 22). */
 .tabbar {
   display: flex;
-  border-top: 1.5px solid var(--ln);
-  background: #fff;
+  border-top: 1px solid var(--ln2);
+  background: var(--bg2);
   flex: 0 0 auto;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding: 6px 4px calc(7px + env(safe-area-inset-bottom));
 }
-/* LOT 8 — QUATRE onglets. À 320 px de large, chaque bouton dispose de 80 px.
-   « Mes congés » est le plus long des quatre : il tient à 11,5 px, mais sans
-   marge. D'où les trois précautions ci-dessous — police légèrement réduite,
-   marges internes resserrées, et interdiction absolue de couper un mot. Une
-   étiquette tronquée en « Mes cong… » serait pire que pas d'étiquette. */
-/* LOT 22 §22.3 — la barre est un peu plus aérée : chaque bouton fait au moins
-   44 px de haut, seuil en dessous duquel une cible tactile se rate une fois
-   sur trois sur un téléphone tenu d'une main. */
 .tabbar button {
-  flex: 1; text-align: center; padding: 7px 2px 8px;
-  min-height: 44px; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 3px;
-  font: inherit; font-size: 11.5px; color: var(--ink3); font-weight: 600;
+  flex: 1; text-align: center; padding: 5px 0 4px;
+  min-height: 46px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+  font: inherit; font-size: 13px; color: var(--ink3); font-weight: 400;
   background: none; border: none; cursor: pointer;
-  white-space: nowrap; overflow: visible; letter-spacing: -.1px;
+  white-space: nowrap; overflow: visible; letter-spacing: -.02em;
   min-width: 0; position: relative;
-  border-radius: 11px; margin: 3px 2px;
+  border-radius: 12px; margin: 0 2px;
 }
 .tabbar button .i { display: block; line-height: 0; }
-.tabbar button .i svg { width: 22px; height: 22px; display: block; }
+.tabbar button .i svg { width: 21px; height: 21px; display: block; }
+.tabbar button.on { color: var(--acd); background: var(--acs); font-weight: 600; }
+.tabbar button:active { transform: scale(.985); }
 
-/* LOT 22 §22.3 — L'ONGLET ACTIF EST UNE PASTILLE PLEINE, pas un simple
-   changement de couleur. Une teinte seule se perd au soleil, sur un écran
-   baissé, ou pour qui distingue mal les couleurs : le fond dit la même chose
-   sans elle. La graisse renforcée la redit une troisième fois. */
-.tabbar button.on {
-  color: var(--acd); background: var(--acs); font-weight: 700;
+/* La pastille de l'onglet Accueil : le NOMBRE est écrit dedans. */
+.pastille-onglet {
+  position: absolute; top: 2px; right: calc(50% - 22px);
+  min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+  border-radius: 999px; background: var(--wa); color: var(--bg2);
+  font-size: 13px; font-weight: 600; line-height: 16px; text-align: center;
 }
 
 /* ------------------------------------------------------------------------ */
-/* Titres de section, boutons                                                */
+/* 4. TITRES DE SECTION, BOUTONS, LIENS                                      */
 /* ------------------------------------------------------------------------ */
 
 .sec {
-  font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700;
-  color: var(--ink3); margin: 19px 0 9px; display: flex; align-items: baseline;
+  font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+  font-weight: 600; color: var(--ink3);
+  margin: 7px 0 9px;
 }
 .sec:first-child { margin-top: 0; }
 
+/* LES TROIS BOUTONS (§24.2) : plein, contour (nt / dg), texte (lien).
+   La variante `sm` est une pastille. */
 .btn {
   display: block; width: 100%; text-align: center;
-  background: var(--ac); color: #fff; border: none; border-radius: 12px;
-  padding: 16px; font: inherit; font-weight: 600; font-size: 17px;
-  margin-top: 11px; cursor: pointer; transition: transform .08s;
+  background: var(--ac); color: var(--bg2); border: none; border-radius: 12px;
+  padding: 14px; font: inherit; font-weight: 600; font-size: 17px;
+  margin: 0 0 9px; cursor: pointer;
 }
-.btn:active { transform: scale(.985); }
-.btn[disabled] { opacity: .55; cursor: default; }
-.btn.gh { background: #fff; color: var(--ac); border: 2px solid var(--ac); }
-.btn.nt { background: #fff; color: var(--ink2); border: 1.5px solid var(--ln); font-weight: 500; font-size: 16px; }
-.btn.dg { background: #fff; color: var(--danger); border: 1.5px solid var(--danger-l); font-weight: 500; font-size: 16px; }
+.btn:active:not([disabled]) { transform: scale(.985); }
+.btn[disabled] { background: var(--bg3); color: var(--ch); cursor: default; }
+.btn.nt {
+  background: var(--bg2); color: var(--ink2);
+  border: 1.5px solid var(--ln); font-weight: 400; font-size: 15px; padding: 12px;
+}
+.btn.nt[disabled] { background: var(--bg3); color: var(--ch); border-color: var(--ln2); }
+.btn.dg {
+  background: var(--bg2); color: var(--dg);
+  border: 1.5px solid var(--dgl); font-weight: 400; font-size: 15px; padding: 12px;
+}
+/* `gh` (ancien contour vert) est absorbé par le contour neutre. */
+.btn.gh {
+  background: var(--bg2); color: var(--ac);
+  border: 1.5px solid var(--acl); font-weight: 600; font-size: 15px; padding: 12px;
+}
+.btn.sm {
+  display: inline-block; width: auto;
+  padding: 9px 12px; font-size: 13px; font-weight: 600; border-radius: 999px;
+  margin: 0;
+}
+.btn.sm.nt, .btn.sm.dg { padding: 9px 12px; }
+
+/* Bouton-texte. */
+.lien {
+  background: none; border: none; padding: 0; font: inherit; font-size: 13px;
+  color: var(--ac); font-weight: 600; cursor: pointer; margin-left: auto;
+}
+.lien2 { font-weight: 600; text-decoration: underline; cursor: pointer; }
+
+/* Rangée de raccourcis : des petits boutons côte à côte, largeur partagée. */
+.rrow { display: flex; gap: 8px; margin: 0 0 9px; }
+.rrow .btn { flex: 1; margin: 0; }
+
+.actions { display: flex; flex-direction: column; gap: 9px; margin: 5px 0 9px; }
+.actions .btn { margin: 0; }
 
 /* ------------------------------------------------------------------------ */
-/* Accueil : tuiles « À faire » et cartes contrat                            */
+/* 5. ENCART (`enc`) — le composant unique, 3 tons (§24.2)                   */
+/*    info (vert) · attention (orange, .w) · blocage (rouge, .k)             */
+/*    Variante `one` : une ligne, chevron, cliquable.                        */
+/*    `note` et `warnbox` (les 10 encarts d'hier) SONT des encarts : ils     */
+/*    prennent la géométrie et les tons du composant.                        */
 /* ------------------------------------------------------------------------ */
 
+.enc, .note, .warnbox {
+  border: 1.5px solid var(--acl);
+  background: var(--acs);
+  color: var(--acd);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0 0 9px;
+}
+.enc.w, .warnbox {
+  border-color: var(--wal); background: var(--was); color: var(--wad);
+}
+.enc.k {
+  border-color: var(--dgl); background: var(--dgs); color: var(--dg);
+}
+.enc b, .note b, .warnbox b {
+  display: block; font-size: 15px; font-weight: 600; margin-bottom: 4px; line-height: 1.35;
+}
+.enc.one {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  width: 100%; text-align: left; font-family: inherit;
+}
+.enc.one b { margin: 0; flex: 1; }
+.enc.one .ch { color: inherit; opacity: .7; font-size: 15px; flex: none; }
+.enc.one:active { transform: scale(.985); }
+.note .btn, .warnbox .btn, .enc .btn { margin: 9px 0 0; }
+.note .btn.sm, .warnbox .btn.sm { margin: 9px 6px 0 0; }
+/* Habillages historiques de la note, conservés le temps des lots 25-27. */
+.note.ecart { background: var(--bg); border-color: var(--ln); color: var(--ink2); }
+.note.ecart b { color: var(--ink); }
+.note.ecart .actions { flex-direction: row; flex-wrap: wrap; gap: 8px; margin: 11px 0 0; }
+.note.ecart .actions .btn { flex: 1 1 auto; margin: 0; font-size: 13px; padding: 10px 12px; }
+.note.a-venir { border-left: 3px solid var(--ac); }
+.note.permanente { margin-top: 5px; }
+
+/* ------------------------------------------------------------------------ */
+/* 6. LIGNE (`ln`) — « libellé · valeur », et les listes héritées            */
+/* ------------------------------------------------------------------------ */
+
+/* Le composant cible : padding 11 px, sous-texte `sb2` à 3 px, variante
+   `tot` (trait 2 px au-dessus), variante `tap` (cliquable). */
+.ln {
+  display: flex; justify-content: space-between; gap: 14px;
+  padding: 11px 0; border-bottom: 1px solid var(--ln2);
+  font-size: 15px; align-items: baseline; line-height: 1.45;
+}
+.ln:last-child { border-bottom: 0; }
+.ln b {
+  font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap; text-align: right;
+}
+.ln .sb2 { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 3px; }
+.ln.tot {
+  border-top: 2px solid var(--ink); border-bottom: 0;
+  font-weight: 700; margin-top: 4px; padding-top: 12px;
+}
+.ln.tot b { font-weight: 700; }
+.ln.tap { cursor: pointer; }
+.ln.tap:active { transform: scale(.985); }
+
+/* Les lignes héritées (`lines .l`) prennent la même géométrie : les écrans
+   des lots 25-27 migreront vers `ln`, l'œil ne verra pas la couture. */
+.lines { font-size: 15px; }
+.lines .l {
+  display: flex; padding: 11px 0; border-bottom: 1px solid var(--ln2);
+  gap: 14px; align-items: baseline; line-height: 1.45;
+}
+.lines .l:last-child { border-bottom: none; }
+.lines .l span:last-child {
+  margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.lines .l span:last-child.phr { white-space: normal; text-align: right; }
+.lines .l.tot {
+  border-top: 2px solid var(--ink); border-bottom: none;
+  margin-top: 4px; padding-top: 12px; font-weight: 700;
+}
+.lines .l.tot span:last-child { font-weight: 700; }
+.lines .l.q span { color: var(--ink3); font-weight: 400; }
+.lines .l .wa { color: var(--wa); }
+.lines .l .sb2 { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 3px; }
+
+/* Ligne de menu héritée : même carte cliquable que `cd tap`. */
+.menu {
+  display: flex; align-items: center; gap: 11px; padding: 14px 15px;
+  border: 1.5px solid var(--ln); border-radius: 12px; margin: 0 0 9px;
+  font-size: 15px; font-weight: 600; background: var(--bg2); cursor: pointer;
+  width: 100%; text-align: left; font-family: inherit; color: inherit;
+}
+.menu:active { transform: scale(.985); }
+.menu .ar { margin-left: auto; color: var(--ch); font-size: 17px; flex: none; }
+.menu .d { font-size: 13px; color: var(--ink3); display: block; margin-top: 3px; font-weight: 400; }
+
+/* Carte-liste héritée. */
+.card { border: 1.5px solid var(--ln); border-radius: 12px; padding: 13px 14px; margin: 0 0 9px; background: var(--bg2); }
+.card.click { cursor: pointer; width: 100%; text-align: left; font: inherit; color: inherit; display: block; font-family: inherit; }
+.card.click:active { transform: scale(.985); }
+.row { display: flex; align-items: baseline; gap: 9px; }
+.row .nm { font-weight: 600; font-size: 15px; }
+.row .mt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; }
+.sb { font-size: 13px; color: var(--ink2); margin-top: 3px; line-height: 1.45; }
+.sb.q { color: var(--ink3); }
+.sb.alerte { color: var(--wa); font-weight: 600; }
+
+/* Intertitre d'année (historique). */
+.an {
+  font-size: 13px; font-weight: 600; letter-spacing: .06em; color: var(--ink3);
+  margin: 7px 0 9px; display: flex; align-items: center; gap: 10px;
+}
+.an .t { color: var(--ac); }
+.an .tr { flex: 1; height: 1px; background: var(--ln); }
+.an .more { font-size: 13px; color: var(--ac); font-weight: 600; cursor: pointer; letter-spacing: 0; background: none; border: none; font-family: inherit; padding: 0; }
+
+/* ------------------------------------------------------------------------ */
+/* 7. CARTE (`cd`) — et les cartes héritées                                  */
+/* ------------------------------------------------------------------------ */
+
+.cd { background: var(--bg2); border: 1.5px solid var(--ln); border-radius: 12px; padding: 14px 15px; margin: 0 0 9px; }
+.cd.tap {
+  display: flex; align-items: center; gap: 11px; cursor: pointer;
+  width: 100%; text-align: left; font-family: inherit; color: inherit; font-size: 15px;
+}
+.cd.tap:active { transform: scale(.985); }
+.cd.pad0 { padding: 4px 14px; }
+.cd .gr { flex: 1; min-width: 0; }
+.cd .n { display: block; font-weight: 600; font-size: 15px; line-height: 1.3; }
+.cd .d { display: block; font-size: 13px; color: var(--ink3); line-height: 1.45; margin-top: 3px; }
+.cd .ch { color: var(--ch); font-size: 17px; flex: none; }
+
+/* Le panneau blanc hérité (`pane`) est une carte. */
+.pane { background: var(--bg2); border: 1.5px solid var(--ln); border-radius: 12px; padding: 14px 15px; margin: 0 0 9px; }
+.pane .pt { font-weight: 600; font-size: 17px; letter-spacing: -.01em; margin-bottom: 9px; display: flex; align-items: baseline; }
+.pane .pt .more { margin-left: auto; font-size: 13px; color: var(--ac); font-weight: 600; cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; }
+.pane .btn { margin-bottom: 0; margin-top: 9px; }
+
+/* Tuile « À faire » héritée (l'accueil du lot 25 la remplace par `cd tap`). */
 .todo {
-  display: flex; align-items: center; gap: 12px; background: #fff;
-  border: 1.5px solid var(--wal); border-radius: 13px; padding: 13px;
-  margin-bottom: 8px; cursor: pointer; transition: transform .08s;
-  width: 100%; text-align: left; font: inherit; color: inherit;
+  display: flex; align-items: center; gap: 11px; background: var(--bg2);
+  border: 1.5px solid var(--wal); border-radius: 12px; padding: 13px;
+  margin: 0 0 9px; cursor: pointer;
+  width: 100%; text-align: left; font: inherit; color: inherit; font-family: inherit;
 }
 .todo:active { transform: scale(.985); }
 .todo .ic {
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 34px; height: 34px; border-radius: 999px;
   background: var(--was); color: var(--wa);
   display: flex; align-items: center; justify-content: center;
-  font-size: 16px; font-weight: 700; flex: 0 0 auto;
+  font-size: 15px; font-weight: 700; flex: 0 0 auto;
 }
 .todo.act { border-color: var(--acl); cursor: default; }
 .todo.act .ic { background: var(--acs); color: var(--acd); }
-.todo .tx { flex: 1; font-size: 14.5px; font-weight: 600; }
-.todo .tx small { display: block; font-size: 12.5px; color: var(--ink3); font-weight: 400; margin-top: 1px; }
-.todo .ar { color: var(--ink3); font-size: 18px; }
+.todo .tx { flex: 1; font-size: 15px; font-weight: 600; line-height: 1.3; }
+.todo .tx small { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 3px; }
+.todo .ar { color: var(--ch); font-size: 17px; }
 
+/* Grande carte de contrat héritée. */
 .big {
-  border: 1.5px solid var(--ln); border-radius: 16px; padding: 14px; margin-bottom: 10px;
-  background: #fff; cursor: pointer; transition: transform .08s;
-  width: 100%; text-align: left; font: inherit; color: inherit; display: block;
+  border: 1.5px solid var(--ln); border-radius: 12px; padding: 14px 15px; margin: 0 0 9px;
+  background: var(--bg2); cursor: pointer;
+  width: 100%; text-align: left; font: inherit; color: inherit; display: block; font-family: inherit;
 }
 .big:active { transform: scale(.985); }
-.big .top { display: flex; align-items: center; gap: 13px; }
-.big .av {
-  width: 44px; height: 44px; border-radius: 50%;
-  background: var(--acs); color: var(--acd);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 18px; flex: 0 0 auto; border: 2px solid var(--acl);
-}
-/* LOT 8 — la teinte d'ÉTAT de la carte ne s'applique à la pastille que si
-   l'enfant n'a pas de couleur d'identité à lui. Sinon c'est son identité qui
-   parle : l'état est déjà dit par la pastille « en cours / à clôturer /
-   clôturé », avec son mot. */
-.big.warn .av:not([class*="id-"]) { background: var(--was); color: var(--wa); border-color: var(--wal); }
-.big .nm { font-weight: 700; font-size: 17px; }
-.big .fm { font-size: 12.5px; color: var(--ink3); }
-.big .ar { margin-left: auto; color: var(--ink3); font-size: 19px; }
+.big .top { display: flex; align-items: center; gap: 11px; }
+.big .nm { font-weight: 600; font-size: 15px; line-height: 1.3; }
+.big .fm { font-size: 13px; color: var(--ink3); margin-top: 3px; }
+.big .ar { margin-left: auto; color: var(--ch); font-size: 17px; }
 .big .stats { display: flex; gap: 8px; margin-top: 11px; }
-.big .st { flex: 1; background: #f6f8f9; border-radius: 9px; padding: 7px 9px; text-align: center; }
+.big .st { flex: 1; background: var(--bg3); border-radius: 12px; padding: 7px 9px; text-align: center; }
 .big .st .v { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
-.big .st .k { font-size: 10.5px; color: var(--ink3); font-weight: 600; }
-.big .etat { margin-top: 10px; font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.big .etat.ok { color: var(--acd); }
-.big .etat.wa { color: var(--wa); }
-.big.off { opacity: .72; background: #fbfcfd; }
-.big.off .av { background: #eef1f4; color: var(--ink3); border-color: var(--ln); }
+.big .st .k { font-size: 13px; color: var(--ink3); font-weight: 400; }
+.big .etat { margin-top: 10px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.big .etat .quand { color: var(--ink3); font-weight: 600; }
+.big.off { opacity: .62; background: var(--bg4); }
+.big.warn .av:not([class*="id-"]) { background: var(--was); color: var(--wa); border-color: var(--wal); }
 
-/* ------------------------------------------------------------------------ */
-/* Calendrier                                                                */
-/* ------------------------------------------------------------------------ */
-
-table.cal { width: 100%; border-collapse: separate; border-spacing: 4px; table-layout: fixed; }
-table.cal th { font-size: 10.5px; font-weight: 700; color: var(--ink3); padding-bottom: 3px; }
-table.cal td {
-  height: 46px; vertical-align: middle; text-align: center; border-radius: 10px;
-  border: 1.5px solid var(--ln); background: #fff; cursor: pointer; transition: transform .08s;
-  padding: 0;
+/* Choix de feuille hérité (liste unique de la feuille du jour comprise). */
+.choice {
+  display: flex; align-items: center; gap: 11px; border: 1.5px solid var(--ln);
+  border-radius: 12px; padding: 12px 13px; margin: 0 0 8px;
+  font-size: 15px; font-weight: 400; cursor: pointer; background: var(--bg2);
+  width: 100%; text-align: left; font-family: inherit; color: inherit;
 }
+.choice:active { transform: scale(.985); }
+.choice .ic {
+  width: 34px; height: 34px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; font-size: 15px; flex: 0 0 auto;
+}
+.choice.c1 .ic { background: var(--acs); color: var(--acd); }
+.choice.c2 .ic { background: var(--was); color: var(--wa); }
+.choice.c3 .ic { background: var(--bls); color: var(--bl); }
+.choice .tx { flex: 1; }
+.choice .why { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 3px; line-height: 1.35; }
+.choice.on { border-color: var(--acl); background: var(--acs); }
+.choice.off { opacity: .55; cursor: default; }
+
+/* La liste unique de choix (feuille du jour) : pastille radio de 20 px. */
+.amorce { margin: 2px 0 9px; color: var(--ink3); }
+.liste-choix .choice,
+.detail-choix .choice { gap: 10px; padding: 11px 12px; margin-bottom: 8px; font-size: 15px; }
+.liste-choix .choice .ic,
+.detail-choix .choice .ic {
+  width: 20px; height: 20px; border-radius: 999px; box-sizing: border-box;
+  background: none; border: 1.5px solid var(--ln);
+  font-size: 0;
+}
+.liste-choix .choice.on,
+.detail-choix .choice.on { background: var(--bg2); border-color: var(--ac); box-shadow: 0 0 0 2px rgba(13, 92, 70, .13); }
+.liste-choix .choice.on .ic,
+.detail-choix .choice.on .ic { border: 6px solid var(--ac); }
+.liste-choix .choice.autre .ic { border: none; font-size: 17px; color: var(--ink3); }
+.detail-choix:not(:empty) { margin: 4px 0 2px; }
+.detail-choix .sec:first-child { margin-top: 14px; }
+.detail-choix .effet-heures { margin-top: 2px; }
+.detail-choix > .sb.q { font-size: 13px; margin: 2px 0 0; }
+
+/* OPTION radio de la maquette (`opt`) — la forme cible des choix. */
+.opt {
+  display: flex; align-items: center; gap: 11px; background: var(--bg2);
+  border: 1.5px solid var(--ln); border-radius: 12px;
+  padding: 12px 13px; margin: 0 0 8px; font-size: 15px; cursor: pointer; font-weight: 400;
+  width: 100%; text-align: left; font-family: inherit; color: inherit;
+}
+.opt:active { transform: scale(.985); }
+.opt .rd { width: 20px; height: 20px; border-radius: 999px; border: 1.5px solid var(--ln); flex: none; box-sizing: border-box; }
+.opt.on { border-color: var(--ac); box-shadow: 0 0 0 2px rgba(13, 92, 70, .13); }
+.opt.on .rd { border: 6px solid var(--ac); }
+.opt .gr { flex: 1; min-width: 0; }
+.opt .d { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; line-height: 1.35; margin-top: 2px; }
+.opt .vv { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink2); }
+.opt.off { opacity: .5; cursor: default; }
+
+/* LIGNE ENFANT de l'écran de pose (`kid`) : en-tête + corps déplié. */
+.kid { background: var(--bg2); border: 1.5px solid var(--ln); border-radius: 12px; overflow: hidden; margin: 0 0 9px; }
+.kid .hd { display: flex; align-items: center; gap: 11px; padding: 11px 13px; cursor: pointer; }
+.kid .hd:active { transform: scale(.985); }
+.kid .gr { flex: 1; min-width: 0; }
+.kid .nm { display: block; font-weight: 600; font-size: 15px; line-height: 1.3; }
+.kid .dt { display: block; font-size: 13px; color: var(--ink3); margin-top: 3px; line-height: 1.4; }
+.kid.warn { border-color: var(--wal); }
+.kid.warn .dt { color: var(--wa); font-weight: 600; }
+.kid.off { opacity: .55; }
+.kid .ch { color: var(--ch); font-size: 15px; transition: transform .18s; flex: none; }
+.kid.open .ch { transform: rotate(90deg); }
+.kid .adj { border-top: 1px solid var(--ln2); padding: 11px 13px; display: none; flex-direction: column; gap: 9px; background: var(--bg4); }
+.kid.open .adj { display: flex; }
+.cnt { display: flex; align-items: center; gap: 11px; font-size: 15px; }
+.cnt .cl { flex: 1; }
+.cnt .cl i { display: block; font-style: normal; font-size: 13px; color: var(--ink3); }
+
+/* Ligne à cocher héritée (alignement, samedis, rappels). */
+.aligne {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 12px 13px; border: 1.5px solid var(--ln); border-radius: 12px;
+  margin: 0 0 8px; background: var(--bg2); cursor: pointer;
+}
+.aligne input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; margin: 0; accent-color: var(--ac); }
+.aligne .tx { font-size: 15px; }
+.aligne .tx b { display: block; font-weight: 600; }
+.aligne .tx .d { display: block; font-size: 13px; color: var(--ink3); margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+.coche-ligne {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 12px 0; border-bottom: 1px solid var(--ln2); cursor: pointer;
+}
+.coche-ligne input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; margin: 0; accent-color: var(--ac); }
+.coche-ligne .tx b { display: block; font-weight: 600; font-size: 15px; }
+.coche-ligne .tx .d { display: block; font-size: 13px; color: var(--ink3); margin-top: 2px; line-height: 1.4; }
+
+/* « Transmis à la famille ». */
+.transmis { margin: 0 0 9px; }
+.coche {
+  display: flex; align-items: flex-start; gap: 9px; width: 100%;
+  text-align: left; font: inherit; font-size: 15px; font-weight: 600;
+  background: var(--bg2); border: 1.5px solid var(--ln); border-radius: 12px;
+  padding: 12px 13px; color: var(--ink); cursor: pointer; font-family: inherit;
+}
+button.coche:active { transform: scale(.985); }
+.coche.on { background: var(--acs); border-color: var(--acl); color: var(--acd); cursor: default; }
+.coche .bx2 { font-size: 17px; line-height: 1.1; flex: 0 0 auto; }
+.coche > .bx { font-size: 17px; line-height: 1.1; flex: 0 0 auto; width: auto; height: auto; border: none; background: none; color: inherit; }
+.coche .tx small { display: block; font-weight: 400; font-size: 13px; color: var(--ink3); margin-top: 2px; }
+.coche.on .tx small { color: var(--acd); }
+.coche[disabled] { opacity: .6; }
+
+/* ------------------------------------------------------------------------ */
+/* 8. REPLI (`fold`) — en-tête (titre · valeur · chevron), corps replié       */
+/* ------------------------------------------------------------------------ */
+
+.fold { background: var(--bg2); border: 1.5px solid var(--ln); border-radius: 12px; overflow: hidden; margin: 0 0 9px; }
+.fold .fh {
+  display: flex; align-items: center; gap: 10px; padding: 14px 15px;
+  cursor: pointer; font-size: 15px; font-weight: 600;
+  width: 100%; text-align: left; font-family: inherit; color: inherit;
+  background: none; border: none;
+}
+.fold .fh .vv { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink3); font-weight: 600; font-size: 15px; white-space: nowrap; }
+.fold .fh .ch { color: var(--ch); font-size: 15px; transition: transform .18s; flex: none; }
+.fold.open .fh .ch { transform: rotate(90deg); }
+.fold .fb { display: none; padding: 2px 15px 13px; border-top: 1px solid var(--ln2); }
+.fold.open .fb { display: block; }
+
+/* Replis hérités en <details>. */
+.ajuster { border: 1.5px solid var(--ln); border-radius: 12px; margin: 10px 0 9px; background: var(--bg2); }
+.ajuster > summary { padding: 13px; font-size: 15px; font-weight: 600; cursor: pointer; list-style: none; color: var(--ink); }
+.ajuster > summary::-webkit-details-marker { display: none; }
+.ajuster > summary::after { content: '⌄'; float: right; color: var(--ink3); }
+.ajuster[open] > summary::after { content: '⌃'; }
+.ajuster-corps { padding: 0 13px 13px; }
+.ajuster .compteur-jours .lb b { display: block; font-weight: 600; }
+.ajuster .compteur-jours .lb .d { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 2px; }
+
+.ventil-detail { margin: 2px 0 8px; }
+.ventil-detail > summary { font-size: 13px; color: var(--ac); cursor: pointer; padding: 4px 0; }
+.ventil-detail .sb { margin-top: 2px; }
+
+/* ------------------------------------------------------------------------ */
+/* 9. SEGMENTÉ (`seg`), STEPPER (`stp`), compteurs hérités                    */
+/* ------------------------------------------------------------------------ */
+
+.seg { display: flex; background: var(--bg3); border-radius: 12px; padding: 3px; gap: 3px; margin: 0 0 9px; }
+.seg button {
+  flex: 1; border: 0; background: transparent; font-family: inherit;
+  font-size: 13px; font-weight: 600; color: var(--ink3);
+  padding: 9px 4px; border-radius: 12px; cursor: pointer; line-height: 1.2;
+}
+.seg button.on { background: var(--bg2); color: var(--ac); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.seg button[disabled] { opacity: .45; cursor: default; }
+.seg.mini button { padding: 7px 4px; }
+
+/* STEPPER — boutons désactivés aux bornes. */
+.stp { display: flex; align-items: center; gap: 2px; background: var(--bg3); border-radius: 12px; padding: 2px; flex: none; }
+.stp button {
+  width: 30px; height: 29px; border: 0; background: var(--bg2); border-radius: 12px;
+  font-size: 17px; font-weight: 700; color: var(--ac);
+  font-family: inherit; cursor: pointer; line-height: 1;
+}
+.stp button:active:not([disabled]) { transform: scale(.985); }
+.stp button[disabled] { color: var(--ln); background: var(--bg4); cursor: default; }
+.stp span { min-width: 24px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; font-size: 15px; }
+
+/* Compteur « − n + » hérité (ventilation, minutes). */
+.compteur-jours { display: flex; align-items: center; gap: 11px; padding: 11px 0; border-bottom: 1px solid var(--ln2); }
+.compteur-jours .lb { font-size: 15px; font-weight: 600; flex: 1; }
+.compteur-jours .lb .sslb { display: block; font-size: 13px; font-weight: 400; color: var(--ink3); margin-top: 2px; }
+.compteur-jours .grp { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; background: var(--bg3); border-radius: 12px; padding: 2px; }
+.compteur-jours .pas {
+  width: 38px; height: 36px; border-radius: 12px;
+  border: none; background: var(--bg2);
+  font: inherit; font-size: 17px; font-weight: 700; color: var(--ac);
+  cursor: pointer; line-height: 1; font-family: inherit;
+}
+.compteur-jours .pas:active:not([disabled]) { transform: scale(.985); }
+.compteur-jours .pas[disabled] { color: var(--ln); background: var(--bg4); cursor: default; }
+.compteur-jours .val { min-width: 30px; text-align: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Compteurs à barre hérités (réserves de l'espace enfant, lot 25 les replie). */
+.cptr { margin-bottom: 12px; }
+.cptr:last-child { margin-bottom: 0; }
+.cptr .cl { display: flex; font-size: 13px; margin-bottom: 5px; align-items: baseline; }
+.cptr .cl b { font-size: 15px; font-weight: 600; }
+.cptr .cl span:last-child { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cptr .cb { height: 9px; border-radius: 999px; background: var(--bg3); overflow: hidden; }
+.cptr .cb i { display: block; height: 100%; border-radius: 999px; background: var(--ac); }
+.cptr.low .cb i { background: var(--wa); }
+.cptr .cn { font-size: 13px; color: var(--ink3); margin-top: 4px; }
+.cptr.low .cn { color: var(--wa); font-weight: 600; }
+
+/* ------------------------------------------------------------------------ */
+/* 10. PASTILLES — `pill` (4 tons), pastille d'état, badge, synthèse, avatars */
+/* ------------------------------------------------------------------------ */
+
+.pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+  background: var(--acs); color: var(--acd); white-space: nowrap;
+}
+.pill.w { background: var(--was); color: var(--wa); }
+.pill.g { background: var(--bg3); color: var(--ink3); }
+.pill.b { background: var(--bls); color: var(--bl); }
+
+/* La ligne de synthèse chiffrée du calendrier (lot 25). */
+.synth { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 9px; }
+
+/* Pastille d'état héritée — le mot est toujours écrit à côté du rond. */
+.pastille { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.pastille .rond { width: 9px; height: 9px; border-radius: 999px; border: 1.5px solid; flex: 0 0 auto; }
+.pastille.en_cours { color: var(--ink3); }
+.pastille.en_cours .rond { background: var(--bg3); border-color: var(--ch); }
+.pastille.a_cloturer { color: var(--wa); }
+.pastille.a_cloturer .rond { background: var(--was); border-color: var(--wal); }
+.pastille.cloture { color: var(--acd); }
+.pastille.cloture .rond { background: var(--acs); border-color: var(--acl); }
+.pastille.p-passe { color: var(--ink3); font-weight: 600; }
+.pastille.p-vigueur { color: var(--ac); font-weight: 700; }
+.pastille.p-avenir { color: var(--ac); font-weight: 600; }
+
+.badge { display: inline-block; font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 999px; }
+.badge.ok { background: var(--acs); color: var(--acd); }
+.badge.wa { background: var(--was); color: var(--wa); }
+.badge.ar { background: var(--bg3); color: var(--ink3); }
+
+/* Avatars — photo ou initiale, dans la couleur d'identité de l'enfant. */
+.av {
+  width: 34px; height: 34px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px; flex: 0 0 auto; overflow: hidden;
+  border: 1.5px solid;
+}
+.av.id-vert       { background: var(--id-vert-f);       color: var(--id-vert-x);       border-color: var(--id-vert-t); }
+.av.id-bleu       { background: var(--id-bleu-f);       color: var(--id-bleu-x);       border-color: var(--id-bleu-t); }
+.av.id-prune      { background: var(--id-prune-f);      color: var(--id-prune-x);      border-color: var(--id-prune-t); }
+.av.id-terracotta { background: var(--id-terracotta-f); color: var(--id-terracotta-x); border-color: var(--id-terracotta-t); }
+.av.id-ocre       { background: var(--id-ocre-f);       color: var(--id-ocre-x);       border-color: var(--id-ocre-t); }
+.av.id-ardoise    { background: var(--id-ardoise-f);    color: var(--id-ardoise-x);    border-color: var(--id-ardoise-t); }
+.av.id-neutre     { background: var(--id-neutre-f);     color: var(--id-neutre-x);     border-color: var(--id-neutre-t); }
+.av.avphoto { padding: 0; }
+.av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.av.pt { width: 26px; height: 26px; font-size: 13px; }
+.av.gd { width: 64px; height: 64px; font-size: 22px; font-weight: 700; }
+.pile { display: flex; flex: 0 0 auto; }
+.pile .av { margin-left: -9px; box-shadow: 0 0 0 2px var(--bg2); }
+.pile .av:first-child { margin-left: 0; }
+.etapes .et .av { margin-right: 1px; }
+
+.portrait { display: flex; align-items: center; gap: 14px; margin: 4px 0 14px; }
+.portrait .nm { font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
+.portrait .fm { font-size: 13px; color: var(--ink3); margin-top: 2px; }
+
+/* ------------------------------------------------------------------------ */
+/* 11. CALENDRIER — cellules pleine largeur, mini-libellés, repères          */
+/* ------------------------------------------------------------------------ */
+
+table.cal { width: 100%; border-collapse: separate; border-spacing: 3px; table-layout: fixed; margin: 0 0 9px; }
+table.cal th { font-size: 13px; font-weight: 600; color: var(--ink3); padding-bottom: 2px; }
+table.cal td {
+  height: 44px; vertical-align: middle; text-align: center; border-radius: 12px;
+  border: 1.5px solid var(--ln2); background: var(--bg2); cursor: pointer;
+  padding: 0; position: relative;
+}
+/* L'amplitude du calendrier : .94, l'exception écrite de la spécification. */
 table.cal td:active { transform: scale(.94); }
 table.cal td.no { cursor: default; }
 table.cal td.no:active { transform: none; }
-.num { font-size: 14px; font-weight: 600; color: var(--ink2); line-height: 1.1; }
+.num { font-size: 15px; font-weight: 600; color: var(--ink2); line-height: 1.1; }
+/* Le mini-libellé porte le mot de l'état — jamais la couleur seule (V8-01).
+   13 px : la plus petite taille du socle (écart assumé à la maquette, qui
+   descendait à 8 px — le document de spécification prime). */
+.mini { font-size: 13px; font-weight: 600; margin-top: 1px; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; }
 
-/* LOT 7 — Les bordures d'état, MESURÉES contre le fond de la carte (#fff).
-   Les anciennes valeurs étaient à 1,21–2,25:1 : autrement dit le codage par la
-   couleur ne fonctionnait pas, et le défaut venait d'une appréciation visuelle
-   plutôt que d'une mesure. Les fonds pastel sont conservés — ce sont les
-   BORDURES qui portent désormais la distinction.
-
-     présence      #649685   3,36:1
-     absence       #b1833f   3,39:1
-     férié         #878b90   3,43:1
-     congé         #838aa5   3,42:1
-     non travaillé #878d92   3,36:1
-
-   Et la couleur n'est jamais seule porteuse de sens : chaque état non ordinaire
-   porte son mot dans la case (« férié », « congé », « abs. », « ss solde »,
-   « non trav. »). La présence reste le cas par défaut, sans marque. */
-td.ok { background: var(--acs); border-color: #649685; }
-td.ok .num { color: var(--acd); font-weight: 800; }
-td.ab { background: var(--was); border-color: #b1833f; }
-td.ab .num { color: var(--wa); font-weight: 800; }
-td.fe { background: #eef1f4; border-color: #878b90; }
-td.fe .num { color: var(--ink3); font-weight: 500; }
-td.cg { background: var(--bls); border-color: #838aa5; }
-td.cg .num { color: var(--bl); font-weight: 800; }
-/* Un week-end hors planning n'est pas un ÉTAT : il ne crie pas. */
-td.we { background: #fafbfc; border-color: var(--ln2); }
-td.we .num { color: #b6bec7; font-weight: 500; }
-/* « Je ne travaillais pas », lui, EST un état posé par Maria. */
-td.nt { background: #f2f4f6; border-color: #878d92; }
+td.ok { background: var(--acs); border-color: var(--acl); }
+td.ok .num { color: var(--acd); font-weight: 700; }
+td.ab { background: var(--was); border-color: var(--wal); }
+td.ab .num { color: var(--wa); font-weight: 700; }
+td.ab .mini { color: var(--wad); }
+td.fe { background: var(--bg3); border-color: var(--ch); }
+td.fe .num { color: var(--ink3); font-weight: 400; }
+td.fe .mini { color: var(--ink3); }
+td.cg { background: var(--bls); border-color: var(--bll); }
+td.cg .num { color: var(--bl); font-weight: 700; }
+td.cg .mini { color: var(--bl); }
+td.we { background: var(--bg); border-color: var(--bg3); }
+td.we .num { color: var(--ch); font-weight: 400; }
+td.nt { background: var(--bg3); border-color: var(--ch); }
 td.nt .num { color: var(--ink3); font-weight: 700; }
 td.nt .mini { color: var(--ink3); }
-.mini { font-size: 8.5px; font-weight: 700; margin-top: 1px; }
-td.fe .mini { color: var(--ink3); }
-td.cg .mini { color: var(--bl); }
-td.ab .mini { color: var(--wa); }
+td.warn { background: var(--was); border-color: var(--wal); }
+td.warn .num { color: var(--wa); font-weight: 700; }
+td.warn .mini { color: var(--wa); }
 
-/* LOT 7 — Aujourd'hui : un contour épais dans la couleur d'accent, DISTINCT
-   des fonds d'état, pour que le repère ne se confonde jamais avec un état. */
+/* Aujourd'hui : contour vert, distinct des fonds d'état. */
 table.cal td.auj { box-shadow: 0 0 0 2px var(--ac); }
 
-/* LOT 7 — Les jours à venir : pointillés, fond neutre, non touchables.
-   On ne saisit pas l'avenir. Un jour DÉJÀ saisi dans le futur — un congé posé
-   d'avance — reste touchable pour pouvoir être retiré : il ne prend donc pas
-   cette classe seule, sa couleur d'état demeure. */
+/* Jours à venir : pointillés, non touchables ; un congé déjà posé reste
+   touchable et garde sa couleur d'état. */
 table.cal td.futur { border-style: dashed; }
-table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) {
-  background: #fff; border-color: var(--ln);
-}
-/* CORRECTIF A9 (lot 7) DE LA RELECTURE PR9 — DEUX CONTRASTES SOUS LE SEUIL.
-   Le numéro des jours à venir était #9aa3ad sur blanc : 2,56:1, pour un seuil
-   de 4,5:1. Mesuré, pas estimé. #6b7580 rend 4,74:1 en gardant l'effet
-   « estompé » qui distingue un jour à venir d'un jour écoulé. */
-table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) .num { color: #6b7580; font-weight: 500; }
+table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) { background: var(--bg2); border-color: var(--ln); }
+table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) .num { color: var(--ink3); font-weight: 400; }
 table.cal td.futur { cursor: default; }
 table.cal td.futur:active { transform: none; }
 
-.lg { display: flex; flex-wrap: wrap; gap: 5px 13px; margin-top: 12px; font-size: 11.5px; color: var(--ink2); font-weight: 600; }
-.lg i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; border: 1px solid; }
-.g1 { background: var(--acs); border-color: #649685; }
-.g2 { background: var(--was); border-color: #b1833f; }
-.g3 { background: #eef1f4; border-color: #878b90; }
-.g5 { background: var(--bls); border-color: #838aa5; }
-/* CORRECTIF A9 (lot 7) — la pastille « À venir » de la légende était bordée en
-   `--ln` (#cfd6dd) sur blanc : 1,47:1 pour un seuil de 3:1. Elle était donc
-   INVISIBLE, et la légende censée expliquer le codage devenait illisible.
-   #8b959d rend 3,05:1 et garde l'aspect estompé du pointillé. */
-.g6 { background: #fff; border-color: #8b959d; border-style: dashed; }
+/* Sélection multiple : cadre épais + aria-checked, jamais une teinte de plus. */
+table.cal td.sel { box-shadow: inset 0 0 0 3px var(--ac); }
+table.cal td.hors-sel { opacity: .4; cursor: default; }
+table.cal td.hors-sel:active { transform: none; }
+
+/* Repères de journée : des FORMES (• note, ◆ heures, ▾ congé posé). */
+.reperes { display: flex; gap: 2px; justify-content: center; align-items: center; line-height: 1; margin-top: 1px; height: 7px; }
+.rp { font-size: 13px; color: var(--ink3); line-height: .55; }
+.rp.conge { color: var(--ac); }
+
+/* Légende (remplacée par la synthèse au lot 25 ; stylée d'ici là). */
+.lg { display: flex; flex-wrap: wrap; gap: 5px 13px; margin: 0 0 9px; font-size: 13px; color: var(--ink2); font-weight: 600; }
+.lg i { display: inline-block; width: 11px; height: 11px; border-radius: 999px; margin-right: 5px; vertical-align: -1px; border: 1.5px solid; }
+.g1 { background: var(--acs); border-color: var(--acl); }
+.g2 { background: var(--was); border-color: var(--wal); }
+.g3 { background: var(--bg3); border-color: var(--ch); }
+.g5 { background: var(--bls); border-color: var(--bll); }
+.g6 { background: var(--bg2); border-color: var(--ch); border-style: dashed; }
+.lg i.gnote, .lg i.gheures { border: none; background: none; width: auto; height: auto; color: var(--ink3); font-size: 13px; line-height: 1; }
 
 /* ------------------------------------------------------------------------ */
-/* Panneaux, lignes de chiffres, compteurs                                   */
+/* 12. BLOC RÉSULTAT VERT (`res`), décompte, reste à répartir                */
 /* ------------------------------------------------------------------------ */
 
-.pane { background: #fff; border: 1.5px solid var(--ln); border-radius: 14px; padding: 14px; margin-bottom: 11px; }
-.pane .pt { font-weight: 700; font-size: 15px; margin-bottom: 9px; display: flex; align-items: baseline; }
-.pane .pt .more { margin-left: auto; font-size: 12.5px; color: var(--ac); font-weight: 600; cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; }
+.res { background: var(--ac); color: var(--bg2); border-radius: 12px; padding: 15px 15px 14px; margin: 0 0 9px; }
+.res .big2 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.res .sub { font-size: 13px; opacity: .86; margin-top: 3px; }
+.res .sam {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 11px;
+  border-top: 1px solid rgba(255, 255, 255, .22); font-size: 13px; cursor: pointer;
+  width: 100%; text-align: left; background: none; border-left: 0; border-right: 0; border-bottom: 0;
+  color: inherit; font-family: inherit;
+}
+.res .sam.mut { cursor: default; }
+.res .q { margin-left: auto; font-size: 13px; opacity: .85; }
+.res .q.lien2 { opacity: 1; }
+.bx {
+  width: 22px; height: 22px; border-radius: 12px; border: 1.5px solid rgba(255, 255, 255, .65);
+  flex: none; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; box-sizing: border-box;
+}
+.bx.on { background: var(--bg2); color: var(--ac); border-color: var(--bg2); }
 
-.lines { font-size: 14.5px; }
-.lines .l { display: flex; padding: 8px 0; border-bottom: 1px solid var(--ln2); gap: 12px; align-items: baseline; }
-.lines .l:last-child { border-bottom: none; }
-.lines .l span:last-child { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* UNE VALEUR QUI EST UNE PHRASE, PAS UN NOMBRE.
-   `nowrap` ci-dessus est fait pour « 1 234,00 € » : un montant coupé en deux
-   se lit mal, et on ne veut jamais d'un « € » seul à la ligne suivante. Mais
-   « Vos réserves » y met une phrase de 342 px — « 10 j de congés payés · 5 j
-   (47h00) de récupération ». Interdite de retour à la ligne, elle sortait de
-   l'encadré blanc de 38 px, et comme `.bd` porte `overflow-y: auto` — ce qui
-   fait calculer `overflow-x: auto` au navigateur — TOUT l'écran se mettait à
-   glisser latéralement de 43 px. Signalé par Adrien sur le téléphone.
-   L'option est explicite : sans elle, rien ne change nulle part ailleurs. */
-.lines .l span:last-child.phr { white-space: normal; text-align: right; }
-.lines .l.tot { border-top: 2px solid var(--ink); border-bottom: none; margin-top: 4px; padding-top: 10px; font-size: 16px; }
-.lines .l.q span { color: var(--ink3); font-weight: 500; }
-.lines .l .wa { color: var(--wa); }
+/* Décompte hérité de la pose (le bloc vert le remplace au lot 26). */
+.decompte { background: var(--acs); border: 1.5px solid var(--acl); border-radius: 12px; padding: 12px 13px; margin: 4px 0 12px; color: var(--acd); }
+.decompte .gros { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+.decompte .q { font-size: 13px; margin-top: 3px; opacity: .85; }
 
-.cptr { margin-bottom: 12px; }
-.cptr:last-child { margin-bottom: 0; }
-.cptr .cl { display: flex; font-size: 13.5px; margin-bottom: 5px; align-items: baseline; }
-.cptr .cl b { font-size: 14.5px; }
-.cptr .cl span:last-child { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
-.cptr .cb { height: 9px; border-radius: 5px; background: #eef1f4; overflow: hidden; }
-.cptr .cb i { display: block; height: 100%; border-radius: 5px; background: var(--ac); }
-.cptr.low .cb i { background: var(--wa); }
-.cptr .cn { font-size: 12px; color: var(--ink3); margin-top: 4px; }
-.cptr.low .cn { color: var(--wa); font-weight: 600; }
-
-.badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
-.badge.ok { background: var(--acs); color: var(--acd); }
-.badge.wa { background: var(--was); color: var(--wa); }
-.badge.ar { background: #e8ecef; color: var(--ink3); }
-
-.note { background: var(--acs); border: 1.5px solid var(--acl); border-radius: 11px; padding: 12px 13px; font-size: 13px; color: var(--acd); margin-top: 12px; }
-.note b { display: block; margin-bottom: 3px; }
-.warnbox { background: var(--was); border: 1.5px solid var(--wal); border-radius: 11px; padding: 12px 13px; font-size: 13px; color: var(--wa); margin-top: 12px; }
-.warnbox b { display: block; margin-bottom: 3px; }
+/* « Reste à répartir » : vert à zéro, orange sinon — le chiffre est là. */
+.reste {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 13px; border-radius: 12px; margin: 12px 0 9px;
+  font-size: 15px; font-weight: 600; border: 1.5px solid;
+}
+.reste b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.reste.ok { background: var(--acs); border-color: var(--acl); color: var(--acd); }
+.reste.ko { background: var(--was); border-color: var(--wal); color: var(--wa); }
+.effet-sans-solde .warnbox { margin-top: 10px; }
+.effet-heures { background: var(--acs); border: 1.5px solid var(--acl); border-radius: 12px; padding: 11px 12px; margin: 12px 0 10px; font-size: 15px; color: var(--acd); }
+.issue { margin: -4px 0 10px 30px; }
+.issue .row { gap: 6px; margin-bottom: 5px; }
+.issue .row .btn { margin-bottom: 0; }
+.issue .warnbox { margin-top: 6px; }
+.rappel-jour { color: var(--wa); margin-top: 6px; }
+.rappel-jour b { font-weight: 700; }
 
 /* ------------------------------------------------------------------------ */
-/* Champs, lignes de menu, cartes d'historique                               */
+/* 13. CHAMPS                                                                */
 /* ------------------------------------------------------------------------ */
 
 .fld {
-  border: 1.5px solid var(--ln); border-radius: 11px; padding: 12px 13px; margin-bottom: 8px;
-  display: flex; align-items: center; gap: 12px; font-size: 15px; background: #fff;
+  border: 1.5px solid var(--ln); border-radius: 12px; padding: 11px 13px; margin: 0 0 8px;
+  display: flex; align-items: center; gap: 10px; font-size: 15px; background: var(--bg2);
   overflow: hidden;
 }
 .fld .lb { color: var(--ink3); flex: 0 0 46%; }
@@ -441,726 +915,312 @@ table.cal td.futur:active { transform: none; }
   border: none; background: none; color: var(--ink); min-width: 0; flex: 1;
   padding: 0; -webkit-appearance: none; appearance: none;
 }
+.fld input[type=time] {
+  margin-left: auto; font: inherit; font-weight: 600; text-align: right;
+  border: none; background: none; color: var(--ink); padding: 0;
+  -webkit-appearance: none; appearance: none;
+}
 .fld select { text-align: left; text-align-last: right; }
-.fld input:focus, .fld select:focus { outline: 2px solid var(--acl); outline-offset: 4px; border-radius: 4px; }
+.fld input:focus, .fld select:focus { outline: 2px solid var(--acl); outline-offset: 4px; border-radius: 12px; }
 .fld.col { display: block; }
 .fld.col .lb { display: block; margin-bottom: 6px; }
 .fld .dates { margin-left: auto; display: flex; gap: 6px; }
 .fld .dates select { flex: 0 0 auto; text-align-last: center; font-weight: 600; }
+.fld.a-declarer .vl { color: var(--wa); }
+.fld.futur .vl { color: var(--ink3); font-weight: 400; }
 
-.menu {
-  display: flex; align-items: center; gap: 12px; padding: 15px 14px;
-  border: 1.5px solid var(--ln); border-radius: 12px; margin-bottom: 8px;
-  font-size: 16px; background: #fff; cursor: pointer; transition: transform .08s;
-  width: 100%; text-align: left; font-family: inherit; color: inherit;
+.fld.duree .row { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.fld.duree input {
+  width: 4.5em; text-align: right; font-size: 15px; font-weight: 600;
+  padding: 8px; border: 1.5px solid var(--ln); border-radius: 12px;
+  background: var(--bg2); color: var(--ink); font-family: inherit;
 }
-.menu:active { transform: scale(.99); }
-.menu .ar { margin-left: auto; color: var(--ink3); font-size: 18px; }
-.menu .d { font-size: 12.5px; color: var(--ink3); display: block; margin-top: 2px; font-weight: 400; }
+.fld.duree .u { color: var(--ink3); font-size: 13px; }
 
-.card { border: 1.5px solid var(--ln); border-radius: 12px; padding: 13px 14px; margin-bottom: 9px; background: #fff; }
-.card.click { cursor: pointer; transition: transform .08s; width: 100%; text-align: left; font: inherit; color: inherit; display: block; }
-.card.click:active { transform: scale(.99); }
-.row { display: flex; align-items: baseline; gap: 9px; }
-.row .nm { font-weight: 600; font-size: 16px; }
-.row .mt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; font-size: 15px; }
-.sb { font-size: 13px; color: var(--ink2); margin-top: 3px; }
-.sb.q { color: var(--ink3); }
+.fld.planning { display: block; }
+.fld.planning .lb { display: block; margin-bottom: 6px; }
+.fld.planning .jours { display: flex; flex-wrap: wrap; gap: 6px; }
+.fld.planning .jour {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px; padding: 0 10px;
+  border: 1.5px solid var(--ln); border-radius: 12px; background: var(--bg2);
+  font-size: 13px; cursor: pointer;
+}
+.fld.planning .jour input { width: 20px; height: 20px; accent-color: var(--ac); }
 
-.an { font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--ink3); margin: 16px 0 8px; display: flex; align-items: center; gap: 10px; }
-.an .t { color: var(--ac); }
-.an .tr { flex: 1; height: 1px; background: var(--ln); }
-.an .more { font-size: 12px; color: var(--ac); font-weight: 600; cursor: pointer; letter-spacing: 0; background: none; border: none; font-family: inherit; padding: 0; }
+.fld.mod .vl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fld.mod .crayon {
+  border: 0; background: none; color: var(--ac); font-size: 13px; font-weight: 600;
+  text-decoration: underline; cursor: pointer; padding: 6px 2px; min-height: 44px; font-family: inherit;
+}
+.fld.mod input { flex: 1 1 140px; }
+.fld.mod .grp { display: flex; gap: 6px; }
+.fld.mod .grp .pas {
+  min-height: 44px; padding: 0 10px; border: 1.5px solid var(--ln);
+  border-radius: 12px; background: var(--bg2); font-size: 13px; cursor: pointer; font-family: inherit;
+}
+.fld.mod .grp .pas.ok { border-color: var(--ac); background: var(--acs); font-weight: 600; }
+.fld.mod .msg { flex: 1 1 100%; font-size: 13px; }
+
+textarea.inp, .note-mois {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  border: 1.5px solid var(--ln); border-radius: 12px; padding: 11px 13px;
+  font: inherit; font-size: 15px; line-height: 1.45; color: var(--ink);
+  background: var(--bg2); margin: 6px 0;
+}
+textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-offset: 1px; }
+
+.conditions { margin-top: 4px; }
+.conditions .fld { margin-bottom: 12px; }
+
+/* Nuancier d'identité. */
+.nuancier { display: block; }
+.teintes { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.teinte { width: 34px; height: 34px; border-radius: 999px; cursor: pointer; border: 1.5px solid; padding: 0; font: inherit; }
+.teinte:active { transform: scale(.985); }
+.teinte.on { box-shadow: 0 0 0 3px var(--ac); }
+.teinte.id-neutre     { background: var(--id-neutre-f);     border-color: var(--id-neutre-t); }
+.teinte.id-vert       { background: var(--id-vert-f);       border-color: var(--id-vert-t); }
+.teinte.id-bleu       { background: var(--id-bleu-f);       border-color: var(--id-bleu-t); }
+.teinte.id-prune      { background: var(--id-prune-f);      border-color: var(--id-prune-t); }
+.teinte.id-terracotta { background: var(--id-terracotta-f); border-color: var(--id-terracotta-t); }
+.teinte.id-ocre       { background: var(--id-ocre-f);       border-color: var(--id-ocre-t); }
+.teinte.id-ardoise    { background: var(--id-ardoise-f);    border-color: var(--id-ardoise-t); }
+
+/* Photo. */
+.photo-fld { display: block; }
+.apercu-photo {
+  width: 96px; height: 96px; border-radius: 12px; margin: 8px 0 10px;
+  border: 1.5px dashed var(--ln); background: var(--bg4);
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.apercu-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.apercu-photo .q { font-size: 13px; color: var(--ink3); }
+.photo-fld .btn { margin-bottom: 8px; }
+.photo-fld.grand .apercu-photo { width: 96px; height: 96px; }
 
 /* ------------------------------------------------------------------------ */
-/* Feuille en bas d'écran, choix, toast                                      */
+/* 14. FEUILLE EN BAS D'ÉCRAN, TOAST, MESSAGES                               */
 /* ------------------------------------------------------------------------ */
 
 .sheetwrap { position: fixed; inset: 0; background: rgba(15, 20, 25, .42); display: flex; z-index: 30; align-items: flex-end; }
 .sheetwrap[hidden] { display: none; }
 .sheet {
-  background: #fff; border-radius: 20px 20px 0 0; padding: 18px 16px 24px;
+  background: var(--bg2); border-radius: 12px 12px 0 0; padding: 16px 15px 24px;
   padding-bottom: calc(24px + env(safe-area-inset-bottom));
   width: 100%; max-height: 88%; overflow-y: auto;
+  display: flex; flex-direction: column;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, .19);
 }
-.sheet .h { font-weight: 700; font-size: 17px; margin-bottom: 3px; }
+/* La garde Safari, ici aussi : la feuille défile et est une colonne flex. */
+.sheet > * { flex: none; }
+.sheet .h { font-weight: 700; font-size: 17px; margin-bottom: 3px; line-height: 1.2; }
 .sheet .s { font-size: 13px; color: var(--ink3); margin-bottom: 13px; }
-
-.choice {
-  display: flex; align-items: center; gap: 12px; border: 1.5px solid var(--ln);
-  border-radius: 12px; padding: 15px 14px; margin-bottom: 9px;
-  font-size: 16px; font-weight: 600; cursor: pointer; background: #fff;
-  transition: transform .08s; width: 100%; text-align: left; font-family: inherit; color: inherit;
-}
-.choice:active { transform: scale(.985); }
-.choice .ic { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex: 0 0 auto; }
-.choice.c1 .ic { background: var(--acs); color: var(--acd); }
-.choice.c2 .ic { background: var(--was); color: var(--wa); }
-.choice.c3 .ic { background: var(--bls); color: var(--bl); }
-.choice .tx { flex: 1; }
-.choice .why { display: block; font-size: 12px; color: var(--ink3); font-weight: 400; margin-top: 1px; }
-/* Lot 20 — un choix RETENU parmi plusieurs (l'indemnité d'entretien du jour,
-   §20.6). La bordure et le fond, jamais la couleur seule : la pastille pleine
-   « ● » dans l'icône dit la même chose sans elle. */
-.choice.on { border-color: var(--acl); background: var(--acs); }
-/* Lot 20 — « aujourd'hui : heures à déclarer » sur la carte de l'Accueil.
-   Le seul endroit de l'Accueil qui RÉCLAME quelque chose. */
-/* Lot 21 — l'issue choisie pour un enfant, sous sa ligne dans la pose à
-   l'heure : les trois boutons, puis l'effet chiffré. Décalé sous le choix
-   auquel il se rapporte, pour qu'on ne le lise pas comme celui du suivant. */
-.issue { margin: -4px 0 10px 30px; }
-.issue .row { gap: 6px; margin-bottom: 5px; }
-.issue .row .btn { margin-bottom: 0; }
-.issue .warnbox { margin-top: 6px; }
-.choice.off { opacity: .55; cursor: default; }
-/* FEUILLE DU JOUR REFAITE COMME LA MAQUETTE — LA LISTE UNIQUE DE CHOIX.
-
-   Tous les choix d'une journée ont désormais la même allure : une pastille
-   radio et un libellé. Ce qui se déplie une fois le choix fait vit dans
-   `.detail-choix`, JUSTE SOUS la liste — et non dans le choix lui-même : la
-   liste ne bouge pas sous le doigt de Maria quand elle change d'avis.
-
-   LA LIGNE REPREND LES MESURES DE LA MAQUETTE (`.opt`), et pas seulement son
-   principe : premier rendu côte à côte, Adrien a répondu « ça ne ressemble
-   toujours pas ». Le composant `.choice` habillait sa pastille d'une tuile
-   verte de 34 px — juste pour l'icône d'un geste unique. Répétée sept fois,
-   elle fait une colonne de carrés verts là où la maquette pose sept lignes
-   claires. La pastille redevient un VRAI bouton radio : un cercle de 19 px,
-   qui se remplit de vert quand il est choisi. */
-.amorce { margin: 2px 0 9px; color: var(--ink3); }
-.liste-choix .choice,
-.detail-choix .choice {
-  gap: 10px; padding: 11px 12px; margin-bottom: 8px;
-  border-width: 1px; font-size: 15px;
-}
-.liste-choix .choice .ic,
-.detail-choix .choice .ic {
-  width: 19px; height: 19px; border-radius: 50%; box-sizing: border-box;
-  background: none; border: 2px solid var(--ln);
-  /* Le caractère « ● » / « ○ » que pose `poserOption` reste dans le DOM pour
-     les lecteurs d'écran qui liraient le contenu, mais la FORME du cercle dit
-     déjà l'état, et `aria-checked` le dit aux autres. */
-  font-size: 0;
-}
-.liste-choix .choice.on,
-.detail-choix .choice.on {
-  background: #fff; box-shadow: 0 0 0 2px rgba(13, 92, 70, .14);
-}
-.liste-choix .choice.on .ic,
-.detail-choix .choice.on .ic { border-color: var(--ac); border-width: 6px; }
-/* « Autre cas… » ouvre une autre feuille : un chevron, pas une pastille. */
-.liste-choix .choice.autre .ic { border: none; font-size: 19px; color: var(--ink3); }
-.detail-choix:not(:empty) { margin: 4px 0 2px; }
-.detail-choix .sec:first-child { margin-top: 14px; }
-.detail-choix .effet-heures { margin-top: 2px; }
-.detail-choix > .sb.q { font-size: 12.5px; margin: 2px 0 0; }
-/* UN BOUTON INACTIF DOIT AVOIR L'AIR INACTIF. `opacity: .55` sur un aplat
-   vert donne un vert un peu pâle : sur la capture, le bouton « Enregistrer »
-   d'une feuille où aucun choix n'est fait avait exactement l'air d'un bouton
-   qui attend qu'on appuie. La maquette le pose en gris ; on fait pareil. */
-.sheet .btn:disabled { background: #eef1f3; color: #9aa3ad; opacity: 1; }
-/* Lot 22 §22.2 — la photo en tête de la fiche : l'aperçu passe en grand,
-   parce que c'est le portrait de l'enfant et non une vignette de formulaire. */
-.photo-fld.grand .apercu-photo { width: 96px; height: 96px; }
-.rappel-jour { color: var(--wa); margin-top: 6px; }
-.rappel-jour b { font-weight: 700; }
+.sheet .btn[disabled] { background: var(--bg3); color: var(--ch); opacity: 1; }
+/* Le corps d'une feuille est lui aussi une colonne : mêmes lois. */
+.corps-feuille { display: flex; flex-direction: column; align-items: stretch; }
+.corps-feuille > * { flex: none; }
+.corps-feuille > p { margin-top: 0; }
 
 .toast {
   position: fixed; left: 14px; right: 14px; bottom: calc(84px + env(safe-area-inset-bottom));
-  background: var(--ink); color: #fff; padding: 13px 15px; border-radius: 12px; font-size: 14px;
+  background: var(--ink); color: var(--bg2); padding: 12px 14px; border-radius: 12px; font-size: 13px;
   opacity: 0; transform: translateY(8px); transition: .22s; pointer-events: none; z-index: 40;
 }
 .toast.on { opacity: 1; transform: translateY(0); pointer-events: auto; }
-.toast.ko { background: var(--danger); }
-/* Action d'un message éphémère — « Annuler » après une réouverture (lot 13).
-   Une seule par message, jamais deux : un vrai choix se prend dans une
-   feuille, pas dans un message qui s'efface. */
+.toast.ko { background: var(--dg); }
 .toast .tact {
-  background: none; border: none; color: #fff; font: inherit; font-weight: 700;
+  background: none; border: none; color: var(--bg2); font: inherit; font-weight: 700;
   text-decoration: underline; cursor: pointer; padding: 2px 0 2px 14px; float: right;
 }
 
-/* ------------------------------------------------------------------------ */
-/* Document (identité papier : fond crème, Georgia, filet bleu)              */
-/* ------------------------------------------------------------------------ */
-
-.doc {
-  background: #fffdf8; padding: 18px 16px;
-  font-family: Georgia, 'Times New Roman', serif;
-  border: 1.5px solid #e3dcca; border-radius: 12px;
-}
-.doc .dh { border-bottom: 2px solid #1f4f7a; padding-bottom: 9px; margin-bottom: 12px; }
-.doc .dh .t1 { font-size: 18px; font-weight: 700; color: #2b2a26; }
-.doc .dh .t2 { font-size: 12.5px; color: #6b6659; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-.doc .dl { display: flex; padding: 8px 0; border-bottom: 1px solid #e3dcca; font-size: 14.5px; color: #2b2a26; gap: 12px; }
-.doc .dl span:last-child { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.doc .dl.tt { border-top: 2px solid #2b2a26; border-bottom: none; margin-top: 6px; padding-top: 10px; font-size: 16px; }
-.doc .ds {
-  font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: #8a8371;
-  margin: 15px 0 6px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-}
-.doc .dn {
-  background: #f4f1e6; border: 1px solid #e3dcca; border-radius: 8px; padding: 11px 12px;
-  font-size: 12px; color: #5d5747; margin-top: 13px;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.5;
-}
-
-/* ------------------------------------------------------------------------ */
-/* Écran de connexion et état d'attente                                      */
-/* ------------------------------------------------------------------------ */
-
-.login {
-  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-  padding: 22px; background: linear-gradient(160deg, #0d5c46, #0a4a38);
-}
-.login .carte { background: #fff; border-radius: 18px; padding: 22px 18px; width: 100%; max-width: 360px; }
-.login h1 { font-size: 21px; margin: 0 0 4px; }
-.login p { font-size: 13.5px; color: var(--ink3); margin: 0 0 16px; }
-.login label { display: block; font-size: 12.5px; color: var(--ink3); font-weight: 600; margin-bottom: 10px; }
-.login input {
-  display: block; width: 100%; margin-top: 5px; font: inherit; font-size: 16px;
-  padding: 13px 12px; border: 1.5px solid var(--ln); border-radius: 11px; background: #fff; color: var(--ink);
-}
-.login input:focus { outline: none; border-color: var(--acl); }
-
-.attente { padding: 40px 20px; text-align: center; color: var(--ink3); font-size: 14.5px; white-space: pre-line; }
-.vide { color: var(--ink3); font-size: 14px; padding: 6px 0; }
-
-/* Bloc d'erreur d'écriture : un échec doit se voir (§3 des specs). */
-.msg { font-size: 13px; margin-top: 8px; color: var(--ink3); }
-.msg.ko { color: var(--danger); font-weight: 600; }
-
-[hidden] { display: none !important; }
-
-/* ------------------------------------------------------------------------ */
-/* LOT 7 — États d'un mois, parcours de fin de mois, écrans vide et de panne  */
-/* ------------------------------------------------------------------------ */
-
-/* La pastille porte TOUJOURS son mot. La couleur seule ne dit rien à qui ne
-   la distingue pas, et « en cours » lu en gris clair sur une carte reste
-   « en cours ». Le rond est un renfort, jamais le message. */
-.pastille { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
-.pastille .rond {
-  width: 9px; height: 9px; border-radius: 50%;
-  border: 1.5px solid; flex: 0 0 auto;
-}
-.pastille.en_cours   { color: var(--ink3); }
-.pastille.en_cours .rond   { background: #eef1f4; border-color: #878b90; }
-.pastille.a_cloturer { color: var(--wa); }
-.pastille.a_cloturer .rond { background: var(--was); border-color: #b1833f; }
-.pastille.cloture    { color: var(--acd); }
-.pastille.cloture .rond    { background: var(--acs); border-color: #649685; }
-
-.big .etat { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
-.big .etat .quand { color: var(--ink3); font-weight: 600; }
-
-/* La phrase permanente sous le calendrier (V8-06) : présente à chaque
-   ouverture, pas seulement le premier jour. C'est la règle qui fait tenir
-   toute la saisie — sans elle, Maria croit devoir marquer chaque jour. */
-.note.permanente { margin-top: 14px; }
-
-/* --- Fin de mois guidée (§6.7) ------------------------------------------ */
-
-.etapes {
-  display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 14px;
-  font-size: 12.5px; font-weight: 600;
-}
-.etapes .et {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 5px 10px; border-radius: 999px;
-  border: 1.5px solid var(--ln); color: var(--ink3); background: #fff;
-}
-.etapes .et.on { border-color: var(--ac); color: var(--ac); border-width: 2px; }
-.etapes .et.fait { border-color: #649685; background: var(--acs); color: var(--acd); }
-.etapes .et.passe { border-style: dashed; }
-.etapes .et .ck { font-weight: 800; }
-
-.etape-tt { margin: 2px 0 12px; }
-.etape-tt .tt { font-size: 19px; font-weight: 800; letter-spacing: -.2px; }
-.etape-tt .ss { font-size: 13px; color: var(--ink3); margin-top: 2px; }
-
-.actions { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; }
-.actions .btn { margin-bottom: 0; }
-
-/* --- État vide (V8-29) --------------------------------------------------- */
-
-.vide-accueil { padding: 22px 4px 8px; }
-.vide-accueil h2 { font-size: 22px; font-weight: 800; margin: 0 0 10px; letter-spacing: -.3px; }
-.vide-accueil p { font-size: 14.5px; color: var(--ink2); line-height: 1.5; margin: 0 0 12px; }
-.vide-accueil .btn.plein { margin-top: 6px; }
-
-/* --- État de panne (V8-29) ---------------------------------------------- */
-
-.panne {
-  border: 1.5px solid var(--wal); background: var(--was);
-  border-radius: 14px; padding: 16px; margin-top: 14px;
-}
-.panne h2 { font-size: 16.5px; font-weight: 800; margin: 0 0 6px; color: var(--wa); }
-.panne p { font-size: 13.5px; color: var(--ink2); margin: 0 0 10px; line-height: 1.45; }
-.panne p.q { font-size: 12px; color: var(--ink3); }
-.panne .btn { margin-bottom: 0; }
-
-/* --- LOT 7 : document auto-portant, aperçu du texte, transmission --------- */
-
-/* Troisième ligne d'en-tête : la période exacte et la famille. Ce qui rend le
-   document lisible SEUL, des mois plus tard, sans rien d'autre sous les yeux. */
-.doc .dh .t3 {
-  font-size: 12px; color: #6b6659; margin-top: 2px;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
-/* Bandeau de statut : un document provisoire ne se présente jamais comme
-   définitif. C'est le défaut central que ce lot corrige. */
-.doc .dstat {
-  display: inline-block; margin: 0 0 12px; padding: 4px 11px; border-radius: 999px;
-  font-size: 11.5px; font-weight: 800; letter-spacing: .2px;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-  border: 1.5px solid;
-}
-.doc .dstat.prov { background: #f0ece0; border-color: #8a8574; color: #4a4638; }
-.doc .dstat.def  { background: var(--acs); border-color: #649685; color: var(--acd); }
-
-/* L'aperçu du texte à coller : en clair, sélectionnable. Le bouton « Copier »
-   agissait à l'aveugle — Maria envoyait sans avoir jamais vu quoi. */
+.msg { font-size: 13px; margin: 0 0 8px; color: var(--ink3); }
+.msg.ko { color: var(--dg); font-weight: 600; }
+.msg.ok { color: var(--acd); font-weight: 600; }
+.intro { font-size: 15px; color: var(--ink2); line-height: 1.5; margin: 2px 0 12px; }
+.apercu-rappel { background: var(--bg); border: 1.5px solid var(--ln); border-radius: 12px; padding: 12px 13px; margin: 4px 0 10px; font-size: 15px; color: var(--ink2); }
+.apercu-rappel b { color: var(--ink); }
 .apercu-texte {
   white-space: pre-wrap; word-break: break-word;
-  background: #fbfbfc; border: 1.5px solid var(--ln); border-radius: 12px;
-  padding: 13px; margin: 0 0 11px;
-  font: 400 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg4); border: 1.5px solid var(--ln); border-radius: 12px;
+  padding: 13px; margin: 0 0 9px;
+  font: 400 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--ink2); max-height: 320px; overflow: auto;
   user-select: text; -webkit-user-select: text;
 }
 
-/* « Transmis à la famille ». Cocher ne clôture pas, clôturer ne coche pas. */
-.transmis { margin-top: 12px; }
-.coche {
-  display: flex; align-items: flex-start; gap: 9px; width: 100%;
-  text-align: left; font: inherit; font-size: 14px; font-weight: 600;
-  background: #fff; border: 1.5px solid var(--ln); border-radius: 12px;
-  padding: 12px 13px; color: var(--ink); cursor: pointer;
-}
-button.coche:active { transform: scale(.99); }
-.coche.on { background: var(--acs); border-color: #649685; color: var(--acd); cursor: default; }
-.coche .bx { font-size: 17px; line-height: 1.1; flex: 0 0 auto; }
-.coche .tx small { display: block; font-weight: 500; font-size: 12.5px; color: var(--ink3); margin-top: 2px; }
-.coche.on .tx small { color: var(--acd); }
-.coche[disabled] { opacity: .6; }
-
 /* ------------------------------------------------------------------------ */
-/* LOT 8 — Identité d'un enfant : couleur, photo, familles                   */
+/* 15. ÉTAPES, FRISE, SÉLECTION MULTIPLE                                     */
 /* ------------------------------------------------------------------------ */
 
-/* La palette d'identité. SIX teintes, jamais une couleur libre.
-   Elles ne servent QU'À reconnaître un enfant. Elles n'entrent jamais dans le
-   codage des états du calendrier (V8-31) : le calendrier parle d'états, pas
-   d'enfants, et deux systèmes de sens sur le même pixel n'en laissent aucun
-   lisible. Aucune règle de ce bloc ne cible `table.cal`. */
-.av.id-vert       { background: #dcefe8; color: #1d4436; border-color: #2f6b56; }
-.av.id-bleu       { background: #dee6f4; color: #24395a; border-color: #3a5a8c; }
-.av.id-prune      { background: #eee0ec; color: #4e2b48; border-color: #7a4370; }
-.av.id-terracotta { background: #f6e2da; color: #63321f; border-color: #9c4f33; }
-.av.id-ocre       { background: #f3ead2; color: #55411a; border-color: #87682a; }
-.av.id-ardoise    { background: #e4e8ea; color: #30393e; border-color: #4d5a61; }
-/* A13 : l'enfant à qui aucune couleur n'a été donnée. Neutre et assumé, plutôt
-   que « vert » par accident — deux enfants portaient sinon la même pastille,
-   l'un par choix, l'autre par défaut. */
-.av.id-neutre     { background: #e9edf0; color: #39434a; border-color: #5a666e; }
-
-/* La pastille existe en trois tailles, une seule logique. */
-.av { overflow: hidden; }
-.av.avphoto { padding: 0; }
-.av img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.av.pt {
-  width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 11px; flex: 0 0 auto; vertical-align: middle;
+.etapes { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 14px; font-size: 13px; font-weight: 600; }
+.etapes .et {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; border-radius: 999px;
+  border: 1.5px solid var(--ln); color: var(--ink3); background: var(--bg2);
 }
-.av.gd {
-  width: 64px; height: 64px; border-radius: 50%; border: 2px solid;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 26px; flex: 0 0 auto;
+.etapes .et.on { border-color: var(--ac); color: var(--ac); }
+.etapes .et.fait { border-color: var(--acl); background: var(--acs); color: var(--acd); }
+.etapes .et.passe { border-style: dashed; }
+.etapes .et .ck { font-weight: 700; }
+
+.etape-tt { margin: 2px 0 12px; }
+.etape-tt .tt { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+.etape-tt .ss { font-size: 13px; color: var(--ink3); margin-top: 2px; }
+
+/* Barre d'avancement de l'assistant (Ajouter un enfant, lot 27). */
+.wsteps { display: flex; gap: 6px; margin: 0 0 13px; }
+.wsteps i { flex: 1; height: 4px; border-radius: 999px; background: var(--ln2); }
+.wsteps i.on { background: var(--ac); }
+
+/* Frise des avenants. */
+.frise { border-left: 2px solid var(--ln); margin-left: 9px; padding-left: 16px; display: flex; flex-direction: column; gap: 11px; }
+.frise > * { flex: none; }
+.frise .fcard { position: relative; }
+.frise .fcard::before { content: ''; position: absolute; left: -22.5px; top: 16px; width: 11px; height: 11px; border-radius: 999px; background: var(--ln); }
+.frise .fcard.on::before { background: var(--ac); }
+
+/* Pied fixe de la sélection multiple. */
+.selbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+  padding: 11px 14px calc(11px + env(safe-area-inset-bottom));
+  background: var(--bg2); border-top: 1px solid var(--ln2);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .10);
+  display: flex; flex-direction: column; gap: 9px;
 }
-
-/* Pile de photos superposées : un foyer de trois enfants se reconnaît sans
-   lire son nom. */
-.pile { display: flex; flex: 0 0 auto; }
-.pile .av { margin-left: -9px; box-shadow: 0 0 0 2px #fff; }
-.pile .av:first-child { margin-left: 0; }
-
-/* Barre d'étapes de la fin de mois : la pastille y tient aussi. */
-.etapes .et .av { margin-right: 1px; }
-
-/* Bloc identité de la fiche contrat. */
-.portrait { display: flex; align-items: center; gap: 14px; margin: 4px 0 14px; }
-.portrait .nm { font-weight: 800; font-size: 19px; letter-spacing: -.2px; }
-.portrait .fm { font-size: 13px; color: var(--ink3); margin-top: 2px; }
-
-/* Nuancier : six pastilles, chacune avec son nom en attribut. La couleur
-   seule ne dit rien à qui ne la distingue pas — d'où `aria-label` et `title`
-   sur chaque bouton, posés côté JavaScript. */
-.nuancier { display: block; }
-.teintes { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
-.teinte {
-  width: 34px; height: 34px; border-radius: 50%; cursor: pointer;
-  border: 2px solid; padding: 0; font: inherit;
+.selbar > * { flex: none; }
+.selbar .sb-n { font-weight: 700; font-size: 15px; }
+.selbar .sb-ch { display: flex; background: var(--bg3); border-radius: 12px; padding: 3px; gap: 3px; margin: 0; }
+.selbar .sb-ch .pas {
+  flex: 1; min-height: 42px; border: none; border-radius: 12px;
+  background: transparent; font-size: 13px; font-weight: 600; color: var(--ink3);
+  cursor: pointer; font-family: inherit;
 }
-.teinte.on { box-shadow: 0 0 0 3px var(--ac); }
-.teinte.id-neutre     { background: #e9edf0; border-color: #5a666e; }
-.teinte.id-vert       { background: #dcefe8; border-color: #2f6b56; }
-.teinte.id-bleu       { background: #dee6f4; border-color: #3a5a8c; }
-.teinte.id-prune      { background: #eee0ec; border-color: #7a4370; }
-.teinte.id-terracotta { background: #f6e2da; border-color: #9c4f33; }
-.teinte.id-ocre       { background: #f3ead2; border-color: #87682a; }
-.teinte.id-ardoise    { background: #e4e8ea; border-color: #4d5a61; }
+.selbar .sb-ch .pas.on { background: var(--bg2); color: var(--ac); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.selbar .sb-ef { font-size: 13px; color: var(--ink2); }
+.selbar .sb-wa { font-size: 13px; color: var(--wad); }
+.selbar .sb-ac { display: flex; gap: 8px; }
+.selbar .sb-ac .btn { flex: 1; margin: 0; padding: 12px; font-size: 15px; }
 
-/* Photo : aperçu carré, deux boutons, un message. */
-.photo-fld { display: block; }
-.apercu-photo {
-  width: 96px; height: 96px; border-radius: 14px; margin: 8px 0 10px;
-  border: 1.5px dashed var(--ln); background: #fbfbfc;
-  display: flex; align-items: center; justify-content: center; overflow: hidden;
+.multi { margin: 10px 0 0; }
+.multi-tt { margin-bottom: 8px; }
+.multi-tt b { display: block; font-size: 15px; font-weight: 600; }
+.multi-tt span { display: block; font-size: 13px; color: var(--ink3); margin-top: 2px; }
+
+/* ==========================================================================
+   16. DOCUMENT — IDENTITÉ PAPIER
+   La seule section du fichier qui a le droit à ses couleurs propres et à sa
+   propre échelle typographique, réduite à QUATRE valeurs : 17/15/13/11.
+   Les repères <papier> / </papier> délimitent l'exception pour le test.
+   ========================================================================== */
+/*<papier>*/
+.doc {
+  /* La palette papier, rassemblée ici et nulle part ailleurs. */
+  --papier: #fffdf8;        /* fond crème */
+  --p-encre: #2b2a26;       /* encre du document */
+  --p-doux: #6b6659;        /* encre secondaire */
+  --p-trait: #e3dcca;       /* filets */
+  --p-note: #f4f1e6;        /* fond de l'encart */
+  --p-note-encre: #5d5747;  /* encre de l'encart */
+  --p-filet: #1f4f7a;       /* le filet bleu d'en-tête */
+  --p-etiquette: #8a8371;   /* étiquettes et statut */
+
+  background: var(--papier); padding: 17px 16px;
+  font-family: Georgia, 'Times New Roman', serif;
+  border: 1.5px solid var(--p-trait); border-radius: 12px; margin: 0 0 9px;
+  color: var(--p-encre);
 }
-.apercu-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.apercu-photo .q { font-size: 12px; color: var(--ink3); }
-.photo-fld .btn { margin-bottom: 8px; }
+.doc .dh { border-bottom: 2px solid var(--p-filet); padding-bottom: 9px; margin-bottom: 12px; }
+.doc .dh .t1 { font-size: 17px; font-weight: 700; color: var(--p-encre); }
+.doc .dh .t2 { font-size: 13px; color: var(--p-doux); font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+.doc .dh .t3 { font-size: 11px; color: var(--p-doux); margin-top: 2px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+.doc .dl { display: flex; padding: 10px 0; border-bottom: 1px solid var(--p-trait); font-size: 13px; color: var(--p-encre); gap: 12px; align-items: baseline; line-height: 1.45; }
+.doc .dl span:last-child { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.doc .dl.tt { border-top: 2px solid var(--p-encre); border-bottom: none; margin-top: 6px; padding-top: 10px; font-size: 15px; }
+.doc .ds {
+  font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--p-etiquette);
+  margin: 15px 0 6px; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.doc .dn {
+  background: var(--p-note); border: 1px solid var(--p-trait); border-radius: 12px; padding: 11px 12px;
+  font-size: 11px; color: var(--p-note-encre); margin-top: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.5;
+}
+.doc .dstat {
+  display: inline-block; margin: 0 0 12px; padding: 3px 11px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  border: 1px solid var(--p-trait);
+}
+.doc .dstat.prov { background: var(--p-note); border-color: var(--p-etiquette); color: var(--p-note-encre); }
+.doc .dstat.def  { background: var(--acs); border-color: var(--acl); color: var(--acd); }
+/*</papier>*/
 
 /* ------------------------------------------------------------------------ */
-/* LOT 10 — Congés : décompte, compteurs de ventilation, reste à répartir     */
+/* 17. CONNEXION, ÉTATS VIDES ET DE PANNE, DIVERS                            */
 /* ------------------------------------------------------------------------ */
 
-/* Le décompte en jours ouvrables, EN DIRECT sous les dates. Il est gros
-   volontairement : une semaine du lundi au vendredi compte 6 jours, samedi
-   inclus, et c'est le désaccord historique avec les familles. Il ne doit
-   surprendre personne au moment de la clôture. */
-.decompte {
-  background: var(--acs); border: 1.5px solid #649685; border-radius: 12px;
-  padding: 12px 13px; margin: 4px 0 12px; color: var(--acd);
+.login {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 22px; background: linear-gradient(160deg, var(--ac), var(--ac2));
 }
-.decompte .gros { font-size: 17px; font-weight: 800; letter-spacing: -.2px; }
-.decompte .q { font-size: 12.5px; margin-top: 3px; opacity: .85; }
-
-/* Un compteur « − n + » par destination. Les boutons sont larges : ils sont
-   touchés au pouce, souvent plusieurs fois de suite. */
-.compteur-jours {
-  display: flex; align-items: center; gap: 12px;
-  padding: 11px 0; border-bottom: 1px solid var(--ln2);
+.login .carte { background: var(--bg2); border-radius: 12px; padding: 22px 18px; width: 100%; max-width: 360px; }
+.login h1 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px; }
+.login p { font-size: 13px; color: var(--ink3); margin: 0 0 16px; }
+.login label { display: block; font-size: 13px; color: var(--ink3); font-weight: 600; margin-bottom: 10px; }
+.login input {
+  display: block; width: 100%; margin-top: 5px; font: inherit; font-size: 15px;
+  padding: 13px 12px; border: 1.5px solid var(--ln); border-radius: 12px; background: var(--bg2); color: var(--ink);
 }
-.compteur-jours .lb { font-size: 14.5px; font-weight: 600; flex: 1; }
-.compteur-jours .grp { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
-.compteur-jours .pas {
-  width: 40px; height: 40px; border-radius: 11px;
-  border: 1.5px solid var(--ln); background: #fff;
-  font: inherit; font-size: 21px; font-weight: 700; color: var(--ac);
-  cursor: pointer; line-height: 1;
-}
-.compteur-jours .pas:active { transform: scale(.94); }
-.compteur-jours .pas[disabled] { opacity: .35; cursor: default; }
-.compteur-jours .pas[disabled]:active { transform: none; }
-.compteur-jours .val {
-  min-width: 34px; text-align: center; font-size: 19px; font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-/* « Reste à répartir » : c'est lui qui décide si « Continuer » s'active.
-   Vert à zéro, orange sinon — et le CHIFFRE est toujours là, la couleur ne
-   porte pas le sens toute seule. */
-.reste {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 13px; border-radius: 12px; margin: 12px 0 0;
-  font-size: 15px; font-weight: 700; border: 1.5px solid;
-}
-.reste b { font-size: 20px; font-variant-numeric: tabular-nums; }
-.reste.ok { background: var(--acs); border-color: #649685; color: var(--acd); }
-.reste.ko { background: var(--was); border-color: #b1833f; color: var(--wa); }
-
-.effet-sans-solde .warnbox { margin-top: 10px; }
-
-/* ------------------------------------------------------------------------ */
-/* LOT 11 — Contrats types, alignement, écarts                               */
-/* ------------------------------------------------------------------------ */
-
-/* Une ligne d'alignement : la case, le prénom, et « valeur actuelle → cible ».
-   La case n'est JAMAIS cochée par défaut (V8-14) — une case pré-cochée est
-   une décision prise à la place de Maria. */
-.aligne {
-  display: flex; align-items: flex-start; gap: 11px;
-  padding: 12px 13px; border: 1.5px solid var(--ln); border-radius: 12px;
-  margin-bottom: 8px; background: #fff; cursor: pointer;
-}
-.aligne input[type="checkbox"] {
-  width: 22px; height: 22px; flex: 0 0 auto; margin: 0; accent-color: var(--ac);
-}
-.aligne .tx { font-size: 14.5px; }
-.aligne .tx b { display: block; font-weight: 700; }
-.aligne .tx .d {
-  display: block; font-size: 12.5px; color: var(--ink3); margin-top: 2px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* L'écart affiché sur la fiche contrat.
-
-   PAS DE ROUGE, PAS D'ICÔNE D'ALERTE. Un écart est un fait négocié avec une
-   famille — Tom garde son ancienne rémunération parce que ses parents ne l'ont
-   pas revalorisée —, pas une erreur à corriger. Le ton de cette boîte est
-   volontairement celui d'une note, pas celui d'un avertissement. */
-.modele-bloc { margin-bottom: 4px; }
-.note.ecart { background: #f4f6f8; border-color: var(--ln); color: var(--ink2); }
-.note.ecart b { color: var(--ink); }
-.note.ecart .actions { flex-direction: row; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
-.note.ecart .actions .btn { flex: 1 1 auto; margin-bottom: 0; font-size: 14px; padding: 10px 12px; }
-
-/* Un écart refermé garde une ligne discrète : refermer n'est pas fermer la
-   porte. Sans elle, Maria qui a touché « Garder cet écart » n'aurait plus
-   aucun moyen d'aligner depuis cette fiche. */
-.ecart-referme { align-items: center; }
-.ecart-referme .lb { color: var(--ink3); }
-.lien {
-  background: none; border: none; padding: 0; font: inherit; font-size: 13.5px;
-  color: var(--ac); font-weight: 600; cursor: pointer; margin-left: auto;
-}
-
-/* ------------------------------------------------------------------------ */
-/* LOT 12 — Notes, repères de journée, ajustement des heures                 */
-/* ------------------------------------------------------------------------ */
-
-/* La note du mois. Pour Maria seule — la phrase le dit, et la migration 009
-   le garantit : elle n'entre dans aucun instantané de récapitulatif. */
-.note-mois {
-  width: 100%; box-sizing: border-box; resize: vertical;
-  border: 1.5px solid var(--ln); border-radius: 12px; padding: 11px 12px;
-  font: inherit; font-size: 14.5px; line-height: 1.45; color: var(--ink);
-  background: #fbfbfc; margin: 6px 0 6px;
-}
-.note-mois:focus { outline: 2px solid var(--ac); outline-offset: 1px; background: #fff; }
-
-/* LES REPÈRES DU CALENDRIER SONT DES FORMES, jamais des couleurs seules.
-   Le calendrier code déjà quatre états par la couleur ; une cinquième teinte
-   n'y serait plus lisible, et deux systèmes de sens sur le même pixel n'en
-   laissent aucun debout. D'où un point et un losange, doublés d'un
-   `aria-description` posé côté JavaScript. */
-.reperes {
-  display: flex; gap: 2px; justify-content: center; align-items: center;
-  line-height: 1; margin-top: 1px; height: 7px;
-}
-.rp { font-size: 9px; color: var(--ink3); }
-.rp.heures { font-size: 7px; }
-/* Lot 21/22, correction B2 — un congé posé à l'heure sur une journée
-   travaillée. Troisième repère, jamais une couleur de plus : le calendrier a
-   déjà quatre états codés par la teinte. */
-.rp.conge { font-size: 9px; color: var(--ac); }
-.lg i.gnote, .lg i.gheures {
-  border: none; background: none; width: auto; height: auto;
-  color: var(--ink3); font-size: 10px; line-height: 1;
-}
-
-/* La section repliée « Ajuster mes heures ce jour-là ». Repliée par défaut :
-   ce sont des cas particuliers, et une journée ordinaire ne doit pas
-   ressembler à un formulaire. */
-.ajuster {
-  border: 1.5px solid var(--ln); border-radius: 12px; margin-top: 10px;
-  background: #fff;
-}
-.ajuster > summary {
-  padding: 13px; font-size: 14.5px; font-weight: 600; cursor: pointer;
-  list-style: none; color: var(--ink);
-}
-.ajuster > summary::-webkit-details-marker { display: none; }
-.ajuster > summary::after { content: '⌄'; float: right; color: var(--ink3); }
-.ajuster[open] > summary::after { content: '⌃'; }
-.ajuster-corps { padding: 0 13px 13px; }
-.ajuster .compteur-jours .lb b { display: block; font-weight: 600; }
-.ajuster .compteur-jours .lb .d {
-  display: block; font-size: 12px; color: var(--ink3); font-weight: 400; margin-top: 2px;
-}
-
-/* Le renoncement : une case, et sa conséquence écrite dessous. Réversible à
-   tout moment — la phrase le dit, parce qu'un geste qu'on croit définitif ne
-   se fait pas. */
-.coche-ligne {
-  display: flex; align-items: flex-start; gap: 11px;
-  padding: 12px 0; border-bottom: 1px solid var(--ln2); cursor: pointer;
-}
-.coche-ligne input[type="checkbox"] {
-  width: 22px; height: 22px; flex: 0 0 auto; margin: 0; accent-color: var(--ac);
-}
-.coche-ligne .tx b { display: block; font-weight: 600; font-size: 14.5px; }
-.coche-ligne .tx .d {
-  display: block; font-size: 12px; color: var(--ink3); margin-top: 2px; line-height: 1.4;
-}
-
-.effet-heures {
-  background: var(--acs); border: 1.5px solid #649685; border-radius: 11px;
-  padding: 11px 12px; margin: 12px 0 10px; font-size: 14px; color: var(--acd);
-}
-
-/* ------------------------------------------------------------------------ */
-/* LOT 14 — Mise en service, export, mot de passe oublié                     */
-/* ------------------------------------------------------------------------ */
-
-/* Le lien « Mot de passe oublié », sous le bouton de connexion. Discret mais
-   atteignable : c'est le seul chemin de retour pour quelqu'un qui ne peut plus
-   entrer. */
+.login input:focus { outline: none; border-color: var(--acl); }
 .lien-login {
   display: block; width: 100%; margin-top: 10px;
   background: none; border: none; padding: 6px 0;
-  font: inherit; font-size: 14px; color: var(--ac); font-weight: 600;
+  font: inherit; font-size: 13px; color: var(--ac); font-weight: 600;
   cursor: pointer; text-align: center;
 }
 .lien-login[disabled] { opacity: .5; cursor: default; }
 
-/* Le texte d'introduction d'un écran, avant les blocs. */
-.intro {
-  font-size: 14.5px; color: var(--ink2); line-height: 1.5;
-  margin: 2px 0 12px;
-}
+.attente { padding: 40px 20px; text-align: center; color: var(--ink3); font-size: 13px; white-space: pre-line; }
+.vide { color: var(--ink3); font-size: 13px; padding: 6px 0; }
+
+.vide-accueil { padding: 22px 4px 8px; }
+.vide-accueil h2 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 10px; }
+.vide-accueil p { font-size: 15px; color: var(--ink2); line-height: 1.5; margin: 0 0 12px; }
+
+.panne { border: 1.5px solid var(--wal); background: var(--was); border-radius: 12px; padding: 16px; margin: 5px 0 9px; }
+.panne h2 { font-size: 17px; font-weight: 700; margin: 0 0 6px; color: var(--wa); }
+.panne p { font-size: 13px; color: var(--ink2); margin: 0 0 10px; line-height: 1.45; }
+.panne p.q { font-size: 13px; color: var(--ink3); }
+.panne .btn { margin-bottom: 0; }
+
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 /* ------------------------------------------------------------------------ */
-/* LOT 15 — Rappels et pastille                                              */
+/* 18. RESPONSIVE — sous 375 px, tout se resserre d'un cran                  */
+/*     (paddings et espacements seulement : les quatre tailles de police      */
+/*     sont une loi, la media query de la maquette qui descendait à 12 px     */
+/*     n'est pas reprise — écart assumé, le document de spécification prime.) */
 /* ------------------------------------------------------------------------ */
 
-/* LA PASTILLE DE L'ONGLET ACCUEIL. C'est le filet : elle ne demande ni
-   permission, ni serveur, ni réseau. Le NOMBRE est écrit dedans et annoncé
-   aux lecteurs d'écran — une tache de couleur ne dit rien à qui ne la voit
-   pas, et « il y a quelque chose » sans dire combien n'aide personne. */
-.tabbar button { position: relative; }
-.pastille-onglet {
-  position: absolute; top: 2px; left: 50%; margin-left: 4px;
-  min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
-  border-radius: 999px; background: var(--wa); color: #fff;
-  font-size: 10.5px; font-weight: 800; line-height: 17px; text-align: center;
+@media (max-width: 374px) {
+  .bd { padding: 12px 10px 20px; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .stick { margin-left: -10px; margin-right: -10px; padding-left: 10px; padding-right: 10px; }
+  .stick { bottom: calc(-20px - env(safe-area-inset-bottom)); margin-bottom: calc(-20px - env(safe-area-inset-bottom)); }
+  .cd, .pane, .card { padding: 12px; }
+  .cd.pad0 { padding: 2px 12px; }
+  .fold .fh { padding: 12px; }
+  .fold .fb { padding: 2px 12px 12px; }
+  .bar, .hero { padding-left: 10px; padding-right: 10px; gap: 7px; }
+  .bar .bk, .bar .nav button { width: 29px; height: 29px; }
+  table.cal { border-spacing: 2px; }
+  table.cal td { height: 41px; }
+  .mini { letter-spacing: -.06em; }
+  .seg button { padding: 8px 2px; }
+  .btn { padding: 13px; }
+  .ln, .lines .l { gap: 10px; }
+  .stp button { width: 28px; height: 27px; }
+  .compteur-jours .pas { width: 34px; height: 34px; }
+  .fld .lb { flex-basis: 42%; }
 }
-
-/* L'aperçu du message de rappel : Maria voit exactement ce qui arrivera sur
-   son écran, avant d'activer quoi que ce soit. */
-.apercu-rappel {
-  background: #f4f6f8; border: 1.5px solid var(--ln); border-radius: 12px;
-  padding: 12px 13px; margin: 4px 0 10px; font-size: 14px; color: var(--ink2);
-}
-.apercu-rappel b { color: var(--ink); }
-
-/* ---------------------------------------------------------------------
-   LOT 16 — congés posés par période (§16.8) et bornes de ventilation
-   (§16.1 d). Aucune règle de mise en page nouvelle : on réutilise les
-   sous-textes existants (.sb) et on ajoute deux détails.
-   ------------------------------------------------------------------ */
-
-/* Sous-titre d'un compteur de ventilation : « reste 10 j au compteur ».
-   Le « + » qui s'éteint doit dire pourquoi il s'éteint. */
-.compteur-jours .lb .sslb {
-  display: block; font-size: 12.5px; font-weight: 400;
-  color: var(--ink3); margin-top: 2px;
-}
-
-/* Répartition qui diffère d'un contrat à l'autre : le détail s'ouvre au
-   toucher plutôt que d'empiler quatre lignes. */
-.ventil-detail { margin: 2px 0 8px; }
-.ventil-detail > summary {
-  font-size: 13px; color: var(--ac); cursor: pointer; padding: 4px 0;
-}
-.ventil-detail .sb { margin-top: 2px; }
-
-/* CORRECTION RELECTURE LOT 16 (C1) — la marque « répartition écartée » sur
-   la ligne d'un mois, dans l'historique. Forme allégée : l'encart complet
-   avec son bouton reste sur l'espace enfant, où la correction se fait. */
-.sb.alerte { color: var(--wa); font-weight: 600; }
-
-/* ==========================================================================
-   LOT 17 — LES CONDITIONS DATÉES, LE TEMPS, LA FIN DE CONTRAT
-   ========================================================================== */
-
-/* Le formulaire des onze conditions, partagé par la création d'un contrat et
-   « Faire un avenant ». Onze champs, c'est long : l'espacement fait tout le
-   travail de lisibilité, sinon Maria perd sa ligne au troisième. */
-.conditions { margin-top: 4px; }
-.conditions .fld { margin-bottom: 12px; }
-
-/* Une durée en heures ET minutes. Deux champs étroits plutôt qu'un large :
-   « 9 h 30 » se saisit comme on le lit, pas comme « 9,5 ». */
-.fld.duree .row { display: flex; align-items: center; gap: 6px; }
-.fld.duree input {
-  width: 4.5em; text-align: right; font-size: 16px;
-  padding: 10px 8px; border: 1px solid var(--bd); border-radius: 10px;
-  background: var(--bg2); color: var(--ink);
-}
-.fld.duree .u { color: var(--ink3); font-size: 14px; }
-
-/* Les jours de garde. Cibles au doigt : 44 px de haut, pas moins — c'est la
-   taille minimale d'une case qu'on coche debout, un enfant dans les bras. */
-.fld.planning .jours { display: flex; flex-wrap: wrap; gap: 6px; }
-.fld.planning .jour {
-  display: inline-flex; align-items: center; gap: 6px;
-  min-height: 44px; padding: 0 10px;
-  border: 1px solid var(--bd); border-radius: 10px; background: var(--bg2);
-  font-size: 14px; cursor: pointer;
-}
-.fld.planning .jour input { width: 20px; height: 20px; }
-
-/* Un avenant À VENIR : visible sans être appliqué. Il ne crie pas — ce n'est
-   ni une alerte ni une erreur, c'est une décision déjà prise qui attend sa
-   date. La barre latérale suffit à le distinguer d'une note ordinaire. */
-.note.a-venir { border-left: 3px solid var(--ac); }
-
-/* La frise : l'état d'une période de conditions. Les trois mots sont dits en
-   toutes lettres, jamais par la couleur seule (V8-01). */
-.pastille.p-passe   { color: var(--ink3); font-weight: 600; }
-.pastille.p-vigueur { color: var(--ac); font-weight: 700; }
-.pastille.p-avenir  { color: var(--ac); font-weight: 600; }
-
-/* L'encart d'effet d'un avenant, rejoué par le moteur. Il s'insère entre les
-   champs et le bouton : c'est le dernier chose lue avant d'appuyer. */
-.apercu-avenant { margin: 10px 0; }
-.apercu-avenant .attente { padding: 8px 0; font-size: 13px; color: var(--ink3); }
-
-/* ------------------------------------------------------------------ */
-/* LOT 18 §18.1 — Marquer plusieurs jours d'un coup                    */
-/* ------------------------------------------------------------------ */
-
-/* La barre permanente, sous le calendrier. Elle ne crie pas : c'est un
-   raccourci offert, pas une action attendue. */
-.multi { margin-top: 10px; }
-.multi-tt { margin-bottom: 8px; }
-.multi-tt b { display: block; font-size: 14.5px; }
-.multi-tt span { display: block; font-size: 13px; color: var(--ink3); margin-top: 2px; }
-
-/* En mode sélection, une case choisie se voit sans dépendre de sa couleur
-   d'état : le calendrier en porte déjà cinq, une sixième teinte n'y serait
-   plus lisible. C'est un cadre épais, doublé d'un aria-checked. */
-table.cal td.sel { box-shadow: inset 0 0 0 3px var(--ac); }
-table.cal td.hors-sel { opacity: .4; cursor: default; }
-table.cal td.hors-sel:active { transform: none; }
-
-/* Le pied fixe. Il reste sous les yeux pendant que le calendrier défile :
-   le compte des jours et l'effet chiffré n'ont d'utilité que visibles au
-   moment où l'on choisit. */
-.selbar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
-  background: var(--bg2); border-top: 1px solid var(--bd);
-  box-shadow: 0 -6px 18px rgba(0, 0, 0, .10);
-}
-.selbar .sb-n { font-weight: 700; font-size: 14.5px; }
-.selbar .sb-ch { display: flex; gap: 8px; margin: 8px 0; }
-.selbar .sb-ch .pas {
-  flex: 1; min-height: 44px; border: 1px solid var(--bd); border-radius: 10px;
-  background: var(--bg); font-size: 14px; cursor: pointer;
-}
-.selbar .sb-ch .pas.on { border-color: var(--ac); background: var(--acs); font-weight: 700; }
-.selbar .sb-ef { font-size: 13px; color: var(--ink2); margin-bottom: 6px; }
-.selbar .sb-wa { font-size: 13px; color: var(--wad); margin-bottom: 6px; }
-.selbar .sb-ac { display: flex; gap: 8px; }
-.selbar .sb-ac .btn { flex: 1; margin: 0; }
-
-/* LOT 18 §18.3 — le champ qui se corrige sur place. */
-.fld.mod .vl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.fld.mod .crayon {
-  border: 0; background: none; color: var(--ac); font-size: 13px;
-  text-decoration: underline; cursor: pointer; padding: 6px 2px; min-height: 44px;
-}
-.fld.mod input { flex: 1 1 140px; }
-.fld.mod .grp { display: flex; gap: 6px; }
-.fld.mod .grp .pas {
-  min-height: 44px; padding: 0 10px; border: 1px solid var(--bd);
-  border-radius: 10px; background: var(--bg2); font-size: 14px; cursor: pointer;
-}
-.fld.mod .grp .pas.ok { border-color: var(--ac); background: var(--acs); font-weight: 700; }
-.fld.mod .msg { flex: 1 1 100%; font-size: 13px; }

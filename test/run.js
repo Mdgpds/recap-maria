@@ -31,7 +31,9 @@ var suites = [
   { titre: 'Écriture contre schéma : la base ne refusera pas ce que l’écran envoie', suite: require('./ecriture-vs-schema.test.js') },
   /* Placé en dernier : ce fichier pose un décor global (window, document) pour
      charger ui-kit.js sous Node. Il ne doit pas polluer les suites pures. */
-  { titre: 'État d’avancement d’un mois (lot 7)', suite: require('./etat-mois.test.js') }
+  { titre: 'État d’avancement d’un mois (lot 7)', suite: require('./etat-mois.test.js') },
+  /* Même décor global que le précédent, mêmes précautions : en dernier. */
+  { titre: 'Le socle du redesign : quatre tailles, deux rayons, zéro couleur en dur (lot 24)', suite: require('./lot24-socle.test.js') }
 ];
 
 var reussis = 0;
