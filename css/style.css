@@ -339,9 +339,21 @@ body {
   background: none; border: none; padding: 0; font: inherit; font-size: 13px;
   color: var(--ac); font-weight: 600; cursor: pointer; margin-left: auto;
 }
-.lien2 { font-weight: 600; text-decoration: underline; cursor: pointer; }
+/* LOT 27 (§27.1) — LE RENVOI EN CONTEXTE. Un lien TEXTE souligné, sobre et
+   rare : il n'y a PAS de « ? » dans les barres d'écran (décision d'Adrien du
+   24 août : « incompréhensible »). Un vrai bouton, pour rester atteignable
+   au clavier — mais qui a l'air de ce qu'il est, un lien. */
+.lien2 {
+  background: none; border: none; padding: 4px 0; font: inherit; font-size: 13px;
+  color: var(--ac); font-weight: 600; text-decoration: underline; cursor: pointer;
+  text-align: left; align-self: flex-start; margin: 0 0 9px;
+}
 
 /* Rangée de raccourcis : des petits boutons côte à côte, largeur partagée. */
+/* LOT 27 (§27.1) — LE TEXTE D'UNE RÈGLE, dans son repli. 15 px : c'est un
+   paragraphe qu'on lit, pas un libellé qu'on parcourt. */
+.regle { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink2); }
+
 /* Une phrase centrée sous un bouton — la seule de l'application (§26.2). */
 .centre { text-align: center; }
 .rrow { display: flex; gap: 8px; margin: 0 0 9px; }

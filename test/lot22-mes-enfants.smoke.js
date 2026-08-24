@@ -288,16 +288,22 @@ function ongletActif() {
 
   window.App.aller('menu', {}, true);
   await pause(500);
-  var ligne = parTexte(corps, '.menu', 'Mes enfants');
+  var ligne = parTexte(corps, '.cd', 'Mes enfants');
   assert(!!ligne, 'le Menu porte une entrée unique « Mes enfants »');
   contient(ligne, '2 en garde · 1 contrat terminé',
     '§22.1 : les deux comptes sont CALCULÉS, pas écrits en dur');
-  /* §22.1 — le Menu n'affiche plus la LISTE DES ENFANTS en ligne. L'entrée
-     « Familles » y reste (correction C5 de la relecture) : la spécification ne
-     demandait pas sa suppression. */
   absent(corps, 'Léa · Tom', '§22.1 : le Menu n’affiche plus la liste des enfants en ligne');
-  assert(!!parTexte(corps, '.menu', 'Familles'),
-    'C5 : l’accès par famille n’a pas été retiré du Menu');
+  /* EXIGENCE CHANGÉE — LOT 27 §27.2 : « FAMILLES » QUITTE LE MENU.
+     Le lot 22 l'avait remplacée par « Mes enfants » (Maria pense par enfant),
+     puis la correction C5 de la relecture l'avait rétablie en signalant la
+     question à Adrien : « s'il préfère l'entrée unique, c'est cette ligne-ci
+     qui repart. » Il a tranché le 23 août, et le §27.2 le reprend.
+     RIEN NE SE PERD (B.0-7) : l'écran des familles existe toujours, et il
+     s'atteint par « Voir par famille » en bas de « Mes enfants » — le même
+     nombre d'appuis, depuis l'endroit où la question « qui vit ensemble ? »
+     se pose vraiment. Le chemin est vérifié plus bas dans ce fichier. */
+  assert(!parTexte(corps, '.cd', 'Familles'),
+    '§27.2 : l’entrée unique est « Mes enfants » — « Familles » a quitté le Menu');
 
   ligne.click();
   await pause(500);
@@ -335,6 +341,11 @@ function ongletActif() {
     '§22.1 : mais rien ne se modifie — pas de formulaire d’identité');
   assert(!parTexte(corps, '.fld', 'Photo'),
     '§22.1 : ni de bloc photo : un contrat terminé ne se modifie plus');
+  /* LOT 27 §27.3 — sa carte d'identité est INERTE : elle n'ouvre rien, parce
+     qu'il n'y a rien à modifier. */
+  var carteJade = parTexte(corps, '.cd', 'Jade');
+  assert(!!carteJade && carteJade.tagName !== 'BUTTON',
+    '§22.1 : sa carte d’identité ne s’ouvre pas non plus');
 
   boutonExact(corps, 'Remettre en cours').click();
   await pause(600);
@@ -351,8 +362,38 @@ function ongletActif() {
   window.App.invalider();
   window.App.aller('fiche', { contratId: 'c-lea' });
   await pause(500);
-  var blocPhoto = parTexte(corps, '.fld', 'Photo');
-  assert(!!blocPhoto, '§22.2 : le bloc « Photo » est EN TÊTE de la fiche');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 27 §27.3 : LA PHOTO DESCEND D'UN CRAN.
+
+     Le §22.2 l'avait mise EN TÊTE DE LA FICHE, et c'était la bonne correction
+     à ce moment-là : on ne pouvait la poser que depuis « Modifier l'identité »,
+     un bouton en BAS d'une fiche longue, ouvrant un formulaire de douze champs
+     où l'on croise la date de début du contrat et son statut. Le geste le plus
+     anodin passait par l'écran le plus risqué, et personne ne l'avait jamais
+     fait : l'application avait une photo que personne ne pouvait mettre.
+
+     CE MOTIF TOMBE. La carte d'identité est le PREMIER élément de la fiche, et
+     elle ouvre cette feuille d'un appui. Le geste coûte un appui de plus qu'au
+     lot 22 — et cinq de moins qu'avant lui. En échange, la fiche rend le
+     premier écran à ce qu'elle sert : les conditions du contrat, et le seul
+     geste qu'on y fait, « Faire un avenant ».
+
+     CE QUI RESTE EXIGÉ, mot pour mot : la photo est ATTEIGNABLE, elle dit où
+     elle n'apparaîtra jamais, et « Retirer » reste masqué tant qu'il n'y a
+     rien à retirer — un bouton qui ne peut rien faire fait douter. Tout est
+     vérifié ci-dessous, sur la feuille où la photo vit.
+     ====================================================================== */
+  var carteId = parTexte(corps, '.cd', 'Léa');
+  assert(!!carteId, '§27.3 : la carte d’identité est en tête de la fiche');
+  assert(txt(carteId).indexOf('photo, identité') !== -1,
+    '§27.3 : et son sous-texte dit ce qu’elle ouvre');
+  assert(!parTexte(corps, '.fld', 'Photo'),
+    '§27.3 : le bloc photo n’occupe plus le premier écran de la fiche');
+  carteId.click();
+  await pause(300);
+
+  var blocPhoto = parTexte(sheet, '.fld', 'Photo');
+  assert(!!blocPhoto, '§22.2 : la photo est atteignable en UN appui depuis la fiche');
   contient(blocPhoto, 'Choisir une photo', 'il propose de choisir une photo');
   contient(blocPhoto, 'Jamais sur le récapitulatif ni dans l’export',
     '§22.2 : et il dit où elle n’apparaîtra jamais');
@@ -360,6 +401,8 @@ function ongletActif() {
   assert(!!bRetirer && bRetirer.hidden === true,
     '§22.2 : « Retirer » est masqué quand il n’y a pas de photo — un bouton ' +
     'qui ne peut rien faire fait douter');
+  window.Kit.fermerFeuille();
+  await pause(80);
 
   /* On pose une photo comme le ferait le sélecteur de fichier du téléphone :
      par le chemin d'enregistrement du bloc, celui que la fiche lui donne. */
@@ -377,9 +420,13 @@ function ongletActif() {
 
   window.App.aller('fiche', { contratId: 'c-lea' });
   await pause(500);
-  var bRetirer2 = boutonExact(parTexte(corps, '.fld', 'Photo'), 'Retirer la photo');
+  parTexte(corps, '.cd', 'Léa').click();
+  await pause(300);
+  var bRetirer2 = boutonExact(parTexte(sheet, '.fld', 'Photo'), 'Retirer la photo');
   assert(!!bRetirer2 && bRetirer2.hidden === false,
     '§22.2 : « Retirer la photo » apparaît quand il y en a une');
+  window.Kit.fermerFeuille();
+  await pause(80);
 
   /* ==================================================================== */
   /* §22.2 A2 — LA PHOTO NE FUIT NULLE PART                               */
@@ -410,7 +457,7 @@ function ongletActif() {
 
   window.App.aller('menu', {}, true);
   await pause(500);
-  parTexte(corps, '.menu', 'Ajouter un enfant').click();
+  parTexte(corps, '.cd', 'Ajouter un enfant').click();
   await pause(400);
   var blocs = sheet.querySelectorAll('.fld');
   assert(blocs.length > 0 && txt(blocs[0]).indexOf('Photo') !== -1,

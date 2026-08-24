@@ -502,18 +502,21 @@ function moisDe(s, annee, mois) {
      COMMENTAIRES COMPRIS : `indexOf('Conditions du contrat')` aurait été
      satisfait par un simple commentaire portant ces mots. */
   var menuNu = sansCommentaires(sourceMenu);
-  /* LOT 22 — DEUX sous-titres d'attente, et non plus un : « Mes enfants »
-     s'ajoute à « Familles » dans le Menu. La garde du §16.4 est inchangée dans
-     son fond : un mot d'attente n'est admis que si QUELQU'UN sait le lever. Le
-     contrôle vérifie donc que chaque ligne qui en pose un a bien sa promesse
-     de levée, plutôt que de compter les occurrences. */
+  /* EXIGENCE CHANGÉE — LOT 27 §27.2 : « FAMILLES » A QUITTÉ LE MENU (décision
+     d'Adrien du 23 août). Il ne reste donc qu'UN sous-titre d'attente, celui
+     de « Mes enfants ».
+     LA GARDE DU §16.4 EST INCHANGÉE DANS SON FOND, et elle est vérifiée plus
+     fermement qu'avant : au lieu d'attendre un NOMBRE d'occurrences — qui
+     change à chaque entrée ajoutée ou retirée —, on exige que CHAQUE mot
+     d'attente écrit dans ce fichier ait sa promesse de levée. Un « Chargement… »
+     que personne ne sait lever reste ce qui est interdit. */
   var nbChargement = (sourceMenu.match(/'Chargement…'/g) || []).length;
-  egal(nbChargement, 2,
-    '§16.4 : deux sous-titres d’attente — « Mes enfants » et « Familles »');
-  assert(/poserSousTitre\(ligneFamilles,/.test(sourceMenu),
-    '§16.4 : et celui des Familles est levé par quelqu’un');
+  egal(nbChargement, 1,
+    '§16.4 : un seul sous-titre d’attente, celui de « Mes enfants »');
   assert(/poserSousTitre\(ligneEnfants,/.test(sourceMenu),
-    '§16.4 : celui de « Mes enfants » aussi');
+    '§16.4 : et il est levé par quelqu’un');
+  assert(sourceMenu.indexOf('ligneFamilles') === -1,
+    '§27.2 : la ligne « Familles » a bien quitté le Menu, code compris');
   assert(menuNu.indexOf("querySelectorAll('.menu')[0]") === -1,
     '§16.4 : la ligne n’est plus retrouvée par sa POSITION dans la liste');
   assert(menuNu.indexOf('function libelleReglageRappel') !== -1,

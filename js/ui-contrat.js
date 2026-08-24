@@ -106,55 +106,64 @@
       Kit.vider(ctx.corps);
       var corps = ctx.corps;
 
-      corps.appendChild(Kit.section('Identité'));
+      /* ==================================================================
+         LOT 27 (§27.3) — L'IDENTITÉ TIENT SUR UNE CARTE.
 
-      /* LOT 8 — la photo et la couleur, en tête : c'est ce qui distingue
-         quatre cartes d'accueil autrement identiques. */
-      var portrait = Kit.ce('div', 'portrait');
-      portrait.appendChild(Kit.avatar(contrat, 'gd'));
-      var pTx = Kit.ce('div');
-      pTx.appendChild(Kit.ce('div', 'nm', Kit.nomComplet(contrat)));
-      pTx.appendChild(Kit.ce('div', 'fm', 'famille ' + ((contrat.famille && contrat.famille.nom) || '—')));
-      portrait.appendChild(pTx);
-      corps.appendChild(portrait);
+         Elle occupait le premier écran entier : un portrait, le bloc photo
+         avec son aperçu et ses trois lignes d'explication, le prénom, le nom,
+         le genre, la famille, le bouton « Changer de famille », la date de
+         début, et enfin « Modifier l'identité ». Neuf éléments pour des
+         valeurs qui ne changent jamais — sur une fiche dont le seul geste est
+         « Faire un avenant », qui arrivait tout en bas.
 
-      /* LOT 22 §22.2 — LA PHOTO DEVIENT ACCESSIBLE.
+         UNE CARTE, comme la maquette : l'avatar en grand, le nom complet, et
+         le sous-texte qui dit tout le reste — la famille, la date de début, et
+         ce que la carte ouvre. Elle mène à « Modifier l'identité », où tout ce
+         qui a quitté cet écran se trouve déjà : la photo, le prénom, le nom,
+         le genre, la couleur, la date de début, le statut, et désormais le
+         rattachement à un foyer.
 
-         Elle existe depuis le lot 8 : réduite à 200 px, 50 Ko au plus, jamais
-         sur un document ni dans l'export. Mais on ne pouvait la poser que
-         depuis « Modifier l'identité » — un formulaire de douze champs où l'on
-         croise la date de début du contrat et son statut. Le geste le plus
-         anodin passait par l'écran le plus risqué, et personne ne l'a jamais
-         fait : l'application avait une photo que personne ne pouvait mettre.
+         RIEN NE SE PERD (B.0-7). Ce qui était en LECTURE sur la fiche est
+         maintenant dans le sous-texte ou dans la feuille ; ce qui était
+         MODIFIABLE l'est resté, à un appui.
 
-         Elle est donc EN TÊTE DE LA FICHE, et elle s'enregistre toute seule.
-         Sur un contrat rangé, elle reste en lecture : un contrat terminé ne se
-         modifie plus. */
-      if (!contrat.archive) {
-        corps.appendChild(blocPhoto({ valeur: contrat.photo || null }, {
-          grand: true,
-          enregistrer: function (valeur) {
-            return majIdentiteSurPlace(contrat, { photo: valeur });
-          }
-        }));
-      }
+         SUR UN CONTRAT RANGÉ, la carte n'ouvre rien : un contrat terminé ne
+         se modifie plus. Elle reste une carte, en lecture, et les valeurs
+         détaillées restent affichées dessous — c'est le seul écran d'où elles
+         se lisent encore. */
+      var identite = [];
+      if (contrat.famille && contrat.famille.nom) identite.push('famille ' + contrat.famille.nom);
+      identite.push('depuis le ' + Kit.dateLongue(contrat.date_debut));
+      if (contrat.date_fin) identite.push('jusqu’au ' + Kit.dateLongue(contrat.date_fin));
+      if (!contrat.archive) identite.push('photo, identité ›');
 
-      /* LOT 18 §18.3 — LE PRÉNOM ET LE NOM SE CORRIGENT SUR PLACE.
-
-         Corriger une faute d'orthographe demandait d'ouvrir « Modifier
-         l'identité », un formulaire de douze champs où l'on croise la date de
-         début du contrat et son statut — deux réglages qui, eux, changent des
-         calculs. Le geste le plus anodin de la fiche passait par l'écran le
-         plus risqué.
-
-         Ces deux champs-là ne changent AUCUN chiffre : ils changent un nom.
-         Ils se corrigent donc ici, d'un appui, et le formulaire complet reste
-         pour tout le reste. Sur un contrat rangé, les champs redeviennent de
-         simples lignes en lecture : un contrat terminé ne se modifie plus. */
       if (contrat.archive) {
-        corps.appendChild(Kit.fld('Prénom de l’enfant', contrat.prenom_enfant));
+        var carteId = Kit.ce('div', 'cd tap inerte');
+        carteId.appendChild(Kit.avatar(contrat, 'gd'));
+        var grId = Kit.ce('span', 'gr');
+        grId.appendChild(Kit.ce('span', 'n', Kit.nomComplet(contrat)));
+        grId.appendChild(Kit.ce('span', 'd', identite.join(' · ')));
+        carteId.appendChild(grId);
+        corps.appendChild(carteId);
+        /* Un contrat rangé ne s'ouvre plus : ses valeurs d'identité se lisent
+           donc ici, en clair, puisqu'il n'y a plus de feuille pour elles. */
         corps.appendChild(Kit.fld('Nom de l’enfant', contrat.nom || '—'));
+        corps.appendChild(Kit.fld('Genre', libelleGenre(contrat.genre)));
       } else {
+        corps.appendChild(Kit.carteTap(Kit.nomComplet(contrat), identite.join(' · '),
+          function () { feuilleContrat(contrat, recaps); },
+          { avatar: Kit.avatar(contrat, 'gd') }));
+
+        /* LOT 18 §18.3 — LE PRÉNOM ET LE NOM RESTENT MODIFIABLES SUR PLACE.
+
+           ÉCART ASSUMÉ À LA MAQUETTE, qui ne montre que la carte. Le §18.3 a
+           sorti ces deux champs du formulaire pour une raison qui n'a pas
+           disparu : ils ne changent AUCUN chiffre, alors que le formulaire
+           croise la date de début du contrat et son statut, qui en changent.
+           Corriger une faute d'orthographe ne doit pas obliger Maria à ouvrir
+           l'écran le plus risqué de la fiche. Deux lignes, contre les neuf
+           éléments d'avant — et le formulaire complet reste pour tout le
+           reste. */
         corps.appendChild(Kit.fldModifiable('Prénom de l’enfant', contrat.prenom_enfant, {
           obligatoire: 'Le prénom de l’enfant est obligatoire.',
           enregistrer: function (v) { return majIdentiteSurPlace(contrat, { prenom_enfant: v }); }
@@ -162,30 +171,6 @@
         corps.appendChild(Kit.fldModifiable('Nom de l’enfant', contrat.nom, {
           enregistrer: function (v) { return majIdentiteSurPlace(contrat, { nom: v }); }
         }));
-      }
-      corps.appendChild(Kit.fld('Genre', libelleGenre(contrat.genre)));
-
-      /* LOT 8 — LE CHAMP « Nom de la famille » A DISPARU DE CETTE FICHE.
-         Il était un champ TEXTE, et le remplir renommait le FOYER, donc tous
-         ses enfants d'un coup, sans que rien ne le dise. Le rattachement se lit
-         désormais ici, et se change par un geste qui ouvre la liste des foyers
-         existants : personne n'écrit plus un nom de famille depuis un écran
-         qui parle d'un enfant. */
-      var fFamille = Kit.fld('Famille', (contrat.famille && contrat.famille.nom) || '—');
-      corps.appendChild(fFamille);
-      if (!contrat.archive) {
-        var bFam = Kit.bouton('btn nt', function () { feuilleChangerFamille(contrat); });
-        bFam.textContent = 'Changer de famille';
-        corps.appendChild(bFam);
-      }
-
-      corps.appendChild(Kit.fld('Début du contrat', Kit.dateLongue(contrat.date_debut)));
-      if (contrat.date_fin) corps.appendChild(Kit.fld('Fin du contrat', Kit.dateLongue(contrat.date_fin)));
-
-      if (!contrat.archive) {
-        var bModif = Kit.bouton('btn nt', function () { feuilleContrat(contrat, recaps); });
-        bModif.textContent = 'Modifier l’identité';
-        corps.appendChild(bModif);
       }
 
       /* LOT 17 §17.4 — LES CONDITIONS, EN VIGUEUR AUJOURD'HUI, ET DATÉES.
@@ -446,6 +431,24 @@
         corps.appendChild(Kit.ce('p', 'sb q',
           'Le genre sert uniquement à accorder les phrases de l’application. ' +
           'Sans lui, elles restent neutres.'));
+
+        /* LOT 27 (§27.3, A.2) — « CHANGER DE FAMILLE » VIT ICI DÉSORMAIS.
+
+           Décision d'Adrien du 24 août : le bouton QUITTE LA FICHE. Il y
+           offrait un geste rare — un enfant ne déménage pas d'un foyer à
+           l'autre, on ne corrige qu'une erreur de saisie — juste à côté de la
+           photo et du prénom, c'est-à-dire au milieu des gestes quotidiens.
+
+           IL N'EST PAS SUPPRIMÉ (B.0-7) : « Modifier l'identité » est
+           l'endroit des corrections d'identité, celui où l'on croise déjà le
+           genre, la couleur et la date de début. Le rattachement se LIT sur la
+           fiche, et il se corrige ici. `feuilleChangerFamille` n'a pas changé
+           d'une ligne : c'est sa PORTE qui a bougé. */
+        corps.appendChild(Kit.fld('Famille',
+          (contrat.famille && contrat.famille.nom) || '—'));
+        var bFam = Kit.bouton('btn nt', function () { feuilleChangerFamille(contrat); });
+        bFam.textContent = 'Changer de famille';
+        corps.appendChild(bFam);
 
         var couleurChoisie = { jeton: contrat.couleur || null };
         corps.appendChild(nuancier(couleurChoisie));
@@ -903,22 +906,40 @@
      écrire en français. Une seule table : la frise, l'encart « ce qui
      change » et le refus de suppression s'en servent tous les trois, et
      trois listes jumelles finiraient par diverger. */
+  /* LOT 27 (§27.3) — LES ONZE CONDITIONS, GROUPÉES EN TROIS BLOCS.
+
+     Elles se lisaient d'affilée, onze lignes de même poids : les heures, les
+     montants et les congés mêlés. Le quatrième champ de la liste est une durée
+     et le septième un montant en euros — rien ne le disait, et il fallait lire
+     chaque libellé pour savoir de quoi on parlait.
+
+     Trois blocs, comme la maquette : LE TEMPS (le planning et les heures),
+     L'ARGENT (ce qui se verse), LES CONGÉS (ce qui se décompte). Le groupe est
+     la QUATRIÈME colonne de la table — l'ordre des lignes dans chaque bloc est
+     celui de la table, et `differences()` continue de la parcourir en entier :
+     un avenant qui change une condition la nomme, quel que soit son bloc. */
   var REGLAGES_LISIBLES = [
-    ['jours_planning', 'Jours de garde', function (v) { return libellePlanning(v); }],
-    ['heure_arrivee', 'Début d’accueil', function (v) { return heureCourte(v); }],
-    ['heure_depart', 'Fin d’accueil', function (v) { return heureCourte(v); }],
-    ['minutes_contractuelles', 'Journée d’accueil', function (v) { return Kit.duree(v); }],
-    ['minutes_sup_jour', 'Minutes supplémentaires par jour', function (v) { return Kit.duree(v); }],
-    ['minutes_par_jour_conge', 'Un jour de congé vaut', function (v) { return Kit.duree(v); }],
-    ['entretien_centimes_jour', 'Entretien par jour de présence', function (v) { return Kit.eur(v); }],
+    ['jours_planning', 'Jours de garde', function (v) { return libellePlanning(v); }, 'temps'],
+    ['heure_arrivee', 'Début d’accueil', function (v) { return heureCourte(v); }, 'temps'],
+    ['heure_depart', 'Fin d’accueil', function (v) { return heureCourte(v); }, 'temps'],
+    ['minutes_contractuelles', 'Journée d’accueil', function (v) { return Kit.duree(v); }, 'temps'],
+    ['minutes_sup_jour', 'Minutes supplémentaires par jour', function (v) { return Kit.duree(v); }, 'temps'],
+    ['minutes_par_jour_conge', 'Un jour de congé vaut', function (v) { return Kit.duree(v); }, 'conges'],
+    ['entretien_centimes_jour', 'Entretien par jour de présence', function (v) { return Kit.eur(v); }, 'argent'],
     ['sup_dues_si_enfant_absent', 'Minutes dues si l’enfant est absent',
-      function (v) { return v === false ? 'non' : 'oui'; }],
+      function (v) { return v === false ? 'non' : 'oui'; }, 'temps'],
     ['ordre_imputation', 'Congés déduits d’abord',
-      function (v) { return v === 'sup_puis_cp' ? 'sur la récupération' : 'sur les congés payés'; }],
+      function (v) { return v === 'sup_puis_cp' ? 'sur la récupération' : 'sur les congés payés'; }, 'conges'],
     ['brut_mensuel_centimes', 'Salaire brut',
-      function (v) { return v == null ? 'inconnu' : Kit.eur(v); }],
+      function (v) { return v == null ? 'inconnu' : Kit.eur(v); }, 'argent'],
     ['net_mensuel_centimes', 'Salaire net',
-      function (v) { return v == null ? 'inconnu' : Kit.eur(v); }]
+      function (v) { return v == null ? 'inconnu' : Kit.eur(v); }, 'argent']
+  ];
+
+  var BLOCS_CONDITIONS = [
+    ['temps', 'Le temps'],
+    ['argent', 'L’argent'],
+    ['conges', 'Les congés']
   ];
 
   function memeValeur(a, b) {
@@ -1036,41 +1057,98 @@
       bloc.appendChild(Kit.warnbox('Aucune condition applicable aujourd’hui',
         'Le premier avenant de ce contrat prend effet le ' +
         Kit.dateLongue(tries[0].date_effet) + '. Les mois d’avant ne peuvent pas être calculés.'));
-    } else {
-      REGLAGES_LISIBLES.forEach(function (r) {
-        bloc.appendChild(Kit.fld(r[1], r[2](enVigueur[r[0]])));
-      });
-      /* §16.5 — la phrase qui réconcilie la fin d'accueil et l'heure à
-         laquelle l'enfant repart vraiment. Elle est produite par le MOTEUR
-         depuis le lot 17 : c'est la référence d'une journée (§17.5), et elle
-         décide du signe de chaque écart déclaré. */
-      bloc.appendChild(Kit.ce('p', 'sb q',
-        'L’enfant repart vers ' + heureDeReferenceLisible(enVigueur) + ' : les ' +
-        Kit.duree(enVigueur.minutes_sup_jour) + ' s’ajoutent à l’accueil.'));
-      bloc.appendChild(Kit.fld('Majoration fin de contrat', libelleMajoration()));
+      if (!contrat.archive) bloc.appendChild(boutonAvenant(contrat, tries, recaps));
+      return bloc;
+    }
 
-      var depuis = Kit.ce('p', 'sb',
-        'En vigueur depuis le ' + Kit.dateLongue(enVigueur.date_effet) +
-        ' · avenant n° ' + enVigueur.numero +
-        (enVigueur.reconstitue ? ' (reconstitué)' : ''));
-      bloc.appendChild(depuis);
-      if (enVigueur.brut_mensuel_centimes == null) {
-        bloc.appendChild(Kit.warnbox('Aucune rémunération connue',
-          'Tant que le brut et le net ne sont pas renseignés, les montants de ce contrat ' +
-          'restent à zéro et ses mois ne peuvent pas être clôturés.'));
+    /* LOT 27 §27.3 — « FAIRE UN AVENANT » EST EN TÊTE, avec sa phrase.
+
+       Il était en BAS, sous les onze conditions et sous l'historique. Or c'est
+       le seul geste de cet écran : tout le reste est en lecture. Le poser en
+       tête, c'est dire d'emblée ce qu'on peut faire ici — et la phrase qui le
+       suit dit pourquoi il n'y en a pas d'autre. Elle remplace le paragraphe
+       de trois lignes qui vivait en bas de bloc : ce que celui-ci expliquait
+       — un avenant ne touche jamais un mois antérieur — est désormais dans
+       « Comment l'application compte », l'endroit unique des règles (§27.1). */
+    if (!contrat.archive) {
+      bloc.appendChild(boutonAvenant(contrat, tries, recaps));
+      bloc.appendChild(Kit.ce('p', 'sb q centre',
+        'Les conditions ne se changent que par avenant.'));
+    }
+
+    /* LES TROIS BLOCS. Chaque condition est rendue par la MÊME table que la
+       frise et que `differences()` : une condition oubliée ici serait une
+       condition qu'un avenant changerait sans que la fiche le montre. */
+    BLOCS_CONDITIONS.forEach(function (groupe) {
+      var lignes = REGLAGES_LISIBLES.filter(function (r) { return r[3] === groupe[0]; });
+      if (!lignes.length) return;
+      bloc.appendChild(Kit.section(groupe[1]));
+      var carte = Kit.ce('div', 'cd pad0');
+      lignes.forEach(function (r) {
+        Kit.ligneLn(carte, r[1], r[2](enVigueur[r[0]]));
+      });
+
+      /* §16.5 — la phrase qui réconcilie la fin d'accueil et l'heure à
+         laquelle l'enfant repart vraiment, sous le bloc du TEMPS : c'est là
+         qu'elle explique quelque chose. Elle est produite par le MOTEUR
+         depuis le lot 17 — c'est la référence d'une journée (§17.5), et elle
+         décide du signe de chaque écart déclaré. */
+      if (groupe[0] === 'temps') {
+        bloc.appendChild(carte);
+        bloc.appendChild(Kit.ce('p', 'sb q',
+          'L’enfant repart vers ' + heureDeReferenceLisible(enVigueur) + ' : les ' +
+          Kit.duree(enVigueur.minutes_sup_jour) + ' s’ajoutent à l’accueil.'));
+        return;
       }
+
+      /* §7 — LE QUOTA DE SAMEDIS, DANS LE BLOC DES CONGÉS. La maquette le
+         met ici, avec un lien texte souligné vers la règle — le seul renvoi
+         en contexte de l'application, et il n'y a PAS de « ? » dans les
+         barres (décision d'Adrien du 24 août). */
+      if (groupe[0] === 'conges') {
+        var ligneSam = Kit.ligneLn(carte, 'Samedis comptés', null,
+          { sous: Kit.anneeDeReferenceConges(
+              Kit.iso(m.annee, m.mois, 15)).libelle });
+        var valSam = ligneSam.querySelector('b');
+        bloc.appendChild(carte);
+        var lien = Kit.bouton('lien2', function () { global.App.aller('regles', {}); });
+        lien.textContent = 'Comment les congés se décomptent';
+        bloc.appendChild(lien);
+        /* Le compte est LU, jamais supposé : `null` veut dire « pas pu lire »,
+           et on le dit (§8) plutôt que d'afficher un zéro crédible et faux. */
+        if (typeof global.DB.compterSamedisAnnee === 'function') {
+          var an = Kit.anneeDeReferenceConges(Kit.iso(m.annee, m.mois, 15));
+          global.DB.compterSamedisAnnee(contrat.id, an.debut, an.fin)
+            .then(function (n) {
+              valSam.textContent = n + ' sur ' + Kit.QUOTA_SAMEDIS;
+            })
+            .catch(function () { valSam.textContent = 'non lus'; });
+        } else {
+          valSam.textContent = 'non lus';
+        }
+        return;
+      }
+
+      /* L'ARGENT. La majoration de fin de contrat est une clause ÉCRITE AU
+         CONTRAT : elle se lit ici, elle ne se règle pas — c'est ce que dit sa
+         valeur, et c'est pourquoi elle n'a pas de champ. */
+      Kit.ligneLn(carte, 'Majoration fin de contrat', libelleMajoration());
+      bloc.appendChild(carte);
+    });
+
+    bloc.appendChild(Kit.ce('p', 'sb',
+      'En vigueur depuis le ' + Kit.dateLongue(enVigueur.date_effet) +
+      ' · avenant n° ' + enVigueur.numero +
+      (enVigueur.reconstitue ? ' (reconstitué)' : '')));
+    if (enVigueur.brut_mensuel_centimes == null) {
+      bloc.appendChild(Kit.warnbox('Aucune rémunération connue',
+        'Tant que le brut et le net ne sont pas renseignés, les montants de ce contrat ' +
+        'restent à zéro et ses mois ne peuvent pas être clôturés.'));
     }
 
     var bFrise = Kit.bouton('btn nt', function () { feuilleFrise(contrat, tries, recaps); });
     bFrise.textContent = 'Voir l’historique des conditions';
     bloc.appendChild(bFrise);
-
-    if (!contrat.archive) bloc.appendChild(boutonAvenant(contrat, tries, recaps));
-
-    bloc.appendChild(Kit.ce('p', 'sb q',
-      'Ces conditions gouvernent vos calculs. Un avenant ne touche jamais un mois ' +
-      'antérieur à sa date : c’est ce qui protège les documents déjà remis. ' +
-      'La majoration de fin de contrat est une clause écrite au contrat, elle ne se règle pas ici.'));
     return bloc;
   }
 

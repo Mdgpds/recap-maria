@@ -55,7 +55,10 @@
     historique: 'historique', bilan: 'historique', periode: 'historique',
     conges: 'conges',
     menu: 'menu', fiche: 'menu', familles: 'menu', enfants: 'menu',
-    familiarisation: 'menu', reprise: 'menu', rappels: 'menu', compte: 'menu'
+    familiarisation: 'menu', reprise: 'menu', rappels: 'menu', compte: 'menu',
+    /* LOT 27 §27.1 — « Comment l'application compte », atteint depuis le
+       Menu, dont il garde donc l'onglet actif. */
+    regles: 'menu'
   };
   var ECRANS = {
     accueil: 'UiAccueil',
@@ -87,7 +90,20 @@
        son retrait appartient au §19.2. */
     reprise: 'UiMenu',          // lot 14 — reprendre mes comptes
     rappels: 'UiMenu',          // lot 15 — rappels par notification
-    compte: 'UiMenu'            // lot 16 §16.2 — mon nom sur les documents
+    compte: 'UiMenu',           // lot 16 §16.2 — mon nom sur les documents
+    /* LOT 27 §27.1 — L'ENDROIT UNIQUE DES RÈGLES.
+
+       ÉCART ASSUMÉ AU PÉRIMÈTRE : le §27.1 propose « un nouveau module léger
+       js/ui-regles.js si tu préfères, entré dans index.html et sw.js ». Cet
+       écran est une liste de sept replis sans état, sans lecture en base et
+       sans écriture. Lui donner un fichier, une balise `script` de plus au
+       chargement et une entrée dans la liste de pré-cache coûterait plus que
+       ce qu'il pèse. Il est rendu par le module du Menu, dont il est la
+       troisième entrée — comme `reprise`, `rappels` et `compte` avant lui.
+
+       Ces deux lignes sont les SEULES touchées dans `js/app.js` : le §27
+       n'annonce pas ce fichier, mais un écran doit être routé pour exister. */
+    regles: 'UiMenu'
   };
 
   var el = {};

@@ -736,7 +736,10 @@ function entrerSelection() {
   assert(!!lienEnfant, '§18.3 : l’enfant est un BOUTON, plus une ligne inerte');
   lienEnfant.click();
   await pause(400);
-  assert(txt(corps).indexOf('Identité') !== -1,
+  /* LOT 27 §27.3 — l'intertitre « Identité » a disparu avec le bloc qu'il
+     coiffait : l'identité tient sur UNE CARTE, qui porte le nom de l'enfant.
+     C'est elle qui dit qu'on est arrivé sur la bonne fiche. */
+  assert(txt(corps).indexOf('Alpha') !== -1 && !!parTexte(corps, '.cd', 'Alpha'),
     '§18.3 : et il mène à la fiche du contrat');
 
   /* ==================================================================== */

@@ -29,7 +29,82 @@
     if (ctx.vue === 'reprise') return afficherReprise(ctx);
     if (ctx.vue === 'rappels') return afficherRappels(ctx);
     if (ctx.vue === 'compte') return afficherCompte(ctx);
+    if (ctx.vue === 'regles') return afficherRegles(ctx);
     return afficherMenu(ctx);
+  }
+
+  /* ================================================================== */
+  /* LOT 27 (§27.1) — « COMMENT L'APPLICATION COMPTE »                  */
+  /*                                                                     */
+  /* L'ENDROIT UNIQUE DES RÈGLES. C'est lui qui autorise les retraits    */
+  /* des lots 25 et 26 : chaque phrase de règle qui a quitté un écran    */
+  /* de saisie atterrit ici, une fois, en entier.                        */
+  /*                                                                     */
+  /* Un écran de saisie doit dire ce que le geste FAIT — un montant, un  */
+  /* décompte, un effet. Il n'a pas à porter le cours de droit qui va    */
+  /* avec, à chaque ouverture, pour toujours. Maria connaît son métier ; */
+  /* ce qu'elle veut de l'application, c'est le chiffre, et de savoir OÙ */
+  /* aller quand une famille conteste.                                   */
+  /*                                                                     */
+  /* PAS DE « ? » DANS LES BARRES D'ÉCRAN (décision d'Adrien du 24 août :*/
+  /* « incompréhensible »). Cet écran s'atteint par le Menu, et les      */
+  /* renvois en contexte sont des liens texte, sobres et rares.          */
+  /*                                                                     */
+  /* LES SEPT TEXTES SONT CEUX DE LA MAQUETTE, à une exception près et   */
+  /* elle est délibérée : la règle du décompte des congés est celle de   */
+  /* `Kit.ENCART_RG06`, la constante partagée qui sert DÉJÀ au document  */
+  /* remis à la famille (critère A12 du lot 23). Écrire ici une seconde  */
+  /* version de la phrase la plus contestée de l'application, c'était    */
+  /* garantir qu'un jour les deux divergeraient — et que Maria           */
+  /* défendrait devant une famille un texte que son propre document ne   */
+  /* dit pas. Le complément propre à l'écran (le quota par famille) est  */
+  /* ajouté APRÈS la constante, pas à sa place.                          */
+  /* ================================================================== */
+
+  function reglesDeLApplication() {
+    return [
+      ['Le décompte des congés',
+        Kit.ENCART_RG06 + ' Le quota de cinq vaut PAR FAMILLE : sur une même ' +
+        'période, vous pouvez compter le samedi pour un enfant et pas pour un autre.'],
+      ['Les 30 minutes',
+        'Votre journée va au-delà de la fin d’accueil : 30 minutes par jour sont ' +
+        'dues, enfant présent ou non. Un parent en retard en ajoute, une ' +
+        'libération anticipée que vous demandez en rend. La durée exacte est ' +
+        'celle de chaque contrat — elle se lit sur sa fiche.'],
+      ['L’entretien',
+        'Dû au montant plein chaque jour de présence. Il ne se retire qu’hors du ' +
+        'cadre : une absence, un écart d’horaire déclaré, ou la familiarisation.'],
+      ['La familiarisation',
+        'Une période avant la garde normale : seules les heures déclarées sont ' +
+        'payées, à l’heure, au taux du contrat. Pas de minutes supplémentaires. ' +
+        'Les congés s’acquièrent normalement.'],
+      ['Un congé vaut pour tous vos contrats',
+        'Vous le posez une fois ; pour chaque enfant, vous choisissez sur quoi il ' +
+        'se décompte — récupération, congés payés (jamais négatifs), ou sans ' +
+        'solde. Les compteurs diffèrent d’un enfant à l’autre parce que les ' +
+        'contrats n’ont pas commencé en même temps.'],
+      ['Le mois clôturé',
+        'Ses chiffres ne bougent plus jamais, même si un barème change. Le rouvrir ' +
+        'laisse une trace définitive dans son historique.'],
+      ['Les avenants',
+        'Les conditions d’un contrat se changent par avenant, en vigueur au 1er ' +
+        'd’un mois, jamais rétroactif. Les mois passés gardent leurs conditions : ' +
+        'c’est ce qui rend le solde de tout compte juste.']
+    ];
+  }
+
+  function afficherRegles(ctx) {
+    global.App.barreRetour(ctx.barre, 'Comment l’application compte');
+
+    ctx.corps.appendChild(Kit.ce('p', 'sb q',
+      'Tout ce que les écrans n’ont plus besoin de répéter.'));
+
+    reglesDeLApplication().forEach(function (r) {
+      var f = Kit.fold(r[0], null);
+      f.corps.appendChild(Kit.ce('p', 'regle', r[1]));
+      ctx.corps.appendChild(f.bloc);
+    });
+    return Promise.resolve(true);
   }
 
   function afficherMenu(ctx) {
@@ -44,57 +119,46 @@
        est justement l'endroit où l'on va chercher le passé. Le Menu ne garde
        que ce qu'on y attend : gérer, et son compte. */
 
+    /* ==================================================================
+       LOT 27 (§27.2) — LE MENU EN CARTES DU SOCLE, ET « FAMILLES » S'EN VA.
+
+       DEUX RUBRIQUES. « Gérer » : Mes enfants, Ajouter un enfant, Comment
+       l'application compte. « Compte » : le nom sur les documents, les
+       rappels, la reprise, l'export, la connexion.
+
+       « FAMILLES » QUITTE LE MENU — décision d'Adrien du 23 août, confirmée
+       par le §27.2. Le lot 22 l'avait remplacée par « Mes enfants » (Maria
+       pense par enfant), puis la relecture l'avait rétablie « le temps qu'il
+       tranche ». Il a tranché.
+
+       RIEN NE SE PERD (B.0-7) : l'écran des familles existe toujours, et il
+       s'atteint par « Voir par famille », en bas de « Mes enfants ». Le
+       chemin n'est pas plus long — c'est le même nombre d'appuis — et il part
+       de l'endroit où Maria vient de lire la liste de ses enfants, donc de
+       l'endroit où la question « qui vit ensemble ? » se pose vraiment.
+       ================================================================== */
     corps.appendChild(Kit.section('Gérer'));
-    /* LOT 16 §16.4 — LA LIGNE NE PART PLUS SUR « Chargement… ».
 
-       Deux lignes étaient créées avec ce sous-titre, et une seule était mise à
-       jour — repérée par sa POSITION dans la liste. La ligne des Rappels
-       affichait donc « Chargement… » pour toujours, et la moindre ligne
-       insérée avant les Familles aurait déplacé le correctif sur la mauvaise.
-
-       Chaque ligne est désormais tenue par sa propre référence, et un
-       sous-titre en attente n'est posé que là où quelqu'un sait le lever. */
-    /* LOT 22 §22.1 — « MES ENFANTS » REMPLACE « FAMILLES » DANS LE MENU.
-
-       Maria pense par ENFANT : c'est un enfant qu'elle garde, un enfant dont
-       elle tient les compteurs, un enfant dont elle remet le récapitulatif.
-       Le foyer sert aux documents et aux échanges avec les parents, pas au
-       geste quotidien.
-
-       L'entrée par famille ne DISPARAÎT pas — rien ne se supprime jamais
-       (B.0-7) : elle est reprise en bas de la page « Mes enfants », d'où un
-       foyer à deux enfants reste consultable d'un geste. Un seul chemin
-       change, aucune vue n'est perdue.
-
-       Le sous-titre porte les deux comptes du §22.1 (« 4 en garde · 3 contrats
-       terminés »), et ils sont CALCULÉS : un historique peut compter quatorze
-       enfants, et un compte écrit en dur mentirait dès le quinzième. */
+    /* LOT 22 §22.1 — le sous-titre porte les deux comptes, et ils sont
+       CALCULÉS : un historique peut compter quatorze enfants, et un compte
+       écrit en dur mentirait dès le quinzième.
+       LOT 16 §16.4 — chaque ligne est tenue par sa PROPRE RÉFÉRENCE et non
+       par sa position : une ligne insérée avant elle déplaçait le correctif
+       sur la mauvaise, et la ligne restait sur « Chargement… » pour
+       toujours. */
     var ligneEnfants = entree('Mes enfants', 'Chargement…',
       function () { global.App.aller('enfants', {}); });
     corps.appendChild(ligneEnfants);
 
-    /* CORRECTION C5 DE LA RELECTURE — « FAMILLES » REVIENT DANS LE MENU.
-
-       Le §22.1 demande une entrée unique « Mes enfants » et une page dédiée.
-       Il ne demande NULLE PART de supprimer l'accès par famille : c'est un
-       changement de navigation que personne n'a réclamé, sur un écran que
-       Maria connaît, et la grille du lot 22 dit « rien d'autre n'a bougé ».
-       L'entrée est donc rétablie telle qu'elle était.
-
-       Le raccourci « Voir par famille » reste en bas de la page « Mes
-       enfants » : deux portes vers le même écran ne coûtent rien, et la
-       seconde est utile là où l'on vient de lire la liste des enfants.
-       Question remontée à Adrien : s'il préfère l'entrée unique, c'est cette
-       ligne-ci qui repart. */
-    var ligneFamilles = entree('Familles', 'Chargement…',
-      function () { global.App.aller('familles', {}); });
-    corps.appendChild(ligneFamilles);
-    /* LOT 17 §17.9 — deux entrées ont disparu du Menu (« Mes contrats
-       types », « Modifier plusieurs contrats »). Leur code, resté mort et
-       signalé depuis, est RETIRÉ par le lot 24 (§24.5) — voir la note plus
-       bas. Les données restent en base. */
-    corps.appendChild(entree('Ajouter un enfant', 'Une famille, un enfant, ses conditions',
+    corps.appendChild(entree('Ajouter un enfant', 'En trois étapes courtes',
       function () { feuilleNouvelEnfant(); }));
+
+    /* §27.1 — L'ENDROIT UNIQUE DES RÈGLES. Le sous-titre les nomme : sans
+       lui, « Comment l'application compte » ne dit pas ce qu'on y trouve, et
+       Maria n'y va pas quand une famille conteste un décompte. */
+    corps.appendChild(entree('Comment l’application compte',
+      'Les règles — congés, samedis, entretien, 30 minutes…',
+      function () { global.App.aller('regles', {}); }));
 
     corps.appendChild(Kit.section('Compte'));
     /* LOT 16 §16.2 — la saisie du nom qui signe les documents, en tête de la
@@ -110,39 +174,27 @@
       function () { global.App.aller('rappels', {}); });
     corps.appendChild(ligneRappels);
     corps.appendChild(entree('Reprendre mes comptes',
-      'Si vous teniez déjà vos comptes sur papier',
+      'Vos compteurs papier, une fois',
       function () { global.App.aller('reprise', {}); }));
     corps.appendChild(entree('Exporter tout mon historique',
       'Tous vos mois, tous vos contrats. À garder de côté.',
       function () { feuilleExport(); }));
-    corps.appendChild(Kit.fld('Connectée', global.App.email() || '—'));
+    corps.appendChild(Kit.ce('div', 'sec', 'Connectée'));
+    corps.appendChild(Kit.ce('p', 'sb q', global.App.email() || '—'));
     var bOut = Kit.bouton('btn nt', function () { deconnecter(bOut); });
     bOut.textContent = 'Se déconnecter';
     corps.appendChild(bOut);
-    corps.appendChild(Kit.ce('p', 'sb q',
-      'Vous restez connectée d’une fois sur l’autre : ce bouton est le seul moyen de fermer ' +
-      'votre session.'));
+    corps.appendChild(Kit.ce('p', 'sb q centre',
+      'Vous restez connectée d’une fois sur l’autre : ce bouton est le seul moyen ' +
+      'de fermer votre session.'));
 
     /* Les deux lectures sont indépendantes : l'échec de l'une ne doit pas
        laisser l'autre ligne dans son état d'attente. */
-    /* LOT 22 §22.1 — LES DEUX COMPTES, CALCULÉS. « En garde » : les contrats
-       ni rangés ni terminés. « Contrats terminés » : tous les autres, rangés
-       comme terminés — c'est la section où ils atterrissent, et la ligne doit
-       annoncer ce qu'elle ouvre. */
     var pEnfants = global.DB.listContratsTous().then(function (tous) {
       var parts = partagerContrats(tous || []);
       poserSousTitre(ligneEnfants, phraseComptes(parts));
     }).catch(function () {
       poserSousTitre(ligneEnfants, 'Liste indisponible pour l’instant');
-    });
-
-    var pFamilles = global.DB.listFamillesAvecContrats().then(function (familles) {
-      var enCours = (familles || []).filter(function (f) { return !f.archive; });
-      poserSousTitre(ligneFamilles, enCours.length
-        ? enCours.map(function (f) { return f.nom; }).join(', ')
-        : 'Aucune famille pour l’instant');
-    }).catch(function () {
-      poserSousTitre(ligneFamilles, 'Liste indisponible pour l’instant');
     });
 
     /* §16.4 — LE VRAI RÉGLAGE, ou RIEN. Une ligne qui n'a pas pu lire son
@@ -154,7 +206,7 @@
       poserSousTitre(ligneRappels, null);
     });
 
-    return Promise.all([pEnfants, pFamilles, pRappels]);
+    return Promise.all([pEnfants, pRappels]);
   }
 
   function poserSousTitre(ligne, texte) {
@@ -163,8 +215,12 @@
     if (!texte) { if (sous) sous.parentNode.removeChild(sous); return; }
     if (!sous) {
       sous = Kit.ce('span', 'd');
-      var tx = ligne.querySelector('span');
-      if (tx) tx.appendChild(sous); else return;
+      /* LOT 27 — le sous-titre se pose dans le GROUPE de la carte (`.gr`),
+         à côté du titre. `querySelector('span')` prenait le premier span
+         venu : sur la carte du socle c'est `.gr` lui-même, ce qui marchait
+         par accident. On le nomme. */
+      var groupe = ligne.querySelector('.gr');
+      if (groupe) groupe.appendChild(sous); else return;
     }
     sous.textContent = texte;
   }
@@ -233,14 +289,21 @@
     return p.map(function (j) { return NOMS_JOURS_LONGS[j]; }).join(', ');
   }
 
+  /* LOT 27 (§27.2) — UNE ENTRÉE DE MENU EST LA CARTE DU SOCLE (`cd tap`).
+     C'était une ligne `menu` avec son propre style : même géométrie, même
+     chevron, un composant de plus à corriger le jour où la carte change.
+     `Kit.carteTap` la remplace, et `poserSousTitre` continue de poser le
+     sous-titre en différé sur `.d` — la classe ne change pas. */
   function entree(titre, sous, onclick) {
-    var b = onclick ? Kit.bouton('menu', onclick) : Kit.ce('div', 'menu');
-    var tx = Kit.ce('span');
-    tx.appendChild(document.createTextNode(titre));
-    if (sous) tx.appendChild(Kit.ce('span', 'd', sous));
-    b.appendChild(tx);
-    b.appendChild(Kit.ce('span', 'ar', '›'));
-    return b;
+    if (!onclick) {
+      var d = Kit.ce('div', 'cd');
+      var g = Kit.ce('span', 'gr');
+      g.appendChild(Kit.ce('span', 'n', titre));
+      if (sous) g.appendChild(Kit.ce('span', 'd', sous));
+      d.appendChild(g);
+      return d;
+    }
+    return Kit.carteTap(titre, sous, onclick);
   }
 
   /* `majAnciens` et `feuilleAnciens` ONT ÉTÉ SUPPRIMÉES ICI (lot 8).
@@ -273,35 +336,88 @@
      Le bloc est titré « Conditions au 1er septembre 2026 » : le vocabulaire
      prépare l'avenant, pour que « Faire un avenant » ne soit pas un geste
      nouveau six mois plus tard. */
+  /* ================================================================== */
+  /* LOT 27 (§27.4) — AJOUTER UN ENFANT EN TROIS ÉTAPES                 */
+  /*                                                                     */
+  /* C'ÉTAIT UNE SEULE FEUILLE DE QUINZE CHAMPS. Photo, famille, prénom, */
+  /* date, puis les onze conditions, puis la rémunération : sur un       */
+  /* téléphone, six écrans de défilement avant le bouton, et un refus    */
+  /* posé tout en bas qui pouvait porter sur un champ hors de vue.       */
+  /*                                                                     */
+  /* TROIS ÉTAPES, CHACUNE TENANT SANS DÉFILEMENT À 390 px :             */
+  /*   Qui     — la photo, le prénom, la famille, le premier jour ;      */
+  /*   Quand   — le planning, les horaires, la journée, les minutes sup, */
+  /*             ce que consomme un jour de congé ;                      */
+  /*   Combien — l'entretien, l'ordre d'imputation, le brut et le net.   */
+  /*                                                                     */
+  /* CE QUI NE CHANGE PAS : les champs sont les MÊMES objets, construits */
+  /* une seule fois par `Kit.champsConditions` — l'écran ne fait que les */
+  /* répartir. Le refus est le même `erreur()`, l'écriture le même       */
+  /* enchaînement (contrat, puis avenant nº 1 daté du 1er du mois), et   */
+  /* les trois messages d'échec du lot 6 (A10) sont conservés mot pour   */
+  /* mot : contrat créé sans son avenant, rechargement raté, échec sec.  */
+  /*                                                                     */
+  /* LE REFUS REMONTE À L'ÉTAPE QUI LE PORTE. Un prénom manquant est dit */
+  /* à l'étape « Qui », un planning vide à l'étape « Quand » : un        */
+  /* message qui parle d'un champ invisible n'aide personne.             */
+  /* ================================================================== */
+
   function feuilleNouvelEnfant() {
     var maintenant = global.App.moisCourant();
 
     global.DB.listFamillesToutes().then(function (familles) {
-      Kit.ouvrirFeuille('Ajouter un enfant',
-        'La famille, l’enfant, la date de début, puis ses conditions.',
+      Kit.ouvrirFeuille('Ajouter un enfant', null,
         function (corps) {
+          var ETAPES = ['Qui', 'Quand', 'Combien'];
+          var etape = 0;
+
+          /* La barre de progression : trois traits, celui de l'étape en cours
+             et les précédents en vert. Elle dit où l'on en est et combien il
+             reste — sans elle, trois feuilles successives ressemblent à un
+             formulaire sans fin. */
+          var barre = Kit.ce('div', 'wsteps');
+          var traits = ETAPES.map(function () {
+            var t = Kit.ce('i');
+            barre.appendChild(t);
+            return t;
+          });
+          corps.appendChild(barre);
+          var soustitre = Kit.ce('div', 'sec');
+          corps.appendChild(soustitre);
+
+          var zone1 = Kit.ce('div');
+          var zone2 = Kit.ce('div');
+          var zone3 = Kit.ce('div');
+          corps.appendChild(zone1);
+          corps.appendChild(zone2);
+          corps.appendChild(zone3);
+          var zones = [zone1, zone2, zone3];
+
+          /* --- ÉTAPE 1 : QUI ------------------------------------------ */
+
           /* LOT 22 §22.2 — « L'ÉCRAN AJOUTER UN ENFANT COMMENCE PAR ELLE. »
-
-             Ce n'est pas de la décoration. Quatre cartes d'accueil se
-             distinguaient par une seule lettre dans quatre ronds ; la photo
-             est ce qui les rend reconnaissables d'un coup d'œil, debout,
-             entre deux enfants. La poser au moment de la création est le seul
-             moment où Maria l'a sous la main — après, il faut y penser.
-
-             Elle part avec le contrat, dans le même `creerContrat` : aucune
-             écriture séparée, donc aucun état à moitié créé si le réseau
-             lâche. */
+             Quatre cartes d'accueil se distinguaient par une seule lettre
+             dans quatre ronds ; la photo est ce qui les rend reconnaissables
+             d'un coup d'œil, debout, entre deux enfants. La poser à la
+             création est le seul moment où Maria l'a sous la main. Elle part
+             avec le contrat, dans le même `creerContrat` : aucune écriture
+             séparée, donc aucun état à moitié créé si le réseau lâche. */
           var photo = { valeur: null };
-          corps.appendChild(global.UiContrat.blocPhoto(photo, { grand: true }));
+          zone1.appendChild(global.UiContrat.blocPhoto(photo, { grand: true }));
+
+          var prenom = Kit.champ('Prénom de l’enfant', '', { placeholder: 'Léa' });
+          zone1.appendChild(prenom.bloc);
 
           var options = [['', '➕ Nouvelle famille']].concat(
             (familles || []).filter(function (f) { return !f.archive; })
               .map(function (f) { return [f.id, f.nom]; }));
-          var selFamille = Kit.champSelect('Famille', options, options.length > 1 ? options[1][0] : '');
-          corps.appendChild(selFamille.bloc);
+          var selFamille = Kit.champSelect('Famille', options,
+            options.length > 1 ? options[1][0] : '');
+          zone1.appendChild(selFamille.bloc);
 
-          var nomFamille = Kit.champ('Nom de la nouvelle famille', '', { placeholder: 'Papillon' });
-          corps.appendChild(nomFamille.bloc);
+          var nomFamille = Kit.champ('Nom de la nouvelle famille', '',
+            { placeholder: 'Papillon' });
+          zone1.appendChild(nomFamille.bloc);
 
           function majFamille() {
             nomFamille.bloc.hidden = !!selFamille.select.value;
@@ -309,45 +425,101 @@
           selFamille.select.addEventListener('change', majFamille);
           majFamille();
 
-          var prenom = Kit.champ('Prénom de l’enfant', '', { placeholder: 'Léa' });
-          corps.appendChild(prenom.bloc);
-
           var debut = Kit.champDate('Premier jour de garde',
             Kit.iso(maintenant.annee, maintenant.mois, 1),
             { anneeMin: maintenant.annee - 3, anneeMax: maintenant.annee + 1 });
-          corps.appendChild(debut.bloc);
+          zone1.appendChild(debut.bloc);
 
-          /* Les conditions, avec leur titre daté. Il suit la date de début :
-             changer le premier jour de garde change le mois d'effet, et
-             laisser le titre en arrière ferait croire à une date qui n'est pas
-             celle qui sera écrite. */
-          var conditions = Kit.champsConditions(REGLAGES_PAR_DEFAUT, { titre: titreConditions(debut.valeur()) });
-          corps.appendChild(conditions.bloc);
+          /* --- ÉTAPES 2 ET 3 : LES ONZE CONDITIONS -------------------- */
 
-          var titre = conditions.bloc.querySelector('.sec');
-          debut.bloc.addEventListener('change', function () {
-            if (titre) titre.textContent = titreConditions(debut.valeur());
-          });
+          /* Construites UNE FOIS, puis réparties : `temps` va dans « Quand »,
+             `argent` dans « Combien ». Déplacer un nœud ne le recrée pas, donc
+             `conditions.valeurs()` et `conditions.erreur()` continuent de lire
+             les mêmes champs. */
+          var conditions = Kit.champsConditions(REGLAGES_PAR_DEFAUT);
+          zone2.appendChild(conditions.temps);
+          zone3.appendChild(conditions.argent);
 
-          corps.appendChild(Kit.ce('p', 'sb q',
+          /* La phrase des avenants clôt la dernière étape : c'est là que Maria
+             valide, et c'est ce qu'elle doit savoir avant de le faire. Le
+             titre daté, lui, est devenu le sous-titre de l'étape — il suit la
+             date de début, qui se saisit à l'étape précédente. */
+          zone3.appendChild(Kit.ce('p', 'sb q',
             'Ces conditions valent à partir de ce mois-là. Pour les changer plus tard, ' +
-            'vous ferez un avenant depuis la fiche du contrat : les mois d’avant ne bougeront pas.'));
+            'vous ferez un avenant depuis la fiche du contrat : les mois d’avant ne ' +
+            'bougeront pas.'));
+
+          /* --- LE PIED : progression, refus, navigation ---------------- */
 
           var msg = Kit.ce('div', 'msg');
           corps.appendChild(msg);
-          var b = Kit.bouton('btn', function () { creer(); });
-          b.textContent = 'Créer le contrat';
+
+          var b = Kit.bouton('btn', function () { suivant(); });
           corps.appendChild(b);
+          var bRetour = Kit.bouton('btn nt', function () { precedent(); });
+          bRetour.textContent = 'Revenir';
+          corps.appendChild(bRetour);
 
           function erreur(t) { msg.textContent = t; msg.className = 'msg ko'; }
 
+          function dessiner() {
+            zones.forEach(function (z, k) { z.hidden = k !== etape; });
+            traits.forEach(function (t, k) { t.className = k <= etape ? 'on' : ''; });
+            soustitre.textContent = 'Étape ' + (etape + 1) + ' sur ' + ETAPES.length +
+              ' · ' + ETAPES[etape] +
+              (etape === 1 || etape === 2 ? ' — ' + titreConditions(debut.valeur()) : '');
+            b.textContent = etape === ETAPES.length - 1 ? 'Créer le contrat' : 'Continuer';
+            bRetour.hidden = etape === 0;
+            msg.textContent = ''; msg.className = 'msg';
+          }
+
+          /* LE REFUS EST RENDU À L'ÉTAPE QUI LE PORTE : on ne laisse pas Maria
+             avancer sur une saisie qu'on refusera trois écrans plus loin, et
+             on ne lui parle jamais d'un champ qu'elle ne voit pas. */
+          function refusDeLEtape() {
+            if (etape === 0) {
+              if (!prenom.input.value.trim()) {
+                return 'Le prénom de l’enfant est obligatoire.';
+              }
+              if (!selFamille.select.value && !nomFamille.input.value.trim()) {
+                return 'Donnez un nom à la nouvelle famille.';
+              }
+              return null;
+            }
+            /* `conditions.erreur()` couvre les onze champs à la fois. On ne le
+               pose qu'à la dernière étape, où ils ont tous été vus — le poser
+               à l'étape « Quand » refuserait un brut que Maria n'a pas encore
+               eu l'occasion de saisir. */
+            return etape === ETAPES.length - 1 ? conditions.erreur() : null;
+          }
+
+          function suivant() {
+            var refus = refusDeLEtape();
+            if (refus) { erreur(refus); return; }
+            if (etape < ETAPES.length - 1) { etape++; dessiner(); return; }
+            creer();
+          }
+
+          function precedent() {
+            if (etape > 0) { etape--; dessiner(); }
+          }
+
+          dessiner();
+
           function creer() {
             msg.textContent = ''; msg.className = 'msg';
+            /* LES TROIS REFUS SONT REJOUÉS ICI, ET C'EST VOULU : `suivant()`
+               les a déjà posés étape par étape, mais `creer()` est le dernier
+               point avant l'écriture. Un garde-fou qui ne tient que dans le
+               chemin nominal n'est pas un garde-fou. */
             var p = prenom.input.value.trim();
-            if (!p) { erreur('Le prénom de l’enfant est obligatoire.'); return; }
+            if (!p) { etape = 0; dessiner(); erreur('Le prénom de l’enfant est obligatoire.'); return; }
             var idFamille = selFamille.select.value;
             var nouveauNom = nomFamille.input.value.trim();
-            if (!idFamille && !nouveauNom) { erreur('Donnez un nom à la nouvelle famille.'); return; }
+            if (!idFamille && !nouveauNom) {
+              etape = 0; dessiner();
+              erreur('Donnez un nom à la nouvelle famille.'); return;
+            }
             var refus = conditions.erreur();
             if (refus) { erreur(refus); return; }
             var vals = conditions.valeurs();

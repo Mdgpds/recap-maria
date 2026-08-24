@@ -441,13 +441,13 @@ var sheet = document.getElementById('sheet');
     '§16.4 : aucune ligne ne reste sur « Chargement… »');
   assert(txt(corps).indexOf('Le 25, puis chaque jour') !== -1,
     '§16.4 : la ligne des rappels affiche son VRAI réglage, lu en base');
-  assert(!!parTexte(corps, '.menu', 'Mon nom sur les documents'),
+  assert(!!parTexte(corps, '.cd', 'Mon nom sur les documents'),
     '§16.2 : le Menu propose la saisie du nom');
   /* LOT 22 §22.1 — la ligne « Familles » est devenue « Mes enfants », et son
      sous-titre porte les DEUX comptes calculés au lieu des noms de foyers. La
      garde du §16.4 vaut toujours : une ligne qui part sur « Chargement… » doit
      être levée par quelqu'un qui sait la lever. */
-  var ligneEnfants = parTexte(corps, '.menu', 'Mes enfants');
+  var ligneEnfants = parTexte(corps, '.cd', 'Mes enfants');
   assert(!!ligneEnfants, '§22.1 : le Menu porte l’entrée « Mes enfants »');
   assert(txt(ligneEnfants).indexOf('en garde') !== -1,
     '§16.4 : et son sous-titre est bien renseigné, lui aussi');
