@@ -54,7 +54,7 @@ function assert(cond, msg) {
 }
 function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 30); }); }
 function txt(el) { return el ? el.textContent : ''; }
-function sansInsecable(t) { return String(t).replace(/ /g, ' '); }
+function sansInsecable(t) { return String(t).replace(/[\u00a0\u202f]/g, ' '); }
 function parTexte(racineEl, selecteur, morceau) {
   return Array.prototype.filter.call(racineEl.querySelectorAll(selecteur), function (e) {
     return e.textContent.indexOf(morceau) !== -1;

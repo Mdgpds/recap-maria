@@ -51,7 +51,7 @@ function egal(obtenu, attendu, msg) {
     ', obtenu ' + JSON.stringify(obtenu) + ')');
 }
 function lire(f) { return fs.readFileSync(path.join(racine, f), 'utf8'); }
-function sansInsecable(t) { return String(t).replace(/ /g, ' '); }
+function sansInsecable(t) { return String(t).replace(/[\u00a0\u202f]/g, ' '); }
 /* Les commentaires EXPLIQUENT les défauts corrigés, en les citant. Une
    recherche naïve dans le source confondrait l'explication avec le défaut :
    on les retire avant tout contrôle de code. */
@@ -542,9 +542,18 @@ function moisDe(s, annee, mois) {
   var sourceContrat = lire('js/ui-contrat.js');
   assert(sourceContrat.indexOf('Fin d’accueil') !== -1,
     '§16.5 : le champ s’appelle « fin d’accueil » à l’écran');
-  assert(sourceContrat.indexOf('function finReelle') !== -1,
+  /* LOT 24 (§24.5) — ASSERTION MISE À JOUR, la garantie est inchangée.
+     `finReelle` calculait cette heure localement ; morte depuis le lot 17
+     (la fiche lit `Engine.heureDeReference` via `heureDeReferenceLisible`),
+     elle est retirée avec le reste du code mort. Ce qu'on vérifie reste
+     exactement la même chose : l'heure à laquelle l'enfant repart vient du
+     MOTEUR, jamais d'une constante écrite dans l'écran. */
+  assert(sourceContrat.indexOf('function heureDeReferenceLisible') !== -1 &&
+         sourceContrat.indexOf('Engine.heureDeReference(') !== -1,
     '§16.5 : et l’heure à laquelle l’enfant repart est produite à partir des ' +
-    'valeurs appliquées, jamais écrite en dur');
+    'valeurs appliquées (Engine.heureDeReference), jamais écrite en dur');
+  assert(sourceContrat.indexOf('function finReelle') === -1,
+    '§24.5 : `finReelle`, morte depuis le lot 17, est bien retirée');
 
   /* ==================================================================== */
   /* REMARQUE 4 DE LA RELECTURE — L'ÉCRAN ET LE SCHÉMA NE PEUVENT PAS      */

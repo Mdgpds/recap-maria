@@ -26,7 +26,8 @@
 
    Aucune formule n'est réécrite : la valorisation des heures supplémentaires
    passe par Engine.montantCentimes avec le coefficient de RG-13, la sélection
-   du barème par Engine.salaireApplicable, les soldes par la chaîne des mois.
+   des conditions par Engine.conditionsApplicables, les soldes par la chaîne
+   des mois.
    ========================================================================= */
 (function (global) {
   'use strict';
@@ -313,89 +314,23 @@
   }
 
   /* ================================================================== */
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2                       */
+  /* LOT 24 (§24.5) — LE CODE MORT DU §17.9 EST RETIRÉ.                 */
   /*                                                                     */
-  /* Deux familles de fonctions, mortes pour deux raisons différentes.    */
-  /*                                                                     */
-  /* LES BARÈMES (`carteBareme`, `feuilleBareme`,                        */
-  /* `feuilleSuppressionBareme`, `moisClosDependants`) : la table         */
-  /* `salaire_contrat` est devenue `avenant_contrat` et porte les ONZE    */
-  /* réglages (§17.2). Un écran qui ne daterait QUE le brut et le net     */
-  /* redonnerait l'impression qu'eux seuls ont un historique — c'est      */
-  /* exactement l'idée fausse que ce lot corrige. Ils sont remplacés par  */
-  /* la frise et « Faire un avenant ».                                     */
-  /*                                                                     */
-  /* LES CONTRATS TYPES (`blocModele`, `ligneEcartReferme`, `phraseEcart`,*/
-  /* `valeurLisible`, `feuilleAlignerCeContrat`) : décision d'Adrien      */
-  /* (§17.9). Les données restent en base ; la notion d'« écart »         */
-  /* disparaît, puisque plus rien ne compare un contrat à une référence.   */
-  /*                                                                     */
-  /* `feuilleRegles` : « modifier les conditions sans passer par un       */
-  /* avenant n'existe plus » (§17.4).                                     */
-  /*                                                                     */
-  /* CE CODE NE FONCTIONNE PLUS — il appelle `DB.getSalaires`,           */
-  /* `DB.ajouterSalaire`, `DB.majSalaire`, `DB.supprimerSalaire` et      */
-  /* `Engine.salaireApplicable`, qui n'existent plus. C'est délibéré :    */
-  /* un écran qui écrirait encore un réglage sans date serait le seul     */
-  /* moyen d'effacer le passé sans s'en apercevoir. Plus aucun appelant   */
-  /* ne le touche ; la spécification demande de le SIGNALER, pas de le    */
-  /* supprimer dans ce lot.                                               */
+  /* Les barèmes (`carteBareme`, `feuilleBareme`,                        */
+  /* `feuilleSuppressionBareme`, `moisClosDependants`), les contrats     */
+  /* types (`blocModele` et ses feuilles) et `feuilleRegles` vivaient    */
+  /* ici, morts depuis le lot 17 : plus appelés, signalés en bannière,   */
+  /* et appelant des fonctions `DB` disparues (`getSalaires`,            */
+  /* `majSalaire`, `supprimerSalaire`) et `Engine.salaireApplicable`.    */
+  /* Le lot 17 réservait leur retrait au §19.2 : c'est ce lot-ci.        */
+  /* Retrait pur — aucun comportement ne change.                         */
   /* ================================================================== */
-
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
-  function carteBareme(contrat, s, salaires, recaps, enVigueur) {
-    var carte = Kit.ce('div', 'card');
-    var row = Kit.ce('div', 'row');
-    row.appendChild(Kit.ce('span', 'nm', 'Depuis le ' + Kit.dateLongue(s.date_effet)));
-    if (enVigueur && enVigueur.id === s.id) {
-      row.appendChild(Kit.ce('span', 'badge ok', 'en cours'));
-    }
-    carte.appendChild(row);
-    carte.appendChild(Kit.ce('div', 'sb',
-      'Brut ' + Kit.eur(s.brut_mensuel_centimes) + ' · Net ' +
-      (s.net_mensuel_centimes ? Kit.eur(s.net_mensuel_centimes) : 'non renseigné')));
-    if (!s.net_mensuel_centimes) {
-      carte.appendChild(Kit.ce('div', 'sb', 'Les récapitulatifs des mois concernés sont incomplets ' +
-        'et ne peuvent pas être clôturés tant que le net manque.'));
-    }
-    if (contrat.archive) return carte;
-
-    var moisClos = moisClosDependants(s, salaires, recaps);
-    if (moisClos.length) {
-      carte.appendChild(Kit.ce('div', 'sb q',
-        'Ce barème sert au(x) mois clôturé(s) de ' + listeMois(moisClos) +
-        ' : il ne peut plus être modifié ni supprimé.'));
-      return carte;
-    }
-    var b = Kit.bouton('btn nt', function () { feuilleBareme(contrat, s, salaires, recaps); });
-    b.textContent = 'Modifier ce barème';
-    b.style.marginTop = '8px';
-    carte.appendChild(b);
-    var d = Kit.bouton('btn dg', function () { feuilleSuppressionBareme(contrat, s, salaires, recaps); });
-    d.textContent = 'Supprimer ce barème';
-    carte.appendChild(d);
-    return carte;
-  }
 
   function libelleStatut(s) {
     return { familiarisation: 'familiarisation', actif: 'actif', termine: 'terminé' }[s] || s;
   }
   function heureCourte(h) { return String(h || '').slice(0, 5) || '—'; }
 
-  /* LOT 16 §16.5 — L'HEURE À LAQUELLE L'ENFANT REPART, PRODUITE À PARTIR DES
-     VALEURS APPLIQUÉES, jamais écrite en dur. C'est fin d'accueil + minutes
-     supplémentaires du contrat : un contrat qui en prévoit 45 le dira, et une
-     constante « 18 h » serait fausse ce jour-là sans que rien ne le signale.
-     Aucun calcul métier : une addition de minutes d'horloge, pas une règle. */
-  function finReelle(contrat) {
-    var h = String(contrat.heure_depart || '').slice(0, 5).split(':');
-    if (h.length !== 2) return '—';
-    var total = Number(h[0]) * 60 + Number(h[1]) + (contrat.minutes_sup_jour || 0);
-    if (!isFinite(total)) return '—';
-    total = ((total % 1440) + 1440) % 1440;
-    var mm = total % 60;
-    return Math.floor(total / 60) + ' h' + (mm ? ' ' + String(mm).padStart(2, '0') : '');
-  }
   var NOMS_JOURS = ['', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
   function libellePlanning(planning) {
     var p = (planning || [1, 2, 3, 4, 5]).slice().sort(function (a, b) { return a - b; });
@@ -592,197 +527,6 @@
                 ' Votre saisie est conservée.');
             });
         }
-      });
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* LOT 11 — Le rattachement à un contrat type, et ses ÉCARTS           */
-  /*                                                                     */
-  /* UN ÉCART N'EST PAS UNE ERREUR (V8-13, risque n° 3). Tom garde son    */
-  /* ancienne rémunération parce que ses parents ne l'ont pas             */
-  /* revalorisée : c'est un fait négocié, pas un oubli. L'application le  */
-  /* CONSTATE — pas d'icône d'alerte, pas de rouge, pas d'injonction. Et  */
-  /* « Garder cet écart » ne fait rien d'autre que refermer la mention :  */
-  /* un écart ne doit pas devenir une alerte permanente.                  */
-  /* ------------------------------------------------------------------ */
-
-  var ecartsMasques = {};   // contratId -> true, le temps de la session
-
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
-  function blocModele(contrat, modele, salaires) {
-    var bloc = Kit.ce('div', 'modele-bloc');
-    /* CORRECTIF A4 DE LA RELECTURE PR9 — l'écart se compare au barème EN
-       VIGUEUR, pas au DERNIER SAISI. `getSalaires` trie par date d'effet
-       croissante : prendre le dernier, c'était prendre un barème FUTUR s'il
-       existait. Saisir un relèvement du SMIC au 1ᵉʳ septembre faisait
-       apparaître, en août, un « écart » assorti d'un bouton invitant à défaire
-       ce qu'on venait de saisir. Quinze lignes plus bas, la section
-       Rémunération du même écran affichait, elle, le bon barème. */
-    var m = global.App.moisCourant();
-    var enVigueur = Engine.salaireApplicable(salaires || [], m.annee, m.mois);
-    var ecarts = global.DB.ecartsContratModele(contrat, modele, enVigueur);
-
-    var ligne = Kit.ce('div', 'fld');
-    ligne.appendChild(Kit.ce('span', 'lb', 'Contrat type'));
-    ligne.appendChild(Kit.ce('span', 'vl', modele.nom));
-    bloc.appendChild(ligne);
-
-    if (!ecarts.length) return bloc;
-
-    /* « Garder cet écart » referme la mention pour la session. Mais il ne la
-       fait pas DISPARAÎTRE : il reste une ligne discrète, sans injonction, qui
-       permet d'y revenir. Sans elle, Maria qui a refermé une fois n'aurait plus
-       aucun moyen d'aligner depuis cette fiche — on aurait remplacé une alerte
-       trop insistante par une porte fermée. */
-    if (ecartsMasques[contrat.id]) {
-      bloc.appendChild(ligneEcartReferme(contrat, ecarts));
-      return bloc;
-    }
-
-    var n = Kit.note(ecarts.length > 1 ? ecarts.length + ' écarts avec ' + modele.nom
-                                       : 'Un écart avec ' + modele.nom,
-      ecarts.map(function (e) { return phraseEcart(e); }).join(' · ') + '.');
-    n.classList.add('ecart');
-
-    var actions = Kit.ce('div', 'actions');
-    var bAligner = Kit.bouton('btn nt', function () {
-      feuilleAlignerCeContrat(contrat, modele, ecarts, enVigueur);
-    });
-    bAligner.textContent = 'Aligner sur la version';
-    actions.appendChild(bAligner);
-
-    var bGarder = Kit.bouton('btn nt', function () {
-      /* Rien d'autre que refermer : aucune écriture, aucune trace. La note est
-         remplacée SUR PLACE par la ligne discrète — refermer n'est pas fermer
-         la porte. */
-      ecartsMasques[contrat.id] = true;
-      if (n.parentNode) n.parentNode.replaceChild(ligneEcartReferme(contrat, ecarts), n);
-    });
-    bGarder.textContent = 'Garder cet écart';
-    actions.appendChild(bGarder);
-    n.appendChild(actions);
-
-    bloc.appendChild(n);
-    return bloc;
-  }
-
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
-  function ligneEcartReferme(contrat, ecarts) {
-    var rappel = Kit.ce('div', 'fld ecart-referme');
-    rappel.appendChild(Kit.ce('span', 'lb',
-      ecarts.length > 1 ? ecarts.length + ' écarts assumés' : 'Un écart assumé'));
-    var bVoir = Kit.bouton('lien', function () {
-      delete ecartsMasques[contrat.id];
-      global.App.rafraichir();
-    });
-    bVoir.textContent = 'Voir';
-    rappel.appendChild(bVoir);
-    return rappel;
-  }
-
-  function phraseEcart(e) {
-    if (e.format === 'remuneration') {
-      return 'rémunération ' + Kit.eur(e.valeurContrat.brut_mensuel_centimes) +
-        ' au lieu de ' + Kit.eur(e.valeurModele.brut_mensuel_centimes);
-    }
-    return e.libelle.toLowerCase() + ' ' + valeurLisible(e, e.valeurContrat) +
-      ' au lieu de ' + valeurLisible(e, e.valeurModele);
-  }
-
-  function valeurLisible(e, v) {
-    if (e.format === 'euros') return Kit.eur(v);
-    if (e.format === 'duree') return Kit.duree(v);
-    if (e.format === 'heure') return String(v).slice(0, 5);
-    if (e.format === 'planning') return libellePlanning(v);
-    if (e.format === 'oui_non') return v === false ? 'non dues' : 'dues';
-    if (e.format === 'ordre') return v === 'sup_puis_cp' ? 'récupération' : 'congés payés';
-    return String(v);
-  }
-
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
-  function feuilleAlignerCeContrat(contrat, modele, ecarts, dernierSalaire) {
-    var maintenant = global.App.moisCourant();
-    var touchRemuneration = ecarts.some(function (e) { return e.champ === 'remuneration'; });
-
-    Kit.ouvrirFeuille('Aligner ' + contrat.prenom_enfant + ' sur ' + modele.nom,
-      null, function (corps) {
-        var l = Kit.lines(corps);
-        ecarts.forEach(function (e) {
-          Kit.ligne(l, e.libelle,
-            valeurLisible(e, e.format === 'remuneration' ? e.valeurContrat.brut_mensuel_centimes : e.valeurContrat) +
-            ' → ' +
-            valeurLisible(e, e.format === 'remuneration' ? e.valeurModele.brut_mensuel_centimes : e.valeurModele));
-        });
-
-        var effet = null;
-        if (touchRemuneration) {
-          /* A2 : le mois SUIVANT par défaut, comme la feuille de barème.
-             Le 1ᵉʳ du mois en cours appliquait la revalorisation au mois qu'on
-             est en train de vivre, sans le dire. */
-          var prochainMois = Chaine.moisSuivant(maintenant.annee, maintenant.mois);
-          effet = Kit.champDate('Rémunération à partir du',
-            Kit.iso(prochainMois.annee, prochainMois.mois, 1),
-            { anneeMin: maintenant.annee - 1, anneeMax: maintenant.annee + 3 });
-          corps.appendChild(effet.bloc);
-        }
-
-        var msg = Kit.ce('div', 'msg');
-        corps.appendChild(msg);
-
-        var b = Kit.bouton('btn', function () {
-          b.disabled = true;
-          msg.className = 'msg';
-          msg.textContent = 'Alignement…';
-          var reglages = {};
-          ecarts.forEach(function (e) {
-            if (e.champ !== 'remuneration') reglages[e.champ] = e.valeurModele;
-          });
-          /* CORRECTIF B6 : le garde-fou des mois clôturés, absent ici comme
-             sur les deux autres chemins d'alignement. Et la rémunération part
-             AVANT les réglages (A6) : c'est elle qui porte le refus possible,
-             et un refus ne doit rien laisser derrière lui. */
-          var gardeFou = touchRemuneration
-            ? verifierDateEffet([contrat], effet.valeur())
-            : Promise.resolve(null);
-
-          gardeFou.then(function (refus) {
-            if (refus) {
-              var eRefus = new Error('date d’effet sur un mois clôturé');
-              eRefus.messageFrancais = 'mois déjà clôturé(s) — ' + refus +
-                '. Choisissez une date postérieure : un mois clôturé ne se recalcule pas.';
-              throw eRefus;
-            }
-            if (!touchRemuneration) return null;
-            /* A4 — une ligne salaire_contrat DATÉE, jamais une écriture
-               directe sur le contrat : sinon les mois passés changeraient. */
-            return global.DB.ajouterSalaire(contrat.id, {
-              date_effet: effet.valeur(),
-              brut_mensuel_centimes: modele.brut_mensuel_centimes,
-              net_mensuel_centimes: modele.net_mensuel_centimes
-            });
-          }).then(function () {
-            return Object.keys(reglages).length
-              ? global.DB.majContrat(contrat.id, reglages)
-              : null;
-          }).then(function () {
-            return global.App.rechargerContrats();
-          }).then(function () {
-            Kit.fermerFeuille();
-            Kit.toast(contrat.prenom_enfant + ' est aligné' +
-              (contrat.genre === 'f' ? 'e' : (contrat.genre === 'g' ? '' : '·e')) +
-              ' sur ' + modele.nom + '.');
-            global.App.rafraichir();
-          }).catch(function (e2) {
-            b.disabled = false;
-            msg.className = 'msg ko';
-            msg.textContent = 'L’alignement n’a pas abouti : ' + Kit.messageErreur(e2);
-          });
-        });
-        b.textContent = 'Aligner';
-        corps.appendChild(b);
-
-        corps.appendChild(Kit.ce('p', 'sb q',
-          'Les mois déjà clôturés ne changeront pas.'));
       });
   }
 
@@ -1083,65 +827,7 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Les deux règles paramétrables (RG-07, RG-09)                        */
-  /* ------------------------------------------------------------------ */
-
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
-  function feuilleRegles(contrat) {
-    Kit.ouvrirFeuille('Règles de ' + contrat.prenom_enfant,
-      'Elles décident comment vos congés et vos heures sont comptés.',
-      function (corps) {
-        var ordre = Kit.champSelect('Congés déduits d’abord', [
-          ['cp_puis_sup', 'congés payés'],
-          ['sup_puis_cp', 'récupération']
-        ], contrat.ordre_imputation || 'cp_puis_sup');
-        corps.appendChild(ordre.bloc);
-
-        /* LOT 12 (V8-19) — RG-09 EN CLAIR. Le libellé technique « heures sup si
-           l'enfant est absent : dues / non dues » demandait à Maria de traduire
-           une règle de convention collective. La question se pose désormais
-           dans ses mots. */
-        corps.appendChild(Kit.section('Quand l’enfant est absent'));
-        var sup = Kit.champSelect('Mes ' + Kit.duree(contrat.minutes_sup_jour) + ' ce jour-là', [
-          ['true', 'restent dues'],
-          ['false', 'je ne les compte pas']
-        ], contrat.sup_dues_si_enfant_absent === false ? 'false' : 'true');
-        corps.appendChild(sup.bloc);
-        corps.appendChild(Kit.ce('p', 'sb q',
-          'Vous pouvez aussi décider au cas par cas, jour par jour, depuis le calendrier.'));
-
-        corps.appendChild(Kit.warnbox('Ce changement recalcule les mois non clôturés',
-          'Tous les mois de ce contrat qui ne sont pas encore clôturés seront recalculés avec ' +
-          'ces règles, y compris des mois passés. Les mois déjà clôturés ne bougeront pas.'));
-
-        var msg = Kit.ce('div', 'msg');
-        corps.appendChild(msg);
-        var b = Kit.bouton('btn', function () {
-          b.disabled = true;
-          msg.className = 'msg';
-          msg.textContent = 'Enregistrement…';
-          global.DB.majContrat(contrat.id, {
-            ordre_imputation: ordre.select.value,
-            sup_dues_si_enfant_absent: sup.select.value === 'true'
-          }).then(function () {
-            return global.App.rechargerContrats();
-          }).then(function () {
-            Kit.fermerFeuille();
-            Kit.toast('Règles enregistrées');
-            return global.App.rafraichir();
-          }).catch(function (e) {
-            b.disabled = false;
-            msg.className = 'msg ko';
-            msg.textContent = 'Enregistrement impossible : ' + Kit.messageErreur(e) + ' Rien n’a changé.';
-          });
-        });
-        b.textContent = 'Enregistrer ces règles';
-        corps.appendChild(b);
-      });
-  }
-
-  /* ------------------------------------------------------------------ */
-  /* Barèmes (RG-15) — création, modification, suppression               */
+  /* Le garde-fou des dates d'effet (RG-15), partagé par les avenants    */
   /* ------------------------------------------------------------------ */
 
   /* Premier mois RÉELLEMENT touché par une date d'effet : le test de RG-15 tel
@@ -1824,20 +1510,6 @@
       });
   }
 
-  /* Un barème est « utilisé par un mois clôturé » si, pour au moins un mois
-     figé, c'est lui que RG-15 retient. On ne recalcule rien : on interroge le
-     moteur. */
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
-  function moisClosDependants(bareme, salaires, recaps) {
-    var out = [];
-    (recaps || []).forEach(function (r) {
-      if (r.statut !== 'fige') return;
-      var applicable = Engine.salaireApplicable(salaires, r.annee, r.mois);
-      if (applicable && applicable.id === bareme.id) out.push(r);
-    });
-    return out;
-  }
-
   /* La ligne « Familiarisation » de la fiche. Elle se remplit après coup : la
      fiche ne doit pas attendre une lecture de plus pour s'afficher. Le
      sous-titre part sur « Chargement… » et est levé par CELUI QUI SAIT le
@@ -1877,202 +1549,6 @@
     return rs.map(function (r) { return Kit.libelleMoisAnnee(r.annee, r.mois); }).join(', ');
   }
 
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
-  function feuilleBareme(contrat, bareme, salaires, recaps) {
-    var creation = !bareme;
-    var m = global.App.moisCourant();
-    var prochain = Chaine.moisSuivant(m.annee, m.mois);
-    var autres = creation
-      ? global.App.contrats().filter(function (c) { return c.id !== contrat.id; })
-      : [];
-
-    Kit.ouvrirFeuille(creation ? 'Nouveau barème' : 'Modifier le barème',
-      contrat.prenom_enfant + ' — le net se lit sur la fiche de paie, il ne se calcule pas.',
-      function (corps) {
-        var date = Kit.champMois('À partir du',
-          bareme ? bareme.date_effet : Kit.iso(prochain.annee, prochain.mois, 1),
-          { anneeMin: m.annee - 3, anneeMax: m.annee + 2 });
-        corps.appendChild(date.bloc);
-
-        var brut = Kit.champ('Salaire brut',
-          bareme ? (bareme.brut_mensuel_centimes / 100).toFixed(2).replace('.', ',') : '',
-          { placeholder: '1 401,20', inputmode: 'decimal' });
-        corps.appendChild(brut.bloc);
-        var net = Kit.champ('Salaire net',
-          (bareme && bareme.net_mensuel_centimes)
-            ? (bareme.net_mensuel_centimes / 100).toFixed(2).replace('.', ',') : '',
-          { placeholder: '1 094,60', inputmode: 'decimal' });
-        corps.appendChild(net.bloc);
-
-        var cases = [];
-        if (autres.length) {
-          corps.appendChild(Kit.section('Appliquer aussi à'));
-          autres.forEach(function (c) {
-            var f = Kit.ce('div', 'fld');
-            var lab = Kit.ce('label', 'lb', c.prenom_enfant +
-              (c.famille && c.famille.nom ? ' · ' + c.famille.nom : ''));
-            lab.style.flex = '1';
-            var cb = Kit.ce('input');
-            cb.type = 'checkbox';
-            cb.checked = true;
-            cb.style.width = '22px';
-            cb.style.height = '22px';
-            lab.appendChild(cb);
-            f.appendChild(lab);
-            corps.appendChild(f);
-            cases.push({ contrat: c, cb: cb });
-          });
-          corps.appendChild(Kit.ce('p', 'sb q',
-            'Le SMIC bouge pour tous les contrats le même jour. Décochez ceux qui ne changent pas.'));
-        }
-
-        corps.appendChild(Kit.note('Les mois déjà clôturés ne bougent pas',
-          'Un barème ne peut pas réécrire un document déjà remis aux parents.'));
-
-        var msg = Kit.ce('div', 'msg');
-        corps.appendChild(msg);
-        var etape = 0;          // 0 = saisie, 1 = confirmation demandée
-        var b = Kit.bouton('btn', function () { enregistrer(); });
-        b.textContent = 'Enregistrer';
-        corps.appendChild(b);
-
-        function erreur(t) { msg.textContent = t; msg.className = 'msg ko'; }
-
-        function enregistrer() {
-          if (etape === 0) { msg.textContent = ''; msg.className = 'msg'; }
-          var dateEffet = date.valeur();
-          var brutC = Kit.parseEuros(brut.input.value);
-          var netC = Kit.parseEuros(net.input.value);
-          if (brutC == null) { erreur('Le salaire brut est illisible (exemple : 1 401,20).'); return; }
-
-          /* Modifier un barème dont dépend un mois clôturé reviendrait à
-             réécrire ce document : même interdit que la suppression. */
-          if (!creation) {
-            var dep = moisClosDependants(bareme, salaires, recaps);
-            if (dep.length) {
-              erreur('Ce barème sert au(x) récapitulatif(s) clôturé(s) de ' + listeMois(dep) +
-                '. Ces documents sont partis chez les parents : créez plutôt un nouveau barème ' +
-                'à une date postérieure.');
-              return;
-            }
-          }
-
-          var choisis = [contrat].concat(cases.filter(function (x) { return x.cb.checked; })
-            .map(function (x) { return x.contrat; }));
-
-          b.disabled = true;
-          msg.className = 'msg';
-          msg.textContent = 'Vérification des mois clôturés…';
-
-          Promise.all(choisis.map(function (c) {
-            var pRecaps = (c.id === contrat.id)
-              ? Promise.resolve(recaps)
-              : global.DB.listRecapsContrat(c.id);
-            return Promise.all([global.DB.getSalaires(c.id), pRecaps]).then(function (r) {
-              var analyse = analyserDateEffet(dateEffet, r[1]);
-              var doublon = (r[0] || []).some(function (s) {
-                return s.date_effet === dateEffet && (!bareme || s.id !== bareme.id);
-              });
-              var refus = null;
-              if (doublon) refus = 'un barème existe déjà à cette date';
-              else if (analyse.clos.length) refus = 'mois déjà clôturé(s) : ' + listeMois(analyse.clos);
-              return { contrat: c, refus: refus, brouillons: analyse.brouillons };
-            });
-          })).then(function (verifs) {
-            b.disabled = false;
-            var refuses = verifs.filter(function (v) { return v.refus; });
-            var acceptes = verifs.filter(function (v) { return !v.refus; });
-            if (!acceptes.length) {
-              erreur('Enregistrement refusé — ' + refuses.map(function (v) {
-                return v.contrat.prenom_enfant + ' : ' + v.refus;
-              }).join(' · ') + '. Choisissez un mois postérieur au dernier mois clôturé.');
-              return null;
-            }
-
-            /* Restauration R3 : une date d'effet rétroactive recalcule TOUS les
-               mois non clôturés, dont des montants déjà annoncés aux parents.
-               Le lot 5 le disait ; la refonte jetait la liste en silence. */
-            var brouillons = [];
-            acceptes.forEach(function (v) { brouillons = brouillons.concat(v.brouillons); });
-            if (etape === 0 && (brouillons.length || netC == null)) {
-              etape = 1;
-              b.textContent = 'Enregistrer quand même';
-              var phrases = [];
-              if (brouillons.length) {
-                phrases.push('Le(s) récapitulatif(s) non clôturé(s) de ' + listeMois(brouillons) +
-                  ' seront recalculés avec ce barème.');
-              }
-              if (netC == null) {
-                phrases.push('Sans le net, les récapitulatifs des mois concernés resteront ' +
-                  'incomplets et ne pourront pas être clôturés.');
-              }
-              erreur(phrases.join(' ') + ' Touchez de nouveau pour enregistrer.');
-              return null;
-            }
-
-            b.disabled = true;
-            msg.className = 'msg';
-            msg.textContent = 'Enregistrement…';
-            var champs = {
-              date_effet: dateEffet,
-              brut_mensuel_centimes: brutC,
-              net_mensuel_centimes: netC == null ? 0 : netC
-            };
-            var travaux = creation
-              ? acceptes.map(function (v) { return global.DB.ajouterSalaire(v.contrat.id, champs); })
-              : [global.DB.majSalaire(bareme.id, champs)];
-
-            return Promise.all(travaux).then(function () {
-              global.App.invalider();
-              Kit.fermerFeuille();
-              Kit.toast(creation
-                ? acceptes.length + ' barème(s) enregistré(s)' +
-                  (refuses.length ? ' · ' + refuses.length + ' refusé(s), mois déjà clôturés' : '')
-                : 'Barème modifié');
-              return global.App.rafraichir();
-            });
-          }).catch(function (e) {
-            b.disabled = false;
-            erreur('Enregistrement impossible : ' + Kit.messageErreur(e) + ' Rien n’a été enregistré.');
-          });
-        }
-      });
-  }
-
-  /* CODE MORT DEPUIS LE LOT 17 — RETRAIT AU §19.2. Voir la bannière plus bas. */
-  function feuilleSuppressionBareme(contrat, bareme, salaires, recaps) {
-    var dep = moisClosDependants(bareme, salaires, recaps);
-    Kit.ouvrirFeuille('Supprimer ce barème ?',
-      'Depuis le ' + Kit.dateLongue(bareme.date_effet) + ' — ' +
-      Kit.eur(bareme.brut_mensuel_centimes) + ' brut',
-      function (corps) {
-        if (dep.length) {
-          corps.appendChild(Kit.warnbox('Suppression impossible',
-            'Ce barème est celui appliqué au(x) récapitulatif(s) clôturé(s) de ' + listeMois(dep) +
-            '. Le supprimer effacerait la justification de documents déjà remis aux parents.'));
-          return;
-        }
-        corps.appendChild(Kit.warnbox('Les mois concernés repasseront au barème précédent',
-          'Les récapitulatifs non clôturés qui s’appuyaient sur ce barème seront recalculés.'));
-        var b = Kit.bouton('btn dg', function () {
-          b.disabled = true;
-          global.DB.supprimerSalaire(bareme.id)
-            .then(function () {
-              global.App.invalider();
-              Kit.fermerFeuille();
-              Kit.toast('Barème supprimé');
-              return global.App.rafraichir();
-            })
-            .catch(function (e) {
-              b.disabled = false;
-              Kit.toast('Suppression impossible : ' + Kit.messageErreur(e) + ' Rien n’a changé.', true);
-            });
-        });
-        b.textContent = 'Oui, supprimer ce barème';
-        corps.appendChild(b);
-      });
-  }
-
   /* ------------------------------------------------------------------ */
   /* Fin de contrat (RG-13)                                              */
   /* ------------------------------------------------------------------ */
@@ -2103,8 +1579,11 @@
     var corps = ctx.corps;
 
     corps.appendChild(Kit.note('Rien n’est supprimé',
+      /* LOT 24 (§24.5) — le renvoi fantôme est corrigé : « Anciens contrats »
+         a quitté le Menu au lot 8 ; les contrats terminés vivent sur la page
+         « Mes enfants », section « Contrats terminés ». */
       'Le contrat sort de l’Accueil et de la saisie, mais tout son historique reste consultable ' +
-      'depuis « Anciens contrats ». C’est réversible.'));
+      'depuis « Mes enfants → Contrats terminés ». C’est réversible.'));
 
     var date = Kit.champDate('Dernier jour de garde', global.App.aujourdhui(), {
       anneeMin: Number(String(contrat.date_debut).slice(0, 4)),

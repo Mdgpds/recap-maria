@@ -49,7 +49,7 @@ function egal(obtenu, attendu, msg) {
     ', obtenu ' + JSON.stringify(obtenu) + ')');
 }
 function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 60); }); }
-function txt(el) { return el ? String(el.textContent).replace(/ /g, ' ') : ''; }
+function txt(el) { return el ? String(el.textContent).replace(/[\u00a0\u202f]/g, ' ') : ''; }
 function parTexte(racineEl, selecteur, morceau) {
   return Array.prototype.filter.call(racineEl.querySelectorAll(selecteur), function (e) {
     return txt(e).indexOf(morceau) !== -1;

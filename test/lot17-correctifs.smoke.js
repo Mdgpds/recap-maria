@@ -46,7 +46,12 @@ function egal(obtenu, attendu, msg) {
     ', obtenu ' + JSON.stringify(obtenu) + ')');
 }
 function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 60); }); }
-function txt(el) { return el ? String(el.textContent).replace(/ /g, ' ') : ''; }
+function txt(el) { return el ? String(el.textContent).replace(/[\u00a0\u202f]/g, ' ') : ''; }
+/* LOT 24 (§24.3) — le séparateur de milliers est une espace FINE insécable.
+   `txt` normalise déjà les deux espaces invisibles du rendu ; un montant
+   attendu doit passer par le même filtre, sinon on compare « 1 142,00 € »
+   normalisé à « 1 142,00 € » qui ne l'est pas. Harnais, pas assertion. */
+function eurN(centimes) { return String(window.Kit.eur(centimes)).replace(/[\u00a0\u202f]/g, ' '); }
 function parTexte(racineEl, selecteur, morceau) {
   return Array.prototype.filter.call(racineEl.querySelectorAll(selecteur), function (e) {
     return txt(e).indexOf(morceau) !== -1;
@@ -228,10 +233,10 @@ var sheet = document.getElementById('sheet');
 
   var pMois = parTexte(corps, '.pane', 'Le mois de');
   assert(!!pMois, 'l’espace enfant affiche le panneau du mois');
-  assert(txt(pMois).indexOf(window.Kit.eur(rMars.salaireNetProrataCentimes)) !== -1,
+  assert(txt(pMois).indexOf(eurN(rMars.salaireNetProrataCentimes)) !== -1,
     'B4 : l’espace enfant affiche le net PRORATISÉ (' +
     window.Kit.eur(rMars.salaireNetProrataCentimes) + ')');
-  assert(txt(pMois).indexOf(window.Kit.eur(rMars.salaireNetCentimes)) === -1,
+  assert(txt(pMois).indexOf(eurN(rMars.salaireNetCentimes)) === -1,
     'B4 : et plus le net contractuel (' + window.Kit.eur(rMars.salaireNetCentimes) + ')');
   assert(txt(pMois).indexOf('Mois partiel') !== -1,
     'B4 : le quotient est dit — un montant proratisé sans son quotient est indéfendable');
@@ -239,13 +244,13 @@ var sheet = document.getElementById('sheet');
   /* Le document, lui, ne régresse pas. */
   window.App.aller('document', { contratId: 'c-alpha', annee: 2026, mois: 3 }, true);
   await pause(350);
-  assert(txt(corps).indexOf(window.Kit.eur(rMars.salaireNetProrataCentimes)) !== -1,
+  assert(txt(corps).indexOf(eurN(rMars.salaireNetProrataCentimes)) !== -1,
     'B4 : le document remis à la famille porte le MÊME net que l’espace enfant');
 
   /* La fin de mois guidée : c'est l'écran qui précède la clôture. */
   window.App.aller('finDeMois', { liste: [{ contrat: ALPHA, annee: 2026, mois: 3 }] }, true);
   await pause(400);
-  assert(txt(corps).indexOf(window.Kit.eur(rMars.salaireNetProrataCentimes)) !== -1,
+  assert(txt(corps).indexOf(eurN(rMars.salaireNetProrataCentimes)) !== -1,
     'B4 : la fin de mois guidée annonce le net dû, pas un montant que le document ' +
     'contredira dix secondes plus tard');
   assert(txt(corps).indexOf('Mois partiel') !== -1,

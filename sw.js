@@ -110,7 +110,16 @@
    servi avec un écran ancien produirait des décomptes incohérents ET
    CRÉDIBLES — le pire résultat possible sur le chiffre que les familles
    contestent. */
-var CACHE = 'recap-mes-enfants-v5';
+/* LOT 24 (REDESIGN, LE SOCLE) — NOM DE CACHE CHANGÉ.
+
+   Quatre fichiers servis changent : `css/style.css` (réécrite en entier —
+   jetons, composants, deux rayons, quatre tailles), `js/ui-kit.js` (les
+   composants du socle et l'espace fine des milliers), `js/ui-menu.js` et
+   `js/ui-contrat.js` (le code mort du §17.9 est retiré). Le cas à éviter
+   est immédiat : la feuille de style neuve servie avec l'ancien
+   `js/ui-kit.js` — des classes stylées que personne ne pose, et des
+   montants dont le séparateur change d'un écran à l'autre. */
+var CACHE = 'recap-redesign-socle-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
