@@ -399,8 +399,16 @@ var toast = document.getElementById('toast');
     'LOT 10 : le parcours en journées commence toujours par les DATES');
   assert(txt(sheet).indexOf('ouvrables décomptés') !== -1,
     'LOT 10 : le décompte s’affiche sous les dates');
-  assert(txt(sheet).indexOf('samedi inclus') !== -1,
-    'RG-06 : le samedi inclus est dit, pas sous-entendu');
+  /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
+     « Samedi inclus » n'est plus vrai : le samedi ne compte que s'il est
+     choisi. L'assertion ne disparaît pas, elle change de cible — l'écran doit
+     toujours DIRE la règle du décompte plutôt que la sous-entendre, et c'est
+     désormais la règle des cinq samedis qu'il dit, depuis la constante
+     partagée (§6.3). */
+  assert(txt(sheet).indexOf('samedi non travaillé') !== -1 ||
+         txt(sheet).indexOf('cinq samedis') !== -1 ||
+         txt(sheet).indexOf('que si vous le choisissez') !== -1,
+    'RG-06 : la règle du décompte est dite, pas sous-entendue');
 
   /* ================= B5 — un contrat illisible bloque la pose =========== */
   etatTest.serieCassee = 'c-tom';

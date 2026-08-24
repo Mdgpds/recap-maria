@@ -55,6 +55,16 @@
   /* 1. L'onglet                                                         */
   /* ------------------------------------------------------------------ */
 
+  /* La fenêtre de lecture des samedis comptés d'un mois affiché : le mois,
+     débordé d'un mois de chaque côté. Un samedi qui prolonge une semaine de
+     fin de mois appartient au mois suivant, et il doit quand même être nommé
+     sur la période à laquelle il se rattache. */
+  function fenetreSamedis(m) {
+    var d = new Date(Date.UTC(m.annee, m.mois - 2, 1));
+    var f = new Date(Date.UTC(m.annee, m.mois + 1, 0));
+    return { debut: d.toISOString().slice(0, 10), fin: f.toISOString().slice(0, 10) };
+  }
+
   function afficher(ctx) {
     var m = { annee: ctx.params.annee, mois: ctx.params.mois };
     if (!m.annee || !m.mois) m = global.App.moisCourant();
@@ -84,11 +94,29 @@
              congés lit trois réglages : le planning (quelles journées écrire),
              les minutes d'un jour de congé (la retenue de sans solde) et le
              barème (son montant). Aucun ne se lit plus sur `contrat`. */
-          global.App.avenants(c.id)
+          global.App.avenants(c.id),
+          /* LA RÈGLE DES CINQ SAMEDIS (§7) — les samedis comptés du mois, pour
+             que chaque période affichée NOMME les siens. La fenêtre déborde
+             d'un mois de chaque côté : le samedi qui prolonge une semaine
+             appartient parfois au mois suivant.
+
+             `null` — et non `[]` — quand la lecture échoue : l'écran doit
+             pouvoir dire qu'il n'a pas pu lire plutôt que d'afficher « aucun
+             samedi compté », ce qui serait un chiffre faux et crédible. */
+          /* Contrôle de CAPACITÉ, pas rattrapage d'erreur — même règle que la
+             chaîne pour les imputations : un décor de test ancien n'expose pas
+             cette fonction, et n'a aucun samedi compté. Une erreur RÉELLE,
+             elle, rend `null` : l'écran dit alors qu'il n'a pas pu lire, au
+             lieu d'afficher un zéro faux et crédible (§8). */
+          (typeof global.DB.listSamedisConge === 'function'
+            ? global.DB.listSamedisConge(c.id, fenetreSamedis(m).debut,
+                fenetreSamedis(m).fin).catch(function () { return null; })
+            : Promise.resolve([]))
         ]).then(function (r) {
           return {
             contrat: c,
             avenants: r[3],
+            samedis: r[4],
             entree: global.App.moisDe(r[0], m.annee, m.mois),
             journees: r[1],
             /* `null` — et non `[]` — quand la lecture échoue : l'écran doit
@@ -151,7 +179,8 @@
       var e = global.App.moisDe(chaine, moisDebut.annee, moisDebut.mois);
       feuilleCorrection(e
         ? { contrat: trouve.fiche.contrat, entree: e, journees: trouve.fiche.journees,
-            imputations: trouve.fiche.imputations, erreur: null }
+            imputations: trouve.fiche.imputations, samedis: trouve.fiche.samedis,
+            erreur: null }
         : trouve.fiche, trouve.imputation);
     }).catch(function (err) {
       /* Rien n'est ouvert sur des chiffres dont on n'est pas sûr. */
@@ -181,7 +210,14 @@
        AVANT qu'elle ne réparte, et le « reste à répartir » démarre au nombre de
        jours qu'elle a en plus. Rien n'est écrit en base tant qu'elle n'a pas
        validé. */
-    var jours = Engine.decompterJoursOuvrables(imputation.date_debut, imputation.date_fin, planning);
+    /* Le décompte de CETTE période, avec LES SAMEDIS QU'ELLE PORTE — pas ceux
+       qu'elle pourrait porter. Corriger une répartition ne change pas les
+       samedis comptés : c'est la ventilation qui est en cause, pas RG-06. */
+    var samedisDeLaPeriode = ((fiche && fiche.samedis) || []).filter(function (sm) {
+      return sm.imputation_id === imputation.id;
+    }).map(function (sm) { return String(sm.date_samedi).slice(0, 10); });
+    var jours = Engine.decompterJoursOuvrables(imputation.date_debut, imputation.date_fin,
+      planning, samedisDeLaPeriode);
     var enregistres = imputation.jours_ouvrables == null ? jours : imputation.jours_ouvrables;
     var ecartDecompte = jours - enregistres;
 
@@ -215,7 +251,8 @@
           corps.appendChild(Kit.note(
             'Cette période compte ' + Kit.jours(jours) + ' ouvrables, pas ' +
             Kit.jours(enregistres) + ' comme enregistré',
-            'Le décompte se fait en jours ouvrables, samedis inclus. Vous avez ' +
+            /* §6.3 — une seule source pour la règle du décompte. */
+            Kit.RESUME_RG06 + ' Vous avez ' +
             (ecartDecompte > 0
               ? Kit.jours(ecartDecompte) + ' de plus à répartir.'
               : Kit.jours(-ecartDecompte) + ' de moins à répartir.')));
@@ -376,7 +413,7 @@
        erreur. */
     corps.appendChild(Kit.note('Un congé vaut pour ' + libelleContrats(fiches.length),
       'Vous le posez une fois, il s’applique partout — mais vous choisissez, pour chaque ' +
-      'enfant, comment il est décompté. Une semaine complète compte 6 jours, samedi inclus.'));
+      'enfant, comment il est décompté. ' + Kit.RESUME_RG06));
 
     var bPoser = Kit.bouton('btn', function () { ouvrirParcours(); });
     bPoser.textContent = 'Poser des congés';
@@ -600,11 +637,26 @@
        découper au 1er du mois donnerait un décompte faux. La part vient de la
        chaîne, qui la demande au moteur. */
     var planning = planningA(groupe.lignes[0].fiche, groupe.debut);
-    var part = Chaine.partDuMois(Engine, ref, planning, vue.annee, vue.mois);
+    /* La part d'un mois se calcule avec LES MÊMES samedis que le décompte
+       total : deux règles différentes donneraient « 6 jours, dont 3 en août »
+       sur une période qui en compte 5. */
+    var part = Chaine.partDuMois(Engine, ref, planning, vue.annee, vue.mois,
+      samedisDuGroupe(groupe));
 
     var textes = [];
     if (part !== ref.jours_ouvrables) {
       textes.push('dont ' + Kit.jours(part) + ' en ' + Kit.libelleMois(vue.mois));
+    }
+    /* §7 — UNE PÉRIODE AFFICHÉE NOMME SES SAMEDIS COMPTÉS, comme sur le
+       document. Une période sans samedi compté ne dit rien de plus : le
+       décompte parle seul. */
+    var samedis = samedisDuGroupe(groupe);
+    if (samedis.length) {
+      textes.push('dont ' + (samedis.length > 1 ? 'les samedis ' : 'le ') +
+        samedis.map(function (d) {
+          return samedis.length > 1 ? Kit.jourLong(d).toLowerCase().replace('samedi ', '')
+                                    : Kit.jourLong(d).toLowerCase();
+        }).join(', '));
     }
     var sous = uniforme ? detailVentilation(ref) : 'la répartition diffère d’un contrat à l’autre';
     if (sous) textes.push(sous);
@@ -636,8 +688,7 @@
      information demandée au moteur, jamais écrite en dur : `Engine` connaît
      les fériés, l'écran non. */
   function phraseDecompte(groupes) {
-    var texte = 'Le décompte se fait en jours ouvrables, samedis inclus. ' +
-      'Une semaine complète compte 6 jours.';
+    var texte = Kit.RESUME_RG06;
     var feries = feriesDesPeriodes(groupes);
     if (feries.length) {
       texte += ' Les jours fériés ne sont pas décomptés : ' +
@@ -688,9 +739,12 @@
       var cp = cpDe(f);
       var sup = supDe(f);
       var cond = condDe(f);
+      /* §7 — LE RESTE DU QUOTA EST VISIBLE HORS DE LA POSE. Sans cela, Maria
+         ne découvrirait combien il lui reste de samedis qu'au moment de poser
+         un congé, c'est-à-dire trop tard pour arbitrer. */
       Kit.ligne(l, f.contrat.prenom_enfant,
         Kit.joursCp(cp, mpjc(cond)) + ' de congés payés · ' +
-        joursDeRecup(cond, sup) + ' de récupération',
+        joursDeRecup(cond, sup) + ' de récupération · ' + phraseQuotaSamedis(f),
         /* `phrase` : cette valeur est une phrase, pas un montant. Sans elle,
            elle sortait de l'encadré et faisait glisser tout l'écran de côté. */
         { alerte: Kit.cpEstBas(cp, cond), phrase: true });
@@ -698,6 +752,41 @@
     p.appendChild(Kit.ce('div', 'sb q',
       'Les compteurs diffèrent car les contrats n’ont pas commencé en même temps.'));
     return p;
+  }
+
+  /* §7 — « samedis comptés : 2 sur 5 cette année ». Le compte porte sur
+     l'année de référence du MOIS AFFICHÉ, et il se lit dans les samedis
+     chargés avec la fiche. `null` veut dire « pas pu lire » : on le dit, on
+     ne le remplace pas par zéro (§8). */
+  function phraseQuotaSamedis(f) {
+    if (f.samedis == null) return 'samedis comptés : non lus';
+    var annee = Kit.anneeDeReferenceConges(
+      vue.annee + '-' + String(vue.mois).padStart(2, '0') + '-15');
+    var n = f.samedis.filter(function (x) {
+      var d = String(x.date_samedi || x).slice(0, 10);
+      return d >= annee.debut && d <= annee.fin;
+    }).length;
+    return 'samedis comptés : ' + n + ' sur ' + Kit.QUOTA_SAMEDIS + ' cette année';
+  }
+
+  /* §7 — les samedis comptés d'UNE période, pour qu'elle les NOMME. */
+  function samedisDuGroupe(groupe) {
+    var vus = {};
+    groupe.lignes.forEach(function (x) {
+      var f = x.fiche || trouverFiche(x.contrat);
+      var id = x.imputation && x.imputation.id;
+      if (!f || !f.samedis || !id) return;
+      f.samedis.forEach(function (sm) {
+        if (sm.imputation_id === id) vus[String(sm.date_samedi).slice(0, 10)] = true;
+      });
+    });
+    return Object.keys(vus).sort();
+  }
+
+  function trouverFiche(contrat) {
+    return (vue.fiches || []).filter(function (f) {
+      return f.contrat && contrat && f.contrat.id === contrat.id;
+    })[0] || null;
   }
 
   /* La récupération se lit en MINUTES en base, et se dépense en JOURNÉES de
@@ -1448,10 +1537,15 @@
           b.appendChild(Kit.ce('div', 'gros', mini === maxi
             ? Kit.jours(maxi) + ' ouvrables décomptés'
             : 'de ' + mini + ' à ' + Kit.jours(maxi) + ' ouvrables décomptés'));
-          b.appendChild(Kit.ce('div', 'q', 'samedi inclus · ' +
+          b.appendChild(Kit.ce('div', 'q',
             libellePlage(parcours.debut, parcours.fin).replace(/^./, function (c) {
               return c.toUpperCase();
             }) + '.'));
+          /* §6.3 — LA RÈGLE DU DÉCOMPTE EST DITE, PAS SOUS-ENTENDUE, et elle
+             vient de la constante partagée. Elle disait « samedi inclus »
+             jusqu'ici ; ce n'est plus vrai, et un chiffre qui baisse sans
+             explication est pire qu'un chiffre qu'on conteste. */
+          b.appendChild(Kit.ce('div', 'q', Kit.RESUME_RG06));
           if (mini !== maxi) {
             b.appendChild(Kit.ce('div', 'q',
               'Le nombre dépend des jours de garde de chaque contrat. Le détail ' +
@@ -1718,7 +1812,16 @@
         ? condDe(f, Number(bornes.debut.slice(0, 4)), Number(bornes.debut.slice(5, 7)))
         : condDe(f);
       var planning = (cond && cond.jours_planning) || [1, 2, 3, 4, 5];
-      var n = bornes ? Engine.decompterJoursOuvrables(bornes.debut, bornes.fin, planning) : 0;
+      /* LA RÈGLE DES CINQ SAMEDIS — les samedis que CE contrat peut compter
+         sur CETTE période. Ils viennent du moteur : un écran qui les
+         déduirait lui-même redirait RG-06 une deuxième fois. */
+      var eligibles = bornes
+        ? Engine.samedisEligibles(bornes.debut, bornes.fin, planning) : [];
+      /* Rien n'est coché au départ (décision d'Adrien du 24 août 2026 : « rien
+         n'est coché par défaut, c'est Maria qui arbitre »). */
+      var choisis = {};
+      var n = bornes
+        ? Engine.decompterJoursOuvrables(bornes.debut, bornes.fin, planning, []) : 0;
 
       var propose = { joursSurCp: 0, joursSurSup: 0, joursSansSolde: 0 };
       if (n > 0) {
@@ -1734,6 +1837,13 @@
 
       return {
         fiche: f, contrat: c, cond: cond, joursPoses: joursPoses, jours: n,
+        planning: planning,
+        samedisEligibles: eligibles,
+        samedisChoisis: choisis,
+        /* Le reste du quota, lu en base à l'étape des samedis. `null` tant
+           qu'il n'a pas été lu : l'écran refuse alors le choix, il ne suppose
+           jamais un quota plein (§8). */
+        quota: null,
         /* Les bornes de CE contrat, portées jusqu'à l'écriture : c'est ce
            couple qui part dans `imputation_conge`, pas la plage saisie. */
         bornes: bornes,
@@ -1750,7 +1860,235 @@
       return;
     }
     parcours.index = 0;
+    /* §5.1 — LE CHOIX DES SAMEDIS VIENT APRÈS LES DATES ET AVANT LA
+       VENTILATION, et seulement s'il y a au moins un samedi éligible. Sinon,
+       rien : l'écran ne s'alourdit pas d'une section vide. */
+    var aChoisir = parcours.plans.some(function (p) {
+      return p.samedisEligibles.length > 0;
+    });
+    if (aChoisir) return etapeSamedis();
     etapeVentilation();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* §5 — LES SAMEDIS DE CETTE PÉRIODE                                   */
+  /*                                                                     */
+  /* Un samedi que Maria ne travaille pas ne compte que si elle le       */
+  /* choisit, dans la limite de cinq par année de référence et par       */
+  /* famille. Le défaut est NON COCHÉ : si le défaut était « compté »,   */
+  /* les cinq premiers samedis de l'année seraient consommés tout seuls  */
+  /* et elle n'aurait plus le choix DESQUELS (§2.6).                     */
+  /* ------------------------------------------------------------------ */
+
+  function recalculerPlan(p) {
+    if (!p.bornes) { p.jours = 0; return; }
+    var choisis = Object.keys(p.samedisChoisis).filter(function (d) {
+      return p.samedisChoisis[d];
+    });
+    /* LE DÉCOMPTE VIENT DU MOTEUR, rejoué à chaque case cochée (§5.2). */
+    p.jours = Engine.decompterJoursOuvrables(p.bornes.debut, p.bornes.fin,
+      p.planning, choisis);
+    var r = Engine.imputerConges(p.jours, { minutesCp: p.cp, minutesSup: p.sup }, p.cond);
+    p.choix = { joursSurCp: r.joursSurCp, joursSurSup: r.joursSurSup,
+                joursSansSolde: r.joursSansSolde };
+  }
+
+  /* LE RESTE DU QUOTA EST RÉEL, lu en base sur l'année de référence de CHAQUE
+     samedi, contrat par contrat (§5.2). Une période à cheval sur le 31 mai
+     interroge donc deux années.
+
+     LA LECTURE ÉCHOUE FERMÉ (§8) : si le compte ne peut pas être lu, l'écran
+     refuse le choix et le dit, plutôt que de supposer un quota plein. Un
+     garde-fou qui échoue ouvert n'est pas un garde-fou. */
+  function lireQuotas() {
+    var demandes = [];
+    parcours.plans.forEach(function (p) {
+      var annees = {};
+      p.samedisEligibles.forEach(function (d) {
+        var a = Kit.anneeDeReferenceConges(d);
+        annees[a.debut] = a;
+      });
+      Object.keys(annees).forEach(function (k) {
+        demandes.push({ plan: p, annee: annees[k] });
+      });
+    });
+    /* Contrôle de CAPACITÉ, pas rattrapage d'erreur — même distinction que
+       partout ailleurs : un décor de test ancien n'expose pas la fonction et
+       n'a aucun samedi compté. Une erreur RÉELLE, elle, rejette et l'écran
+       refuse le choix : le quota ne se suppose jamais plein (§8). */
+    if (typeof global.DB.compterSamedisAnnee !== 'function') {
+      parcours.plans.forEach(function (p) { p.quota = {}; });
+      return Promise.resolve(true);
+    }
+    return Promise.all(demandes.map(function (d) {
+      return global.DB.compterSamedisAnnee(d.plan.contrat.id, d.annee.debut, d.annee.fin)
+        .then(function (n) { return { d: d, n: n }; });
+    })).then(function (res) {
+      parcours.plans.forEach(function (p) { p.quota = {}; });
+      res.forEach(function (x) { x.d.plan.quota[x.d.annee.debut] = x.n; });
+      return true;
+    });
+  }
+
+  function etapeSamedis() {
+    /* La barre d'étapes de la ventilation est « une étape par enfant » : elle
+       n'a pas de sens ici, où l'on voit tous les enfants d'un coup. */
+    Kit.ouvrirFeuille('Les samedis de cette période',
+      libellePlage(parcours.debut, parcours.fin), function (corps) {
+        corps.appendChild(Kit.ce('div', 'attente', 'Lecture de vos samedis déjà comptés…'));
+
+        lireQuotas().then(function () {
+          Kit.vider(corps);
+          dessinerSamedis(corps);
+        }).catch(function (e) {
+          Kit.vider(corps);
+          corps.appendChild(Kit.warnbox(
+            'Impossible de lire vos samedis déjà comptés',
+            ' ' + Kit.messageErreur(e) + ' Sans ce compte, l’application ne peut ' +
+            'pas vous dire combien il vous en reste — et elle ne va pas le ' +
+            'deviner. Rien n’a été posé : réessayez, ou revenez aux dates.'));
+          var bReessayer = Kit.bouton('btn', function () { etapeSamedis(); });
+          bReessayer.textContent = 'Réessayer';
+          corps.appendChild(bReessayer);
+          var bDates = Kit.bouton('btn nt', function () { etapeDates(); });
+          bDates.textContent = 'Revenir aux dates';
+          corps.appendChild(bDates);
+        });
+      });
+  }
+
+  function dessinerSamedis(corps) {
+    corps.appendChild(Kit.note('Les samedis de cette période',
+      ' Un samedi que vous ne travaillez pas ne compte que si vous le ' +
+      'choisissez, dans la limite de ' + Kit.QUOTA_SAMEDIS + ' par an et par famille.'));
+
+    /* §5.2 — un samedi FÉRIÉ n'est pas un choix, et une phrase discrète le
+       dit plutôt que de le laisser inexpliqué. La liste vient du moteur. */
+    var ferisSamedis = {};
+    parcours.plans.forEach(function (p) {
+      if (!p.bornes) return;
+      Engine.feriesDeLaPeriode(p.bornes.debut, p.bornes.fin, p.planning)
+        .forEach(function (d) {
+          if (Engine.jourSemaine(d) === 6) ferisSamedis[d] = true;
+        });
+    });
+    var listeFeries = Object.keys(ferisSamedis).sort();
+    if (listeFeries.length) {
+      corps.appendChild(Kit.ce('p', 'sb q',
+        listeFeries.length > 1
+          ? 'Les samedis ' + listeFeries.map(function (d) {
+              return Kit.jourLong(d).toLowerCase();
+            }).join(' et ') + ' sont fériés : ils ne sont jamais décomptés.'
+          : 'Le ' + Kit.jourLong(listeFeries[0]).toLowerCase() +
+            ' est férié : il n’est jamais décompté.'));
+    }
+
+    parcours.plans.forEach(function (p) {
+      if (!p.samedisEligibles.length) return;
+      corps.appendChild(blocSamedisDuContrat(p));
+    });
+
+    var bSuite = Kit.bouton('btn', function () {
+      parcours.index = 0;
+      etapeVentilation();
+    });
+    bSuite.textContent = 'Continuer';
+    corps.appendChild(bSuite);
+
+    var bDates = Kit.bouton('btn nt', function () { etapeDates(); });
+    bDates.textContent = 'Revenir aux dates';
+    corps.appendChild(bDates);
+  }
+
+  function blocSamedisDuContrat(p) {
+    var bloc = Kit.pane(p.contrat.prenom_enfant);
+    var entete = Kit.ce('p', 'sb q');
+    bloc.appendChild(entete);
+    var cases = Kit.ce('div', 'samedis');
+    bloc.appendChild(cases);
+    var effet = Kit.ce('div', 'sb decompte-samedis');
+    bloc.appendChild(effet);
+    var alerte = Kit.ce('div');
+    bloc.appendChild(alerte);
+
+    /* Combien de samedis Maria a déjà comptés cette année-là, hors la période
+       en cours de pose, plus ceux qu'elle coche à l'instant. */
+    function comptePourAnnee(cleAnnee) {
+      var n = p.quota[cleAnnee] || 0;
+      Object.keys(p.samedisChoisis).forEach(function (d) {
+        if (!p.samedisChoisis[d]) return;
+        if (Kit.anneeDeReferenceConges(d).debut === cleAnnee) n++;
+      });
+      return n;
+    }
+
+    function majEntete() {
+      var annees = {};
+      p.samedisEligibles.forEach(function (d) {
+        var a = Kit.anneeDeReferenceConges(d);
+        annees[a.debut] = a;
+      });
+      var textes = Object.keys(annees).sort().map(function (k) {
+        var a = annees[k];
+        var utilises = comptePourAnnee(k);
+        var reste = Kit.QUOTA_SAMEDIS - utilises;
+        return (reste > 0
+          ? 'il vous reste ' + reste + (reste > 1 ? ' samedis' : ' samedi')
+          : (reste === 0 ? 'vous avez utilisé vos ' + Kit.QUOTA_SAMEDIS + ' samedis'
+                         : 'vous dépassez de ' + (-reste) +
+                           (-reste > 1 ? ' samedis' : ' samedi'))) +
+          ' (' + a.libelle + ')';
+      });
+      Kit.vider(entete);
+      entete.appendChild(document.createTextNode(textes.join(' · ')));
+    }
+
+    function majEffet() {
+      recalculerPlan(p);
+      Kit.vider(effet);
+      /* §5.2 — LE DÉCOMPTE AFFICHÉ EST REJOUÉ PAR LE MOTEUR. Cocher un samedi
+         change la phrase toute seule. */
+      effet.appendChild(Kit.ce('b', null, 'Décompte : ' + Kit.jours(p.jours)));
+
+      Kit.vider(alerte);
+      var annees = {};
+      Object.keys(p.samedisChoisis).forEach(function (d) {
+        if (p.samedisChoisis[d]) annees[Kit.anneeDeReferenceConges(d).debut] = true;
+      });
+      Object.keys(annees).sort().forEach(function (k) {
+        var utilises = comptePourAnnee(k);
+        if (utilises <= Kit.QUOTA_SAMEDIS) return;
+        /* §5.3 — LE DÉPASSEMENT EST PERMIS, MAIS DIT. Même logique que la
+           récupération négative du lot 21 : l'application ne décide pas à sa
+           place, elle s'assure qu'elle sait. */
+        alerte.appendChild(Kit.warnbox(
+          'C’est le ' + utilises + 'ᵉ samedi compté pour ' +
+          p.contrat.prenom_enfant + ' cette année.',
+          ' La règle habituelle en prévoit ' + Kit.QUOTA_SAMEDIS +
+          ' par année de référence (' + Kit.anneeDeReferenceConges(k).libelle +
+          '). Vous pouvez le compter quand même.'));
+      });
+      majEntete();
+    }
+
+    p.samedisEligibles.forEach(function (d) {
+      var lab = Kit.ce('label', 'coche-ligne');
+      var box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = !!p.samedisChoisis[d];
+      box.addEventListener('change', function () {
+        p.samedisChoisis[d] = box.checked;
+        majEffet();
+      });
+      lab.appendChild(box);
+      var tx = Kit.ce('span', 'tx');
+      tx.appendChild(Kit.ce('b', null, Kit.jourLong(d).toLowerCase()));
+      lab.appendChild(tx);
+      cases.appendChild(lab);
+    });
+
+    majEffet();
+    return bloc;
   }
 
   function etapeVentilation() {
@@ -2145,7 +2483,24 @@
           jours_sur_cp: p.choix.joursSurCp,
           jours_sur_sup: p.choix.joursSurSup,
           jours_sans_solde: p.choix.joursSansSolde
-        }).then(function (i) { posees.push(i); });
+        }).then(function (i) {
+          posees.push(i);
+          /* §4.3 — LA PÉRIODE ET SES SAMEDIS ABOUTISSENT ENSEMBLE OU ÉCHOUENT
+             ENSEMBLE. Une période enregistrée sans ses samedis porterait un
+             décompte faux, et le moteur écarterait la ventilation — Maria
+             lirait « votre choix a été écarté » sans savoir pourquoi.
+
+             Il n'y a pas de transaction côté client : l'atomicité est obtenue
+             par COMPENSATION, comme pour les journées depuis le correctif B3.
+             Si l'écriture des samedis échoue, la chaîne rejette, et
+             `retirerImputations` supprime les imputations déjà posées — la
+             CASCADE de `samedi_conge` emporte les samedis avec elles. */
+          var choisis = Object.keys(p.samedisChoisis || {}).filter(function (d) {
+            return p.samedisChoisis[d];
+          }).sort();
+          if (!choisis.length) return null;
+          return global.DB.enregistrerSamedis(i.id, choisis);
+        });
       });
     });
 

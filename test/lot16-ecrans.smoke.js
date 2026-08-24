@@ -170,6 +170,21 @@ var DB = {
   getJourneesPeriode: function () {
     return Promise.resolve({ '2026-06': journees(JOURS_JUIN), '2026-08': journees(JOURS_AOUT) });
   },
+  /* LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026) — le décor déclare
+     comptés les samedis de ses périodes, convention du §4.2. Ce fichier
+     vérifie que l'encart oppose LE DÉCOMPTE RÉEL à ce qu'une ligne fautive
+     porte ; sans les samedis, le décor n'opposerait plus rien. */
+  listSamedisConge: function (id, debut, fin) {
+    var out = [];
+    [IMPUT_JUIN, IMPUT_AOUT].forEach(function (i) {
+      Engine.samedisEligibles(i.date_debut, i.date_fin, PLANNING).forEach(function (d) {
+        if (d >= debut && d <= fin) out.push({ imputation_id: i.id, date_samedi: d });
+      });
+    });
+    return Promise.resolve(out);
+  },
+  compterSamedisAnnee: function () { return Promise.resolve(0); },
+  enregistrerSamedis: function () { return Promise.resolve([]); },
   listImputations: function (id, debut, fin) {
     return Promise.resolve([IMPUT_JUIN, IMPUT_AOUT].filter(function (i) {
       return i.date_debut <= fin && i.date_fin >= debut;
@@ -232,7 +247,8 @@ var sheet = document.getElementById('sheet');
   /* ==================================================================== */
   console.log('\n--- B1 : corriger une répartition dont le décompte est faux ---');
 
-  var attendu = Engine.decompterJoursOuvrables('2026-06-08', '2026-06-12', PLANNING);
+  var attendu = Engine.decompterJoursOuvrables('2026-06-08', '2026-06-12', PLANNING,
+    Engine.samedisEligibles('2026-06-08', '2026-06-12', PLANNING));
   egal(attendu, 6, 'décor : le décompte RG-06 réel de la période vaut 6, la ligne en porte 5');
 
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 6 });
@@ -245,7 +261,11 @@ var sheet = document.getElementById('sheet');
   assert(txt(corps).indexOf('couvre 5 j') !== -1 && txt(corps).indexOf('en compte 6 j') !== -1,
     'B1 : l’encart oppose les DEUX nombres — ce qui est réparti, et ce que la ' +
     'période compte réellement');
-  assert(txt(corps).indexOf('samedis inclus') !== -1,
+  /* EXIGENCE CHANGÉE — « samedis inclus » n'est plus vrai : ils ne le sont
+     plus d'office. L'assertion garde son objet — l'encart doit DIRE pourquoi
+     le second nombre est plus grand — et la phrase dit maintenant que les
+     samedis COMPTÉS y sont compris. */
+  assert(txt(corps).indexOf('samedis comptés compris') !== -1,
     'B1 : et il dit pourquoi le second est plus grand');
 
   var bCorriger = boutonExact(corps, 'Corriger la répartition');
@@ -299,8 +319,12 @@ var sheet = document.getElementById('sheet');
 
   assert(txt(corps).indexOf('Du 10 au 14 août') !== -1,
     '§16.8 : la période est listée en UNE ligne, avec ses vraies bornes');
-  assert(txt(corps).indexOf('Une semaine complète compte 6 jours') !== -1,
-    '§16.8 : la phrase du décompte est là');
+  /* EXIGENCE CHANGÉE — la phrase ne dit plus « une semaine complète compte
+     6 jours ». Elle dit la règle des cinq samedis, et elle vient de la
+     constante partagée (§6.3, A12). L'assertion garde son objet : la phrase du
+     décompte est là, sous la liste des périodes. */
+  assert(txt(corps).indexOf(window.Kit.RESUME_RG06) !== -1,
+    '§16.8 : la phrase du décompte est là, et c’est la phrase partagée');
   assert(txt(corps).indexOf('15 août') !== -1,
     'B2 : LE SAMEDI FÉRIÉ EST NOMMÉ — sans lui, l’écran affiche « 5 j » sous ' +
     '« une semaine complète compte 6 jours » et rien ne l’explique');

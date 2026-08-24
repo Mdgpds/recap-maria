@@ -265,10 +265,18 @@ definir('§17.6 — la récupération vide passe en négatif, ce n’est pas un 
 
 definir('§17.6 A3 — RG-06 produit les mêmes décomptes qu’avant', function () {
   /* La règle des jours ouvrables n'est pas touchée par le changement d'unité :
-     une semaine complète vaut toujours 6 jours, soit 6 × 540 minutes. */
-  egal(Engine.decompterJoursOuvrables('2025-09-01', '2025-09-05'), 6, 'semaine complète');
+     une semaine complète vaut toujours 6 jours, soit 6 × 540 minutes.
+
+     EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026). Le
+     samedi ne compte plus d'office. Ce cas vérifie que le passage des congés
+     payés en MINUTES (lot 17) n'a pas touché RG-06 : on lui rend donc sa
+     semaine de six jours en cochant son samedi, et l'assertion garde
+     exactement sa valeur et son sens. */
+  egal(Engine.decompterJoursOuvrables('2025-09-01', '2025-09-05', null,
+    ['2025-09-06']), 6, 'semaine complète');
   egal(Engine.decompterJoursOuvrables('2025-09-01', '2025-09-03'), 3, 'lundi → mercredi');
-  egal(Engine.decompterJoursOuvrables('2025-05-26', '2025-05-30'), 5, 'semaine avec férié');
+  egal(Engine.decompterJoursOuvrables('2025-05-26', '2025-05-30', null,
+    ['2025-05-31']), 5, 'semaine avec férié');
 
   var r = Engine.imputerConges(6, { minutesSup: 0, minutesCp: 10 * 540 }, conditions());
   egal(r.joursSurCp, 6, 'six jours pris');

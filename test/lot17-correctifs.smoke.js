@@ -279,8 +279,15 @@ var sheet = document.getElementById('sheet');
   await pause(450);
   assert(txt(corps).indexOf('Décompte des congés') !== -1,
     'un mois AVEC congés le porte — c’est là qu’il éteint le litige');
-  assert(txt(corps).indexOf('Une semaine complète compte donc 6 jours') !== -1,
-    'et il énonce RG-06 mot pour mot, samedi inclus');
+  /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026, §6).
+     « Une semaine complète compte donc 6 jours » devient faux le jour du
+     déploiement. L'assertion garde son objet — l'encart énonce RG-06 mot pour
+     mot sur le document remis à la famille — et exige EN PLUS que ce mot pour
+     mot vienne de la constante partagée (§6.3, critère A12). */
+  assert(txt(corps).indexOf(window.Kit.ENCART_RG06) !== -1,
+    'et il énonce RG-06 mot pour mot, depuis la constante partagée');
+  assert(txt(corps).indexOf('règle dite des cinq samedis') !== -1,
+    'et la règle nommée est bien celle des cinq samedis');
 
   /* Le TEXTE À COLLER doit dire la même chose que le document : c'est lui qui
      part chez la famille. Les faire diverger serait pire que les vider tous

@@ -119,6 +119,21 @@
   /* interroge par recouvrement (`date_debut <= fin` et `date_fin >=      */
   /* debut`), ce qui suffit — encore faut-il l'appeler.                   */
   /* ------------------------------------------------------------------ */
+  /* LA RÈGLE DES CINQ SAMEDIS (§4.1) — LES SAMEDIS COMPTÉS, CHARGÉS ICI.
+
+     Même branchement et même raison que les imputations : le moteur ne va
+     jamais les chercher, la chaîne les lui passe. Un décor de test ancien
+     n'expose pas cette fonction — aucun samedi compté, donc aucun samedi
+     décompté, ce qui est exactement l'état de départ de la règle. */
+  function chargerSamedisConge(DB, contratId, debut, fin) {
+    if (typeof DB.listSamedisConge !== 'function') return Promise.resolve([]);
+    return DB.listSamedisConge(contratId, debut, fin).then(function (l) {
+      return (l || []).map(function (x) {
+        return typeof x === 'string' ? x : x.date_samedi;
+      }).filter(Boolean);
+    });
+  }
+
   function chargerImputations(DB, contratId, debut, fin) {
     /* Contrôle de CAPACITÉ, pas rattrapage d'erreur : les décors de test
        anciens n'exposent pas cette fonction. Une erreur réelle, elle,
@@ -209,12 +224,12 @@
   /* Part d'une période imputée tombant dans un mois donné (§16.8 : « Du 29
      juillet au 4 août — 6 jours ouvrables, dont 2 en août »). Ce n'est plus
      un calcul, c'est la lecture d'une tranche. */
-  function partDuMois(Engine, imputation, planning, annee, mois) {
+  function partDuMois(Engine, imputation, planning, annee, mois, samedisComptes) {
     if (!imputation || !imputation.date_debut || !imputation.date_fin) return 0;
     if (imputation.date_fin < imputation.date_debut) return 0;
     var cible = annee + '-' + String(mois).padStart(2, '0');
     var tranches = Engine.joursOuvrablesParMois(
-      imputation.date_debut, imputation.date_fin, planning);
+      imputation.date_debut, imputation.date_fin, planning, samedisComptes);
     for (var i = 0; i < tranches.length; i++) {
       if (tranches[i].cle === cible) return tranches[i].jours;
     }
@@ -256,7 +271,14 @@
          ici recalculerait le mois de repli sans elle : chaque jour non
          déclaré redeviendrait une présence mensualisée, et le mois affiché
          après un repli n'aurait plus rien à voir avec le mois réel. */
-      periodesFamiliarisation: params.periodesFamiliarisation
+      periodesFamiliarisation: params.periodesFamiliarisation,
+      /* LA RÈGLE DES CINQ SAMEDIS — LES SAMEDIS SUIVENT LE REPLI, exactement
+         comme la période de familiarisation ci-dessus et pour la même raison :
+         le repli n'écarte que les IMPUTATIONS. Les oublier ici recalculerait
+         le mois de repli sans les samedis choisis, et une semaine de six jours
+         en vaudrait cinq le temps d'un repli — sur le chiffre même que les
+         familles contestent. */
+      samedisComptes: params.samedisComptes
     };
   }
 
@@ -671,12 +693,14 @@
         chargerJournees(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
         chargerRecaps(DB, contrat.id, debutChaine.annee, cible.annee),
         chargerImputations(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
-        chargerPeriodesFamiliarisation(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois))
+        chargerPeriodesFamiliarisation(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
+        chargerSamedisConge(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois))
       ]).then(function (charge) {
         var journeesParMois = charge[0] || {};
         var recapsParMois = charge[1];
         var imputations = charge[2] || [];
         var periodesFam = charge[3] || [];
+        var samedisComptes = charge[4] || [];
 
         var entrees = [];
         var cur = { annee: debutChaine.annee, mois: debutChaine.mois };
@@ -784,7 +808,12 @@
                     /* §20.1 — la période entre dans le moteur COMME DONNÉE, et
                        par ici seul. */
                     periodesFamiliarisation:
-                      periodesFamiliarisationDuMois(periodesFam, mm.annee, mm.mois)
+                      periodesFamiliarisationDuMois(periodesFam, mm.annee, mm.mois),
+                    /* §4.1 — les samedis cochés de CE contrat. On passe la
+                       liste entière : un samedi hors des périodes du mois
+                       n'entre dans aucun décompte, et le filtrer ici
+                       supposerait de redire RG-06 une deuxième fois. */
+                    samedisComptes: samedisComptes
                   });
                   var r = rep.resultat;
                   compteur = r.compteurSortie;

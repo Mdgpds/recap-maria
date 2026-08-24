@@ -1,42 +1,40 @@
 /* ============================================================================
-   lot20-differentiel.test.js — LA PREUVE DU CRITÈRE A1 DU §20.5.
+   lot23-differentiel.test.js — LA PREUVE DU CRITÈRE A1 DU §4.2 ET DU §9.
 
-     « Un mois entièrement hors familiarisation se calcule à l'identique de
-       l'avant-lot (différentiel exhaustif). »
+     « Avec tous les samedis éligibles passés en entrée, le décompte doit être
+       rigoureusement identique à celui d'avant le lot. »
 
-   Le lot 20 ouvre le moteur. C'est le seul lot du cycle à le faire, et c'est
-   là qu'est tout le risque : une ligne déplacée dans `calculerMois` change un
-   chiffre remis à une famille, sur un mois qui n'a rien à voir avec la
-   familiarisation. Ce fichier confronte le moteur d'aujourd'hui au moteur
-   FIGÉ d'avant le lot 20 (`test/fixtures/engine-avant-lot20.js`, copie exacte
-   de `js/engine.js` au commit `7433800`) sur un produit croisé de mois, de
-   plannings, de motifs de journées, d'imputations et de bornes de contrat.
+   La règle des cinq samedis rouvre `js/engine.js`, et elle touche RG-06 —
+   c'est-à-dire le chiffre que les familles contestent depuis toujours, et
+   celui qui a déjà été remis sur des documents. Une ligne déplacée dans
+   `joursOuvrablesParMois` change un décompte, donc une imputation, donc des
+   congés payés consommés, donc un total à verser.
+
+   Ce fichier confronte le moteur d'aujourd'hui au moteur FIGÉ d'avant le lot
+   (`test/fixtures/engine-avant-cinq-samedis.js`, copie exacte de
+   `js/engine.js` au commit `53d4030`) sur un produit croisé de mois, de
+   plannings, de motifs de journées, d'imputations et de bornes de contrat —
+   EN LUI PASSANT TOUS LES SAMEDIS. Puisque l'ancien moteur comptait tous les
+   samedis d'office, les deux doivent alors rendre exactement la même chose.
 
    LA COMPARAISON EST EXHAUSTIVE PAR CONSTRUCTION : on ne liste pas les champs
    à vérifier — on sérialise les DEUX résultats entiers et on exige l'égalité
-   stricte, après avoir retiré du nouveau les champs que le lot 20 AJOUTE.
-   Lister les champs, c'est oublier celui qu'on vient d'écrire ; c'est
-   exactement comme ça qu'une anomalie a échappé à 719 assertions en août.
+   stricte. Lister les champs, c'est oublier celui qu'on vient d'écrire.
 
-   DEUX DIFFÉRENCES SONT ATTENDUES, et elles sont vérifiées positivement :
+   AUCUN CHAMP N'EST RETIRÉ AVANT COMPARAISON, contrairement aux différentiels
+   des lots 17 et 20 : ce lot n'ajoute aucun champ au résultat. Il change la
+   valeur d'un décompte, et cette valeur doit être identique. Le moindre écart
+   est bloquant.
 
-     1. les champs neufs du §20 — `familiarisation`, `joursSansEntretien`, et
-        `prorata.joursFamiliarisation` — qui doivent valoir exactement leur
-        valeur neutre sur un mois sans familiarisation ;
-     2. §20.3, l'acquisition des congés payés : un mois contenant une journée
-        `familiarisation` en acquiert désormais. Ces scénarios-là sont donc
-        EXCLUS du différentiel strict et traités par leur propre assertion,
-        plutôt qu'ignorés.
-
-   Aucune journée du différentiel ne porte `entretien_du` : l'ancien moteur ne
-   connaît pas la colonne. Le §20.6 a ses propres cas, dans
-   `test/lot20-familiarisation.test.js`.
+   Le second cas de ce fichier prouve l'autre moitié : SANS les samedis, le
+   décompte baisse bien — sinon le différentiel serait vert parce que rien
+   n'aurait changé du tout.
    ========================================================================= */
 'use strict';
 
-var Avant = require('./fixtures/engine-avant-lot20.js');
+var Avant = require('./fixtures/engine-avant-cinq-samedis.js');
 var Apres = require('../js/engine.js');
-var FeriesSamedis = require('../js/feries.js');
+var Feries = require('../js/feries.js');
 
 var cas = [];
 function test(nom, fn) { cas.push({ nom: nom, fn: fn }); }
@@ -153,23 +151,19 @@ var MOTIFS = [
   }
 ];
 
-/* Les samedis du scénario en cours : les constructeurs d'imputation en ont
-   besoin pour que `jours_ouvrables` corresponde au décompte du moteur neuf. */
-var samedisDuScenario = [];
-
 var IMPUTATIONS = [
   function () { return []; },
-  function (joursConge, planning) {
+  function (joursConge, planning, mpjc, samedis) {
     if (!joursConge.length) return [];
-    var n = Apres.decompterJoursOuvrables(joursConge[0], joursConge[joursConge.length - 1], planning,
-      samedisDuScenario);
+    var n = Apres.decompterJoursOuvrables(joursConge[0], joursConge[joursConge.length - 1],
+      planning, samedis);
     return [{ date_debut: joursConge[0], date_fin: joursConge[joursConge.length - 1],
               jours_ouvrables: n, jours_sur_cp: 0, jours_sur_sup: 0, jours_sans_solde: n }];
   },
-  function (joursConge, planning) {
+  function (joursConge, planning, mpjc, samedis) {
     if (!joursConge.length) return [];
-    var n = Apres.decompterJoursOuvrables(joursConge[0], joursConge[joursConge.length - 1], planning,
-      samedisDuScenario);
+    var n = Apres.decompterJoursOuvrables(joursConge[0], joursConge[joursConge.length - 1],
+      planning, samedis);
     return [{ date_debut: joursConge[0], date_fin: joursConge[joursConge.length - 1],
               jours_ouvrables: n, jours_sur_cp: n, jours_sur_sup: 0, jours_sans_solde: 0 }];
   },
@@ -215,25 +209,15 @@ function scenarios() {
   return out;
 }
 
-/* LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026) — POURQUOI CE FICHIER
-   PASSE DÉSORMAIS DES SAMEDIS AU MOTEUR NEUF.
-
-   Ce différentiel prouve qu'un lot antérieur n'a rien changé au calcul. Le
-   moteur de référence, lui, comptait TOUS les samedis d'office. Pour que la
-   comparaison porte encore sur ce qu'elle prouve, on passe au moteur neuf
-   tous les samedis — c'est exactement la convention du §4.2 du lot des cinq
-   samedis : « avec tous les samedis éligibles passés en entrée, le décompte
-   doit être rigoureusement identique à celui d'avant ».
-
-   AUCUNE ASSERTION N'EST AFFAIBLIE : la comparaison reste stricte, champ par
-   champ. Seule l'entrée du moteur neuf gagne une clé que l'ancien n'a pas.
-   La preuve que la règle mord vraiment est ailleurs, dans
-   `lot23-differentiel.test.js`. */
+/* TOUS LES SAMEDIS d'une fenêtre large autour du mois. Le §4.2 demande « tous
+   les samedis éligibles » ; on en passe davantage, ce qui est plus sévère et
+   jamais plus permissif : un samedi hors période n'entre dans aucun décompte,
+   et un samedi du planning ou férié suit sa propre règle quoi qu'il arrive. */
 function tousLesSamedis(annee, mois) {
   var out = [];
-  var d = FeriesSamedis.ajouterJours(cle(annee, mois) + '-01', -20);
-  var fin = FeriesSamedis.ajouterJours(cle(annee, mois) + '-01', 62);
-  for (; d <= fin; d = FeriesSamedis.ajouterJours(d, 1)) {
+  var d = Feries.ajouterJours(cle(annee, mois) + '-01', -20);
+  var fin = Feries.ajouterJours(cle(annee, mois) + '-01', 62);
+  for (; d <= fin; d = Feries.ajouterJours(d, 1)) {
     if (Apres.jourSemaine(d) === 6) out.push(d);
   }
   return out;
@@ -278,22 +262,21 @@ function detacherLesChampsDuLot20(ap, etiquette) {
 
 /* ------------------------------------------------------------------ */
 
-test('A1 — différentiel exhaustif : hors familiarisation, rien ne bouge', function () {
+test('A1 — différentiel exhaustif : tous les samedis passés, rien ne bouge', function () {
   var liste = scenarios();
   assert(liste.length > 3000,
     'le différentiel doit être exhaustif : ' + liste.length + ' scénarios seulement');
 
   var compares = 0;
   var refusIdentiques = 0;
-  var acquisitionsChangees = 0;
 
   for (var i = 0; i < liste.length; i++) {
     var v = liste[i];
     var journees = journeesDe(v);
     var joursConge = journees.filter(function (x) { return x.type === 'conge_maria'; })
                              .map(function (x) { return x.jour; }).sort();
-    samedisDuScenario = tousLesSamedis(v.annee, v.mois);
-    var imputations = IMPUTATIONS[v.imputation](joursConge, v.planning, v.mpjc);
+    var samedis = tousLesSamedis(v.annee, v.mois);
+    var imputations = IMPUTATIONS[v.imputation](joursConge, v.planning, v.mpjc, samedis);
 
     var etiquette = 'scénario #' + i + ' [' + cle(v.annee, v.mois) +
       ' planning=' + v.planning.join('') + ' motif=' + v.motif +
@@ -312,13 +295,20 @@ test('A1 — différentiel exhaustif : hors familiarisation, rien ne bouge', fun
         minutesCpAcquis: v.compteur.minutesCpAcquis,
         minutesCpPris: v.compteur.minutesCpPris
       },
-      annee: v.annee, mois: v.mois, imputations: imputations,
-      samedisComptes: samedisDuScenario
+      annee: v.annee, mois: v.mois, imputations: imputations
     };
+    /* Les MÊMES entrées pour les deux moteurs, à une clé près : l'ancien
+       ignore `samedisComptes` (il comptait tous les samedis d'office), le
+       neuf la lit. C'est tout l'objet du critère A1. */
+    var entreesApres = {};
+    for (var k in entrees) if (Object.prototype.hasOwnProperty.call(entrees, k)) {
+      entreesApres[k] = entrees[k];
+    }
+    entreesApres.samedisComptes = samedis;
 
     var av = null, ap = null, eAv = null, eAp = null;
     try { av = Avant.calculerMois(entrees); } catch (e) { eAv = e; }
-    try { ap = Apres.calculerMois(entrees); } catch (e) { eAp = e; }
+    try { ap = Apres.calculerMois(entreesApres); } catch (e) { eAp = e; }
 
     if (eAv || eAp) {
       assert(eAv && eAp, etiquette + ' — un seul des deux moteurs refuse : avant=' +
@@ -330,33 +320,12 @@ test('A1 — différentiel exhaustif : hors familiarisation, rien ne bouge', fun
       continue;
     }
 
-    var apNu = detacherLesChampsDuLot20(ap, etiquette);
-
-    if (v.motif === MOTIF_FAMILIARISATION) {
-      /* §20.3 — la seule divergence voulue. On la vérifie sur les DEUX
-         bornes : l'acquisition, qui change ; et tout le reste, qui ne change
-         pas d'un centime. */
-      if (av.minutesCpAcquis !== apNu.minutesCpAcquis) {
-        assert(av.minutesCpAcquis === 0,
-          etiquette + ' — l’ancien moteur devrait n’acquérir aucun CP : ' + av.minutesCpAcquis);
-        assert(apNu.minutesCpAcquis === Apres.minutesCpParMois(conditions(v)),
-          etiquette + ' — le nouveau devrait acquérir un mois plein : ' + apNu.minutesCpAcquis);
-        acquisitionsChangees++;
-      }
-      var avSansCp = JSON.parse(JSON.stringify(av));
-      var apSansCp = JSON.parse(JSON.stringify(apNu));
-      avSansCp.minutesCpAcquis = apSansCp.minutesCpAcquis = 0;
-      avSansCp.compteurSortie.minutesCpAcquis = apSansCp.compteurSortie.minutesCpAcquis = 0;
-      assert(JSON.stringify(avSansCp) === JSON.stringify(apSansCp),
-        etiquette + ' — hors acquisition, le mois devrait être identique :\n  avant ' +
-        JSON.stringify(avSansCp) + '\n  après ' + JSON.stringify(apSansCp));
-      compares++;
-      continue;
-    }
-
-    assert(JSON.stringify(av) === JSON.stringify(apNu),
+    /* AUCUN CHAMP N'EST RETIRÉ : ce lot n'en ajoute pas au résultat. Il change
+       la valeur d'un décompte, et cette valeur doit être identique dès lors
+       que tous les samedis sont passés. */
+    assert(JSON.stringify(av) === JSON.stringify(ap),
       etiquette + ' — résultat différent :\n  avant ' + JSON.stringify(av) +
-      '\n  après ' + JSON.stringify(apNu));
+      '\n  après ' + JSON.stringify(ap));
     compares++;
   }
 
@@ -364,21 +333,99 @@ test('A1 — différentiel exhaustif : hors familiarisation, rien ne bouge', fun
   assert(refusIdentiques > 20,
     'trop peu de refus rencontrés (' + refusIdentiques +
     ') : la matrice ne teste pas les gardes du moteur');
-  assert(acquisitionsChangees > 20,
-    'la divergence voulue du §20.3 n’a presque pas été rencontrée (' +
-    acquisitionsChangees + ') : le différentiel ne prouve pas grand-chose');
 });
 
-test('A1 bis — sans période, `partCouverteDuMois` rend le même couple qu’avant', function () {
-  var v = { planning: [1, 2, 3, 4, 5], dateDebut: '2026-09-16', dateFin: null };
-  var av = Avant.partCouverteDuMois(contrat(v), v.planning, 2026, 9);
-  var ap = Apres.partCouverteDuMois(contrat(v), v.planning, 2026, 9);
-  assert(av.joursCouverts === ap.joursCouverts && av.joursDuMois === ap.joursDuMois,
-    'le prorata a bougé sans période : ' + JSON.stringify(av) + ' / ' + JSON.stringify(ap));
-  assert(ap.joursFamiliarisation === 0, 'joursFamiliarisation devrait être nul');
-  var vide = Apres.partCouverteDuMois(contrat(v), v.planning, 2026, 9, []);
-  assert(vide.joursCouverts === ap.joursCouverts,
-    'une liste de périodes VIDE ne doit rien changer non plus');
+/* SANS CE SECOND CAS, LE PREMIER NE PROUVERAIT RIEN. Un différentiel vert
+   peut vouloir dire « rien n'a changé » — y compris parce que le code neuf
+   ignore son nouveau paramètre. On exige donc que le décompte BAISSE quand
+   les samedis ne sont pas passés, sur les mêmes scénarios. */
+test('A1 bis — sans les samedis, le décompte baisse : la règle mord vraiment',
+  function () {
+    var liste = scenarios();
+    var baisses = 0;
+    var identiques = 0;
+
+    for (var i = 0; i < liste.length; i++) {
+      var v = liste[i];
+      var journees = journeesDe(v);
+      var joursConge = journees.filter(function (x) { return x.type === 'conge_maria'; })
+                               .map(function (x) { return x.jour; }).sort();
+      if (!joursConge.length) continue;
+      var samedis = tousLesSamedis(v.annee, v.mois);
+
+      var avecTout = Apres.decompterJoursOuvrables(
+        joursConge[0], joursConge[joursConge.length - 1], v.planning, samedis);
+      var sansRien = Apres.decompterJoursOuvrables(
+        joursConge[0], joursConge[joursConge.length - 1], v.planning);
+      var eligibles = Apres.samedisEligibles(
+        joursConge[0], joursConge[joursConge.length - 1], v.planning);
+
+      assert(sansRien === avecTout - eligibles.length,
+        'scénario #' + i + ' — l’écart doit valoir exactement le nombre de ' +
+        'samedis éligibles : ' + avecTout + ' → ' + sansRien + ' pour ' +
+        eligibles.length + ' samedi(s) éligible(s)');
+      if (eligibles.length) baisses++; else identiques++;
+    }
+
+    assert(baisses > 200, 'trop peu de périodes portant un samedi éligible : ' + baisses);
+    assert(identiques > 0,
+      'aucune période sans samedi éligible : la matrice ne couvre pas le ' +
+      'contrat qui travaille le samedi');
+  });
+
+test('A2 — une semaine posée du lundi au vendredi compte 5 jours, 6 avec le samedi',
+  function () {
+    var planning = [1, 2, 3, 4, 5];
+    assert(Apres.decompterJoursOuvrables('2026-10-19', '2026-10-23', planning) === 5,
+      'A2 : sans samedi coché, la semaine compte 5 jours');
+    assert(Apres.decompterJoursOuvrables('2026-10-19', '2026-10-23', planning,
+      ['2026-10-24']) === 6, 'A3 : avec le samedi coché, elle en compte 6');
+    assert(Avant.decompterJoursOuvrables('2026-10-19', '2026-10-23', planning) === 6,
+      'et l’ancien moteur en comptait 6 d’office — c’est bien la règle qui change');
+  });
+
+test('A4 — trois semaines proposent trois samedis, séparément', function () {
+  var s = Apres.samedisEligibles('2026-10-05', '2026-10-23', [1, 2, 3, 4, 5]);
+  assert(s.length === 3 && s[0] === '2026-10-10' && s[1] === '2026-10-17' &&
+         s[2] === '2026-10-24',
+    'A4 : trois samedis distincts, dont celui qui prolonge la dernière semaine : ' +
+    JSON.stringify(s));
+  assert(Apres.decompterJoursOuvrables('2026-10-05', '2026-10-23', [1, 2, 3, 4, 5],
+    ['2026-10-17']) === 16, 'A4 : cocher le deuxième seulement ajoute un jour, pas trois');
 });
+
+test('A8 — un samedi du planning se décompte d’office et n’est jamais proposé',
+  function () {
+    var planning = [1, 2, 3, 4, 5, 6];
+    assert(Apres.samedisEligibles('2026-10-19', '2026-10-24', planning).length === 0,
+      'A8 : aucun choix sur un contrat qui garde le samedi');
+    assert(Apres.decompterJoursOuvrables('2026-10-19', '2026-10-24', planning) === 6,
+      'A8 : et le samedi posé se décompte sans qu’aucun samedi ne soit coché');
+  });
+
+test('A9 — un samedi férié n’est jamais décompté et n’est jamais proposé', function () {
+  var planning = [1, 2, 3, 4, 5];
+  /* Le samedi 15 août 2026 est férié. */
+  assert(Apres.samedisEligibles('2026-08-10', '2026-08-14', planning).length === 0,
+    'A9 : le samedi férié n’est pas un choix');
+  assert(Apres.decompterJoursOuvrables('2026-08-10', '2026-08-14', planning) === 5,
+    'A9 : et il n’est pas décompté');
+  assert(Apres.decompterJoursOuvrables('2026-08-10', '2026-08-14', planning,
+    ['2026-08-15']) === 5,
+    'A9 : le passer en entrée ne le fait pas décompter pour autant');
+});
+
+test('A13 — une période à cheval sur le 31 mai propose ses samedis des deux années',
+  function () {
+    /* Du lundi 25 mai au samedi 6 juin 2026 : samedis le 30 mai et le 6 juin. */
+    var s = Apres.samedisEligibles('2026-05-25', '2026-06-05', [1, 2, 3, 4, 5]);
+    assert(s.length === 2 && s[0] === '2026-05-30' && s[1] === '2026-06-06',
+      'A13 : les deux samedis sont proposés, chacun dans son année de référence : ' +
+      JSON.stringify(s));
+    /* Le décompte de la période, lui, n'est PAS scindé. */
+    assert(Apres.decompterJoursOuvrables('2026-05-25', '2026-06-05', [1, 2, 3, 4, 5],
+      s) === Avant.decompterJoursOuvrables('2026-05-25', '2026-06-05', [1, 2, 3, 4, 5]),
+      'A13 : avec les deux samedis, le décompte reste celui d’avant le lot');
+  });
 
 module.exports = { cas: cas };

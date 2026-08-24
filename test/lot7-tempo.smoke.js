@@ -384,11 +384,28 @@ async function ouvrirAccueil() {
      dans `lot17-correctifs.smoke.js`. */
   assert(txt(doc).indexOf('Décompte des congés') === -1,
     'P7 : l’encart RG-06 est absent d’un mois sans congé');
-  /* La PHRASE de l'encart, elle, n'a pas changé d'un caractère : c'est son
-     APPARITION qui devient conditionnelle. Le texte exact reste vérifié — sur
-     un mois avec congés — dans `lot17-correctifs.smoke.js`. */
-  assert(window.UiDocument.ENCART_RG06.indexOf('Une semaine complète compte donc 6 jours') !== -1,
-    'P7 : la phrase de l’encart énonce toujours RG-06, mot pour mot');
+  /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026, §6).
+
+     « Une semaine complète compte donc 6 jours, même si je ne travaille pas le
+     samedi » DEVIENT FAUX le jour du déploiement : une semaine ne compte plus
+     6 jours d'office. La laisser sur le document ferait mentir la pièce remise
+     aux familles — exactement ce que l'application existe pour empêcher.
+
+     L'assertion ne disparaît pas et ne s'affaiblit pas : elle exige toujours
+     que l'encart ÉNONCE la règle du décompte mot pour mot, et c'est désormais
+     la règle des cinq samedis. Elle exige en plus, ce qu'elle ne faisait pas,
+     que la phrase vienne de la constante PARTAGÉE (§6.3, critère A12) : le
+     document à l'écran, le texte à copier et l'image sortent tous de
+     l'application et arrivent chez la famille. */
+  assert(window.UiDocument.ENCART_RG06.indexOf(
+    'n’est décompté que lorsque je le choisis') !== -1,
+    'P7 : la phrase de l’encart énonce la règle des cinq samedis, mot pour mot');
+  assert(window.UiDocument.ENCART_RG06.indexOf('1er juin – 31 mai') !== -1,
+    'P7 : et elle nomme l’année de référence');
+  assert(window.UiDocument.ENCART_RG06.indexOf('6 jours') === -1,
+    'P7 : et elle n’affirme plus qu’une semaine complète en compte 6 d’office');
+  assert(window.UiDocument.ENCART_RG06 === window.Kit.ENCART_RG06,
+    'A12 : la phrase vient de la constante partagée, en un seul exemplaire');
 
   var apercu = corps.querySelector('.apercu-texte');
   assert(!!apercu, 'P8 : le texte à coller est AFFICHÉ, pas seulement copiable');

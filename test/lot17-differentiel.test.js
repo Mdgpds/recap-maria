@@ -47,6 +47,7 @@
 
 var Avant = require('./fixtures/engine-avant-lot17.js');
 var Apres = require('../js/engine.js');
+var FeriesSamedis = require('../js/feries.js');
 
 var cas = [];
 function test(nom, fn) { cas.push({ nom: nom, fn: fn }); }
@@ -181,13 +182,18 @@ var MOTIFS = [
 ];
 
 /* Imputations posées, fabriquées à partir des journées de congé du mois. */
+/* Les samedis du scénario en cours : les constructeurs d'imputation en ont
+   besoin pour que `jours_ouvrables` corresponde au décompte du moteur neuf. */
+var samedisDuScenario = [];
+
 var IMPUTATIONS = [
   /* Aucune : l'ordre par défaut du contrat (RG-07). */
   function () { return []; },
   /* Couvrante et cohérente : la ventilation de Maria s'applique. */
   function (jours, planning, mpjc) {
     if (!jours.length) return [];
-    var n = Apres.decompterJoursOuvrables(jours[0], jours[jours.length - 1], planning);
+    var n = Apres.decompterJoursOuvrables(jours[0], jours[jours.length - 1], planning,
+      samedisDuScenario);
     return [{ id: 'i1', date_debut: jours[0], date_fin: jours[jours.length - 1],
               jours_ouvrables: n,
               jours_sur_cp: n, jours_sur_sup: 0, jours_sans_solde: 0 }];
@@ -196,7 +202,8 @@ var IMPUTATIONS = [
      réserves quand le compteur est vide — `IMPUTATION_DEPASSE_RESERVES`. */
   function (jours, planning) {
     if (!jours.length) return [];
-    var n = Apres.decompterJoursOuvrables(jours[0], jours[jours.length - 1], planning);
+    var n = Apres.decompterJoursOuvrables(jours[0], jours[jours.length - 1], planning,
+      samedisDuScenario);
     return [{ id: 'i2', date_debut: jours[0], date_fin: jours[jours.length - 1],
               jours_ouvrables: n,
               jours_sur_cp: 0, jours_sur_sup: n, jours_sans_solde: 0 }];
@@ -204,7 +211,8 @@ var IMPUTATIONS = [
   /* Ventilation qui ne couvre pas le décompte : `IMPUTATION_INCOMPLETE`. */
   function (jours, planning) {
     if (!jours.length) return [];
-    var n = Apres.decompterJoursOuvrables(jours[0], jours[jours.length - 1], planning);
+    var n = Apres.decompterJoursOuvrables(jours[0], jours[jours.length - 1], planning,
+      samedisDuScenario);
     return [{ id: 'i3', date_debut: jours[0], date_fin: jours[jours.length - 1],
               jours_ouvrables: n - 1,
               jours_sur_cp: n - 1, jours_sur_sup: 0, jours_sans_solde: 0 }];
@@ -219,7 +227,8 @@ var IMPUTATIONS = [
   /* Mixte, avec du sans solde : celle qui fait travailler RG-08. */
   function (jours, planning) {
     if (!jours.length) return [];
-    var n = Apres.decompterJoursOuvrables(jours[0], jours[jours.length - 1], planning);
+    var n = Apres.decompterJoursOuvrables(jours[0], jours[jours.length - 1], planning,
+      samedisDuScenario);
     if (n < 3) return [];
     return [{ id: 'i5', date_debut: jours[0], date_fin: jours[jours.length - 1],
               jours_ouvrables: n,
@@ -406,6 +415,30 @@ function scenarios() {
   return out;
 }
 
+/* LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026) — POURQUOI CE FICHIER
+   PASSE DÉSORMAIS DES SAMEDIS AU MOTEUR NEUF.
+
+   Ce différentiel prouve qu'un lot antérieur n'a rien changé au calcul. Le
+   moteur de référence, lui, comptait TOUS les samedis d'office. Pour que la
+   comparaison porte encore sur ce qu'elle prouve, on passe au moteur neuf
+   tous les samedis — c'est exactement la convention du §4.2 du lot des cinq
+   samedis : « avec tous les samedis éligibles passés en entrée, le décompte
+   doit être rigoureusement identique à celui d'avant ».
+
+   AUCUNE ASSERTION N'EST AFFAIBLIE : la comparaison reste stricte, champ par
+   champ. Seule l'entrée du moteur neuf gagne une clé que l'ancien n'a pas.
+   La preuve que la règle mord vraiment est ailleurs, dans
+   `lot23-differentiel.test.js`. */
+function tousLesSamedis(annee, mois) {
+  var out = [];
+  var d = FeriesSamedis.ajouterJours(cle(annee, mois) + '-01', -20);
+  var fin = FeriesSamedis.ajouterJours(cle(annee, mois) + '-01', 62);
+  for (; d <= fin; d = FeriesSamedis.ajouterJours(d, 1)) {
+    if (Apres.jourSemaine(d) === 6) out.push(d);
+  }
+  return out;
+}
+
 function journeesDe(v) {
   var prefixe = cle(v.annee, v.mois) + '-';
   var derniers = Apres.joursDuMois(v.annee, v.mois).length;
@@ -426,6 +459,7 @@ test('différentiel exhaustif — à conditions constantes, résultat identique'
     var journees = journeesDe(v);
     var joursConge = journees.filter(function (x) { return x.type === 'conge_maria'; })
                              .map(function (x) { return x.jour; }).sort();
+    samedisDuScenario = tousLesSamedis(v.annee, v.mois);
     var imputations = IMPUTATIONS[v.imputation](joursConge, v.planning, v.mpjc);
     var facteur = v.mpjc / 10;
 
@@ -454,7 +488,8 @@ test('différentiel exhaustif — à conditions constantes, résultat identique'
         minutesCpAcquis: v.compteur.dixiemesCpAcquis * facteur,
         minutesCpPris: v.compteur.dixiemesCpPris * facteur
       },
-      annee: v.annee, mois: v.mois, imputations: imputations
+      annee: v.annee, mois: v.mois, imputations: imputations,
+      samedisComptes: samedisDuScenario
     };
 
     var av = null, ap = null, eAv = null, eAp = null;
