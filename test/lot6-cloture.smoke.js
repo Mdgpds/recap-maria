@@ -45,8 +45,12 @@ function parTexte(racineEl, selecteur, morceau) {
 /* Les durées et quantités portent une espace INSÉCABLE (format.js) : voulu,
    une valeur ne doit jamais se couper en fin de ligne. On normalise ici. */
 function norm(t) { return t == null ? t : String(t).replace(/\u00A0/g, ' '); }
+/* LOT 25 (§24.3) — LA LIGNE LIBELLÉ/VALEUR EST DEVENUE `Kit.ligneLn` : elle
+   porte la classe `.ln` du socle, et non plus `.l`. Les deux sont acceptées
+   ici, le temps que les écrans finissent de migrer : le test lit une ligne,
+   il n'a pas à savoir de quel lot vient son composant. */
 function ligneDe(racineEl, libelle) {
-  var l = Array.prototype.filter.call(racineEl.querySelectorAll('.l'), function (e) {
+  var l = Array.prototype.filter.call(racineEl.querySelectorAll('.l, .ln'), function (e) {
     return e.firstChild && e.firstChild.textContent.indexOf(libelle) !== -1;
   })[0];
   return l ? norm(l.lastChild.textContent) : null;
@@ -252,14 +256,46 @@ var toast = document.getElementById('toast');
   /* Lot 13 : le bandeau ne promet plus l'impossibilité de modifier — un mois
      clôturé peut être rouvert. Il promet la stabilité des chiffres tant qu'il
      reste clôturé, et il ouvre la porte explicitement. */
-  assert(txt(corps).indexOf('Mois clôturé') !== -1,
-    'B1 : le mois clôturé porte un bandeau qui le dit');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.3 : LE BANDEAU DU MOIS CLÔTURÉ DÉMÉNAGE.
+     L'espace enfant n'a plus qu'UN ENCART, celui du point le plus urgent : le
+     bandeau à trois éléments (phrase de stabilité + deux boutons) y prenait
+     toute la place au-dessus du calendrier, sur l'écran où l'on ne peut
+     justement plus rien saisir.
+
+     RIEN NE SE PERD (A.2) : les trois éléments vivent maintenant sur LE
+     DOCUMENT du mois, où ils étaient DÉJÀ présents — `UiReouverture.
+     actionsMoisCloture` y est appelé depuis le lot 13, à l'identique. L'espace
+     enfant garde LA PORTE : un encart « Mois clôturé le … » qui ouvre ce
+     document d'un appui.
+
+     L'ASSERTION NE S'AFFAIBLIT PAS, ELLE SE RENFORCE : au lieu de vérifier
+     que trois textes sont là, on vérifie la PORTE, puis on la FRANCHIT et on
+     vérifie que les trois éléments sont au bout. Un bandeau présent mais dont
+     les boutons ne mènent nulle part passait l'ancienne assertion ; il ne
+     passe plus celle-ci.
+     ====================================================================== */
+  var encartClos = parTexte(corps, '.enc', 'Mois clôturé');
+  assert(!!encartClos,
+    'B1 : le mois clôturé porte un encart qui le dit');
+  var porteDocument = encartClos.tagName === 'BUTTON'
+    ? encartClos : encartClos.querySelector('button');
+  assert(!!porteDocument,
+    '§25.3 : et cet encart est la porte vers le document du mois');
+
+  /* On franchit la porte, et on vérifie les trois éléments au bout. */
+  porteDocument.click();
+  await pause(200);
   assert(txt(corps).indexOf('ne bougeront plus') !== -1,
-    'B1 : le bandeau promet la stabilité des chiffres');
+    'B1 : le document promet la stabilité des chiffres');
   assert(parTexte(corps, 'button', 'Rouvrir pour corriger') !== null,
-    'lot 13 : le bandeau propose de rouvrir le mois');
+    'lot 13 : le document propose de rouvrir le mois');
   assert(parTexte(corps, 'button', 'Voir l’historique de ce mois') !== null,
-    'lot 13 : le bandeau propose l’historique du mois');
+    'lot 13 : le document propose l’historique du mois');
+
+  /* Retour à l'espace enfant pour la suite du cas. */
+  window.App.aller('enfant', { contratId: 'c-lea', annee: 2026, mois: 5 });
+  await pause(200);
   assert(corps.querySelectorAll('table.cal td[role="button"]').length === 0,
     'B1 : aucune journée n’est touchable sur un mois clôturé (obtenu ' +
     corps.querySelectorAll('table.cal td[role="button"]').length + ')');

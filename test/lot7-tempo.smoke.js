@@ -52,6 +52,33 @@ function parTexte(racineEl, selecteur, morceau) {
     return e.textContent.indexOf(morceau) !== -1;
   })[0] || null;
 }
+/* LOT 25 §25.1 — LES DEUX BLOCS DE L'ACCUEIL, lus par leur SECTION et non
+   par une classe de composant. `aFaire()` rend les cartes du bloc
+   « Aujourd'hui » (ce qui remplace les tuiles `.todo`), `carteContrat(rang)`
+   rend une carte du bloc « Mes contrats » (ce qui remplace `.big`). Passer par
+   le titre de section plutôt que par la classe évite qu'un futur changement de
+   composant recasse quinze assertions qui ne parlent pas de composants. */
+function cartesDeSection(titre) {
+  var sec = Array.prototype.filter.call(corps.querySelectorAll('.sec'), function (e) {
+    return e.textContent.indexOf(titre) !== -1;
+  })[0];
+  if (!sec) return [];
+  var out = [];
+  for (var n = sec.nextSibling; n; n = n.nextSibling) {
+    if (n.nodeType !== 1) continue;
+    if (n.className.indexOf('sec') !== -1) break;
+    if (n.className.indexOf('cd') !== -1) out.push(n);
+  }
+  return out;
+}
+function aFaire() { return cartesDeSection('Aujourd’hui'); }
+function aFaireParTexte(morceau) {
+  return aFaire().filter(function (e) {
+    return e.textContent.indexOf(morceau) !== -1;
+  })[0] || null;
+}
+function carteContrat(rang) { return cartesDeSection('Mes contrats')[rang || 0]; }
+
 function boutonExact(racineEl, libelle) {
   return Array.prototype.filter.call(racineEl.querySelectorAll('button'), function (e) {
     return e.textContent.trim() === libelle;
@@ -253,23 +280,72 @@ async function ouvrirAccueil() {
   /* juillet : volontairement laissé ouvert */
   await ouvrirAccueil();
 
-  var tuiles = corps.querySelectorAll('.todo');
-  assert(tuiles.length > 0, 'P1 : « À faire » n’est pas vide');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.1 : L'ACCUEIL EST REFAIT EN DEUX BLOCS.
+     Les tuiles `.todo` de la liste « À faire » deviennent les cartes du bloc
+     « Aujourd'hui » (`.cd.tap`), et les grandes cartes `.big` deviennent les
+     lignes du bloc « Mes contrats », avec une PASTILLE d'état.
+
+     CE QUI CHANGE, ASSERTION PAR ASSERTION, ET POURQUOI :
+
+     - `.todo` -> `.cd.tap.w` : même rôle, composant du socle (lot 24). Un
+       helper `aFaire()` remplace la requête, pour que la suite du fichier ne
+       dépende pas d'un nom de classe.
+     - « Juillet … n'est pas clôturé » -> « Juillet à clôturer pour Alix ».
+       L'ancienne tuile CONSTATAIT un état ; la nouvelle carte NOMME LE GESTE
+       et l'enfant concerné. C'est la formulation de la maquette. Le fond ne
+       bouge pas : le mois en retard est en tête, avec son alerte.
+     - « Le mois est terminé depuis le 31 juil. 2026 » -> « Terminé depuis le
+       31 juil. 2026 » : le sujet est déjà le titre de la carte, la phrase se
+       débarrasse de sa répétition. LA DATE, elle, est exigée telle quelle.
+     - `.big` -> carte de contrat du bloc « Mes contrats ». Un helper
+       `carteContrat()` la repère par sa section, pour ne pas confondre avec
+       les cartes d'action.
+     - « provisoire » sur la carte : RETIRÉ (§25.2). Le caractère provisoire
+       d'un mois en cours est porté par la PASTILLE (« en cours ») et par le
+       bandeau du document. L'assertion « un mois à clôturer n'annonce plus un
+       total provisoire » devient donc une assertion sur la pastille, qui dit
+       « à clôturer » — plus précise que l'absence d'un adjectif.
+     - « Juillet 2026 n'est pas clôturé » sur la carte du contrat -> pastille
+       « 1 mois en retard ». Le retard reste visible depuis la carte, chiffré,
+       et l'exigence V8-01 (le MOT, jamais la couleur seule) est vérifiée.
+
+     AUCUNE ASSERTION DE COMPORTEMENT N'EST AFFAIBLIE : la garde V8-03 (août
+     n'est pas proposé avant le 25), la bascule exacte au 25, et l'état de
+     chaque mois sont tous exigés à l'identique.
+     ====================================================================== */
+  var tuiles = aFaire();
+  assert(tuiles.length > 0, 'P1 : le bloc « Aujourd’hui » n’est pas vide');
   assert(txt(tuiles[0]).indexOf('Juillet') !== -1 &&
-         txt(tuiles[0]).indexOf('n’est pas clôturé') !== -1,
-    'P1 : juillet est EN TÊTE de « À faire » (obtenu « ' + txt(tuiles[0]).slice(0, 60) + ' »)');
-  assert(txt(tuiles[0]).indexOf('!') !== -1, 'P1 : la tuile porte l’icône d’alerte');
-  assert(txt(tuiles[0]).indexOf('Le mois est terminé depuis le 31 juil. 2026') !== -1,
-    'P1 : la tuile dit depuis quand le mois est terminé');
-  assert(!parTexte(corps, '.todo', 'Clôturer août'),
+         txt(tuiles[0]).indexOf('à clôturer') !== -1,
+    'P1 : juillet est EN TÊTE du bloc « Aujourd’hui » (obtenu « ' +
+    txt(tuiles[0]).slice(0, 60) + ' »)');
+  assert(txt(tuiles[0]).indexOf('Alix') !== -1,
+    'P1 : et la carte nomme l’enfant concerné');
+  assert(txt(tuiles[0].querySelector('.ic')) === '!',
+    'P1 : la carte porte l’icône d’alerte');
+  assert(txt(tuiles[0]).indexOf('Terminé depuis le 31 juil. 2026') !== -1,
+    'P1 : la carte dit depuis quand le mois est terminé');
+  /* §18.4 (7·A5) — UN MOIS ÉCHU N'EST PAS UN MOIS EN COURS QU'ON PEUT DÉJÀ
+     CLÔTURER. Le lot 18 avait corrigé la phrase d'un bandeau qui affirmait
+     « ce mois est terminé » du 25 au 31 d'un mois qui courait encore ; le lot
+     25 a retiré ce bandeau et la distinction vit ICI, sur la carte du bloc
+     « Aujourd'hui » — c'est là que Maria décide de clôturer. Les deux
+     formulations sont exigées, chacune sur son cas : celle-ci pour le mois
+     échu, celle du cas P2 pour le mois en cours. */
+  assert(txt(tuiles[0]).indexOf('Vérifiez les journées') === -1,
+    '7·A5 : pour un mois ÉCHU, la carte ne dit pas la phrase du mois en cours');
+  assert(!aFaireParTexte('Août à clôturer'),
     'P1 : août n’est PAS proposé à la clôture le 11 (V8-03)');
 
-  var carte = corps.querySelector('.big');
-  assert(txt(carte).indexOf('en cours') !== -1, 'P1 : la carte d’août dit « en cours »');
-  assert(txt(carte).indexOf('provisoire') !== -1,
-    'P1 : le total d’un mois en cours est annoncé provisoire');
-  assert(txt(carte).indexOf('Juillet 2026 n’est pas clôturé') !== -1,
-    'P1 : le retard se voit aussi depuis la carte du contrat');
+  var carte = carteContrat();
+  assert(txt(carte.querySelector('.pill')) === 'en cours' ||
+         txt(carte.querySelector('.pill')).indexOf('en retard') !== -1,
+    'P1 : la carte du contrat porte un MOT d’état, pas seulement une couleur ' +
+    '(obtenu « ' + txt(carte.querySelector('.pill')) + ' »)');
+  assert(txt(carte.querySelector('.pill')) === '1 mois en retard',
+    'P1 : le retard se voit aussi depuis la carte du contrat, et il est ' +
+    'chiffré (obtenu « ' + txt(carte.querySelector('.pill')) + ' »)');
 
   /* ==================================================================== */
   /* P2 — Le 26, tout à jour sauf août                                    */
@@ -279,23 +355,32 @@ async function ouvrirAccueil() {
   figer(A.id, 2026, 7);
   await ouvrirAccueil();
 
-  assert(!!parTexte(corps, '.todo', 'Clôturer août pour Alix'),
-    'P2 : le 26, août est proposé à la clôture');
-  assert(!parTexte(corps, '.todo', 'n’est pas clôturé'),
+  var carteAout = aFaireParTexte('Août à clôturer pour Alix');
+  assert(!!carteAout, 'P2 : le 26, août est proposé à la clôture');
+  /* §18.4 (7·A5), l'autre moitié : le 26, août COURT ENCORE. La carte propose
+     de le clôturer sans jamais affirmer qu'il est terminé — c'est exactement
+     le défaut que le lot 18 avait corrigé sur le bandeau disparu. */
+  assert(txt(carteAout).indexOf('Vérifiez les journées, puis clôturez le mois.') !== -1,
+    '7·A5 : au 26, la carte propose de vérifier puis clôturer (obtenu « ' +
+    txt(carteAout) + ' »)');
+  assert(txt(carteAout).indexOf('Terminé depuis') === -1 &&
+         txt(carteAout).indexOf('est terminé') === -1,
+    '7·A5 : et elle n’affirme PAS qu’un mois qui court encore est terminé');
+  assert(!aFaireParTexte('en retard'),
     'P2 : aucun mois en retard n’est signalé');
-  assert(txt(corps.querySelector('.big')).indexOf('à clôturer') !== -1,
-    'P2 : la carte passe à « à clôturer »');
-  assert(txt(corps.querySelector('.big')).indexOf('provisoire') === -1,
-    'P2 : un mois à clôturer n’annonce plus un total provisoire');
+  assert(txt(carteContrat().querySelector('.pill')) === 'à clôturer',
+    'P2 : la pastille passe à « à clôturer »');
 
   /* Le 25 est la frontière : la veille, rien. */
   scene.aujourdhui = '2026-08-24';
   await ouvrirAccueil();
-  assert(!parTexte(corps, '.todo', 'Clôturer août'),
+  assert(!aFaireParTexte('Août à clôturer'),
     'P2bis : le 24, août n’est pas encore proposé');
+  assert(txt(carteContrat().querySelector('.pill')) === 'en cours',
+    'P2bis : et la pastille dit encore « en cours »');
   scene.aujourdhui = '2026-08-25';
   await ouvrirAccueil();
-  assert(!!parTexte(corps, '.todo', 'Clôturer août pour Alix'),
+  assert(!!aFaireParTexte('Août à clôturer pour Alix'),
     'P2bis : le 25, il l’est — la bascule est bien au 25');
 
   /* ==================================================================== */
@@ -306,12 +391,12 @@ async function ouvrirAccueil() {
   figer(A.id, 2026, 8);
   await ouvrirAccueil();
 
-  assert(!!parTexte(corps, '.todo', 'Rien à clôturer pour l’instant'),
-    'P3 : « Rien à clôturer pour l’instant »');
+  assert(!!parTexte(corps, '.cd', 'Rien à clôturer'),
+    'P3 : « Rien à clôturer »');
   assert(txt(corps).indexOf('Les mois terminés sont tous clôturés.') !== -1,
     'P3 : la phrase exacte de la spécification');
-  assert(txt(corps.querySelector('.big')).indexOf('clôturé') !== -1,
-    'P3 : la carte porte l’état clôturé');
+  assert(txt(carteContrat().querySelector('.pill')) === 'clôturé',
+    'P3 : la pastille porte l’état clôturé');
 
   /* ==================================================================== */
   /* P4 — Clôture le 20 : avertissement avec le décompte des jours         */
@@ -519,8 +604,16 @@ async function ouvrirAccueil() {
   await window.App.rechargerContrats();
   await ouvrirAccueil();
 
-  var guide = parTexte(corps, '.todo', 'mois sont à clôturer');
+  /* EXIGENCE CHANGÉE — LOT 25 §25.1 : la carte du parcours guidé.
+     Ancien libellé : « N mois sont à clôturer ». Nouveau : « N mois à
+     clôturer », comme les autres cartes du bloc « Aujourd'hui » — un titre
+     nomme le geste, il ne conjugue pas. Le SEUIL ne bouge pas : le parcours
+     guidé apparaît dès qu'il y a plus d'un mois à clôturer, et c'est ce que
+     ce cas vérifie. */
+  var guide = aFaireParTexte('mois à clôturer');
   assert(!!guide, 'P5 : le parcours guidé est proposé quand plusieurs mois attendent');
+  assert(txt(guide).indexOf('4 mois à clôturer') !== -1,
+    'P5 : et il annonce le NOMBRE de mois (obtenu « ' + txt(guide).slice(0, 60) + ' »)');
   guide.click();
   await pause(300);
 
@@ -596,16 +689,57 @@ async function ouvrirAccueil() {
   window.App.aller('enfant', { contratId: A.id, annee: 2026, mois: 8 });
   await pause(300);
 
-  assert(txt(corps).indexOf('Chiffres provisoires') !== -1,
-    'A1 : le bandeau annonce des chiffres provisoires');
-  assert(txt(corps).indexOf('Il reste 14 jours travaillés en août') !== -1,
-    'A1 : et le NOMBRE exact de jours restants (obtenu « ' +
-    (txt(corps).match(/Il reste[^.]{0,40}/) || [''])[0] + ' »)');
-  /* Kit.duree pose une espace INSÉCABLE entre le nombre et l'unité : un
-     nombre ne doit pas se retrouver seul en fin de ligne. On normalise avant
-     de comparer, sinon le test échoue sur une règle typographique voulue. */
-  assert(sansInsecable(txt(corps)).indexOf('vos 30 min sont dues') !== -1,
-    'A5 : la phrase permanente prend les minutes DU CONTRAT');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.2 et §25.3 : DEUX BANDEAUX PERMANENTS
+     QUITTENT L'ESPACE ENFANT. L'écran n'a plus qu'UN encart, celui du point le
+     plus urgent ; deux textes qui s'affichaient à chaque ouverture, quoi qu'il
+     arrive, n'y ont plus leur place.
+
+     RIEN NE SE PERD (A.2) — voici où chacun vit désormais, et l'assertion
+     suit :
+
+     1. « Chiffres provisoires » : le caractère provisoire est dit par la
+        PASTILLE de la carte d'accueil (« en cours ») et par le bandeau
+        « Document provisoire » du document — deux endroits où Maria regarde
+        un TOTAL, c'est-à-dire là où l'information sert. Vérifié ci-dessous
+        sur le document.
+     2. « Il reste 14 jours travaillés en août » : le compte exact des jours
+        restants vit dans l'avertissement de CLÔTURE ANTICIPÉE (V8-04), au
+        moment où il décide de quelque chose — juste avant de figer. Il y
+        était déjà, et le cas P4 de ce fichier le vérifie mot pour mot, avec
+        le nombre exact. On le re-vérifie ici pour que le lien soit explicite.
+     3. « vos 30 min sont dues » (sous-texte de « Rien à faire les jours
+        normaux », retiré par le §25.3) : la règle vit dans LA FICHE DU
+        CONTRAT, où elle est dite AVEC LA VALEUR DE CE CONTRAT — « Minutes
+        supplémentaires par jour : 30 min », puis « L'enfant repart vers
+        18h30 : les 30 min s'ajoutent à l'accueil ». La fiche est à un appui
+        de l'espace enfant, dans le repli « Depuis le début ». Le lot 27 y
+        ajoutera l'énoncé général, dans « Comment l'application compte ».
+        L'EXIGENCE A5 — la phrase prend les minutes DU CONTRAT, jamais 30 en
+        dur — est vérifiée là, et elle en sort renforcée : l'ancienne phrase
+        disait la durée, la fiche la dit ET la rattache à l'heure de départ.
+     ====================================================================== */
+  assert(!parTexte(corps, '.enc', 'Chiffres provisoires'),
+    '§25.2 : l’encart permanent « Chiffres provisoires » a quitté l’espace enfant');
+  window.App.aller('document', { contratId: A.id, annee: 2026, mois: 8 });
+  await pause(300);
+  assert(txt(corps).indexOf('Document provisoire') !== -1,
+    'A1 : le document dit que les chiffres ne sont pas définitifs');
+  window.App.aller('enfant', { contratId: A.id, annee: 2026, mois: 8 });
+  await pause(300);
+
+  /* Le NOMBRE de jours restants, au moment où il décide : la clôture. */
+  window.App.aller('document', { contratId: A.id, annee: 2026, mois: 8 });
+  await pause(300);
+  boutonExact(corps, 'Clôturer le mois').click();
+  await pause(200);
+  assert(/14 jours travaillés sont encore à venir/.test(txt(sheet)),
+    'A1 : le NOMBRE exact de jours restants est dit avant de figer (obtenu « ' +
+    (txt(sheet).match(/\d+ jours travaillés[^.]{0,40}/) || [''])[0] + ' »)');
+  boutonExact(sheet, 'Annuler').click();
+  await pause(150);
+  window.App.aller('enfant', { contratId: A.id, annee: 2026, mois: 8 });
+  await pause(300);
 
   var jour10 = Array.prototype.filter.call(
     corps.querySelectorAll('table.cal td[role="button"]'), function (td) {
@@ -641,8 +775,17 @@ async function ouvrirAccueil() {
   window.App.invalider();
   window.App.aller('enfant', { contratId: E.id, annee: 2026, mois: 8 });
   await pause(300);
-  assert(sansInsecable(txt(corps)).indexOf('vos 45 min sont dues') !== -1,
-    'A5 : « vos 45 min sont dues » — jamais 30 en dur');
+  /* Kit.duree pose une espace INSÉCABLE entre le nombre et l'unité : un
+     nombre ne doit pas se retrouver seul en fin de ligne. On normalise avant
+     de comparer, sinon le test échoue sur une règle typographique voulue. */
+  parTexte(corps, '.ln.tap', 'Contrat, horaires et rémunération').click();
+  await pause(350);
+  var tFiche = sansInsecable(txt(corps));
+  assert(tFiche.indexOf('45 min') !== -1 && tFiche.indexOf('30 min') === -1,
+    'A5 : « 45 min » — les minutes viennent DU CONTRAT, jamais 30 en dur ' +
+    '(obtenu « ' + (tFiche.match(/[^.]{0,30}min[^.]{0,30}/) || [''])[0] + ' »)');
+  assert(tFiche.indexOf('s’ajoutent à l’accueil') !== -1,
+    'A5 : et la fiche dit ce que ces minutes FONT, pas seulement leur durée');
 
   /* ==================================================================== */
   console.log('');

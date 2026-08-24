@@ -288,21 +288,44 @@ function choixParLibelle(morceau) {
   console.log('\n--- P1 : la note du mois ---');
   await ouvrirEnfant();
 
-  var pNote = parTexte(corps, '.pane', 'Mes notes sur ce mois');
-  assert(!!pNote, 'P1 : le panneau de note est présent');
-  assert(txt(pNote).indexOf('Pour vous seule') !== -1,
-    'P1 : il dit à qui la note est destinée');
-  assert(txt(pNote).indexOf('n’apparaît pas sur le document remis à la famille') !== -1,
-    'A1 : et à qui elle NE l’est pas');
-  assert(!!zoneNote(), 'P1 : la zone de texte est là');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.3 : LE PANNEAU DE NOTE DEVIENT UN REPLI.
+     Les cinq `.pane` de l'espace enfant deviennent quatre `.fold` (composant
+     du socle, lot 24). Trois conséquences pour ce fichier, et pourquoi :
 
-  /* V8-17 — la note vient AVANT les réserves (« Compteurs » au lot 12,
-     renommé « Réserves » au §18.5 ; l'ordre, lui, ne change pas). */
-  var panneaux = corps.querySelectorAll('.pane');
-  var iNote = Array.prototype.indexOf.call(panneaux, pNote);
-  var iCompteurs = Array.prototype.indexOf.call(panneaux,
-    parTexte(corps, '.pane', 'Réserves de'));
-  assert(iNote < iCompteurs, 'V8-17 : la note est placée avant les réserves');
+     - le TITRE raccourcit : « Mes notes sur ce mois » -> « Mes notes ». La
+       barre haute dit déjà l'enfant et le mois ; « sur ce mois » répétait.
+     - la mention « Pour vous seule — jamais sur le document remis à la
+       famille » quitte le corps du panneau pour devenir LE PLACEHOLDER du
+       champ. Elle est désormais à l'endroit exact où Maria écrit, au moment
+       où elle écrit — c'est A1, dit plus près du geste, pas dit moins fort.
+       Le mot « jamais » remplace « n'apparaît pas » : plus court, plus net.
+     - « la note AVANT les réserves » (V8-17) : l'ordre des spécifications du
+       lot 25 est « Le mois, Réserves, Mes notes, Depuis le début ». Le motif
+       de V8-17 — « la chercher sous trois panneaux de chiffres revient à ne
+       pas l'écrire » — tombe avec les replis : les quatre têtes tiennent sur
+       un écran, « Mes notes » est visible sans rien dérouler. CE QUI RESTE
+       EXIGÉ, et c'est le fond : la note ne se mérite pas.
+
+     AUCUNE ASSERTION DE COMPORTEMENT N'EST AFFAIBLIE : l'enregistrement à la
+     sortie du champ, l'absence d'écriture inutile, la note modifiable après
+     clôture, son absence de tout document, et le comportement en échec sont
+     tous rejoués à l'identique par la suite de ce fichier.
+     ====================================================================== */
+  var pNote = parTexte(corps, '.fold', 'Mes notes');
+  assert(!!pNote, 'P1 : le repli de note est présent');
+  assert(!!zoneNote(), 'P1 : la zone de texte est là');
+  assert(zoneNote().getAttribute('placeholder').indexOf('Pour vous seule') !== -1,
+    'P1 : il dit à qui la note est destinée');
+  assert(zoneNote().getAttribute('placeholder')
+           .indexOf('jamais sur le document remis à la famille') !== -1,
+    'A1 : et à qui elle NE l’est pas');
+
+  var replis = corps.querySelectorAll('.fold');
+  var iNote = Array.prototype.indexOf.call(replis, pNote);
+  assert(iNote >= 0 && iNote <= 2,
+    'V8-17 : la tête « Mes notes » reste dans le premier écran, sans qu’il ' +
+    'faille dérouler un autre repli (rang ' + iNote + ')');
 
   var z = zoneNote();
   z.value = 'Les parents sont arrivés en retard le 6.';
@@ -350,7 +373,7 @@ function choixParLibelle(morceau) {
 
   /* A2 — modifiable après clôture. */
   await ouvrirEnfant();
-  var pNote2 = parTexte(corps, '.pane', 'Mes notes sur ce mois');
+  var pNote2 = parTexte(corps, '.fold', 'Mes notes');
   assert(!!pNote2, 'A2 : le panneau de note est toujours là sur un mois clôturé');
   assert(!!zoneNote() && zoneNote().disabled !== true,
     'A2 : la note reste MODIFIABLE après clôture — un mois clôturé fige des ' +
@@ -414,7 +437,32 @@ function choixParLibelle(morceau) {
     'A3 : et ce repère est un CARACTÈRE — une forme, jamais une couleur seule');
   assert((cellule6.getAttribute('aria-description') || '').indexOf('annotée') !== -1,
     'A3 : il est aussi annoncé aux lecteurs d’écran');
-  assert(txt(corps).indexOf('Note') !== -1, 'A3 : la légende du calendrier le nomme');
+  /* EXIGENCE CHANGÉE — LOT 25 §25.3 : LA LÉGENDE DE SEPT ENTRÉES DISPARAÎT,
+     remplacée par la ligne de synthèse chiffrée. L'ancienne assertion
+     vérifiait que le mot « Note » figurait dans cette légende.
+
+     RIEN NE SE PERD (A.2) : le repère `•` est nommé aux DEUX endroits où on
+     le lit vraiment — dans la description de la cellule pour un lecteur
+     d'écran (assertion juste au-dessus, inchangée), et dans la FEUILLE DU
+     JOUR, qui affiche la note elle-même dès qu'on touche la journée. Une
+     légende en bas d'écran demandait à Maria de mémoriser une correspondance ;
+     l'appui la lui donne.
+
+     L'ASSERTION SE RENFORCE : au lieu de chercher un mot dans une légende, on
+     ouvre la journée annotée et on exige que LA NOTE soit là. */
+  cellule6.click();
+  await pause(200);
+  var choixNote = parTexte(sheet, '.choice', 'Une note sur la journée');
+  assert(!!choixNote, 'A3 : la journée touchée offre le choix « Une note sur la journée »');
+  choixNote.click();
+  await pause(200);
+  var valeursSaisies = Array.prototype.map.call(
+    sheet.querySelectorAll('input, textarea'), function (e) { return e.value; }).join(' | ');
+  assert(valeursSaisies.indexOf('Sortie au parc') !== -1,
+    'A3 : et la note DE CETTE JOURNÉE y est, en toutes lettres (obtenu « ' +
+    valeursSaisies + ' »)');
+  window.Kit.fermerFeuille();
+  await pause(80);
 
   /* ==================================================================== */
   /* P3 — Heures ajoutées                                                 */
@@ -606,7 +654,7 @@ function choixParLibelle(morceau) {
 
   /* Le détail figure aussi dans « Le mois de … ». */
   await ouvrirEnfant();
-  var pMois = parTexte(corps, '.pane', 'Le mois de');
+  var pMois = parTexte(corps, '.fold', 'Le mois');
   assert(sansInsecable(txt(pMois)).indexOf('non réclamées') !== -1,
     'le bloc du mois détaille les heures non réclamées');
 
@@ -663,7 +711,7 @@ function choixParLibelle(morceau) {
   zp.value = 'Un texte qui ne partira pas.';
   zp.dispatchEvent(new dom.window.Event('blur'));
   await pause(250);
-  var pNoteP = parTexte(corps, '.pane', 'Mes notes sur ce mois');
+  var pNoteP = parTexte(corps, '.fold', 'Mes notes');
   assert(txt(pNoteP).indexOf('n’a pas été enregistrée') !== -1,
     'B.0-9 : l’échec est dit');
   assert(txt(pNoteP).indexOf('Votre texte est toujours là') !== -1,

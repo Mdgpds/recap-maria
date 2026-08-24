@@ -231,14 +231,23 @@ var sheet = document.getElementById('sheet');
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 3 }, true);
   await pause(350);
 
-  var pMois = parTexte(corps, '.pane', 'Le mois de');
-  assert(!!pMois, 'l’espace enfant affiche le panneau du mois');
+  /* LOT 25 §25.3 — les panneaux `.pane` de l'espace enfant sont devenus des
+     replis `.fold`, et leurs titres ont perdu ce que la barre haute dit déjà :
+     « Le mois de mars » -> « Le mois », « Réserves de Alpha » -> « Réserves ».
+     Les LIGNES, elles, sont les mêmes — c'est ce que ce fichier vérifie. Une
+     nuance de casse : « Mois partiel — n jours… » était une ligne à part
+     entière ; c'est maintenant le SOUS-TEXTE de la ligne « Salaire net »,
+     donc « mois partiel — n jours… », attaché au montant qu'il explique.
+     L'exigence ne bouge pas : un montant proratisé ne s'affiche jamais sans
+     son quotient, et il est désormais impossible de lire l'un sans l'autre. */
+  var pMois = parTexte(corps, '.fold', 'Le mois');
+  assert(!!pMois, 'l’espace enfant affiche le repli du mois');
   assert(txt(pMois).indexOf(eurN(rMars.salaireNetProrataCentimes)) !== -1,
     'B4 : l’espace enfant affiche le net PRORATISÉ (' +
     window.Kit.eur(rMars.salaireNetProrataCentimes) + ')');
   assert(txt(pMois).indexOf(eurN(rMars.salaireNetCentimes)) === -1,
     'B4 : et plus le net contractuel (' + window.Kit.eur(rMars.salaireNetCentimes) + ')');
-  assert(txt(pMois).indexOf('Mois partiel') !== -1,
+  assert(txt(pMois).toLowerCase().indexOf('mois partiel') !== -1,
     'B4 : le quotient est dit — un montant proratisé sans son quotient est indéfendable');
 
   /* Le document, lui, ne régresse pas. */
@@ -395,8 +404,8 @@ var sheet = document.getElementById('sheet');
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 3 }, true);
   await pause(400);
 
-  var pRes = parTexte(corps, '.pane', 'Réserves de');
-  assert(!!pRes, 'le panneau des réserves est là');
+  var pRes = parTexte(corps, '.fold', 'Réserves');
+  assert(!!pRes, 'le repli des réserves est là');
   assert(txt(pRes).indexOf('0h00') === -1,
     'B5 : il n’affiche plus « 0h00 » sur un compteur négatif');
   assert(txt(pRes).indexOf('− 9h00') !== -1 || txt(pRes).indexOf('−') !== -1,

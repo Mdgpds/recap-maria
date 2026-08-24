@@ -47,19 +47,6 @@
      une absence d'enfant saisie le même jour ne doit pas disparaître. */
   var TYPES_ABSENCE_MARIA = ['conge_maria', 'sans_solde', 'hors_planning'];
 
-  /* Échelles des barres de progression des compteurs (§2.2 : « en barres de
-     progression avec équivalence en jours »). Une barre a besoin d'un maximum,
-     et le cahier des charges n'en définit aucun pour la récupération : on
-     affiche donc l'équivalent de 10 jours de congé. Pour les congés payés, le
-     maximum est celui de RG-11 : 30 jours ouvrables acquis par exercice.
-     Ces deux valeurs ne servent QU'À la longueur de la barre. */
-  var BARRE_RECUP_EN_JOURS = 10;
-  /* LOT 17 §17.6 — la barre des congés payés est graduée en JOURS, plus en
-     dixièmes : 30 jours ouvrables, c'est l'acquisition d'une année pleine
-     (RG-11). Sa conversion en minutes demande le facteur du contrat, qui vient
-     des conditions du mois. */
-  var BARRE_CP_EN_JOURS = 30;
-
   /* Jusqu'où la navigation du calendrier peut aller au-delà du mois courant.
      Correction A13 : « Mes congés » propose de poser jusqu'à vingt semaines en
      avant ; sans cette borne, un congé d'été posé en mai devenait invisible et
@@ -115,6 +102,42 @@
     barre(ctx.barre, contrat, m);
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Calcul du mois…'));
 
+    return chargerVue(contrat, m, ctx.corps).then(function () {
+      /* LA BARRE EST REDESSINÉE ICI, ET C'EST NÉCESSAIRE : le ⋯ ne doit pas
+         apparaître sur un mois clôturé, un mois à venir ou un contrat rangé,
+         et rien de tout cela n'est connu avant que le mois soit chargé. La
+         première `barre()` ci-dessus n'existe que pour ne pas laisser un
+         en-tête vide pendant le calcul. Un bouton qui refuse est pire qu'un
+         bouton absent : il laisse croire à une panne. */
+      barre(ctx.barre, contrat, m);
+      Kit.vider(ctx.corps);
+      rendre(ctx.corps);
+
+      /* LOT 20 (§20.4 d) — ARRIVÉE DEPUIS L'ÉCRAN DE LA PÉRIODE. Toucher un
+         jour là-bas ouvre sa feuille ICI, dans le mois du jour : la feuille de
+         saisie vit à un seul endroit, et Maria voit l'effet de sa déclaration
+         sur le mois au moment où elle la fait. Le paramètre est ignoré si le
+         jour n'est pas (ou plus) dans une période. */
+      if (ctx.params.jour && !vue.lectureSeule && enFamiliarisation(ctx.params.jour)) {
+        feuilleFamiliarisation(ctx.params.jour);
+      }
+    });
+  }
+
+  /* LOT 25 (§25.1) — LE CHARGEMENT EST SÉPARÉ DU RENDU.
+
+     L'Accueil ouvre la feuille de déclaration de familiarisation SANS passer
+     par l'espace enfant : « un appui pour le faire ». Cette feuille a besoin
+     de tout ce que l'écran sait — les conditions du mois, les journées, les
+     périodes, l'état clôturé des autres contrats — sinon son aperçu chiffré
+     et ses garde-fous seraient faux.
+
+     Plutôt que d'en écrire une seconde, plus pauvre, l'Accueil monte le MÊME
+     contexte et ouvre la MÊME feuille. `corps` vaut `null` dans ce cas :
+     l'écran n'est pas redessiné ici, et `App.rafraichir()` remet l'Accueil à
+     jour après l'écriture — « la carte se met à jour sans quitter
+     l'Accueil » (§25.3, cas 1). */
+  function chargerVue(contrat, m, corps) {
     /* Les journées des AUTRES contrats et l'état clôturé de chacun sont
        chargés ici, pas au moment du geste : une écriture groupée doit savoir
        ce qu'elle va écraser (A5) et qui elle n'a pas le droit de toucher (B1)
@@ -152,7 +175,18 @@
         Kit.iso(m.annee, m.mois, Kit.nbJoursDansMois(m.annee, m.mois))),
       /* Lot 12 — la note du mois. Un échec ici ne vide pas l'écran : on perd
          un espace d'écriture, pas un chiffre. */
-      global.DB.getNoteMensuelle(contrat.id, m.annee, m.mois).catch(function () { return null; })
+      global.DB.getNoteMensuelle(contrat.id, m.annee, m.mois).catch(function () { return null; }),
+      /* §25.2 — le compte des samedis déjà décomptés sur l'année de référence
+         du mois affiché. Contrôle de CAPACITÉ, pas rattrapage d'erreur : un
+         décor de test ancien n'expose pas la fonction et n'a aucun samedi
+         compté. Une erreur RÉELLE rend `null`, et la ligne dit « non lus ». */
+      (function () {
+        if (typeof global.DB.compterSamedisAnnee !== 'function') return Promise.resolve(0);
+        var ref = Kit.anneeDeReferenceConges(
+          m.annee + '-' + String(m.mois).padStart(2, '0') + '-15');
+        return global.DB.compterSamedisAnnee(contrat.id, ref.debut, ref.fin)
+          .catch(function () { return null; });
+      })()
     ]).then(function (r) {
       /* L'ordre des résultats suit celui du tableau ci-dessus. Une insertion au
          milieu décalerait tout : les index sont donc nommés une fois, ici. */
@@ -199,57 +233,16 @@
            ordinaire. L'écran se redessine sans repasser par le réseau : entrer
            et sortir du mode ne doit rien recharger. */
         selection: null,
-        corps: ctx.corps
+        /* §25.2 — LES SAMEDIS COMPTÉS, pour le repli « Réserves ». `null`
+           veut dire « pas pu lire » : l'écran le dit, il ne le remplace
+           jamais par zéro (§8) — un quota faux et crédible sur le chiffre
+           que les familles contestent est le pire résultat possible. */
+        samedis: r[7],
+        corps: corps || null
       };
       vue.lectureSeule = vue.range || vue.clos;
-      Kit.vider(ctx.corps);
-      rendre(ctx.corps);
-
-      /* LOT 20 (§20.4 d) — ARRIVÉE DEPUIS L'ÉCRAN DE LA PÉRIODE. Toucher un
-         jour là-bas ouvre sa feuille ICI, dans le mois du jour : la feuille de
-         saisie vit à un seul endroit, et Maria voit l'effet de sa déclaration
-         sur le mois au moment où elle la fait. Le paramètre est ignoré si le
-         jour n'est pas (ou plus) dans une période : un jour qu'on aurait sorti
-         de la période entre-temps ne doit pas ouvrir une feuille qui ne
-         correspond plus à rien. */
-      if (ctx.params.jour && !vue.lectureSeule && enFamiliarisation(ctx.params.jour)) {
-        feuilleFamiliarisation(ctx.params.jour);
-      }
+      return vue;
     });
-  }
-
-  /* LOT 20 (§20.4 b) — « DÉCLAREZ LES HEURES D'AUJOURD'HUI ».
-
-     Ne s'affiche que si AUJOURD'HUI tombe dans la période et que le mois
-     affiché est bien celui d'aujourd'hui : sur un mois passé, l'encart
-     réclamerait une déclaration pour un jour qui n'est pas dans l'écran, et le
-     bouton ouvrirait une feuille sur une case invisible. */
-  function encartFamiliarisationDuJour() {
-    if (!vue || vue.lectureSeule) return null;
-    var d = vue.aujourdhui;
-    if (!d || d.slice(0, 7) !== vue.annee + '-' + String(vue.mois).padStart(2, '0')) return null;
-    var etat = vue.famJours && vue.famJours[d];
-    if (!etat) return null;
-
-    /* `note` pour l'état paisible, `warnbox` pour l'orange qui réclame : ce
-       sont les deux boîtes de l'application, et l'orange n'apparaît que là où
-       Maria a quelque chose à faire. */
-    var boite = Kit.ce('div', etat.declare ? 'note' : 'warnbox');
-    if (etat.declare) {
-      boite.appendChild(Kit.ce('b', null, 'Aujourd’hui — ' + Kit.heures(etat.minutes) +
-        ' déclarées' + (etat.entretien ? ' · entretien compté' : ' · sans entretien')));
-      var bc = Kit.bouton('btn sm nt', function () { feuilleFamiliarisation(d); });
-      bc.textContent = 'Corriger';
-      boite.appendChild(bc);
-      return boite;
-    }
-    boite.appendChild(Kit.ce('b', null, 'Déclarez les heures d’aujourd’hui'));
-    boite.appendChild(Kit.ce('div', null,
-      'Pendant la familiarisation, seules les heures déclarées sont payées.'));
-    var b = Kit.bouton('btn sm', function () { feuilleFamiliarisation(d); });
-    b.textContent = 'Déclarer maintenant';
-    boite.appendChild(b);
-    return boite;
   }
 
   /* Le détail jour par jour de la familiarisation du mois, indexé par date.
@@ -276,6 +269,14 @@
      avant et après (§18.1 A2 — ils viennent du même `vue`). */
   function redessiner() {
     if (!vue || !vue.corps) return;
+    /* La BARRE change avec le mode : le ⋯ disparaît en sélection, et le
+       retour quitte le mode au lieu de l'écran. La redessiner ici évite un
+       aller-retour réseau — c'est tout l'intérêt du redessin local. */
+    var barreEl = document.getElementById('barre');
+    if (barreEl) {
+      if (vue.selection) barreSelection(barreEl, vue.contrat, { annee: vue.annee, mois: vue.mois });
+      else barre(barreEl, vue.contrat, { annee: vue.annee, mois: vue.mois });
+    }
     Kit.vider(vue.corps);
     rendre(vue.corps);
   }
@@ -295,8 +296,13 @@
        enfant ». Défaut de la spécification, même nature que le §4.2 du lot 9 ;
        tranché de la même façon, et signalé en restitution. */
     barreEl.appendChild(Kit.avatar(contrat, 'pt'));
+    /* §25.2 — « Léa · août 2026 ». Le point médian remplace le tiret cadratin
+       de la maquette : à 320 px, le tiret et ses deux espaces coûtaient trois
+       caractères au prénom. L'ANNÉE reste, elle : la maquette ne montrait que
+       deux mois, l'application en montre douze en arrière et douze en avant,
+       et « Léa · août » sur un août de l'an dernier serait un piège. */
     barreEl.appendChild(Kit.ce('span', 'ti',
-      contrat.prenom_enfant + ' — ' + Kit.libelleMoisAnnee(m.annee, m.mois)));
+      contrat.prenom_enfant + ' · ' + Kit.libelleMoisAnnee(m.annee, m.mois)));
 
     var nav = Kit.ce('div', 'nav');
     var prec = Kit.bouton(null, function () { changerMois(-1); });
@@ -325,7 +331,36 @@
 
     nav.appendChild(prec);
     nav.appendChild(suiv);
+
+    /* §25.2 — LE ⋯ OUVRE LA MULTI-SÉLECTION. Elle vivait dans une barre
+       « Marquer plusieurs jours d'un coup » posée SOUS le calendrier, avec
+       son titre, son sous-titre et son bouton : quatre lignes pour un
+       raccourci. Le geste ne change pas d'un caractère — il change de porte.
+
+       Le bouton n'apparaît pas sur un mois clôturé, un contrat rangé ou un
+       mois à venir : un bouton qui refuse est pire qu'un bouton absent, il
+       laisse croire à une panne. */
+    if (!vue || (!vue.lectureSeule && !vue.aVenir && vue.entree)) {
+      var plus = Kit.bouton(null, function () { entrerSelection(); });
+      plus.textContent = '⋯';
+      plus.setAttribute('aria-label', 'Marquer plusieurs jours');
+      nav.appendChild(plus);
+    }
     barreEl.appendChild(nav);
+  }
+
+  /* La barre du mode sélection : le retour QUITTE le mode plutôt que l'écran,
+     et le ⋯ n'y a plus de sens. */
+  function barreSelection(barreEl, contrat, m) {
+    Kit.vider(barreEl);
+    barreEl.className = 'bar';
+    var bk = Kit.bouton('bk', function () { quitterSelection(); });
+    bk.textContent = '✕';
+    bk.setAttribute('aria-label', 'Quitter la sélection');
+    barreEl.appendChild(bk);
+    barreEl.appendChild(Kit.avatar(contrat, 'pt'));
+    barreEl.appendChild(Kit.ce('span', 'ti',
+      contrat.prenom_enfant + ' · sélection'));
   }
 
   function changerMois(delta) {
@@ -337,145 +372,650 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Les quatre panneaux                                                 */
+  /* L'ÉCRAN (§25.2) — dans cet ordre, et pas un autre                   */
+  /*                                                                     */
+  /*   1. la barre : retour, avatar, « Léa · août 2026 », ‹ ›, ⋯         */
+  /*   2. UN ENCART AU MAXIMUM, les autres repliés derrière une ligne     */
+  /*   3. le calendrier, directement                                      */
+  /*   4. la ligne de synthèse chiffrée                                   */
+  /*   5. les replis : Le mois · Réserves · Mes notes · Depuis le début   */
+  /*   6. la barre fixe : vérifier et clôturer                            */
+  /*                                                                     */
+  /* CE QUI DISPARAÎT, ET OÙ IL VIT MAINTENANT (A.2) :                    */
+  /*                                                                     */
+  /*   · l'encart d'état du mois (« chiffres provisoires ») — la pastille */
+  /*     de la carte d'accueil et le bandeau du document le disent déjà ; */
+  /*   · la légende permanente de sept entrées et la phrase « Rien à      */
+  /*     faire les jours normaux » — la ligne de synthèse chiffrée les    */
+  /*     remplace, et elle dit la même chose avec les vrais nombres ;     */
+  /*   · les quatre panneaux blancs — ils deviennent des replis, « Le     */
+  /*     mois » ouvert par défaut ;                                        */
+  /*   · les barres de progression des compteurs — des lignes chiffrées ; */
+  /*   · la barre « Marquer plusieurs jours d'un coup » sous le           */
+  /*     calendrier — le ⋯ de la barre haute ouvre la multi-sélection.    */
+  /*                                                                     */
+  /* AUCUN AVERTISSEMENT NE SE PERD : tous entrent dans la file de        */
+  /* l'encart unique (`pointsAvertissement`), le plus urgent visible, les */
+  /* autres derrière « N autres points à voir › ».                        */
   /* ------------------------------------------------------------------ */
 
   function rendre(corps) {
-    var c = vue.contrat;
-
-    if (vue.range) {
-      corps.appendChild(Kit.note('Ancien contrat — lecture seule',
-        'Ce contrat est terminé et rangé. Tout son historique reste consultable, ' +
-        'mais aucune journée ne peut plus être modifiée.'));
-    } else if (vue.clos) {
-      /* Lot 13 : un mois clôturé peut désormais être rouvert. Le bandeau ne
-         promet donc plus l'impossibilité de modifier — il promet la stabilité
-         des chiffres tant que le mois reste clôturé, et il ouvre la porte,
-         explicitement. Ce qui protège Maria n'est plus le verrou, c'est la
-         trace : d'où le lien vers l'historique, à côté de la réouverture. */
-      var recapClos = vue.entree && vue.entree.recap;
-      corps.appendChild(Kit.note(
-        'Mois clôturé' + (recapClos && recapClos.fige_le ? ' le ' + Kit.dateLongue(recapClos.fige_le) : ''),
-        'Les chiffres de ce mois ne bougeront plus, même si un salaire change plus tard. ' +
-        'Les journées de ' + c.prenom_enfant + ' ne se modifient pas tant qu’il est clôturé.'));
-      if (global.UiReouverture && recapClos) {
-        global.UiReouverture.actionsMoisCloture(corps, {
-          contrat: c, annee: vue.annee, mois: vue.mois, recap: recapClos
-        });
-      }
-    } else if (vue.aVenir) {
-      corps.appendChild(Kit.note('Mois à venir',
-        'Vous pouvez y consulter et retirer les congés déjà posés. Le mois ne se clôture ' +
-        'qu’une fois passé.'));
-    } else {
-      corps.appendChild(bandeauEtat());
+    /* EN MODE SÉLECTION, L'ÉCRAN CHANGE DE MÉTIER : le calendrier et le pied
+       de sélection, rien d'autre. Les replis et la barre fixe n'y ont pas
+       leur place — on ne consulte pas ses compteurs pendant qu'on coche des
+       journées, et les faire cohabiter obligerait à faire défiler pour
+       atteindre « Valider ». */
+    if (vue.selection) {
+      corps.appendChild(panneauCalendrier());
+      corps.appendChild(piedSelection());
+      return;
     }
 
-    /* LOT 20 (§20.4 b) — L'ENCART DU JOUR, TOUT EN HAUT.
-       Pendant la familiarisation, la seule chose qui compte est de déclarer
-       les heures du jour : elle est donc au-dessus des chiffres. */
-    var encartFam = encartFamiliarisationDuJour();
-    if (encartFam) corps.appendChild(encartFam);
-
-    /* LOT 16 §16.1 b) — EN TÊTE DE L'ÉCRAN. C'est le premier chose que Maria
-       doit lire quand une répartition ne tient plus : avant, l'écran entier
-       ne s'affichait pas. */
-    var reserves = panneauReservesInsuffisantes();
-    if (reserves) corps.appendChild(reserves);
-
-    var ecartes = panneauChoixEcartes();
-    if (ecartes) corps.appendChild(ecartes);
-
+    rendreEncarts(corps);
     corps.appendChild(panneauCalendrier());
 
     if (!vue.entree) {
       corps.appendChild(Kit.ce('p', 'vide',
-        'Le contrat de ' + c.prenom_enfant + ' ne couvre pas ' +
+        'Le contrat de ' + vue.contrat.prenom_enfant + ' ne couvre pas ' +
         Kit.libelleMoisAnnee(vue.annee, vue.mois) + '.'));
-      corps.appendChild(boutonFiche());
+      corps.appendChild(replisDepuisDebut().bloc);
       return;
     }
 
-    corps.appendChild(panneauMois());
-    /* V8-17 — la note vient AVANT les compteurs. Retour de Maria : c'est ce
-       qu'elle relit le plus souvent, et le chercher sous trois panneaux de
-       chiffres revenait à ne pas l'écrire. */
-    corps.appendChild(panneauNote());
-    corps.appendChild(panneauCompteurs());
-    corps.appendChild(panneauDepuisDebut());
-    corps.appendChild(boutonFiche());
+    corps.appendChild(ligneSynthese());
 
-    /* Le pied de sélection vient EN DERNIER et se fixe en bas de l'écran : il
-       doit rester visible pendant que Maria fait défiler le calendrier, sans
-       quoi le compte et l'effet chiffré ne servent à rien. */
-    if (vue.selection) corps.appendChild(piedSelection());
-  }
+    /* Noah : le repli « Familiarisation », OUVERT, avec son jour-par-jour
+       cliquable et son total. Il passe avant « Le mois » : pendant
+       l'adaptation, c'est lui le mois. */
+    var fam = vue.entree.resultat.familiarisation;
+    if (fam && fam.actif) corps.appendChild(replisFamiliarisation(fam).bloc);
 
-  /* Bandeau d'état du mois (§6.3, V8-02). Jusqu'ici l'espace enfant se taisait
-     sur un mois en cours : les chiffres s'affichaient tels quels, et rien ne
-     disait qu'ils allaient encore bouger. Maria lisait « 1 142,50 € à verser »
-     le 11 août comme elle l'aurait lu le 31.
+    corps.appendChild(replisLeMois().bloc);
+    corps.appendChild(replisReserves().bloc);
+    corps.appendChild(replisNotes().bloc);
+    corps.appendChild(replisDepuisDebut().bloc);
 
-     Un mois clôturé a déjà son bandeau plus haut (lot 13) : celui-ci ne traite
-     donc que les deux autres états. */
-  function bandeauEtat() {
-    if (vue.etat === 'en_cours') {
-      return Kit.note('Chiffres provisoires',
-        vue.restants > 0
-          ? 'Il reste ' + phraseJoursRestants(vue.restants) + ' en ' +
-            Kit.libelleMois(vue.mois) + '.'
-          : 'Ce mois n’est pas terminé.');
-    }
-
-    /* LOT 18 §18.4 (7·A5) — LE BANDEAU DU 25.
-
-       L'état « à clôturer » est juste : dès le 25, Maria connaît l'essentiel
-       de son mois et la tuile doit apparaître à l'accueil. Mais la PHRASE ne
-       l'était pas : du 25 au 31, l'espace enfant affirmait « Ce mois est
-       terminé » d'un mois qui court encore, et la mention « Chiffres
-       provisoires » disparaissait le jour même où elle devient la plus utile —
-       il reste des journées à venir, et le total affiché va encore bouger.
-
-       Un mois ÉCHU garde le bandeau d'origine : là, il est vrai. */
-    if (moisEnCours()) {
-      return Kit.note('Chiffres provisoires — le mois n’est pas fini',
-        (vue.restants > 0
-          ? 'Il reste ' + phraseJoursRestants(vue.restants) + ' en ' +
-            Kit.libelleMois(vue.mois) + '. '
-          : '') +
-        'Vous pouvez déjà vérifier les journées ; la clôture attendra la fin du mois.');
-    }
-
-    return Kit.warnbox('Ce mois est terminé',
-      'Vérifiez les journées, puis clôturez-le.');
-  }
-
-  /* Le mois affiché est-il le mois COURANT ? Comparé à `vue.aujourdhui`, lue
-     une seule fois à l'ouverture de l'écran : aucune fonction ne relit
-     l'horloge, sans quoi le comportement du 25 redeviendrait invérifiable. */
-  function moisEnCours() {
-    var auj = String(vue.aujourdhui || '');
-    if (auj.length < 7) return false;
-    return Number(auj.slice(0, 4)) === vue.annee && Number(auj.slice(5, 7)) === vue.mois;
-  }
-
-  function phraseJoursRestants(n) {
-    return n + (n > 1 ? ' jours travaillés' : ' jour travaillé');
-  }
-
-  function boutonFiche() {
-    var b = Kit.bouton('btn nt', function () {
-      global.App.aller('fiche', { contratId: vue.contrat.id });
+    /* LA BARRE FIXE, EN DERNIER : plus besoin de défiler pour la trouver. */
+    var pied = Kit.stick(corps);
+    var b = Kit.bouton(vue.clos ? 'btn nt' : 'btn', function () {
+      global.App.aller('document', {
+        contratId: vue.contrat.id, annee: vue.annee, mois: vue.mois
+      });
     });
-    b.textContent = 'Contrat, horaires et rémunération';
-    return b;
+    b.textContent = vue.clos ? 'Revoir le mois clôturé' : 'Vérifier et clôturer le mois';
+    pied.appendChild(b);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 2. UN ENCART AU MAXIMUM — et la file derrière lui (§25.2)           */
+  /*                                                                     */
+  /* L'écran empilait jusqu'à six boîtes : bandeau d'état, encart du jour */
+  /* de familiarisation, réserves insuffisantes, choix écarté, mois       */
+  /* clôturé, mois à venir. Six boîtes en tête d'écran, c'est un écran    */
+  /* qu'on ne lit plus.                                                   */
+  /*                                                                     */
+  /* Un seul est visible — LE PLUS URGENT. Les autres se déroulent d'un   */
+  /* appui sur « N autres points à voir › ». Rien n'est perdu : c'est     */
+  /* l'ORDRE et le NOMBRE qui changent, jamais l'existence.               */
+  /*                                                                     */
+  /* Priorité, du plus urgent au moins : blocage > ventilation écartée >  */
+  /* heures à déclarer > état du mois.                                    */
+  /* ------------------------------------------------------------------ */
+
+  function rendreEncarts(corps) {
+    var points = pointsAvertissement();
+    if (!points.length) return;
+
+    corps.appendChild(encartDe(points[0]));
+    if (points.length === 1) return;
+
+    var reste = points.slice(1);
+    var zone = Kit.ce('div');
+    var plus = Kit.bouton('lien', function () {
+      plus.hidden = true;
+      reste.forEach(function (p) { zone.appendChild(encartDe(p)); });
+    });
+    plus.textContent = reste.length === 1
+      ? '1 autre point à voir ›'
+      : reste.length + ' autres points à voir ›';
+    plus.style.marginLeft = '0';
+    plus.style.marginBottom = '9px';
+    corps.appendChild(plus);
+    corps.appendChild(zone);
+  }
+
+  function encartDe(p) {
+    if (!p.action) {
+      var e = Kit.enc(p.ton, p.titre, null);
+      return e;
+    }
+    return Kit.encOne(p.ton, p.titre, p.action);
+  }
+
+  /* La file, dans l'ordre de priorité. Chaque point : { ton, titre, action }.
+     Un point sans action reste une boîte d'information, pas un bouton. */
+  function pointsAvertissement() {
+    var c = vue.contrat;
+    var e = vue.entree;
+    var points = [];
+
+    /* --- 1. LES BLOCAGES ---------------------------------------------- */
+
+    /* LE CONTRAT RANGÉ EST LE PREMIER DES BLOCAGES : il verrouille TOUS ses
+       mois, et il explique pourquoi rien ne s'ouvre. Sans lui, Maria appuie
+       sur des journées inertes sans qu'un mot lui dise pourquoi — c'est le
+       défaut que le §18.6 a corrigé, et il ne doit pas revenir.
+
+       LE LIBELLÉ REPREND CELUI DU BANDEAU RETIRÉ AU LOT 25, mot pour mot, et
+       l'encart devient une PORTE : le texte complet (« ses mois ne se
+       clôturent plus ; le document reste disponible ») vit sur le document,
+       qui est aussi le seul écran encore utile sur un contrat rangé. */
+    if (vue.range) {
+      points.push({
+        ton: '',
+        titre: 'Ancien contrat — lecture seule',
+        action: function () {
+          global.App.aller('document', {
+            contratId: c.id, annee: vue.annee, mois: vue.mois
+          });
+        }
+      });
+    }
+
+    if (e && e.salaireManquant) {
+      points.push({
+        ton: 'w',
+        titre: 'Aucune rémunération connue pour ce mois',
+        action: function () { global.App.aller('fiche', { contratId: c.id }); }
+      });
+    } else if (e && !e.resultat.salaireNetCentimes) {
+      /* Un barème SANS NET est un barème présent : le moteur ne signale
+         rien, et le total affiché est amputé du salaire entier. */
+      points.push({
+        ton: 'w',
+        titre: 'Le net de votre barème n’est pas renseigné',
+        action: function () { global.App.aller('fiche', { contratId: c.id }); }
+      });
+    }
+
+    if (e && e.avantInitialisation) {
+      points.push({
+        ton: 'w',
+        titre: 'Mois antérieur à la reprise de vos compteurs',
+        action: function () { feuilleAvantInitialisation(); }
+      });
+    }
+
+    if (vue.chaine && vue.chaine.tronquee) {
+      points.push({
+        ton: 'w',
+        titre: 'Historique trop long — seuls les ' + Chaine.MAX_MOIS + ' derniers mois sont rejoués',
+        action: function () { global.App.aller('fiche', { contratId: c.id }); }
+      });
+    }
+
+    /* --- 2. LA VENTILATION ÉCARTÉE ------------------------------------
+       Le texte complet des deux avertissements (43 et 33 mots) vit sur la
+       FEUILLE qu'ouvre l'encart, avec le bouton « Corriger la répartition ».
+       C'est le déplacement exact demandé par le §25.2 : la phrase ne
+       disparaît pas, elle arrive au moment où Maria peut agir dessus. */
+    var ecartees = (e && e.imputationsEcartees) || [];
+    if (ecartees.length) {
+      points.push({
+        ton: 'w',
+        titre: ecartees.length > 1
+          ? 'Des répartitions ne correspondent plus à vos réserves'
+          : 'Une répartition ne correspond plus à vos réserves',
+        action: function () { feuilleReservesInsuffisantes(ecartees); }
+      });
+    }
+
+    var changees = imputationsChoixEcarte();
+    if (changees.length) {
+      points.push({
+        ton: 'w',
+        titre: changees.length > 1
+          ? 'Deux répartitions de congés ne correspondent plus'
+          : 'Une répartition de congés ne correspond plus',
+        action: function () { feuilleChoixEcartes(changees); }
+      });
+    }
+
+    /* --- 3. LES HEURES À DÉCLARER -------------------------------------- */
+    var fj = famDuJourVue();
+    if (fj && !vue.lectureSeule) {
+      points.push({
+        ton: fj.declare ? '' : 'w',
+        titre: fj.declare
+          ? 'Aujourd’hui — ' + Kit.heures(fj.minutes) + ' déclarées'
+          : 'Aujourd’hui : heures à déclarer',
+        action: function () { feuilleFamiliarisation(fj.jour); }
+      });
+    }
+
+    /* --- 4. L'ÉTAT DU MOIS ---------------------------------------------
+       « Chiffres provisoires » DISPARAÎT (§25.2) : la pastille de la carte
+       d'accueil et le bandeau du document le disent déjà, et le répéter ici
+       occupait la place du seul encart visible.
+
+       Restent les deux états qui portent un GESTE ou un verrou : le mois
+       clôturé (vers son document, avec la porte de réouverture) et le mois à
+       venir, qui explique pourquoi les cases ne s'ouvrent pas. */
+    if (vue.clos) {
+      var recapClos = e && e.recap;
+      points.push({
+        ton: '',
+        titre: 'Mois clôturé' +
+          (recapClos && recapClos.fige_le ? ' le ' + Kit.dateLongue(recapClos.fige_le) : ''),
+        action: function () {
+          global.App.aller('document', {
+            contratId: c.id, annee: vue.annee, mois: vue.mois
+          });
+        }
+      });
+    } else if (vue.aVenir) {
+      points.push({
+        ton: '',
+        titre: 'Mois à venir — il ne se clôture qu’une fois passé',
+        action: null
+      });
+    }
+
+    return points;
+  }
+
+  /* Les périodes dont le choix a été écarté parce que les JOURNÉES ont
+     changé — distinct des réserves insuffisantes, qui ont leur propre point
+     et leur propre remède. */
+  function imputationsChoixEcarte() {
+    var appliquees = (vue.entree && vue.entree.resultat &&
+                      vue.entree.resultat.imputationsAppliquees) || [];
+    var vues = {};
+    ((vue.entree && vue.entree.imputationsEcartees) || []).forEach(function (x) {
+      vues[x.date_debut + '|' + x.date_fin] = true;
+    });
+    return appliquees.filter(function (i) {
+      if (i.source !== 'defaut_choix_ecarte') return false;
+      var ch = i.choixEcarte;
+      return !(ch && vues[ch.date_debut + '|' + ch.date_fin]);
+    });
+  }
+
+  /* LA FEUILLE DES RÉSERVES INSUFFISANTES — le texte complet, et le geste.
+
+     C'est ici que vivent désormais les 43 mots de l'avertissement : nommer la
+     période, dire ce que Maria avait choisi et ce dont elle dispose, puis
+     ouvrir la ventilation DE CETTE PÉRIODE. Trois nombres qui viennent tous
+     du moteur, et un bouton. */
+  function feuilleReservesInsuffisantes(ecartees) {
+    var c = vue.contrat;
+    Kit.ouvrirFeuille(
+      ecartees.length > 1
+        ? 'Des répartitions ne correspondent plus'
+        : 'Une répartition ne correspond plus',
+      c.prenom_enfant + ' — ' + Kit.libelleMoisAnnee(vue.annee, vue.mois),
+      function (corps) {
+        corps.appendChild(Kit.enc('w', null,
+          ecartees.map(phraseEcartee).join(' ') +
+          ' En attendant, ces congés sont décomptés dans l’ordre habituel de ce contrat.'));
+        var b = Kit.bouton('btn', function () {
+          Kit.fermerFeuille();
+          global.App.aller('conges', {
+            annee: vue.annee, mois: vue.mois, corrigerImputation: ecartees[0].id
+          }, true);
+        });
+        b.textContent = 'Corriger la répartition';
+        corps.appendChild(b);
+      });
+  }
+
+  /* La même chose pour l'autre cause : les journées posées ont changé depuis
+     la répartition. Deux causes, deux phrases, deux gestes. */
+  function feuilleChoixEcartes(ecartees) {
+    var c = vue.contrat;
+    Kit.ouvrirFeuille(
+      ecartees.length > 1
+        ? 'Deux répartitions ne correspondent plus'
+        : 'Une répartition ne correspond plus',
+      c.prenom_enfant, function (corps) {
+        corps.appendChild(Kit.enc('w', null,
+          ecartees.map(function (i) {
+            return 'Du ' + Kit.dateLongue(i.date_debut) + ' au ' + Kit.dateLongue(i.date_fin);
+          }).join(', ') + '. Les journées posées ont changé depuis. L’ordre du ' +
+          'contrat s’applique en attendant : refaites la répartition depuis ' +
+          '« Mes congés ».'));
+        var b = Kit.bouton('btn', function () {
+          Kit.fermerFeuille();
+          global.App.aller('conges', { annee: vue.annee, mois: vue.mois }, true);
+        });
+        b.textContent = 'Ouvrir « Mes congés »';
+        corps.appendChild(b);
+      });
+  }
+
+  function feuilleAvantInitialisation() {
+    Kit.ouvrirFeuille('Mois antérieur à la reprise de vos compteurs', null,
+      function (corps) {
+        corps.appendChild(Kit.enc('w', null,
+          'Les jours et les montants de ce mois sont exacts, mais les soldes ' +
+          'd’heures et de congés payés y repartent de zéro : ils ne veulent rien ' +
+          'dire. Ce mois se consulte, il ne se clôture pas.'));
+      });
+  }
+
+  /* Ce que la familiarisation attend AUJOURD'HUI sur le mois affiché, ou
+     `null`. Le moteur ne connaît pas la date du jour : c'est la seule chose
+     que cet écran sait et que lui ignore. */
+  function famDuJourVue() {
+    var d = vue.aujourdhui;
+    if (!d || d.slice(0, 7) !== vue.annee + '-' + String(vue.mois).padStart(2, '0')) return null;
+    var etat = vue.famJours && vue.famJours[d];
+    if (!etat) return null;
+    return { jour: d, declare: !!etat.declare, minutes: etat.minutes || 0 };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 4. LA LIGNE DE SYNTHÈSE CHIFFRÉE (§25.2)                            */
+  /*                                                                     */
+  /* « 14 présents · 1 absence · 5 congés · 1 férié ». Elle REMPLACE la   */
+  /* légende permanente de sept entrées et la phrase « Rien à faire les   */
+  /* jours normaux » : au lieu d'expliquer le codage des couleurs, elle    */
+  /* donne les nombres — et le codage s'explique tout seul en regardant   */
+  /* le calendrier juste au-dessus.                                       */
+  /*                                                                     */
+  /* AUCUN CALCUL : les présences viennent du moteur (`joursPresence`),   */
+  /* le reste est un COMPTAGE des journées saisies et des fériés du       */
+  /* planning — la même lecture d'almanach que `Kit.joursTravailles`.     */
+  /* ------------------------------------------------------------------ */
+
+  function ligneSynthese() {
+    var r = vue.entree.resultat;
+    var bloc = Kit.ce('div', 'synth');
+    var journees = vue.journees || {};
+    var planning = planningDuMois();
+
+    function compter(type) {
+      return Object.keys(journees).filter(function (d) {
+        return journees[d].type === type;
+      }).length;
+    }
+
+    var fam = r.familiarisation;
+    if (fam && fam.actif) {
+      bloc.appendChild(Kit.pill('', fam.joursDeclares +
+        (fam.joursDeclares > 1 ? ' j déclarés' : ' j déclaré')));
+      var restants = fam.joursDeLaPeriode - fam.joursDeclares;
+      if (restants > 0) {
+        bloc.appendChild(Kit.pill('w', restants +
+          (restants > 1 ? ' à déclarer' : ' à déclarer')));
+      }
+    }
+
+    bloc.appendChild(Kit.pill('g', r.joursPresence +
+      (r.joursPresence > 1 ? ' présents' : ' présent')));
+
+    var abs = compter('absence_enfant');
+    if (abs) bloc.appendChild(Kit.pill('w', abs + (abs > 1 ? ' absences' : ' absence')));
+
+    var cg = compter('conge_maria');
+    if (cg) bloc.appendChild(Kit.pill('b', cg + (cg > 1 ? ' congés' : ' congé')));
+
+    var ss = compter('sans_solde');
+    if (ss) bloc.appendChild(Kit.pill('b', ss + (ss > 1 ? ' sans solde' : ' sans solde')));
+
+    var nt = compter('hors_planning');
+    if (nt) bloc.appendChild(Kit.pill('g', nt + (nt > 1 ? ' non travaillés' : ' non travaillé')));
+
+    var feries = Kit.joursPlanning(vue.contrat, planning, vue.annee, vue.mois)
+      .filter(function (d) { return !journees[d] && Feries.estJourFerie(d); }).length;
+    if (feries) bloc.appendChild(Kit.pill('g', feries + (feries > 1 ? ' fériés' : ' férié')));
+
+    return bloc;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 5. LES REPLIS                                                       */
+  /* ------------------------------------------------------------------ */
+
+  /* « Le mois » — ouvert par défaut, ses lignes actuelles, le total en `tot`.
+     Ce sont EXACTEMENT les lignes du panneau d'hier : aucune n'est retirée,
+     elles changent seulement de contenant. */
+  function replisLeMois() {
+    var c = vue.contrat;
+    var r = vue.entree.resultat;
+    var f = Kit.fold('Le mois', Kit.eur(r.totalAVerserCentimes), { ouvert: true });
+    var l = f.corps;
+
+    /* Correction A6 : sur un mois clôturé, le dénominateur d'hier venait d'un
+       comptage fait en direct sur les bornes COURANTES du contrat — un
+       archivage postérieur faisait passer « 20 j sur 20 » à « 20 j sur 14 »
+       sur un document censé ne plus bouger. */
+    if (vue.clos) {
+      Kit.ligneLn(l, 'Jours de présence', Kit.jours(r.joursPresence));
+    } else {
+      var travailles = Kit.joursTravailles(c, planningDuMois(), vue.annee, vue.mois,
+        vue.journees).length;
+      Kit.ligneLn(l, 'Jours de présence', r.joursPresence + ' j sur ' + travailles);
+    }
+
+    /* Le net DÛ, jamais le net contractuel (correction B4 du lot 17). */
+    var partiel = Chaine.proratOuNull(r);
+    Kit.ligneLn(l, 'Salaire net', Kit.eur(Chaine.netDuMois(r)), {
+      sous: partiel
+        ? 'mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
+          partiel.joursDuMois + ' au contrat'
+        : null
+    });
+
+    Kit.ligneLn(l, libelleEntretien(r), Kit.eur(r.entretienCentimes));
+
+    if (r.joursCongesDecomptes > 0) {
+      var imp = r.imputation || {};
+      var bouts = [];
+      if (imp.joursSurCp) bouts.push(imp.joursSurCp + ' j payés');
+      if (imp.joursSurSup) bouts.push(imp.joursSurSup + ' j récup');
+      if (imp.joursSansSolde) bouts.push(imp.joursSansSolde + ' j sans solde');
+      Kit.ligneLn(l, 'Congés posés', r.joursCongesDecomptes + ' j ouvrables', {
+        sous: bouts.join(' · ') || null,
+        alerte: (imp.joursSansSolde || 0) > 0
+      });
+    }
+    if (r.retenueSansSoldeCentimes > 0) {
+      Kit.ligneLn(l, 'Retenue pour jour(s) sans solde',
+        '− ' + Kit.eur(r.retenueSansSoldeCentimes), { alerte: true });
+    }
+
+    var sousSup = [];
+    if (r.minutesSupAjoutees > 0) sousSup.push('dont ' + Kit.heures(r.minutesSupAjoutees) + ' ajoutées');
+    if (r.minutesSupRenoncees > 0) {
+      sousSup.push('dont ' + Kit.heures(r.minutesSupRenoncees) + ' non réclamées, votre choix');
+    }
+    Kit.ligneLn(l, 'Heures sup du mois', Kit.heures(r.minutesSupAcquises), {
+      sous: sousSup.join(' · ') || null
+    });
+
+    Kit.ligneLn(l, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
+    return f;
+  }
+
+  /* « Réserves » — congés payés, récupération, et LES SAMEDIS COMPTÉS.
+     Les barres de progression disparaissent : une barre demande un maximum,
+     et le cahier des charges n'en définit aucun pour la récupération — celle
+     d'hier était graduée sur dix jours choisis à la main. Les nombres, eux,
+     sont vrais.
+
+     LE COMPTEUR BAS ARRIVE ICI (décision d'Adrien du 24 août) : il quitte
+     l'Accueil, où il occupait une carte du bloc « Aujourd'hui » sans porter
+     aucun geste du jour. */
+  function replisReserves() {
+    var cs = vue.entree.resultat.compteurSortie || {};
+    var parJour = mpjc();
+    var cp = Kit.cpSolde(cs);
+    var sup = Kit.supSolde(cs);
+    var enJours = Chaine.reservesEnJours(cond(), cs);
+
+    var f = Kit.fold('Réserves',
+      (cp < 0 ? '− ' + Kit.joursCp(-cp, parJour) : Kit.joursCp(cp, parJour)) +
+      ' · ' + (sup < 0 ? '− ' + Kit.heures(-sup) : Kit.heures(sup)));
+    var l = f.corps;
+
+    var bas = cp >= 0 && Kit.cpEstBas(cp, cond());
+    Kit.ligneLn(l, 'Congés payés',
+      cp < 0 ? '− ' + Kit.joursCp(-cp, parJour) : Kit.joursCp(cp, parJour), {
+        sous: cp < 0
+          ? 'Solde négatif — signalez-le : des congés ont été décomptés au-delà de vos droits'
+          : (bas ? 'Réserve basse — un congé d’été passerait en partie sans solde' : null),
+        alerte: bas || cp < 0
+      });
+
+    Kit.ligneLn(l, 'Récupération',
+      sup < 0 ? '− ' + Kit.heures(-sup) : Kit.heures(sup), {
+        sous: sup < 0
+          ? 'Vous devez ce temps : il se rattrapera sur vos prochaines heures supplémentaires'
+          : enJours.joursSup + ' jour' + (enJours.joursSup > 1 ? 's' : '') + ' de congé — ' +
+            Kit.duree(parJour) + ' accumulées = 1 jour',
+        alerte: sup < 0
+      });
+
+    /* §7 — LES SAMEDIS COMPTÉS, contrat par contrat, sur l'année de
+       référence du mois affiché. `null` veut dire « pas pu lire » : on le
+       dit, on ne le remplace pas par zéro. */
+    Kit.ligneLn(l, 'Samedis comptés',
+      vue.samedis == null
+        ? 'non lus'
+        : vue.samedis + ' sur ' + Kit.QUOTA_SAMEDIS,
+      { sous: vue.samedis == null ? null : Kit.anneeDeReferenceConges(
+          vue.annee + '-' + String(vue.mois).padStart(2, '0') + '-15').libelle });
+
+    /* §18.6 — devant deux réserves, laquelle sera consommée ? La réponse vient
+       du réglage daté (RG-07), jamais d'un ordre supposé. */
+    Kit.ligneLn(l, 'Déduits d’abord sur', premiereReserve());
+    return f;
+  }
+
+  /* « Mes notes » — le textarea, et sa mention « pour vous seule » EN
+     PLACEHOLDER : c'est la phrase qui doit être là au moment d'écrire, pas
+     une ligne de plus à lire avant. */
+  function replisNotes() {
+    var c = vue.contrat;
+    var texte = (vue.note && vue.note.texte) || '';
+    var f = Kit.fold('Mes notes', texte ? '1' : '—');
+
+    var zone = document.createElement('textarea');
+    /* `note-mois` est le REPÈRE STABLE de ce champ — la feuille de style et
+       les tests le désignent par lui depuis le lot 12. Il survit au changement
+       de composant : `inp` dit comment il est peint, `note-mois` dit ce qu'il
+       est. */
+    zone.className = 'inp note-mois';
+    zone.rows = 3;
+    zone.value = texte;
+    zone.setAttribute('aria-label', 'Note sur ' + Kit.libelleMoisAnnee(vue.annee, vue.mois) +
+      ' pour ' + c.prenom_enfant);
+    zone.placeholder = 'Pour vous seule — jamais sur le document remis à la famille.';
+
+    var etat = Kit.ce('div', 'msg');
+    f.corps.appendChild(zone);
+    f.corps.appendChild(etat);
+
+    /* Enregistrement à la SORTIE du champ, pas à chaque frappe. */
+    var dernierEnregistre = zone.value;
+    zone.addEventListener('blur', function () {
+      var t = zone.value;
+      if (t === dernierEnregistre) return;
+      etat.className = 'msg';
+      etat.textContent = 'Enregistrement…';
+      global.DB.enregistrerNoteMensuelle(c.id, vue.annee, vue.mois, t)
+        .then(function (n) {
+          dernierEnregistre = t;
+          vue.note = n;
+          etat.className = 'msg ok';
+          etat.textContent = 'Note enregistrée.';
+          f.majValeur(t ? '1' : '—');
+        })
+        .catch(function (e) {
+          /* B.0-9 : l'échec est visible, et il dit ce qui reste vrai. Le
+             texte est toujours à l'écran : Maria peut le recopier ailleurs. */
+          etat.className = 'msg ko';
+          etat.textContent = 'La note n’a pas été enregistrée : ' + Kit.messageErreur(e) +
+            ' Votre texte est toujours là.';
+        });
+    });
+
+    if (vue.clos) {
+      f.corps.appendChild(Kit.ce('p', 'sb q',
+        'Ce mois est clôturé, mais cette note reste modifiable : elle ne fait pas ' +
+        'partie des chiffres.'));
+    }
+    return f;
+  }
+
+  /* « Depuis le début » — dont LA LIGNE VERS LA FICHE. Le bouton pleine
+     largeur « Contrat, horaires et rémunération » qui fermait l'écran devient
+     une ligne de ce repli : on y va rarement, et la barre fixe a pris sa
+     place en bas. */
+  function replisDepuisDebut() {
+    var c = vue.contrat;
+    var jusquIci = (vue.chaine.mois || []).filter(function (e) {
+      return Chaine.cmpMois(e.annee, e.mois, vue.annee, vue.mois) <= 0;
+    });
+    var a = Chaine.agregerPeriode(jusquIci);
+
+    var f = Kit.fold('Depuis le début',
+      a.nbMois + (a.nbMois > 1 ? ' mois' : ' mois'));
+    var l = f.corps;
+    Kit.ligneLn(l, 'Contrat démarré le', Kit.dateLongue(c.date_debut));
+    Kit.ligneLn(l, 'Jours de présence', Kit.jours(a.joursPresence));
+    Kit.ligneLn(l, 'Entretien versé', Kit.eur(a.entretienCentimes));
+    Kit.ligneLn(l, 'Voir tous ses mois', '›', {
+      onclick: function () {
+        global.App.aller('historique', {
+          contratId: c.id, annee: vue.annee, mois: vue.mois
+        });
+      }
+    });
+    Kit.ligneLn(l, 'Contrat, horaires et rémunération', '›', {
+      onclick: function () { global.App.aller('fiche', { contratId: c.id }); }
+    });
+    return f;
+  }
+
+  /* « Familiarisation » — ouvert, le jour-par-jour CLIQUABLE et le total.
+     C'est le même détail que l'écran de la période, ramené là où Maria
+     travaille : pendant l'adaptation, l'espace enfant EST l'écran du jour. */
+  function replisFamiliarisation(fam) {
+    var f = Kit.fold('Familiarisation',
+      Kit.heures(fam.minutesDeclarees) + ' déclarées', { ouvert: true });
+    var l = f.corps;
+
+    (fam.jours || []).forEach(function (x) {
+      var etat;
+      if (x.declare) {
+        etat = Kit.heures(x.minutes) + (x.entretien ? ' · entretien' : ' · sans entretien');
+      } else if (x.jour > vue.aujourdhui) {
+        etat = 'à venir';
+      } else {
+        etat = 'à déclarer';
+      }
+      var ouvrable = !vue.lectureSeule && x.jour <= vue.aujourdhui;
+      Kit.ligneLn(l, Kit.jourLong(x.jour), etat, {
+        alerte: !x.declare && x.jour <= vue.aujourdhui,
+        onclick: ouvrable ? function () { feuilleFamiliarisation(x.jour); } : null
+      });
+    });
+
+    Kit.ligneLn(l, 'Total déclaré',
+      Kit.heures(fam.minutesDeclarees) + ' — ' + Kit.eur(fam.brutCentimes || 0),
+      { total: true });
+    f.corps.appendChild(Kit.ce('p', 'sb q',
+      fam.joursDeclares + ' jour' + (fam.joursDeclares > 1 ? 's' : '') +
+      ' déclaré' + (fam.joursDeclares > 1 ? 's' : '') + ' sur ' + fam.joursDeLaPeriode +
+      '. Seules les heures déclarées sont payées.'));
+    return f;
   }
 
   /* --- 1. Calendrier ------------------------------------------------- */
 
   function panneauCalendrier() {
-    var c = vue.contrat;
-    var p = Kit.pane('Le calendrier de ' + c.prenom_enfant);
     var table = Kit.ce('table', 'cal');
 
     var thead = Kit.ce('tr');
@@ -503,39 +1043,7 @@
     });
     while (col <= 7) { tr.appendChild(cellVide()); col++; }
     table.appendChild(tr);
-
-    p.appendChild(table);
-
-    var lg = Kit.ce('div', 'lg');
-    /* Lot 8 — la légende s'accorde elle aussi. C'est là que le point médian
-       sautait le plus aux yeux : il figurait DEUX FOIS sous chaque calendrier,
-       tous les jours, pour un enfant dont le genre est parfaitement connu. */
-    legende(lg, 'g1', majuscule(Kit.accordDe(c, 'présent')));
-    legende(lg, 'g2', majuscule(Kit.accordDe(c, 'absent')));
-    legende(lg, 'g5', 'Mon congé');
-    legende(lg, 'g3', 'Férié');
-    legende(lg, 'g6', 'À venir');
-    var lgN = Kit.ce('span');
-    lgN.appendChild(Kit.ce('i', 'gnote', '•'));
-    lgN.appendChild(document.createTextNode('Note'));
-    lg.appendChild(lgN);
-    var lgH = Kit.ce('span');
-    lgH.appendChild(Kit.ce('i', 'gheures', '◆'));
-    lgH.appendChild(document.createTextNode('Heures ajustées'));
-    lg.appendChild(lgH);
-    p.appendChild(lg);
-
-    /* V8-06 — La phrase permanente sous le calendrier. Elle dit la règle qui
-       fait tout tenir : la saisie par exception. Sans elle, Maria croit devoir
-       marquer chaque jour présent, et ce qu'elle NE fait pas lui paraît un
-       oubli plutôt qu'une réponse.
-
-       Les minutes viennent du CONTRAT, jamais d'une valeur en dur. Un contrat
-       qui prévoit 45 minutes le dira — et une constante « 30 » serait fausse
-       ce jour-là, sans que rien ne le signale. */
-    p.appendChild(phrasePermanente());
-    p.appendChild(barreMultiSelection());
-    return p;
+    return table;
   }
 
   /* ------------------------------------------------------------------ */
@@ -558,36 +1066,6 @@
   /* résultats du moteur. C'est ce qui rend l'annonce et le résultat      */
   /* identiques par construction (A2).                                    */
   /* ------------------------------------------------------------------ */
-
-  function barreMultiSelection() {
-    var c = vue.contrat;
-    var bloc = Kit.ce('div', 'multi');
-
-    /* Un mois clôturé ou un contrat rangé n'entre pas en mode sélection : le
-       bouton n'apparaît pas du tout. Un bouton qui refuse est pire qu'un
-       bouton absent — il laisse croire à une panne. Un mois à venir non plus :
-       on ne saisit pas l'avenir (V8-05). */
-    if (vue.lectureSeule || vue.aVenir || !vue.entree) return bloc;
-
-    if (vue.selection) {
-      var bStop = Kit.bouton('btn nt', function () { quitterSelection(); });
-      bStop.textContent = 'Quitter la sélection';
-      bloc.appendChild(bStop);
-      return bloc;
-    }
-
-    var t = Kit.ce('div', 'multi-tt');
-    t.appendChild(Kit.ce('b', null, 'Marquer plusieurs jours d’un coup'));
-    t.appendChild(Kit.ce('span', null,
-      'Absences de ' + c.prenom_enfant + ', ou retour à la présence. ' +
-      'Pour vos congés, passez par l’onglet Mes congés.'));
-    bloc.appendChild(t);
-
-    var b = Kit.bouton('btn nt', function () { entrerSelection(); });
-    b.textContent = 'Choisir plusieurs jours';
-    bloc.appendChild(b);
-    return bloc;
-  }
 
   /* Une journée qui porte une absence de MARIA n'est pas sélectionnable : son
      chemin est l'onglet des congés. Tout le reste l'est — y compris une
@@ -807,42 +1285,7 @@
       retour);
   }
 
-  function phrasePermanente() {
-    var c = vue.contrat;
-
-    /* LOT 18 §18.6 — SUR UN MOIS CLÔTURÉ, « Rien à faire les jours normaux »
-       INVITE À TOUCHER DES JOURS INERTES. La phrase est juste sur un mois
-       ouvert et trompeuse sur un mois verrouillé : Maria appuie, rien ne se
-       passe, et rien ne lui dit pourquoi. On la remplace par ce qui est vrai
-       ici — et par le chemin pour rouvrir. */
-    if (vue.clos) {
-      var recap = vue.entree && vue.entree.recap;
-      var nc = Kit.note('Ce mois est clôturé',
-        'Vous pouvez le rouvrir depuis le bandeau ci-dessus si vous devez corriger.' +
-        (recap && !recap.transmis_le
-          ? ' Il n’a pas encore été transmis.'
-          : ''));
-      nc.classList.add('permanente');
-      return nc;
-    }
-
-    var minutes = reg('minutes_sup_jour', 0);
-    var n = Kit.note('Rien à faire les jours normaux',
-      'Tant que vous ne touchez pas un jour, ' + c.prenom_enfant + ' est ' +
-      Kit.accordDe(c, 'compté') + ' ' + Kit.accordDe(c, 'présent') +
-      (minutes > 0 ? ' et vos ' + Kit.duree(minutes) + ' sont dues' : '') + '.');
-    n.classList.add('permanente');
-    return n;
-  }
-
   function majuscule(t) { return String(t).charAt(0).toUpperCase() + String(t).slice(1); }
-
-  function legende(parent, classe, texte) {
-    var s = Kit.ce('span');
-    s.appendChild(Kit.ce('i', classe));
-    s.appendChild(document.createTextNode(texte));
-    parent.appendChild(s);
-  }
 
   function cellVide() { return Kit.ce('td', 'we no'); }
 
@@ -988,95 +1431,6 @@
     return td;
   }
 
-  /* --- 2. Le mois ---------------------------------------------------- */
-
-  function panneauMois() {
-    var c = vue.contrat;
-    var e = vue.entree;
-    var r = e.resultat;
-    var p = Kit.pane('Le mois de ' + c.prenom_enfant);
-
-    if (e.salaireManquant) {
-      p.appendChild(Kit.warnbox('Aucune rémunération connue pour ce mois',
-        'Renseignez un barème dans la fiche contrat : les jours sont exacts, mais les montants ' +
-        'resteront à zéro tant qu’aucun barème n’est enregistré.'));
-    } else if (!r.salaireNetCentimes) {
-      /* Correction B2 : un barème SANS NET est un barème présent — le moteur
-         ne signale rien, et le total affiché est amputé du salaire entier. */
-      p.appendChild(Kit.warnbox('Le net de votre barème n’est pas renseigné',
-        'Ce récapitulatif est incomplet : le total ci-dessous ne contient que l’indemnité ' +
-        'd’entretien. Le net figure sur la fiche de paie ; complétez-le dans la fiche contrat ' +
-        'avant de clôturer.'));
-    }
-    if (e.avantInitialisation) {
-      p.appendChild(Kit.warnbox('Mois antérieur à la reprise de vos compteurs',
-        'Les jours et les montants sont exacts, mais les soldes d’heures et de congés payés ' +
-        'y repartent de zéro : ils ne veulent rien dire. Ce mois se consulte, il ne se clôture pas.'));
-    }
-
-    var l = Kit.lines(p);
-    /* Correction A6 : sur un mois clôturé, le numérateur vient de l'instantané
-       et le dénominateur d'un comptage fait en direct sur les bornes COURANTES
-       du contrat. Un archivage postérieur faisait passer « 20 j sur 20 » à
-       « 20 j sur 14 » sur un document censé ne plus bouger. Sur un mois
-       clôturé, on n'affiche donc que le chiffre figé. */
-    if (vue.clos) {
-      Kit.ligne(l, 'Jours de présence', Kit.jours(r.joursPresence));
-    } else {
-      var travailles = Kit.joursTravailles(c, planningDuMois(), vue.annee, vue.mois,
-        vue.journees).length;
-      Kit.ligne(l, 'Jours de présence', r.joursPresence + ' j sur ' + travailles);
-    }
-    /* CORRECTION B4 DE LA RELECTURE DU LOT 17 — LE NET AFFICHÉ EST LE NET DÛ.
-       Cet écran montrait le net CONTRACTUEL au-dessus d'un total qui, lui,
-       était proratisé : 780,00 € de salaire net et 485,45 € à verser sur le
-       même mois, sans un mot pour expliquer l'écart. Et le document remis à la
-       famille annonçait 425,45 €. Deux écrans du même mois se contredisaient
-       de 354,55 €. */
-    Kit.ligne(l, 'Salaire net', Kit.eur(Chaine.netDuMois(r)));
-    var partiel = Chaine.proratOuNull(r);
-    if (partiel) {
-      /* La même phrase que sur le document : un montant proratisé sans son
-         quotient est indéfendable. */
-      Kit.ligne(l, 'Mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
-        partiel.joursDuMois + ' au contrat', '', { discret: true });
-    }
-    Kit.ligne(l, libelleEntretien(r), Kit.eur(r.entretienCentimes));
-
-    if (r.joursCongesDecomptes > 0) {
-      var imp = r.imputation || {};
-      Kit.ligne(l, 'Congés posés ce mois-ci', r.joursCongesDecomptes + ' j ouvrables');
-      Kit.ligne(l, '— sur vos congés payés', Kit.jours(imp.joursSurCp || 0), { discret: true });
-      Kit.ligne(l, '— sur votre récupération', Kit.jours(imp.joursSurSup || 0), { discret: true });
-      if ((imp.joursSansSolde || 0) > 0) {
-        Kit.ligne(l, '— sans solde', Kit.jours(imp.joursSansSolde), { alerte: true });
-      }
-    }
-    if (r.retenueSansSoldeCentimes > 0) {
-      Kit.ligne(l, 'Retenue pour jour(s) sans solde', '−' + Kit.eur(r.retenueSansSoldeCentimes), { alerte: true });
-    }
-    Kit.ligne(l, 'Heures sup du mois', Kit.heures(r.minutesSupAcquises), { discret: true });
-    /* LOT 12 — le détail, quand ces cas existent. Un total de 8 h qui cache
-       1 h 15 ajoutées et 1 h 30 auxquelles Maria a renoncé ne dit pas la même
-       chose qu'un total de 8 h ordinaire. */
-    if (r.minutesSupAjoutees > 0) {
-      Kit.ligne(l, '— dont ajoutées', Kit.heures(r.minutesSupAjoutees), { discret: true });
-    }
-    if (r.minutesSupRenoncees > 0) {
-      Kit.ligne(l, '— dont non réclamées, votre choix',
-        Kit.heures(r.minutesSupRenoncees), { discret: true });
-    }
-    Kit.ligne(l, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
-
-    var b = Kit.bouton(e.fige ? 'btn nt' : 'btn', function () {
-      global.App.aller('document', { contratId: c.id, annee: vue.annee, mois: vue.mois });
-    });
-    b.textContent = e.fige ? 'Revoir le mois clôturé' : 'Vérifier et clôturer le mois';
-    b.style.marginBottom = '0';
-    p.appendChild(b);
-    return p;
-  }
-
   function libelleEntretien(r) {
     var parJour = reg('entretien_centimes_jour', 0);
     var attendu = r.joursPresence * parJour;
@@ -1086,178 +1440,13 @@
     return 'Indemnité d’entretien';
   }
 
-  /* --- LOT 12 : la note du mois --------------------------------------
-     POUR MARIA SEULE. C'est écrit sous le titre, et c'est vrai : cette note
-     n'entre dans aucun instantané de récapitulatif (migration 009), donc dans
-     aucun document transmis.
-
-     Elle reste MODIFIABLE APRÈS CLÔTURE, contrairement à tout le reste de cet
-     écran. Un mois clôturé fige des montants, pas des souvenirs — et c'est
-     souvent après coup qu'on se rappelle pourquoi une semaine avait été
-     compliquée. */
-  function panneauNote() {
-    var c = vue.contrat;
-    var p = Kit.pane('Mes notes sur ce mois');
-    p.appendChild(Kit.ce('p', 'sb q',
-      'Pour vous seule — n’apparaît pas sur le document remis à la famille.'));
-
-    var zone = document.createElement('textarea');
-    zone.className = 'note-mois';
-    zone.rows = 3;
-    zone.value = (vue.note && vue.note.texte) || '';
-    zone.setAttribute('aria-label', 'Note sur ' + Kit.libelleMoisAnnee(vue.annee, vue.mois) +
-      ' pour ' + c.prenom_enfant);
-    zone.placeholder = 'Un mot pour vous — ce qui s’est passé, ce qu’il faudra penser à faire…';
-
-    var etat = Kit.ce('div', 'sb q');
-    p.appendChild(zone);
-    p.appendChild(etat);
-
-    /* Enregistrement à la SORTIE du champ, pas à chaque frappe : une note
-       s'écrit en plusieurs phrases, et un enregistrement par lettre ferait
-       autant d'allers-retours réseau. */
-    var dernierEnregistre = zone.value;
-    zone.addEventListener('blur', function () {
-      var texte = zone.value;
-      if (texte === dernierEnregistre) return;
-      etat.textContent = 'Enregistrement…';
-      global.DB.enregistrerNoteMensuelle(c.id, vue.annee, vue.mois, texte)
-        .then(function (n) {
-          dernierEnregistre = texte;
-          vue.note = n;
-          etat.textContent = 'Note enregistrée.';
-        })
-        .catch(function (e) {
-          /* B.0-9 : l'échec est visible, et il dit ce qui reste vrai. Le texte
-             est toujours à l'écran : Maria peut le recopier ailleurs. */
-          etat.textContent = 'La note n’a pas été enregistrée : ' + Kit.messageErreur(e) +
-            ' Votre texte est toujours là.';
-          etat.className = 'sb wa';
-        });
-    });
-
-    if (vue.clos) {
-      p.appendChild(Kit.ce('p', 'sb q',
-        'Ce mois est clôturé, mais cette note reste modifiable : elle ne fait pas ' +
-        'partie des chiffres.'));
-    }
-    return p;
-  }
-
-  /* --- 3. Réserves de ce contrat (§18.5) ----------------------------- */
-
-  /* LOT 18 §18.5 — « RÉSERVES », ET LES CONGÉS PAYÉS EN PREMIER.
-
-     Deux corrections de vocabulaire et d'ordre, qui disent la même chose :
-     ce panneau répond à « qu'est-ce qu'il me reste ? », pas à « où en est
-     l'instrument ? ». Une réserve est ce qui reste ; un compteur est un
-     appareil. Et les congés payés passent devant, parce que c'est sur eux que
-     les congés se prennent d'abord — l'ordre à l'écran doit être celui de la
-     consommation, sinon il enseigne l'inverse de la règle.
-
-     LE NOMBRE DE JOURS VIENT DU MOTEUR. `Math.floor(minutes / parJour)` était
-     RG-05 réécrite ici, dans un écran — exactement ce que le contrôle B.0-5
-     interdit. `Chaine.reservesEnJours` fait déjà ce calcul pour l'écran des
-     congés ; il n'y a aucune raison qu'il existe deux fois. */
-  function panneauCompteurs() {
-    var c = vue.contrat;
-    var cs = vue.entree.resultat.compteurSortie || {};
-    var p = Kit.pane('Réserves de ' + c.prenom_enfant);
-
-    var parJour = mpjc();
-    var enJours = Chaine.reservesEnJours(cond(), cs);
-
-    /* CORRECTION B5 — LE SOLDE AFFICHÉ EST LE SOLDE RÉEL, SIGNE COMPRIS.
-       Ce panneau lisait les valeurs bornées à zéro : un compteur à −9 h
-       s'affichait « 0h00 », pendant que le document remis à la famille
-       montrait le vrai solde. §17.5 A4 : « le compteur peut être négatif, et
-       l'écran le dit ». */
-    var cp = Kit.cpSolde(cs);
-    var bas = cp >= 0 && Kit.cpEstBas(cp, cond());
-    compteur(p, {
-      titre: 'Congés payés',
-      valeur: cp < 0 ? '− ' + Kit.joursCp(-cp, parJour) : Kit.joursCp(cp, parJour),
-      pct: pourcent(Math.max(0, cp), BARRE_CP_EN_JOURS * parJour),
-      note: cp < 0
-        ? 'Solde négatif — signalez-le : des congés ont été décomptés au-delà de vos droits'
-        : (bas
-          ? 'Réserve basse — un congé d’été passerait en partie sans solde'
-          : 'sur 30 jours ouvrables acquis par an'),
-      bas: bas || cp < 0
-    });
-
-    var minutes = Kit.supSolde(cs);
-    compteur(p, {
-      titre: 'Récupération',
-      valeur: minutes < 0 ? '− ' + Kit.heures(-minutes) : Kit.heures(minutes),
-      pct: pourcent(Math.max(0, minutes), BARRE_RECUP_EN_JOURS * parJour),
-      note: minutes < 0
-        ? 'Vous devez ce temps : il se rattrapera sur vos prochaines heures supplémentaires'
-        : enJours.joursSup + ' jour' + (enJours.joursSup > 1 ? 's' : '') + ' de congé — ' +
-          Kit.duree(parJour) + ' accumulées = 1 jour',
-      bas: minutes < 0
-    });
-
-    /* LOT 18 §18.6 — DEVANT DEUX RÉSERVES, LAQUELLE SERA CONSOMMÉE ?
-       La question se pose à chaque congé posé, et la réponse était introuvable
-       sans ouvrir la fiche du contrat. Elle vient du réglage daté (RG-07),
-       jamais d'un ordre supposé. */
-    p.appendChild(Kit.note('Vos congés se prennent d’abord sur ' + premiereReserve(),
-      'Modifiable dans le contrat de ' + c.prenom_enfant + '.'));
-    return p;
-  }
-
+  /* §18.6 — DEVANT DEUX RÉSERVES, LAQUELLE SERA CONSOMMÉE ? La question se
+     pose à chaque congé posé, et la réponse était introuvable sans ouvrir la
+     fiche du contrat. Elle vient du réglage daté (RG-07), jamais d'un ordre
+     supposé. */
   function premiereReserve() {
     return reg('ordre_imputation', 'cp_puis_sup') === 'sup_puis_cp'
       ? 'votre récupération' : 'les congés payés';
-  }
-
-  function pourcent(valeur, max) {
-    if (!max) return 0;
-    return Math.max(0, Math.min(100, Math.round(valeur * 100 / max)));
-  }
-
-  function compteur(parent, o) {
-    var bloc = Kit.ce('div', 'cptr' + (o.bas ? ' low' : ''));
-    var cl = Kit.ce('div', 'cl');
-    cl.appendChild(Kit.ce('b', null, o.titre));
-    cl.appendChild(Kit.ce('span', null, o.valeur));
-    bloc.appendChild(cl);
-    var cb = Kit.ce('div', 'cb');
-    var i = Kit.ce('i');
-    i.style.width = o.pct + '%';
-    cb.appendChild(i);
-    bloc.appendChild(cb);
-    bloc.appendChild(Kit.ce('div', 'cn', o.note));
-    parent.appendChild(bloc);
-  }
-
-  /* --- 4. Depuis le début du contrat --------------------------------- */
-
-  function panneauDepuisDebut() {
-    var c = vue.contrat;
-    var jusquIci = (vue.chaine.mois || []).filter(function (e) {
-      return Chaine.cmpMois(e.annee, e.mois, vue.annee, vue.mois) <= 0;
-    });
-    var a = Chaine.agregerPeriode(jusquIci);
-
-    var p = Kit.pane('Depuis le début du contrat', {
-      texte: 'Historique',
-      onclick: function () {
-        global.App.aller('historique', { contratId: c.id, annee: vue.annee, mois: vue.mois });
-      }
-    });
-    var l = Kit.lines(p);
-    Kit.ligne(l, 'Contrat démarré le', Kit.dateLongue(c.date_debut), { discret: true });
-    Kit.ligne(l, 'Mois de garde', String(a.nbMois));
-    Kit.ligne(l, 'Jours de présence', Kit.jours(a.joursPresence));
-    Kit.ligne(l, 'Entretien versé', Kit.eur(a.entretienCentimes));
-    if (vue.chaine.tronquee) {
-      p.appendChild(Kit.warnbox('Historique trop long',
-        'Seuls les ' + Chaine.MAX_MOIS + ' derniers mois ont été rejoués. ' +
-        'Vérifiez la date de début du contrat dans sa fiche.'));
-    }
-    return p;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1296,6 +1485,25 @@
     { cle: 'arrivee_decalee', libelle: 'J’ai demandé une arrivée plus tardive' }
   ];
 
+  /* §25.2 — la feuille courte d'un jour de congé. Elle NOMME ce qui est posé
+     et renvoie là où il se retire. Trois lignes, un bouton. */
+  function feuilleJourEnConge(d) {
+    Kit.ouvrirFeuille(Kit.jourLong(d),
+      vue.contrat.prenom_enfant + ' — famille ' +
+        ((vue.contrat.famille && vue.contrat.famille.nom) || '—'),
+      function (corps) {
+        corps.appendChild(Kit.enc('', 'Congé posé sur ce jour',
+          'Il se retire depuis « Mes congés » — c’est là que les compteurs de ' +
+          'chaque enfant sont rendus en même temps que la journée.'));
+        var b = Kit.bouton('btn nt', function () {
+          Kit.fermerFeuille();
+          global.App.aller('conges', { annee: vue.annee, mois: vue.mois }, true);
+        });
+        b.textContent = 'Ouvrir « Mes congés »';
+        corps.appendChild(b);
+      });
+  }
+
   function ouvrirJour(d) {
     if (vue.lectureSeule) return;
     /* §20.4 — un jour de la période n'a qu'un seul geste : déclarer ses
@@ -1308,6 +1516,21 @@
     var ligne = (vue.journees || {})[d] || {};
     var type = Kit.typeDuJour(vue.journees, d);
     var servis = contratsServis(d);
+
+    /* §25.2 — UN JOUR COUVERT PAR UN CONGÉ POSÉ OUVRE UNE FEUILLE COURTE.
+
+       La liste des sept choix n'a rien à y faire : elle proposait « Finalement,
+       je travaillais », qui retirait la journée de congé sur les contrats
+       servis MAIS LAISSAIT L'IMPUTATION EN PLACE. Le moteur l'écartait alors,
+       et Maria lisait « une répartition ne correspond plus » sans avoir rien
+       demandé — c'est le défaut que l'encart du haut signale.
+
+       Le retrait se fait donc là où il rend AUSSI les compteurs : « Mes congés
+       → Retirer des congés », qui supprime la période et remet les journées
+       en présence, ensemble. Le geste ne disparaît pas, il change de porte. */
+    if (TYPES_ABSENCE_MARIA.indexOf(type) !== -1 && type === 'conge_maria') {
+      return feuilleJourEnConge(d);
+    }
 
     /* CORRECTION B2 DE LA RELECTURE DES LOTS 20 À 22, CONSERVÉE. Le lot 21
        écrit un congé posé à l'heure sur les colonnes `ecart_*`. Les deux ne
@@ -1674,8 +1897,12 @@
         /* --- 4 : l'absence de l'enfant ------------------------------ */
 
         function dessinerAbsence() {
-          detail.appendChild(Kit.note('Absence de ' + c.prenom_enfant,
-            ' ' + apercuAbsence(d)));
+          /* §25.2 — UNE LIGNE DE RÉSULTAT CHIFFRÉE, plus un paragraphe.
+             « entretien − 5,00 € · 30 min toujours dues » au lieu de deux
+             phrases. Le contenu est le MÊME et vient du même rejeu par le
+             moteur : c'est la forme qui change — un encart d'une ligne, lu
+             d'un coup d'œil au moment d'appuyer. */
+          detail.appendChild(Kit.enc('w', apercuAbsence(d), null));
           etat.pret = true;
         }
 
@@ -1705,17 +1932,18 @@
             return;
           }
           if (absenceMaria) {
-            detail.appendChild(Kit.note('Le jour redevient normal pour ' +
-              libelleServis(servis),
-              ' Vos minutes et l’indemnité d’entretien reprennent leur cours.'));
+            detail.appendChild(Kit.enc('', 'Le jour redevient normal pour ' +
+              libelleServis(servis) + ' · minutes et entretien reprennent leur cours',
+              null));
             etat.pret = true;
             return;
           }
           /* L'aperçu vient du MOTEUR : on rejoue le mois avec cette journée
              remise en présence et on annonce l'écart du GESTE (correction B3
              de la relecture du lot 20). */
-          detail.appendChild(Kit.note('Ce que vous aviez déclaré sera retiré',
-            ' ' + phraseEcart(simuler(d, 'presence'), vue.entree.resultat)));
+          /* §25.2 — ligne de résultat chiffrée, ici aussi. */
+          detail.appendChild(Kit.enc('',
+            phraseEcart(simuler(d, 'presence'), vue.entree.resultat), null));
           var restent = [];
           if (ligne.commentaire) restent.push('votre note sur cette journée');
           if ((ligne.minutes_sup_exceptionnelles || 0) > 0 ||
@@ -1790,40 +2018,6 @@
       'du contrat reprendra la main. Refaites-la depuis « Mes congés ».'));
   }
 
-  /* Le moteur signale les périodes dont le choix de Maria a été écarté. Sans
-     cet affichage, l'écart resterait invisible jusqu'au document du mois. */
-  /* LOT 16 §16.1 b) — L'ENCART QUI REMPLACE L'ÉCRAN VIDE.
-
-     Quand une répartition dépasse les réserves, la chaîne l'écarte, rejoue le
-     mois dans l'ordre par défaut du contrat et porte le détail sur le maillon.
-     L'encart nomme la période, ce que Maria avait choisi et ce dont elle
-     dispose — trois nombres qui viennent tous du moteur — puis ouvre la
-     ventilation DE CETTE PÉRIODE.
-
-     C'est distinct du panneau ci-dessous : là, le choix a été écarté parce que
-     les JOURNÉES ont changé ; ici, parce que les RÉSERVES ne suffisent pas.
-     Les deux causes appellent deux phrases et deux gestes différents. */
-  function panneauReservesInsuffisantes() {
-    var ecartees = (vue.entree && vue.entree.imputationsEcartees) || [];
-    if (!ecartees.length) return null;
-
-    var b = Kit.warnbox(
-      ecartees.length > 1
-        ? 'Des répartitions de congé ne correspondent plus à vos réserves'
-        : 'Une répartition de congé ne correspond plus à vos réserves',
-      ' ' + ecartees.map(phraseEcartee).join(' ') +
-      ' En attendant, ces congés sont décomptés dans l’ordre habituel de ce contrat.');
-
-    var bt = Kit.bouton('btn nt', function () {
-      global.App.aller('conges', {
-        annee: vue.annee, mois: vue.mois, corrigerImputation: ecartees[0].id
-      }, true);
-    });
-    bt.textContent = 'Corriger la répartition';
-    b.appendChild(bt);
-    return b;
-  }
-
   /* « Du 3 au 21 août, vous aviez choisi 6 jours de récupération. Vous n'en
      avez que 5. » Les trois codes du moteur ne disent pas la même chose : on
      ne sert pas la phrase des réserves quand le problème est ailleurs. */
@@ -1859,38 +2053,6 @@
       return plage + 'votre répartition ne correspond pas au décompte de la période.';
     }
     return plage + 'votre répartition n’est pas utilisable telle quelle.';
-  }
-
-  function panneauChoixEcartes() {
-    var appliquees = (vue.entree && vue.entree.resultat &&
-                      vue.entree.resultat.imputationsAppliquees) || [];
-    /* Les périodes déjà traitées par l'encart des réserves ne sont pas
-       redites ici : elles portent la même marque `defaut_choix_ecarte`, posée
-       par la chaîne, mais leur cause et leur remède sont différents. */
-    var vues = {};
-    ((vue.entree && vue.entree.imputationsEcartees) || []).forEach(function (e) {
-      vues[e.date_debut + '|' + e.date_fin] = true;
-    });
-    var ecartees = appliquees.filter(function (i) {
-      if (i.source !== 'defaut_choix_ecarte') return false;
-      var c = i.choixEcarte;
-      return !(c && vues[c.date_debut + '|' + c.date_fin]);
-    });
-    if (!ecartees.length) return null;
-
-    var b = Kit.warnbox(
-      ecartees.length > 1 ? 'Deux répartitions de congés ne correspondent plus'
-                          : 'Une répartition de congés ne correspond plus',
-      ' ' + ecartees.map(function (i) {
-        return 'du ' + Kit.dateLongue(i.date_debut) + ' au ' + Kit.dateLongue(i.date_fin);
-      }).join(', ') + '. Les journées posées ont changé depuis. L’ordre du contrat ' +
-      's’applique en attendant : refaites la répartition depuis « Mes congés ».');
-    var lien = Kit.bouton('btn nt', function () {
-      global.App.aller('conges', { annee: vue.annee, mois: vue.mois }, true);
-    });
-    lien.textContent = 'Ouvrir « Mes congés »';
-    b.appendChild(lien);
-    return b;
   }
 
   /* --- LOT 12 : ajuster ses heures un jour donné (V8-18) --------------
@@ -2405,27 +2567,39 @@
 
   function phraseEcart(apres, avant) {
     var delta = (apres.entretienCentimes || 0) - (avant.entretienCentimes || 0);
-    if (delta > 0) return 'Entretien de la journée rétabli (+' + Kit.eur(delta) + ')';
-    if (delta < 0) return 'Entretien de la journée retiré (−' + Kit.eur(-delta) + ')';
-    return 'Journée comptée comme travaillée';
+    if (delta > 0) return 'entretien + ' + Kit.eur(delta) + ' · déclaration retirée';
+    if (delta < 0) return 'entretien − ' + Kit.eur(-delta) + ' · déclaration retirée';
+    return 'journée comptée comme travaillée · déclaration retirée';
   }
 
+  /* §25.2 — LA LIGNE DE RÉSULTAT D'UNE ABSENCE, chiffrée et courte :
+     « entretien − 5,00 € · vos 30 min restent dues ».
+
+     Les deux termes viennent du REJEU par le moteur, comme avant : on lui
+     donne le mois avec la journée forcée en absence, et on annonce l'écart.
+     Aucun montant n'est recomposé ici (B.0-5), et RG-09 continue de décider
+     du sort des minutes — la phrase suit le paramètre, elle ne le devine
+     pas. Seule la mise en mots a changé. */
   function phraseAbsence(apres, avant) {
     var deltaEntretien = (apres.entretienCentimes || 0) - (avant.entretienCentimes || 0);
     var deltaSup = (apres.minutesSupAcquises || 0) - (avant.minutesSupAcquises || 0);
-    var phrase = deltaEntretien < 0
-      ? 'Pas d’entretien ce jour (−' + Kit.eur(-deltaEntretien) + ').'
-      : 'Pas d’entretien ce jour.';
-    /* RG-09 : les minutes restent dues, sauf si le paramètre du contrat dit le
-       contraire. La phrase suit le paramètre, elle ne le devine pas. */
+    var bouts = [];
+    bouts.push(deltaEntretien < 0
+      ? 'entretien − ' + Kit.eur(-deltaEntretien)
+      : 'entretien inchangé');
     if (deltaSup === 0) {
-      phrase += ' Vos ' + Kit.duree(reg('minutes_sup_jour', 0)) + ' restent dues';
+      /* RG-09 — la maquette tranche le libellé de la feuille du JOUR :
+         « vos 30 min restent dues ». C'est la formulation déjà en production
+         depuis le lot 6 ; elle est reprise mot pour mot. La multi-sélection,
+         elle, dit « N min par jour toujours dues » — le « par jour » n'a de
+         sens que lorsqu'on marque plusieurs journées d'un coup. */
+      bouts.push('vos ' + Kit.duree(reg('minutes_sup_jour', 0)) + ' restent dues');
     } else if (deltaSup < 0) {
-      phrase += ' Vos ' + Kit.duree(deltaSup) + ' ne sont pas dues sur ce contrat';
+      bouts.push(Kit.duree(deltaSup) + ' non dues sur ce contrat');
     } else {
-      phrase += ' Cette journée vous rend ' + Kit.duree(deltaSup) + ' de récupération';
+      bouts.push('+ ' + Kit.duree(deltaSup) + ' de récupération');
     }
-    return phrase;
+    return bouts.join(' · ');
   }
 
   /* ------------------------------------------------------------------ */
@@ -2912,8 +3086,44 @@
       { contrats: ids, jours: [d] });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* §25.1 — DÉCLARER LES HEURES DU JOUR DEPUIS L'ACCUEIL                */
+  /*                                                                     */
+  /* « Un appui pour le faire » : la carte du bloc « Aujourd'hui » ouvre  */
+  /* CETTE feuille, la même que dans l'espace enfant, avec le même        */
+  /* aperçu chiffré rejoué par le moteur et les mêmes garde-fous.         */
+  /*                                                                     */
+  /* On monte donc le contexte complet du mois (conditions, journées,     */
+  /* périodes, mois clôturés des autres contrats) avant d'ouvrir — une    */
+  /* feuille plus pauvre annoncerait des montants faux. `corps` vaut      */
+  /* `null` : rien n'est redessiné ici, et `App.rafraichir()` remet       */
+  /* l'Accueil à jour après l'écriture.                                   */
+  /* ------------------------------------------------------------------ */
+  function declarerFamiliarisation(contrat, jour) {
+    var m = { annee: Number(jour.slice(0, 4)), mois: Number(jour.slice(5, 7)) };
+    return chargerVue(contrat, m, null).then(function () {
+      if (!enFamiliarisation(jour)) {
+        /* Le jour est sorti de la période entre-temps : on n'ouvre pas une
+           feuille qui ne correspond plus à rien, et on le dit. */
+        Kit.toast('Ce jour n’est plus dans une période de familiarisation.', true);
+        return;
+      }
+      if (vue.lectureSeule) {
+        Kit.toast('Ce mois est clôturé : il ne peut plus être modifié.', true);
+        return;
+      }
+      feuilleFamiliarisation(jour);
+    }).catch(function (e) {
+      Kit.toast('Impossible d’ouvrir la déclaration : ' + Kit.messageErreur(e), true);
+    });
+  }
+
   global.UiEnfant = {
     afficher: afficher,
+    /* §25.1 — l'Accueil ouvre la feuille de déclaration sans passer par cet
+       écran. Exportée plutôt que recopiée : deux feuilles de saisie pour un
+       même geste divergeraient à la première correction. */
+    declarerFamiliarisation: declarerFamiliarisation,
     TYPES_ABSENCE_MARIA: TYPES_ABSENCE_MARIA,
     MOIS_A_VENIR_VISIBLES: MOIS_A_VENIR_VISIBLES
   };

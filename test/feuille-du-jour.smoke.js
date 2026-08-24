@@ -413,8 +413,17 @@ function boutonEnregistrer() { return boutonExact(sheet, 'Enregistrer'); }
   await ouvrirJour(11);
   choixParLibelle('Absence de Léa').click();
   await pause(200);
-  contient(sheet, 'Pas d’entretien ce jour',
-    'l’entretien retiré est annoncé, rejoué par le moteur');
+  /* EXIGENCE CHANGÉE — LOT 25 §25.2 : LES EXPLICATIONS DE LA FEUILLE DU JOUR
+     DEVIENNENT DES LIGNES DE RÉSULTAT CHIFFRÉES. Ancien texte : « Pas
+     d'entretien ce jour » suivi du montant dans une phrase. Nouveau :
+     « entretien − 5,00 € · vos 30 min restent dues » — une ligne, le signe,
+     le montant, et le sort des minutes.
+     RIEN N'EST PERDU : les deux termes viennent du même REJEU par le moteur,
+     et les deux exigences de fond sont vérifiées ci-dessous à l'identique —
+     l'indemnité du contrat est chiffrée, et RG-09 décide du sort des minutes,
+     mot pour mot. */
+  contient(sheet, 'entretien − ',
+    'l’entretien retiré est annoncé avec son signe, rejoué par le moteur');
   contient(sheet, '5,00', 'et chiffré : l’indemnité du contrat');
   contient(sheet, 'restent dues', 'RG-09 : vos 30 min restent dues');
   boutonEnregistrer().click();
@@ -490,7 +499,13 @@ function boutonEnregistrer() { return boutonExact(sheet, 'Enregistrer'); }
   /* Le sixième choix retire ce que la liste a posé, et dit ce qui reste. */
   choixParLibelle('Finalement, rien de particulier').click();
   await pause(200);
-  contient(sheet, 'Ce que vous aviez déclaré sera retiré', 'le geste dit ce qu’il fait');
+  /* EXIGENCE CHANGÉE — même raison (§25.2) : « Ce que vous aviez déclaré sera
+     retiré » devient « entretien … · déclaration retirée ». Le geste se dit
+     par son EFFET CHIFFRÉ plutôt que par une promesse, et l'effet vient du
+     rejeu par le moteur. Ce qui RESTE — la note, l'ajustement des heures —
+     est dit à l'identique, et c'est la garantie qui compte : chaque choix ne
+     touche que son domaine. */
+  contient(sheet, 'déclaration retirée', 'le geste dit ce qu’il retire');
   contient(sheet, 'votre note sur cette journée',
     'et il dit ce qui RESTE — la note ne part pas avec l’écart');
   boutonEnregistrer().click();
@@ -553,24 +568,47 @@ function boutonEnregistrer() { return boutonExact(sheet, 'Enregistrer'); }
   };
   await ouvrirEnfant();
   await ouvrirJour(22);
-  contient(sheet, 'période de congé déjà répartie',
-    'l’avertissement de ventilation s’affiche AVANT le geste');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.2 : UN JOUR COUVERT PAR UN CONGÉ POSÉ
+     OUVRE UNE FEUILLE COURTE QUI RENVOIE VERS « MES CONGÉS ».
 
-  /* Un jour où Maria ne travaillait pas : les déclarations d'horaire n'y
-     produiraient rien (RG-04). La liste ne propose que ce qui agit. */
-  var libellesConge = libellesDeLaListe();
-  egal(libellesConge.length, 3, 'une liste courte sur un jour non travaillé');
-  egal(libellesConge[0], 'Finalement, je travaillais', 'le geste de retour en tête');
-  assert(libellesConge.indexOf('Un parent est venu en retard') === -1,
-    'RG-04 : aucune déclaration d’horaire sur une journée sans minutes');
-  assert(!sheet.querySelector('.choice.c1.grosse-carte'),
-    'et le geste de retour est dans le style de la liste, plus en grosse carte');
-  choixParLibelle('Finalement, je travaillais').click();
-  await pause(150);
-  boutonEnregistrer().click();
-  await pause(300);
-  egal(ecritures.retraits[ecritures.retraits.length - 1].jours[0], '2026-06-22',
-    'le retrait passe par le chemin existant');
+     La liste des sept choix proposait ici « Finalement, je travaillais ». Ce
+     geste retirait la journée de congé sur les contrats servis MAIS LAISSAIT
+     L'IMPUTATION EN PLACE : le moteur l'écartait ensuite, et Maria lisait
+     « une répartition ne correspond plus à vos réserves » sans avoir rien
+     demandé. L'avertissement de ventilation, affiché avant le geste, ne
+     faisait qu'annoncer ce défaut au lieu de l'empêcher.
+
+     LE GESTE NE DISPARAÎT PAS, IL CHANGE DE PORTE : « Mes congés → Retirer
+     des congés » supprime la période ET remet les journées en présence,
+     ensemble. C'est le seul chemin où les compteurs de chaque enfant sont
+     rendus en même temps que la journée.
+
+     CE QUI RESTE EXIGÉ, et qui est plus fort qu'avant :
+     - la feuille NOMME le congé (elle ne laisse pas Maria devant une liste
+       muette) ;
+     - elle NE PROPOSE AUCUNE déclaration d'horaire (RG-04 : ces journées ne
+       portent aucune minute) — vérifié en exigeant qu'il n'y ait AUCUN choix
+       du tout, ce qui est strictement plus strict que « pas celui-là » ;
+     - elle OUVRE le chemin de retrait, et il mène bien à « Mes congés ».
+     ====================================================================== */
+  contient(sheet, 'Congé posé sur ce jour',
+    'la feuille nomme le congé, au lieu d’offrir des choix qui le feraient ' +
+    'disparaître sans un mot');
+  contient(sheet, 'Il se retire depuis « Mes congés »',
+    'et elle dit où le retirer — là où les compteurs sont rendus en même temps');
+  egal(libellesDeLaListe().length, 0,
+    'RG-04 : aucune déclaration d’horaire sur une journée sans minutes — ' +
+    'la feuille courte n’offre aucun choix du tout');
+  var bMesConges = boutonExact(sheet, 'Ouvrir « Mes congés »');
+  assert(!!bMesConges, 'le chemin de retrait est offert, en un appui');
+  bMesConges.click();
+  await pause(350);
+  assert(txt(document.getElementById('barre')).indexOf('Mes congés') !== -1 ||
+         txt(corps).indexOf('Retirer des congés') !== -1,
+    'et il mène bien à « Mes congés » (obtenu « ' +
+    txt(document.getElementById('barre')).slice(0, 60) + ' »)');
+  await ouvrirEnfant();
   imputations = [];
   delete journees['2026-06-22'];
 

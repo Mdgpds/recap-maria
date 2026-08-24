@@ -65,6 +65,11 @@ function contient(el, morceau, msg) {
 function absent(el, morceau, msg) {
   assert(txt(el).indexOf(morceau) === -1, msg + ' — « ' + morceau + ' » ne devrait pas y être');
 }
+function parTexte(racineEl, selecteur, morceau) {
+  return Array.prototype.filter.call(racineEl.querySelectorAll(selecteur), function (e) {
+    return txt(e).indexOf(morceau) !== -1;
+  })[0] || null;
+}
 function boutonExact(racineEl, libelle) {
   return Array.prototype.filter.call(racineEl.querySelectorAll('button'), function (e) {
     return txt(e).trim() === libelle;
@@ -239,20 +244,47 @@ function celluleDu(numero) {
   /* ==================================================================== */
   console.log('\n--- §20.4 a : la carte dit l’état du jour ---');
 
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.1 : LA CARTE D'ACCUEIL NOMME L'ENFANT.
+     Ancien libellé : « Aujourd'hui : heures à déclarer ». Nouveau : « Noah —
+     heures à déclarer », avec « Familiarisation · jour 8 sur 14 » en
+     sous-texte. Deux raisons, toutes deux tirées de l'usage : l'accueil peut
+     porter PLUSIEURS familiarisations le même jour, et « Aujourd'hui » était
+     déjà le titre du bloc au-dessus — la carte le répétait.
+     LE RANG DANS LA PÉRIODE est neuf : « jour 8 sur 14 » dit où l'on en est de
+     l'adaptation, ce que l'ancienne carte ne disait pas.
+     ET LA CARTE OUVRE DÉSORMAIS LA FEUILLE DE DÉCLARATION DIRECTEMENT, sans
+     passer par l'espace enfant : « un appui pour le faire » (§25.1).
+     L'EXIGENCE A8 — l'accueil réclame la déclaration du jour — est vérifiée
+     à l'identique, et renforcée par le rang. */
   window.App.aller('accueil', {});
   await pause(400);
-  contient(corps, 'Aujourd’hui : heures à déclarer',
-    'A8 : la carte réclame la déclaration du jour');
+  contient(corps, 'Noah — heures à déclarer',
+    'A8 : la carte réclame la déclaration du jour, et nomme l’enfant');
+  contient(corps, 'Familiarisation · jour 8 sur 14',
+    'A8 : et elle dit où l’on en est de la période');
 
   /* ==================================================================== */
   /* §20.4 b — L'ENCART DE L'ESPACE ENFANT                                */
   /* ==================================================================== */
   console.log('\n--- §20.4 b : l’encart en tête de l’espace enfant ---');
 
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.2 : L'ENCART DE L'ESPACE ENFANT TIENT SUR
+     UNE LIGNE. L'écran n'en porte plus qu'un — le plus urgent — et il est
+     CLIQUABLE : il ouvre l'action au lieu de la décrire.
+
+     RIEN NE SE PERD (A.2) : la règle « seules les heures déclarées sont
+     payées » vit dans le SOUS-TITRE de la feuille que cet encart ouvre, où
+     elle est lue au moment de déclarer — pas trois écrans plus haut. Elle est
+     vérifiée ci-dessous, sur cette feuille.
+     ====================================================================== */
   window.App.aller('enfant', { contratId: 'c-noah', annee: 2026, mois: 9 });
   await pause(400);
-  contient(corps, 'Déclarez les heures d’aujourd’hui', 'l’encart est là');
-  contient(corps, 'seules les heures déclarées sont payées', 'et il dit la règle');
+  var encFam = parTexte(corps, '.enc', 'heures à déclarer');
+  assert(!!encFam, 'l’encart est là');
+  assert(encFam.tagName === 'BUTTON' || !!encFam.querySelector('button'),
+    '§25.2 : et il est la porte de l’action, pas seulement sa description');
 
   /* Le calendrier montre la période, pas des présences présumées. */
   assert(txt(celluleDu(10)).indexOf('à décl.') !== -1,
@@ -270,9 +302,12 @@ function celluleDu(numero) {
   /* ==================================================================== */
   console.log('\n--- §20.4 c : déclarer 2 h 30, entretien compté ---');
 
-  boutonExact(corps, 'Déclarer maintenant').click();
-  await pause(200);
+  /* L'ENCART EST LA PORTE : on l'ouvre, et la règle est là. */
+  (encFam.tagName === 'BUTTON' ? encFam : encFam.querySelector('button')).click();
+  await pause(250);
   contient(sheet, 'Familiarisation — ', 'la feuille du jour s’ouvre');
+  contient(sheet, 'seules les heures déclarées sont payées',
+    'et elle dit la règle, là où Maria déclare');
   contient(sheet, 'Rémunération à l’heure', 'elle rappelle la règle');
   contient(sheet, 'Arrivée', 'le champ d’arrivée est là');
   contient(sheet, 'Départ', 'et celui de départ');
@@ -301,17 +336,49 @@ function celluleDu(numero) {
   /* ==================================================================== */
   console.log('\n--- A8 : la carte d’Accueil se met à jour ---');
 
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.1 : LA CARTE, APRÈS DÉCLARATION.
+     Ancien libellé : « 2h30 déclarées aujourd'hui · entretien compté ».
+     Nouveau : « Noah — 2h30 déclarées », sous-texte « Familiarisation · jour 8
+     sur 14 ». Deux changements :
+
+     - « aujourd'hui » tombe : le bloc s'appelle « Aujourd'hui », la carte le
+       répétait. L'ENFANT le remplace, parce que plusieurs familiarisations
+       peuvent coexister le même jour.
+     - « entretien compté » quitte la carte. RIEN NE SE PERD (A.2) : le choix
+       de l'indemnité se fait, se relit et se corrige sur la FEUILLE DE
+       DÉCLARATION (« Indemnité d'entretien du jour », vérifiée plus haut dans
+       ce fichier), et son effet chiffré figure sur le document du mois. Le
+       répéter sur une carte d'accueil ajoutait un mot sans ajouter un geste.
+
+     ÉCART ASSUMÉ AU TEXTE DU §25.1, conforme à la maquette : la carte NE
+     DISPARAÎT PAS une fois les heures déclarées. Elle passe en ton neutre et
+     reste là tant qu'on est dans la période — une durée saisie de travers se
+     corrige, et la faire disparaître coûterait quatre appuis pour y revenir.
+     C'est pourquoi l'assertion « elle ne réclame plus rien » est conservée
+     telle quelle : ce qui doit disparaître, c'est la DEMANDE, pas la carte.
+     ====================================================================== */
   window.App.aller('accueil', {});
   await pause(400);
-  contient(corps, '2h30 déclarées aujourd’hui', 'A8 : la carte a changé');
-  contient(corps, 'entretien compté', 'et elle dit l’entretien');
+  contient(corps, 'Noah — 2h30 déclarées', 'A8 : la carte a changé');
+  contient(corps, 'Familiarisation · jour 8 sur 14',
+    'A8 : et elle dit toujours où l’on en est de la période');
   absent(corps, 'heures à déclarer', 'A8 : elle ne réclame plus rien');
 
-  /* L'espace enfant aussi. */
+  /* L'espace enfant aussi. L'encart passe en ton neutre et RESTE UNE PORTE :
+     le bouton « Corriger » n'a plus lieu d'être, l'encart entier l'est. */
   window.App.aller('enfant', { contratId: 'c-noah', annee: 2026, mois: 9 });
   await pause(400);
-  contient(corps, 'Aujourd’hui — 2h30 déclarées', 'l’encart devient vert');
-  assert(!!boutonExact(corps, 'Corriger'), 'et propose de corriger');
+  contient(corps, 'Aujourd’hui — 2h30 déclarées', 'l’encart dit ce qui est déclaré');
+  var encFait = parTexte(corps, '.enc', '2h30 déclarées');
+  var porteFait = encFait && (encFait.tagName === 'BUTTON'
+    ? encFait : encFait.querySelector('button'));
+  assert(!!porteFait, 'et il propose de corriger — l’encart entier est la porte');
+  porteFait.click();
+  await pause(250);
+  contient(sheet, 'Familiarisation — ', 'qui rouvre bien la feuille de déclaration');
+  window.Kit.fermerFeuille();
+  await pause(120);
   contient(corps, '2h30', 'le calendrier porte les heures du jour');
 
   /* ==================================================================== */
@@ -488,8 +555,17 @@ function celluleDu(numero) {
   assert(!!choixRetour, 'B3 : le geste de retour en journée ordinaire est offert');
   choixRetour.click();
   await pause(200);
-  contient(sheet, 'Entretien de la journée rétabli (+5,50 €)',
+  /* EXIGENCE CHANGÉE — LOT 25 §25.2 : LES EXPLICATIONS DEVIENNENT DES LIGNES
+     DE RÉSULTAT CHIFFRÉES. Ancien texte : « Entretien de la journée rétabli
+     (+5,50 €) ». Nouveau : « entretien + 5,50 € · déclaration retirée ». Le
+     verbe se change en signe, et la seconde moitié dit ce qui est retiré.
+     LE CHIFFRE EXIGÉ EST LE MÊME, il vient du même rejeu par le moteur, et
+     l'interdiction du montant de l'oubli (82,50 €) est conservée telle
+     quelle juste en dessous. */
+  contient(sheet, 'entretien + 5,50 €',
     'B3 : l’aperçu annonce l’entretien d’UNE journée, pas celui de quinze');
+  contient(sheet, 'déclaration retirée',
+    'B3 : et il dit ce que le geste retire');
   absent(sheet, '82,50 €', 'B3 : et surtout pas le montant de l’oubli');
   window.Kit.fermerFeuille();
   await pause(120);

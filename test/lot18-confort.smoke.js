@@ -272,6 +272,20 @@ window.App.aujourdhui = function () { return '2026-06-26'; };
 var corps = document.getElementById('corps');
 var sheet = document.getElementById('sheet');
 
+/* LOT 25 §25.3 — LA PORTE DE LA MULTI-SÉLECTION EST LE ⋯ DE LA BARRE HAUTE.
+   Elle était un bouton « Choisir plusieurs jours » posé sous le calendrier.
+   Le geste ne change pas : cette aide appuie sur la nouvelle porte, pour que
+   les cas qui vérifient la SÉLECTION ne dépendent pas de l'endroit d'où on
+   l'ouvre. */
+function entrerSelection() {
+  var b = Array.prototype.filter.call(
+    document.getElementById('barre').querySelectorAll('button'), function (x) {
+      return x.getAttribute('aria-label') === 'Marquer plusieurs jours';
+    })[0];
+  if (!b) throw new Error('le ⋯ d’entrée en sélection est absent de la barre');
+  b.click();
+}
+
 (async function () {
   document.dispatchEvent(new dom.window.Event('DOMContentLoaded'));
   await pause(300);
@@ -286,15 +300,48 @@ var sheet = document.getElementById('sheet');
 
   egal(window.Kit.etatDuMois(2026, 6, null, '2026-06-26'), 'a_cloturer',
     'décor : le 26 juin, juin est bien passé en « à clôturer »');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.2 : L'ENCART D'ÉTAT DU MOIS DISPARAÎT DE
+     L'ESPACE ENFANT. Le §18.4 avait corrigé sa PHRASE (du 25 au 31, dire « ce
+     mois est terminé » d'un mois qui court encore est faux) ; le lot 25 retire
+     le pavé lui-même, parce que l'écran n'a plus qu'un encart et que celui-ci
+     doit servir à ce qui appelle un GESTE.
+
+     RIEN NE SE PERD (A.2) : la distinction que le §18.4 a établie — un mois
+     ÉCHU n'est pas un mois EN COURS qu'on peut déjà clôturer — est portée par
+     la carte du bloc « Aujourd'hui » de l'accueil, qui écrit « Terminé depuis
+     le 31 mai 2026. » pour l'un et « Vérifiez les journées, puis clôturez le
+     mois. » pour l'autre. C'est là que Maria décide de clôturer, donc là que
+     la nuance sert.
+
+     L'ASSERTION NE S'AFFAIBLIT PAS : les deux cas — mois en cours au 26, mois
+     échu — sont rejoués sur l'écran où l'information vit désormais, et le
+     texte exact est exigé de part et d'autre. On vérifie EN PLUS que la phrase
+     fautive corrigée par le §18.4 n'a reparu nulle part.
+     ====================================================================== */
   assert(txt(corps).indexOf('Ce mois est terminé') === -1,
     '7·A5 : le 26 du mois, l’écran n’affirme PLUS qu’un mois en cours est terminé');
-  assert(txt(corps).indexOf('Chiffres provisoires') !== -1,
-    '7·A5 : la mention « chiffres provisoires » est conservée jusqu’au bout du mois');
+  assert(!parTexte(corps, '.enc', 'Chiffres provisoires'),
+    '§25.2 : l’encart permanent d’état du mois a quitté l’espace enfant');
 
+  /* Le mois échu, lui, ne se confond pas avec celui-ci : l'espace enfant ne
+     l'affirme plus nulle part, et la barre fixe propose le même geste dans les
+     deux cas — « Vérifier et clôturer le mois ». */
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 5 }, true);
   await pause(300);
-  assert(txt(corps).indexOf('Ce mois est terminé') !== -1,
-    '7·A5 : sur un mois ÉCHU, la phrase reste — là, elle est vraie');
+  assert(txt(corps).indexOf('Ce mois est terminé') === -1,
+    '§25.2 : sur un mois échu non plus, l’espace enfant ne porte plus de ' +
+    'bandeau d’état permanent');
+  var pied7 = corps.querySelector('.stick');
+  assert(!!pied7 && txt(pied7).indexOf('Vérifier et clôturer le mois') !== -1,
+    '§25.3 : la barre fixe porte le geste, sans avoir à défiler');
+
+  /* LES DEUX FORMULATIONS DU §18.4 SONT EXIGÉES SUR L'ACCUEIL, dans
+     test/lot7-tempo.smoke.js (cas P1 et P2), dont le décor isole un seul
+     contrat et un seul mois en retard — ce que celui-ci, avec ses douze mois
+     ouverts, ne permet pas. */
+  window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 6 }, true);
+  await pause(300);
 
   /* ==================================================================== */
   /* §18.1 — MARQUER PLUSIEURS JOURS D'UN COUP                            */
@@ -304,13 +351,39 @@ var sheet = document.getElementById('sheet');
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 6 }, true);
   await pause(300);
 
-  assert(txt(corps).indexOf('Marquer plusieurs jours d’un coup') !== -1,
-    'A1 : la barre est présente sous le calendrier');
-  assert(txt(corps).indexOf('passez par l’onglet Mes congés') !== -1,
-    '§18.1 : et elle renvoie les congés à leur seul chemin');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.3 : LA MULTI-SÉLECTION CHANGE DE PORTE.
+     Elle s'ouvrait par une barre posée SOUS le calendrier — un titre
+     (« Marquer plusieurs jours d'un coup »), un sous-titre sur les congés, un
+     bouton : quatre lignes pour un raccourci, qu'il fallait atteindre en
+     défilant. Elle s'ouvre désormais par le **⋯** de la barre haute, toujours
+     visible, comme le demande le §25.3 point 1.
 
-  var bChoisir = boutonExact(corps, 'Choisir plusieurs jours');
-  assert(!!bChoisir, 'A1 : le bouton d’entrée en sélection est là');
+     LE GESTE NE CHANGE PAS D'UN CARACTÈRE : c'est `entrerSelection()` dans les
+     deux cas, et tout ce que ce fichier vérifie ensuite — les deux marquages
+     et seulement deux, l'absence de « Mon congé », le pied fixe, le compte, la
+     validation — est rejoué à l'identique juste en dessous.
+
+     LE SOUS-TITRE « passez par l'onglet Mes congés » : RIEN NE SE PERD (A.2).
+     Il vivait sur une barre permanente, affichée même quand Maria ne
+     cherchait pas à poser un congé. La règle V8-09 — les congés ont UN seul
+     chemin — est dite là où quelqu'un s'y trompe vraiment, et elle y est
+     vérifiée : aucun choix de congé dans la feuille du jour, aucun « Mon
+     congé » dans la multi-sélection (assertion ci-dessous, conservée), et une
+     feuille dédiée qui renvoie vers « Mes congés » quand on touche un jour
+     déjà couvert par un congé posé.
+
+     ON VÉRIFIE EN PLUS que le ⋯ n'apparaît pas là où il refuserait de servir
+     (mois clôturé, mois à venir) — un bouton qui refuse est pire qu'un bouton
+     absent.
+     ====================================================================== */
+  var barreEl = document.getElementById('barre');
+  var bChoisir = Array.prototype.filter.call(barreEl.querySelectorAll('button'), function (b) {
+    return b.getAttribute('aria-label') === 'Marquer plusieurs jours';
+  })[0];
+  assert(!!bChoisir, 'A1 : le bouton d’entrée en sélection est là, dans la barre haute');
+  assert(txt(bChoisir) === '⋯',
+    '§25.3 : et c’est le ⋯ de la maquette (obtenu « ' + txt(bChoisir) + ' »)');
   bChoisir.click();
   await pause(120);
 
@@ -392,7 +465,8 @@ var sheet = document.getElementById('sheet');
 
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 6 }, true);
   await pause(300);
-  boutonExact(corps, 'Choisir plusieurs jours').click();
+  /* LOT 25 §25.3 — la multi-sélection s'ouvre par le ⋯ de la barre haute. */
+  entrerSelection();
   await pause(120);
   celluleDu('2026-06-03').click();
   await pause(150);
@@ -531,7 +605,8 @@ var sheet = document.getElementById('sheet');
   window.App.invalider();
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 6 }, true);
   await pause(350);
-  boutonExact(corps, 'Choisir plusieurs jours').click();
+  /* LOT 25 §25.3 — la multi-sélection s'ouvre par le ⋯ de la barre haute. */
+  entrerSelection();
   await pause(150);
   celluleDu('2026-06-09').click();
   await pause(200);
@@ -568,7 +643,8 @@ var sheet = document.getElementById('sheet');
   window.App.invalider();
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 6 }, true);
   await pause(350);
-  boutonExact(corps, 'Choisir plusieurs jours').click();
+  /* LOT 25 §25.3 — la multi-sélection s'ouvre par le ⋯ de la barre haute. */
+  entrerSelection();
   await pause(150);
   celluleDu('2026-06-09').click();          // annotée
   celluleDu('2026-06-10').click();          // ordinaire
@@ -685,15 +761,45 @@ var sheet = document.getElementById('sheet');
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 4 }, true);
   await pause(400);
 
-  assert(!boutonExact(corps, 'Choisir plusieurs jours'),
-    '§18.1 : sur un mois clôturé, le bouton n’apparaît pas du tout');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.2 : LE PAVÉ DU MOIS CLÔTURÉ DEVIENT UNE
+     PORTE. Le §18.6 avait remplacé « Rien à faire les jours normaux » — qui
+     invitait à toucher des jours inertes — par ce qui est vrai sur un mois
+     verrouillé, plus le chemin pour corriger. Le lot 25 ne revient pas
+     là-dessus : il déplace le TEXTE, pas la garantie.
+
+     RIEN NE SE PERD (A.2), et voici où chaque morceau vit :
+     - « Ce mois est clôturé » -> l'encart unique de l'espace enfant, qui le
+       nomme ET DIT LA DATE de clôture, ce que le pavé ne faisait pas ;
+     - « Vous pouvez le rouvrir » -> le bouton « Rouvrir pour corriger » du
+       document, où il était déjà, et où la porte mène ;
+     - « Il n'a pas encore été transmis » -> la ligne posée juste au-dessus de
+       cette porte de réouverture (`UiReouverture.actionsMoisCloture`), qui
+       DÉSORMAIS dit les deux cas — transmis, et pas encore. Elle y change
+       quelque chose : rouvrir un mois déjà remis à la famille n'est pas le
+       même geste que rouvrir un mois qu'elle n'a jamais vu.
+
+     L'ASSERTION SE RENFORCE : on exige la porte, on la franchit, et on exige
+     les deux textes au bout. Un pavé présent dont les boutons ne mènent nulle
+     part passait l'ancienne assertion.
+     ====================================================================== */
+  assert(!boutonExact(corps, 'Choisir plusieurs jours') &&
+         !document.getElementById('barre').querySelector('button[aria-label="Marquer plusieurs jours"]'),
+    '§18.1 : sur un mois clôturé, le ⋯ n’apparaît pas du tout');
   assert(txt(corps).indexOf('Rien à faire les jours normaux') === -1,
     '§18.6 : et la phrase qui invite à toucher des jours inertes a disparu');
-  assert(txt(corps).indexOf('Ce mois est clôturé') !== -1 &&
-         txt(corps).indexOf('Vous pouvez le rouvrir') !== -1,
-    '§18.6 : elle est remplacée par ce qui est vrai, et par le chemin pour corriger');
-  assert(txt(corps).indexOf('Il n’a pas encore été transmis') !== -1,
+  var encClos = parTexte(corps, '.enc', 'Mois clôturé');
+  assert(!!encClos, '§18.6 : l’écran dit ce qui est vrai — le mois est clôturé');
+  var porteClos = encClos.tagName === 'BUTTON' ? encClos : encClos.querySelector('button');
+  assert(!!porteClos, '§18.6 : et il ouvre le chemin pour corriger');
+  porteClos.click();
+  await pause(350);
+  assert(!!boutonExact(corps, 'Rouvrir pour corriger'),
+    '§18.6 : au bout de ce chemin, la réouverture est offerte');
+  assert(txt(corps).indexOf('n’a pas encore été transmis') !== -1,
     '§18.6 : et l’écran signale qu’aucun document n’est parti');
+  window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 4 }, true);
+  await pause(350);
 
   /* Et sur un contrat RANGÉ, même règle : l'écran entier est en lecture. */
   BETA.archive = true;
@@ -702,8 +808,11 @@ var sheet = document.getElementById('sheet');
   await window.App.rechargerContrats();
   window.App.aller('enfant', { contratId: 'c-beta', annee: 2026, mois: 5 }, true);
   await pause(400);
-  assert(txt(corps).indexOf('Ancien contrat') !== -1, 'décor : le contrat de Beta est rangé');
-  assert(!boutonExact(corps, 'Choisir plusieurs jours'),
+  assert(txt(corps).indexOf('Ancien contrat — lecture seule') !== -1,
+    'décor : le contrat de Beta est rangé, et l’écran le DIT (§18.6) — sans ' +
+    'quoi Maria appuierait sur des journées inertes sans savoir pourquoi');
+  assert(!boutonExact(corps, 'Choisir plusieurs jours') &&
+         !document.getElementById('barre').querySelector('button[aria-label="Marquer plusieurs jours"]'),
     '§18.1 : sur un contrat rangé non plus, le mode sélection n’est pas proposé');
 
   /* ==================================================================== */

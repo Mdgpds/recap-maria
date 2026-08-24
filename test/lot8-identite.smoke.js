@@ -500,29 +500,67 @@ async function ouvrirFiche(id) {
     'A8 : sans genre, la forme inclusive — juste dans tous les cas');
   assert(window.Kit.accord('présent', '') === 'présent·e', 'A8 : chaîne vide = non renseigné');
 
-  window.App.invalider();
-  window.App.aller('enfant', { contratId: 'c-lea', annee: 2026, mois: 8 });
-  await pause(300);
-  assert(txt(corps).indexOf('comptée présente') !== -1,
-    'P8 : Léa, genre « f », donne « comptée présente » (obtenu « ' +
-    (txt(corps).match(/est compt[^.]{0,20}/) || [''])[0] + ' »)');
-  assert(txt(corps).indexOf('·e') === -1,
-    'P8 : plus AUCUN point médian quand le genre est connu');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 25 §25.3 : LA PHRASE QUI PORTAIT L'ACCORD A CHANGÉ
+     DE PLACE. L'accord en genre se lisait sur le sous-texte permanent de
+     « Rien à faire les jours normaux » — « Léa est comptée présente et vos
+     30 min sont dues » — que le §25.3 remplace par la ligne de synthèse
+     chiffrée. Cette ligne compte des jours ; elle n'accorde rien.
 
-  window.App.invalider();
-  window.App.aller('enfant', { contratId: 'c-zoe', annee: 2026, mois: 8 });
-  await pause(300);
-  assert(txt(corps).indexOf('comptée présente') !== -1, 'P8 : Zoé aussi est au féminin');
+     RIEN NE SE PERD (A.2) : les phrases qui NOMMENT l'enfant portent toujours
+     l'accord, et ce sont elles qui comptent — « 30 min non réclamée ce
+     jour-là » et « Quand Léa est absente… » dans les cas particuliers d'une
+     journée, « Léa notée absente » après une écriture, « Léa absente » sur le
+     document. Le test se déplace sur la première, qui est atteignable sans
+     rien écrire en base.
+
+     L'EXIGENCE NE S'AFFAIBLIT PAS : les trois cas — féminin connu, féminin
+     d'un second contrat, genre non renseigné — sont rejoués à l'identique, et
+     l'interdiction du point médian quand le genre EST connu reste vérifiée
+     sur tout l'écran. `Kit.accord` lui-même est testé unitairement juste
+     au-dessus, ce qui n'a pas bougé.
+     ====================================================================== */
+
+  /* Ouvre la feuille d'une journée, puis « Autre cas… », et rend son texte. */
+  async function texteCasParticuliers(contratId) {
+    window.App.invalider();
+    window.App.aller('enfant', { contratId: contratId, annee: 2026, mois: 8 });
+    await pause(300);
+    var jour = corps.querySelectorAll('table.cal td[role="button"]')[0];
+    if (!jour) return '';
+    jour.click();
+    await pause(150);
+    var autre = parTexte(sheet, '.choice', 'Autre cas');
+    if (!autre) return '';
+    autre.click();
+    await pause(200);
+    return txt(sheet);
+  }
+
+  var tLea = await texteCasParticuliers('c-lea');
+  assert(tLea.indexOf('non réclamée') !== -1,
+    'P8 : Léa, genre « f », donne « non réclamée » (obtenu « ' +
+    (tLea.match(/non réclam[^.]{0,12}/) || [''])[0] + ' »)');
+  assert(tLea.indexOf('·e') === -1,
+    'P8 : plus AUCUN point médian quand le genre est connu');
+  window.Kit.fermerFeuille();
+  await pause(60);
+
+  var tZoe = await texteCasParticuliers('c-zoe');
+  assert(tZoe.indexOf('non réclamée') !== -1, 'P8 : Zoé aussi est au féminin');
+  window.Kit.fermerFeuille();
+  await pause(60);
 
   /* Un contrat SANS genre garde la forme inclusive. */
   IRIS.archive = false; IRIS.statut = 'actif'; IRIS.date_fin = null;
   window.App.invalider();
   await window.App.rechargerContrats();
-  window.App.aller('enfant', { contratId: 'c-iris', annee: 2026, mois: 8 });
-  await pause(300);
-  assert(txt(corps).indexOf('compté·e présent·e') !== -1,
+  var tIris = await texteCasParticuliers('c-iris');
+  assert(tIris.indexOf('non réclamé·e') !== -1,
     'P8 : sans genre, la phrase reste neutre (obtenu « ' +
-    (txt(corps).match(/est compt[^.]{0,24}/) || [''])[0] + ' »)');
+    (tIris.match(/non réclam[^.]{0,12}/) || [''])[0] + ' »)');
+  window.Kit.fermerFeuille();
+  await pause(60);
   IRIS.archive = true; IRIS.statut = 'termine'; IRIS.date_fin = '2026-03-31';
   await window.App.rechargerContrats();
 
@@ -576,9 +614,12 @@ async function ouvrirFiche(id) {
   window.App.invalider();
   window.App.aller('accueil', {}, true);
   await pause(300);
-  assert(corps.querySelectorAll('.big .av img').length >= 1,
+  /* LOT 25 §25.1 — la grande carte `.big` est devenue la carte `.cd` du
+     socle. La photo et la couleur d'identité sont exigées à l'identique, sur
+     le composant qui la remplace. */
+  assert(corps.querySelectorAll('.cd .av img').length >= 1,
     'la photo apparaît sur la carte d’accueil');
-  assert(!!corps.querySelector('.big .av.id-prune, .big .av.id-bleu'),
+  assert(!!corps.querySelector('.cd .av.id-prune, .cd .av.id-bleu'),
     'les cartes portent la couleur de l’enfant');
 
   /* ==================================================================== */

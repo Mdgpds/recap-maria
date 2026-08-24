@@ -43,10 +43,16 @@
     var recap = opts.recap;
     if (!recap) return;
 
-    if (recap.transmis_le) {
-      corps.appendChild(Kit.ce('p', 'msg',
-        'Récapitulatif transmis à la famille le ' + Kit.dateLongue(recap.transmis_le) + '.'));
-    }
+    /* LOT 25 (A.2) — LE CAS NÉGATIF EST DIT, LUI AUSSI. Jusqu'ici, seul un
+       récapitulatif DÉJÀ transmis était annoncé ; l'espace enfant portait, sur
+       son bandeau de mois clôturé, la mention « Il n'a pas encore été
+       transmis ». Ce bandeau a quitté l'espace enfant au lot 25 (§25.2) :
+       l'information vient ici, juste au-dessus de la réouverture, où elle
+       change quelque chose — rouvrir un mois déjà remis à la famille n'est
+       pas le même geste que rouvrir un mois qu'elle n'a jamais vu. */
+    corps.appendChild(Kit.ce('p', 'msg', recap.transmis_le
+      ? 'Récapitulatif transmis à la famille le ' + Kit.dateLongue(recap.transmis_le) + '.'
+      : 'Ce récapitulatif n’a pas encore été transmis à la famille.'));
 
     var bHisto = Kit.bouton('btn nt', function () { feuilleHistorique(opts); });
     bHisto.textContent = 'Voir l’historique de ce mois';
