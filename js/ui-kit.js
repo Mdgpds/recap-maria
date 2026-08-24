@@ -343,6 +343,45 @@
   /* pour empêcher.                                                       */
   /* ------------------------------------------------------------------ */
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 28 — LE NOM D'UN ÉCART D'HORAIRE, À UN SEUL ENDROIT             */
+  /*                                                                     */
+  /* Ces deux tables vivaient dans `js/ui-document.js`, parce que le      */
+  /* document remis à la famille était le SEUL écran à nommer un écart.   */
+  /* Le repli « Journées à part » le nomme désormais lui aussi, et deux   */
+  /* copies d'une même phrase divergent toujours : le jour où « J'ai      */
+  /* libéré plus tôt » change de mot, Maria lirait un libellé sur son     */
+  /* écran et la famille un autre sur la pièce opposable. C'est le même   */
+  /* raisonnement que `ENCART_RG06` ci-dessous, appliqué au geste plutôt  */
+  /* qu'à la règle.                                                       */
+  /*                                                                     */
+  /* AUCUN LIBELLÉ N'EST MODIFIÉ : les chaînes sont reprises mot pour     */
+  /* mot, elles changent de fichier, pas de texte.                        */
+  /* ------------------------------------------------------------------ */
+
+  /* Le GESTE déclaré. C'est lui qui explique pourquoi le temps a bougé —
+     la poche où il se déduit ne le dit pas (correction de la remarque 4 de
+     la relecture du lot 17). */
+  var LIBELLE_EVENEMENT_ECART = {
+    liberation_anticipee: 'libération anticipée',
+    arrivee_decalee: 'arrivée décalée à ma demande',
+    retard_parent: 'retard à la reprise',
+    /* LOT 21 (§21.3) — le congé posé à l'heure emprunte la mécanique de
+       l'écart d'horaire, mais ce n'est PAS une libération anticipée : c'est un
+       congé, et le document doit le dire. C'est toute la raison d'être de la
+       migration `017` — sans elle, cette ligne aurait menti sur une pièce
+       opposable des années plus tard. */
+    conge_horaire: 'congé posé sur cette journée'
+  };
+
+  /* La POCHE où l'écart se déduit. Nommée seulement quand elle change
+     quelque chose pour le lecteur. */
+  var LIBELLE_DESTINATION_ECART = {
+    recuperation: 'déduite de ma récupération',
+    conges_payes: 'déduite de mes congés payés',
+    sans_solde: 'passée en sans solde'
+  };
+
   var ENCART_RG06 =
     'Les congés payés d’une assistante maternelle se comptent en jours ouvrables, ' +
     'du lundi au samedi, dimanches et jours fériés exclus. Le samedi que je ne ' +
@@ -1541,6 +1580,10 @@
   /* ------------------------------------------------------------------ */
 
   global.Kit = {
+    /* LOT 28 — le nom d'un écart d'horaire, en un seul exemplaire, partagé
+       par le document remis à la famille et par « Journées à part ». */
+    LIBELLE_EVENEMENT_ECART: LIBELLE_EVENEMENT_ECART,
+    LIBELLE_DESTINATION_ECART: LIBELLE_DESTINATION_ECART,
     /* §6.3 — la phrase du décompte, en un seul exemplaire. */
     ENCART_RG06: ENCART_RG06,
     RESUME_RG06: RESUME_RG06,
@@ -1559,6 +1602,10 @@
     elider: elider, deMois: deMois, deMoisAnnee: deMoisAnnee,
     libellePeriode: libellePeriode,
     jourLong: jourLong, dateLongue: dateLongue,
+    /* LOT 28 — le quantième seul (« 1er », « 26 »), pour énumérer plusieurs
+       dates d'un même mois sans répéter le mois à chaque fois. `jourEtMois`
+       s'en servait déjà ; il n'était simplement pas exposé. */
+    quantieme: quantieme, jourEtMois: jourEtMois,
     MOIS: MOIS, MOIS_COURT: MOIS_COURT, JOURS_SEMAINE: JOURS_SEMAINE, NBSP: NBSP,
     pane: pane, lines: lines, ligne: ligne, note: note, warnbox: warnbox, section: section,
     /* LOT 24 (§24.2) — les composants uniques du socle. */
