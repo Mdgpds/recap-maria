@@ -485,85 +485,106 @@ function entrerSelection() {
   await pause(350);
   assert(txt(corps).indexOf('Un congé vaut pour') !== -1,
     '§18.6 : la phrase « un congé vaut pour vos contrats » est présente');
+  /* EXIGENCE CHANGÉE — LOT 26 §26.2 : LA PHRASE PASSE ENTRE LES DEUX BOUTONS.
+     Le §18.6 l'avait sortie de la note du bas pour la mettre DEVANT les
+     boutons : une explication lue après l'appui n'évite aucune erreur. Elle
+     est maintenant sous « Poser des congés » et au-dessus de « Retirer des
+     congés », centrée, comme la maquette.
+     LA GARANTIE DE FOND EST TENUE, et vérifiée telle quelle : Maria lit ce que
+     le geste va faire AVANT d'avoir posé. Le bouton de retrait, lui, n'a
+     jamais eu besoin de cette phrase — il ne pose rien. */
   var iPhrase = txt(corps).indexOf('Un congé vaut pour');
-  var iBouton = txt(corps).indexOf('Poser des congés');
-  assert(iPhrase < iBouton,
-    '§18.6 : et elle est lue AVANT les boutons, pas après');
+  var iRetrait = txt(corps).indexOf('Retirer des congés');
+  assert(iPhrase < iRetrait,
+    '§18.6 : elle est lue avec le geste de pose, pas reléguée en bas d’écran');
+  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats.') !== -1,
+    '§26.2 : six mots, et c’est la seule explication qui reste sur cet écran');
 
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 26 §26.1 : LES DEUX RACCOURCIS DE VENTILATION
+     DEVIENNENT LE GESTE ORDINAIRE.
+
+     « Tout sur mes congés payés » et « Tout sur ma récupération » existaient
+     parce que la ventilation partait de zéro et qu'une semaine sur quatre
+     contrats demandait jusqu'à vingt-quatre appuis sur les « + ». Le §18.3 les
+     a ajoutés pour faire ce geste courant en un seul.
+
+     LA RÉPARTITION EST MAINTENANT DÉJÀ FAITE, par le moteur, dans l'ordre du
+     contrat (RG-07) — c'est-à-dire exactement ce que produisait le raccourci
+     correspondant à cet ordre. Les corriger coûte un appui par jour déplacé,
+     sur trois steppers qui se rééquilibrent. Les deux boutons n'ont plus rien
+     à raccourcir.
+
+     CE QUE LE §18.3 PROTÉGEAIT, ET QUI EST VÉRIFIÉ ICI :
+     · la répartition ne dépasse JAMAIS le disponible — la borne vient du
+       moteur (`plafondsDe`), pas d'une borne réécrite dans l'écran ;
+     · elle couvre la période ENTIÈRE, sans reste à répartir ;
+     · le prix d'un jour sans solde est dit SOUS son propre compteur (§18.6).
+     ====================================================================== */
   boutonExact(corps, 'Poser des congés').click();
-  await pause(120);
-  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format. */
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
   await pause(200);
   /* Du 1er au 5 juin : la période contient le 3, jour de familiarisation
      saisi à la main. C'est lui qui doit déclencher la garde du §18.4. */
   var boites = sheet.querySelectorAll('.fld .dates');
-  assert(boites.length >= 2, '§18.3 : l’étape des dates propose un début et une fin');
+  assert(boites.length >= 2, '§26.1 : l’écran de pose porte un début et une fin');
   poserDate(boites[0], '2026-06-01');
   poserDate(boites[1], '2026-06-05');
-  await pause(150);
-  var bSuivant = boutonExact(sheet, 'Continuer');
-  assert(!!bSuivant, '§18.3 : l’étape des dates s’ouvre');
-  bSuivant.click();
-  await pause(400);
-  /* §5.1 (règle des cinq samedis) — l'étape du choix des samedis s'intercale
-     entre les dates et la ventilation dès qu'un samedi est éligible. Ce
-     parcours ne l'examine pas : il la franchit sans rien cocher, ce qui est
-     le comportement par défaut. */
-  if (txt(sheet).indexOf('Les samedis de cette période') !== -1) {
-    boutonExact(sheet, 'Continuer').click();
-    await pause(400);
-  }
+  await pause(600);
 
-  var bTout = boutonExact(sheet, 'Tout sur ma récupération');
-  assert(!!boutonExact(sheet, 'Tout sur mes congés payés') && !!bTout,
-    '§18.3 : les deux raccourcis sont offerts');
-  assert(txt(sheet).indexOf('par jour') !== -1,
+  assert(!boutonExact(sheet, 'Tout sur mes congés payés') &&
+         !boutonExact(sheet, 'Tout sur ma récupération'),
+    '§26.1 : les deux raccourcis ont disparu — la répartition est déjà faite');
+
+  var carteAlpha = Array.prototype.filter.call(sheet.querySelectorAll('.kid'), function (k) {
+    return txt(k.querySelector('.nm')) === 'Alpha';
+  })[0];
+  assert(!!carteAlpha, '§26.1 : une carte par enfant, déjà remplie');
+  carteAlpha.querySelector('.hd').click();
+  await pause(100);
+  carteAlpha = Array.prototype.filter.call(sheet.querySelectorAll('.kid'), function (k) {
+    return txt(k.querySelector('.nm')) === 'Alpha';
+  })[0];
+
+  var lignesAlpha = carteAlpha.querySelectorAll('.cnt');
+  assert(lignesAlpha.length === 3, '§18.3 : les trois réserves sont proposées');
+  assert(txt(carteAlpha).indexOf('par jour') !== -1,
     '§18.6 : le prix d’un jour sans solde est dit sous son compteur');
 
-  bTout.click();
-  await pause(250);
-  /* Le compteur de récupération porte 1 080 minutes, soit 2 jours de 540 :
-     « tout sur ma récupération » ne peut donc pas dépasser 2. */
-  var compteurs = sheet.querySelectorAll('.compteur-jours');
-  var valRecup = null, dispoRecup = null;
-  Array.prototype.forEach.call(compteurs, function (c) {
-    if (txt(c).indexOf('Récupération') === -1) return;
-    valRecup = Number(txt(c.querySelector('.val')));
+  var valRecup = null, dispoRecup = null, somme = 0;
+  Array.prototype.forEach.call(lignesAlpha, function (c) {
+    var v = Number(txt(c.querySelector('.stp span'))) || 0;
+    somme += v;
+    if (txt(c.querySelector('.cl')).indexOf('Récupération') !== 0) return;
+    valRecup = v;
     /* Le disponible est annoncé par l'écran lui-même : « reste 7 j
-       convertibles ». C'est CE nombre que le raccourci ne doit jamais
+       convertibles ». C'est CE nombre que la répartition ne doit jamais
        dépasser — et il vient du moteur, pas du test. */
-    var m = txt(c.querySelector('.sslb')).match(/(\d+)/);
+    var m = txt(c.querySelector('.cl i')).match(/(\d+)/);
     dispoRecup = m ? Number(m[1]) : null;
   });
   assert(valRecup !== null && dispoRecup !== null && valRecup <= dispoRecup,
-    '§18.3 : « tout sur ma récupération » ne dépasse jamais le disponible (obtenu ' +
+    '§18.3 : la répartition ne dépasse jamais le disponible (obtenu ' +
     valRecup + ', disponible ' + dispoRecup + ')');
-  var somme = 0;
-  Array.prototype.forEach.call(compteurs, function (c) {
-    somme += Number(txt(c.querySelector('.val'))) || 0;
-  });
   /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
-     Ce parcours franchit l'étape des samedis sans rien cocher : la semaine
-     compte donc 5 jours et non 6. Ce que ce cas vérifie — que le raccourci
-     couvre la période ENTIÈRE, sans reste à répartir — ne change pas d'un
-     mot ; seul le nombre de jours de la période a changé. */
+     Ce parcours ne coche aucun samedi : la semaine compte 5 jours et non 6.
+     Ce que ce cas vérifie — que la répartition couvre la période ENTIÈRE,
+     sans reste — ne change pas d'un mot. */
   assert(somme === 5,
-    '§18.3 : le raccourci couvre la période entière — 5 jours ouvrables répartis ' +
-    '(obtenu ' + somme + ')');
+    '§18.3 : la répartition couvre la période entière — 5 jours ouvrables ' +
+    'répartis (obtenu ' + somme + ')');
 
   /* ==================================================================== */
   /* §18.4 (10·A5) — L'AVERTISSEMENT DE SAISIE MANUELLE, DANS LES CONGÉS  */
   /* ==================================================================== */
   console.log('\n--- §18.4 : la garde de saisie manuelle, rétablie ---');
 
-  var bRecap = boutonExact(sheet, 'Voir le récapitulatif') || boutonExact(sheet, 'Continuer');
-  while (bRecap && txt(bRecap).trim() === 'Continuer') {
-    bRecap.click();
-    await pause(300);
-    bRecap = boutonExact(sheet, 'Voir le récapitulatif') || boutonExact(sheet, 'Continuer');
-  }
-  if (bRecap) { bRecap.click(); await pause(350); }
+  /* EXIGENCE DÉPLACÉE — LOT 26 §26.1, « ce qui ne se perd pas » :
+     l'avertissement vivait sur le récapitulatif, septième écran du parcours.
+     Il s'affiche désormais dans une feuille courte qui ne s'ouvre QUE s'il y a
+     quelque chose à écraser, à l'appui sur « Poser ». Le texte n'a pas changé
+     d'un mot, et il est lu au moment où il décide de quelque chose. */
+  sheet.querySelector('.stick button').click();
+  await pause(500);
 
   assert(txt(sheet).indexOf('Une saisie manuelle sera remplacée') !== -1,
     '10·A5 : la garde est rétablie — une journée de familiarisation ne s’efface ' +
@@ -573,10 +594,12 @@ function entrerSelection() {
   /* L'ASSERTION RETIRÉE EN AOÛT, RÉTABLIE :                             */
   /* « chaque contrat ne reçoit que SON propre jour »                    */
   /* ------------------------------------------------------------------ */
-  var bPoser = boutonExact(sheet, 'Poser ces congés');
-  assert(!!bPoser, '§18.4 : le bouton de pose est offert');
+  var bPoser = boutonExact(sheet, 'Poser ces congés quand même');
+  assert(!!bPoser, '§18.4 : le bouton de pose est offert, APRÈS l’avertissement');
+  assert(!!boutonExact(sheet, 'Annuler'),
+    '§18.4 : et le refus l’est aussi — l’avertissement n’est pas un passage obligé');
   bPoser.click();
-  await pause(400);
+  await pause(500);
 
   egal(ecritures.groupees.length, 1, 'une seule écriture groupée est partie');
   var aff = ecritures.groupees[0].affectations;

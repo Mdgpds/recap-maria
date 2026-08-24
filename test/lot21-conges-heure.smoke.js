@@ -238,14 +238,29 @@ var corps = document.getElementById('corps');
 var sheet = document.getElementById('sheet');
 
 /* Ouvre « Mes congés », puis le parcours, puis le format demandé. */
+/* LOT 26 §26.1 — LE FORMAT EST UN SEGMENTÉ, EN TÊTE DE L'ÉCRAN DE POSE.
+   La feuille « Je pose… » et ses trois cartes ont disparu : les trois formats
+   sont toujours proposés, ils ne coûtent plus un écran, et on change d'avis
+   sans revenir en arrière. Les libellés raccourcissent (maquette) : « Des
+   journées · ½ journée · Durée libre ». Le GESTE est le même — choisir le
+   format — et c'est ce que cette aide fait. */
 async function ouvrirFormat(format) {
   window.App.invalider();
   window.App.aller('conges', { annee: 2026, mois: 10 }, true);
   await pause(500);
   boutonExact(corps, 'Poser des congés').click();
-  await pause(200);
-  parTexte(sheet, 'button', format).click();
-  await pause(400);
+  await pause(300);
+  choisirFormat(format);
+  await pause(500);
+}
+function segFormats() {
+  var seg = sheet.querySelector('.seg');
+  return seg ? Array.prototype.slice.call(seg.querySelectorAll('button')) : [];
+}
+function choisirFormat(libelle) {
+  var b = segFormats().filter(function (x) { return txt(x) === libelle; })[0];
+  if (!b) throw new Error('format introuvable dans le segmenté : ' + libelle);
+  b.click();
 }
 
 /* La durée libre, saisie dans le champ heure natif. */
@@ -281,13 +296,23 @@ function boutonIssue(prenom, libelle) {
   await pause(500);
   boutonExact(corps, 'Poser des congés').click();
   await pause(200);
-  contient(sheet, 'Une ou plusieurs journées', 'le format en journées est proposé');
-  contient(sheet, 'Une demi-journée', 'la demi-journée aussi');
-  contient(sheet, 'Une durée libre', 'et la durée libre');
+  /* EXIGENCE CHANGÉE — LOT 26 §26.1 : les trois formats sont un SEGMENTÉ, en
+     tête de l'écran de pose, et leurs libellés raccourcissent comme la
+     maquette. Ils sont toujours les trois, et toujours atteignables — c'est
+     ce que §21.1 exige — mais ils ne coûtent plus un écran ni un appui de
+     plus, et Maria peut changer d'avis sans revenir en arrière. */
+  var libelles = segFormats().map(txt);
+  assert(libelles.join(' | ') === 'Des journées | ½ journée | Durée libre',
+    '§21.1 : les trois formats sont proposés, en segmenté (obtenu ' +
+    libelles.join(' | ') + ')');
+  assert(txt(segFormats().filter(function (b) {
+    return b.className.indexOf('on') !== -1;
+  })[0]) === 'Des journées',
+    '§26.1 : « des journées » est le format par défaut — le cas le plus fréquent');
 
   console.log('\n--- A1 : la borne des 4 h 30 ---');
-  parTexte(sheet, 'button', 'Une durée libre').click();
-  await pause(400);
+  choisirFormat('Durée libre');
+  await pause(500);
 
   saisirDuree('00:23');
   await pause(150);
@@ -307,10 +332,25 @@ function boutonIssue(prenom, libelle) {
   await pause(150);
   contient(sheet, '4h30 : c’est une demi-journée ou plus',
     'A1 : 4 h 30 est refusé, avec sa phrase');
-  contient(sheet, 'choisissez « une demi-journée » ou « une ou plusieurs journées »',
+  /* EXIGENCE CHANGÉE — la phrase nomme les DEUX AUTRES CASES DU SEGMENTÉ, avec
+     leurs libellés exacts : « choisissez « ½ journée » ou « des journées » ».
+     Elle disait « une demi-journée » et « une ou plusieurs journées », les
+     titres des cartes de l'ancienne feuille de format. Une phrase qui renvoie
+     à un bouton doit le nommer comme il s'appelle, sinon elle envoie chercher
+     ce qui n'existe pas. La phrase, elle, dit toujours quoi faire à la
+     place. */
+  contient(sheet, 'choisissez « ½ journée » ou « des journées »',
     'A1 : et la phrase dit quoi faire à la place');
-  var bRefus = parTexte(sheet, 'button', 'Poser 0h00');
-  assert(!!(bRefus && bRefus.disabled), 'A1 : et le bouton de pose est inactif');
+  /* EXIGENCE CHANGÉE — LE LIBELLÉ DU BOUTON REFUSÉ. Il disait « Poser 0h00 » :
+     un bouton qui annonce une durée nulle laisse croire qu'appuyer poserait
+     zéro minute, alors qu'il ne pose rien du tout. Il dit « Poser », tout
+     court, et il est inactif — la barre fixe récapitule quand il y a quelque
+     chose à récapituler, et se tait sinon (§26.1 point 2, « libellé Poser,
+     jamais Poser 0h00 »). */
+  var bRefus = sheet.querySelector('.stick button');
+  assert(!!bRefus && txt(bRefus) === 'Poser' && bRefus.disabled,
+    'A1 : et le bouton de pose est inactif, sans annoncer une durée nulle ' +
+    '(obtenu « ' + (bRefus ? txt(bRefus) : '—') + ' »)');
 
   saisirDuree('00:00');
   await pause(150);
@@ -325,7 +365,14 @@ function boutonIssue(prenom, libelle) {
   saisirDuree('01:00');
   await pause(200);
   contient(sheet, 'Pour qui, et sur quoi ?', 'le bloc famille par famille est là');
-  contient(sheet, 'Chaque famille se règle individuellement', 'et il le dit');
+  /* EXIGENCE CHANGÉE — LOT 26 §26.1 : la phrase « Chaque famille se règle
+     individuellement » est retirée. Elle commentait ce que l'écran MONTRE :
+     une ligne par enfant, chacune avec son propre segmenté d'issue et son
+     propre effet chiffré. Le §21.2 tient sans elle, et il est vérifié
+     directement ci-dessous — chaque enfant a SON choix, et deux enfants
+     peuvent partir sur deux issues différentes. */
+  assert(txt(sheet).indexOf('Pour qui, et sur quoi ?') !== -1,
+    'et le titre de section pose la question');
   contient(sheet, 'récup 12h00 · CP 10 j', 'les réserves de Léa sont affichées');
   contient(sheet, 'récup 1h30 · CP 0 j', 'et celles de Tom');
 
@@ -444,7 +491,7 @@ function boutonIssue(prenom, libelle) {
   console.log('\n--- A7 : le retrait, enfant par enfant ---');
 
   /* Une pose mixte : Léa sur sa récupération, Noah en sans solde. */
-  await ouvrirFormat('Une demi-journée');
+  await ouvrirFormat('½ journée');
   contient(sheet, '4h30 — la moitié d’une journée de congé',
     '§21.1 : la demi-journée est pré-remplie et non modifiable');
   /* Tom porte déjà un congé ce jour-là : l'écran le dit et l'écarte, plutôt
@@ -508,7 +555,7 @@ function boutonIssue(prenom, libelle) {
      deux mois : 5 j. Le même écran, la même feuille, deux dates — et deux
      réponses différentes. C'est exactement ce que le garde-fou doit faire. */
   window.App.invalider();
-  await ouvrirFormat('Une durée libre');
+  await ouvrirFormat('Durée libre');
   saisirDuree('01:00');
   await pause(300);
 
@@ -577,7 +624,7 @@ function boutonIssue(prenom, libelle) {
   AVENANTS['c-noah'][0].brut_mensuel_centimes = null;
   AVENANTS['c-noah'][0].net_mensuel_centimes = null;
   window.App.invalider();
-  await ouvrirFormat('Une durée libre');
+  await ouvrirFormat('Durée libre');
   saisirDuree('01:00');
   await pause(400);
   boutonIssue('Noah', 'Sans solde').click();

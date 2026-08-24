@@ -292,50 +292,86 @@ function poserDate(bloc, iso) {
     s.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   });
 }
-/* §5.1 — L'étape des samedis s'intercale entre les dates et la ventilation
-   dès qu'un samedi est éligible. Les parcours qui ne l'examinent pas la
-   franchissent sans rien cocher : rien n'est coché par défaut. */
-async function passerSamedis() {
-  if (txt(sheet).indexOf('Les samedis de cette période') === -1) return false;
-  boutonExact(sheet, 'Continuer').click();
-  await pause(300);
-  return true;
+/* LOT 26 — OUVRIR L'ÉCRAN DE POSE ET Y CHOISIR UNE PÉRIODE. Il n'y a plus
+   de feuille de format, plus d'étape des dates, plus d'étape des samedis :
+   un seul écran, qui CHARGE avant d'annoncer (conditions du mois visé,
+   journées déjà saisies, quota réel des samedis). D'où l'attente. */
+async function ouvrirPose(debut, fin) {
+  boutonExact(corps, 'Poser des congés').click();
+  await pause(200);
+  var ch = champsDates();
+  poserDate(ch.du, debut);
+  poserDate(ch.au, fin || debut);
+  await pause(500);
 }
 
+/* ==========================================================================
+   LOT 26 §26.1 — LES AIDES SUIVENT L'ÉCRAN DE POSE UNIQUE.
+
+   Il n'y a plus de feuille par étape : le format est un segmenté, les dates
+   et le bloc vert du décompte sont dessous, et « Pour qui — déjà réparti »
+   pose une carte par enfant (`.kid`) dont le chevron déplie trois steppers.
+   La barre fixe porte le bouton qui récapitule et pose.
+
+   UN POINT DE MÉCANIQUE : chaque appui sur un stepper REDESSINE la carte de
+   l'enfant — c'est ce qui rééquilibre les autres lignes. Les aides
+   re-interrogent donc le DOM à chaque clic ; garder une référence sur un
+   bouton et l'appuyer deux fois n'aurait aucun effet la seconde fois.
+   ========================================================================= */
 function champsDates() {
   var blocs = sheet.querySelectorAll('.fld');
   return { du: blocs[0], au: blocs[1] };
 }
-function compteurDe(libelle) {
-  return parTexte(sheet, '.compteur-jours', libelle);
+function boutonPoser() { return sheet.querySelector('.stick button'); }
+function carteDe(prenom) {
+  return Array.prototype.filter.call(sheet.querySelectorAll('.kid'), function (k) {
+    return txt(k.querySelector('.nm')) === prenom;
+  })[0] || null;
 }
-function valeurDe(libelle) {
-  var c = compteurDe(libelle);
-  return c ? Number(txt(c.querySelector('.val'))) : null;
+function ouvrirCarte(prenom) {
+  var k = carteDe(prenom);
+  if (k && k.className.indexOf('open') === -1) k.querySelector('.hd').click();
+  return carteDe(prenom);
 }
-function resteAffiche() {
-  var r = sheet.querySelector('.reste b');
-  return r ? Number(r.textContent) : null;
+function compteurDe(prenom, libelle) {
+  var k = carteDe(prenom);
+  if (!k) return null;
+  return Array.prototype.filter.call(k.querySelectorAll('.cnt'), function (c) {
+    return txt(c.querySelector('.cl')).indexOf(libelle) === 0;
+  })[0] || null;
 }
-/* Remet une ventilation VALABLE, sans supposer aucune réserve : on vide les
-   trois compteurs, puis on remplit dans l'ordre du contrat — congés payés,
-   récupération, sans solde —, chacun jusqu'à son mur. Les bornes dépendent du
-   mois rejoué par le moteur ; le test ne doit pas les deviner. */
-function remettreProposition() {
-  ['Congés payés', 'Récupération', 'Sans solde'].forEach(function (l) {
-    cliquer(l, '−', 40);
+function valeurDe(prenom, libelle) {
+  var c = compteurDe(prenom, libelle);
+  return c ? Number(txt(c.querySelector('.stp span'))) : null;
+}
+function sommeDe(prenom) {
+  return valeurDe(prenom, 'Congés payés') + valeurDe(prenom, 'Récupération') +
+         valeurDe(prenom, 'Sans solde');
+}
+function cliquer(prenom, libelle, signe, fois) {
+  for (var i = 0; i < (fois || 1); i++) {
+    var c = compteurDe(prenom, libelle);
+    if (!c) return;
+    var b = Array.prototype.filter.call(c.querySelectorAll('.stp button'), function (x) {
+      return txt(x) === signe;
+    })[0];
+    if (!b || b.disabled) return;
+    b.click();
+  }
+}
+/* Les lignes de samedi du bloc vert. Une par samedi ET PAR ENFANT dès que
+   plusieurs contrats peuvent le compter : le quota est par famille (§2.4). */
+function lignesSamedi() {
+  return Array.prototype.filter.call(sheet.querySelectorAll('.res .sam'), function (l) {
+    return l.tagName === 'BUTTON';
   });
-  ['Congés payés', 'Récupération', 'Sans solde'].forEach(function (l) {
-    var manque = resteAffiche();
-    if (manque > 0) cliquer(l, '+', manque);
-  });
 }
-function cliquer(libelle, signe, fois) {
-  var c = compteurDe(libelle);
-  var b = Array.prototype.filter.call(c.querySelectorAll('.pas'), function (x) {
-    return x.textContent === signe;
-  })[0];
-  for (var i = 0; i < (fois || 1); i++) b.click();
+function samediDe(prenom) {
+  return lignesSamedi().filter(function (l) { return txt(l).indexOf(prenom) !== -1; })[0] || null;
+}
+function grosDecompte() {
+  var g = sheet.querySelector('.res .big2');
+  return g ? sansInsecable(txt(g)) : '';
 }
 
 (async function () {
@@ -351,9 +387,34 @@ function cliquer(libelle, signe, fois) {
   assert(txt(corps).indexOf('Vos réserves') !== -1, 'les réserves sont affichées');
   assert(txt(corps).indexOf('Léa') !== -1 && txt(corps).indexOf('Tom') !== -1,
     'contrat par contrat, jamais consolidées');
-  assert(txt(corps).indexOf('de congés payés') !== -1 && txt(corps).indexOf('de récupération') !== -1,
-    'congés payés ET récupération — sans la seconde, Maria ne peut pas éviter le sans-solde');
-  assert(txt(corps).indexOf('Les compteurs diffèrent') !== -1, 'la phrase d’explication');
+  /* EXIGENCE CHANGÉE — LOT 26 §26.2 : « MES CONGÉS » S'ALLÈGE.
+     La valeur d'une ligne de réserve redevient une VALEUR — « 19 j · 12h00 »
+     au lieu de « 19 j de congés payés · 12h00 de récupération · samedis
+     comptés : 0 sur 5 cette année », une phrase de trois membres posée dans
+     la colonne des montants. Le titre de section dit déjà « Vos réserves »,
+     et l'ordre — congés payés d'abord — est celui de la consommation (§18.5).
+     Le quota de samedis descend en sous-texte, où il reste visible HORS de la
+     pose (§7).
+     CE QUE LOT 10 EXIGE NE BOUGE PAS : les DEUX réserves sont affichées,
+     contrat par contrat, pour que Maria sache avant de poser si sa
+     récupération lui évitera le sans-solde. C'est vérifié ici.
+     « Les compteurs diffèrent car les contrats n'ont pas commencé en même
+     temps. » quitte l'écran : c'est une RÈGLE, elle va dans « Comment
+     l'application compte » (lot 27). Ce qu'elle expliquait est dit par la
+     structure — une ligne par enfant, chacune avec ses propres nombres. */
+  var lignesRes = Array.prototype.filter.call(corps.querySelectorAll('.ln'), function (l) {
+    return txt(l).indexOf('Léa') === 0 || txt(l).indexOf('Tom') === 0;
+  });
+  assert(lignesRes.length === 2, 'une ligne par contrat (obtenu ' + lignesRes.length + ')');
+  assert(/\d+ j/.test(sansInsecable(txt(lignesRes[0]))) && /\d+h\d\d/.test(txt(lignesRes[0])),
+    'congés payés (en jours) ET récupération (en heures) — sans la seconde, ' +
+    'Maria ne peut pas éviter le sans-solde (obtenu « ' + txt(lignesRes[0]) + ' »)');
+  assert(txt(lignesRes[0]).indexOf('samedis') !== -1,
+    '§7 : le reste du quota de samedis est visible hors de la pose');
+  assert(txt(corps).indexOf('Les compteurs diffèrent') === -1,
+    '§26.2 : la phrase d’explication a quitté l’écran');
+  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats.') !== -1,
+    '§26.2 : les six mots qui restent, DEVANT le bouton (§18.6)');
   assert(!!boutonExact(corps, 'Poser des congés'), 'V8-08 : UN SEUL bouton de pose');
   assert(!parTexte(corps, 'button', 'Poser une semaine'), 'V8-08 : le mode semaine a disparu');
   assert(!parTexte(corps, 'button', 'Poser une seule journée'),
@@ -364,37 +425,75 @@ function cliquer(libelle, signe, fois) {
   /* A1 — 6 jours ouvrables, samedi inclus, décompte du MOTEUR            */
   /* ==================================================================== */
   console.log('\n--- P1 : semaine du lundi 6 au vendredi 10 juillet ---');
-  boutonExact(corps, 'Poser des congés').click();
-  await pause(120);
-  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
-     le parcours en journées, lui, est inchangé à partir d'ici. */
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
-  await pause(200);
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 26 §26.1 : HUIT ÉCRANS DEVIENNENT UN.
 
-  assert(txt(sheet).indexOf('Quand serez-vous absente ?') !== -1, 'P1 : l’étape des dates');
-  assert(txt(sheet).indexOf('mettez la même date dans les deux champs') !== -1,
-    'P1 : le cas de la journée unique est expliqué');
+     Le parcours était : « Je pose… » (format) → les dates → les samedis →
+     UNE FEUILLE DE VENTILATION PAR ENFANT → le récapitulatif. Tout tient
+     maintenant sur un écran : le format en segmenté, Du/Au, le bloc vert du
+     décompte avec ses samedis dedans, et « Pour qui — déjà réparti » qui pose
+     une carte par enfant, dépliable.
 
-  var ch = champsDates();
-  poserDate(ch.du, '2026-07-06');
-  poserDate(ch.au, '2026-07-10');
-  await pause(80);
+     CE QUI CHANGE, ASSERTION PAR ASSERTION :
+
+     - « Je pose… » et ses trois cartes -> un SEGMENTÉ. Les trois formats sont
+       toujours proposés, ils ne coûtent plus un écran, et on change d'avis
+       sans revenir en arrière. Libellés raccourcis (maquette) : « Des
+       journées · ½ journée · Durée libre ».
+     - « Quand serez-vous absente ? » et « mettez la même date dans les deux
+       champs » -> les deux champs Du/Au, sur le même écran. La phrase
+       disparaît parce que le geste est devenu évident : les deux champs sont
+       côte à côte et déjà remplis avec la même date. LE CAS DE LA JOURNÉE
+       UNIQUE EST VÉRIFIÉ EN P2, où il est réellement exercé.
+     - « N j ouvrables décomptés » -> « N j ouvrables », dans le bloc vert. Le
+       mot « décomptés » quitte le gros chiffre parce que la phrase juste
+       dessous dit la règle du décompte en entier.
+     - « Les samedis de cette période », son écran et ses cases -> les lignes
+       du bloc vert, sous le chiffre qu'elles changent. Le quota reste RÉEL et
+       PAR CONTRAT (§2.4, critère A5 du lot 23) : quand plusieurs enfants
+       peuvent compter le même samedi, il y a une ligne par enfant, nommée.
+       ÉCART ASSUMÉ À LA MAQUETTE, qui n'en montre qu'une : elle retirerait à
+       Maria le droit de compter le samedi chez Léa et pas chez Tom.
+     - « une feuille de ventilation PAR ENFANT », sa barre d'étapes, son
+       panneau « Vos réserves pour ce contrat » et ses boutons « Continuer » ->
+       une CARTE par enfant, déjà remplie par le moteur, dont le chevron
+       déplie les trois mêmes steppers. Les réserves sont sous les steppers,
+       en sous-texte de chaque ligne : « reste 19 j au compteur ».
+     - « Reste à répartir » et « Continuer » désactivé -> RETIRÉS, et c'est
+       plus fort que ce qu'ils protégeaient : la somme ne PEUT PLUS s'écarter
+       du décompte, parce qu'ajuster une ligne rééquilibre les autres. Un
+       bouton qu'on désactive dit « vous vous êtes trompée » ; une somme qui ne
+       peut pas être fausse ne le demande jamais. C'est vérifié explicitement.
+     - le récapitulatif « Vérifiez avant de poser » -> la BARRE FIXE, dont le
+       libellé récapitule (« Poser 6 jours sur vos 2 contrats »), et le total
+       du sans-solde chiffré juste au-dessus.
+
+     AUCUNE GARANTIE N'EST AFFAIBLIE : le décompte vient du moteur, la
+     répartition proposée aussi, les bornes des réserves sont celles du moteur,
+     les congés payés ne passent jamais en négatif, le sans-solde ne dépasse
+     jamais la période, et rien n'est écrit avant l'appui. Tout est vérifié
+     ci-dessous.
+     ====================================================================== */
+  await ouvrirPose('2026-07-06', '2026-07-10');
+
+  assert(txt(sheet).indexOf('Poser un congé') !== -1, 'P1 : la pose tient sur UN écran');
+  var formats = Array.prototype.map.call(
+    sheet.querySelector('.seg').querySelectorAll('button'), txt);
+  assert(formats.join(' | ') === 'Des journées | ½ journée | Durée libre',
+    'LOT 21 : les trois formats restent proposés, en segmenté (obtenu ' +
+    formats.join(' | ') + ')');
+  assert(!!champsDates().du && !!champsDates().au, 'P1 : les deux dates sont là');
 
   /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
 
      « Une semaine du lundi au vendredi décompte 6 JOURS » et « le samedi
      inclus est dit » portaient sur la règle d'avant : le samedi comptait
      d'office. Il ne compte plus que si Maria le choisit, et rien n'est coché
-     par défaut (décision d'Adrien du 24 août). La semaine annonce donc 5.
-
-     Les deux assertions ne disparaissent pas : la première change de valeur,
-     la seconde change de cible — l'écran doit toujours DIRE la règle du
-     décompte plutôt que la sous-entendre, et c'est désormais celle des cinq
-     samedis. La preuve que 6 reste atteignable est juste en dessous, sur
-     l'étape neuve. */
-  assert(sansInsecable(txt(sheet)).indexOf('5 j ouvrables décomptés') !== -1,
-    'A1 : sans samedi coché, une semaine du lundi au vendredi décompte 5 JOURS (obtenu « ' +
-    (sansInsecable(txt(sheet)).match(/\d+ j ouvrables[^.]{0,20}/) || [''])[0] + ' »)');
+     par défaut. La semaine annonce donc 5. La preuve que 6 reste atteignable
+     est juste en dessous. */
+  assert(grosDecompte().indexOf('5 j ouvrables') !== -1,
+    'A1 : sans samedi coché, une semaine du lundi au vendredi décompte 5 JOURS ' +
+    '(obtenu « ' + grosDecompte() + ' »)');
   assert(txt(sheet).indexOf('que si vous le choisissez') !== -1,
     'A1 : la règle du décompte est dite — c’est le désaccord historique avec les familles');
   /* Le décompte vient du moteur : on le recalcule ici indépendamment. */
@@ -403,198 +502,209 @@ function cliquer(libelle, signe, fois) {
   assert(Engine.decompterJoursOuvrables('2026-07-06', '2026-07-10', null,
     ['2026-07-11']) === 6, 'A1 : avec le samedi coché, il en rend 6');
 
-  boutonExact(sheet, 'Continuer').click();
-  await pause(400);
-
   /* ==================================================================== */
-  /* §5 — L'ÉTAPE NEUVE : LES SAMEDIS DE CETTE PÉRIODE                    */
+  /* §5 — LES SAMEDIS, DANS LE BLOC VERT                                  */
   /* ==================================================================== */
-  console.log('\n--- §5 : les samedis de cette période ---');
+  console.log('\n--- §5 : les samedis, dans le bloc vert ---');
 
-  assert(txt(sheet).indexOf('Les samedis de cette période') !== -1,
-    '§5.1 : le choix des samedis vient après les dates et avant la ventilation');
-  assert(txt(sheet).indexOf('dans la limite de 5 par an et par famille') !== -1,
+  assert(txt(sheet).indexOf('que si vous le choisissez') !== -1,
     '§5.2 : la règle est dite, avec son quota');
-  assert(txt(sheet).indexOf('il vous reste 5 samedis') !== -1,
+  assert(txt(sheet).indexOf('cinq') !== -1 || txt(sheet).indexOf('5 ') !== -1,
+    '§5.2 : et le quota y figure');
+  var samedis = lignesSamedi();
+  /* A5 — LE QUOTA EST PAR CONTRAT : une ligne par enfant qui peut le compter,
+     et cocher pour l'un ne coche rien pour l'autre. */
+  assert(samedis.length === 2,
+    '§5.2 + A5 : une ligne par samedi éligible ET par enfant (obtenu ' +
+    samedis.length + ')');
+  assert(txt(samedis[0]).indexOf('samedi 11 juillet') !== -1,
+    '§5.2 : le samedi de la période est proposé, nommé en toutes lettres (obtenu « ' +
+    txt(samedis[0]) + ' »)');
+  assert(txt(samedis[0]).indexOf('reste 5 sur 5') !== -1,
     '§5.2 : le reste du quota est réel, lu en base et affiché (obtenu « ' +
-    (txt(sheet).match(/il vous reste[^(]{0,24}/) || [''])[0] + ' »)');
-  assert(txt(sheet).indexOf('1er juin 2026 – 31 mai 2027') !== -1,
-    'A6 : l’année de référence est nommée, du 1er juin au 31 mai');
-  assert(txt(sheet).indexOf('samedi 11 juillet') !== -1,
-    '§5.2 : le samedi de la période est proposé, nommé en toutes lettres');
-  var casesSamedi = sheet.querySelectorAll('.samedis input[type="checkbox"]');
-  /* A5 — LE QUOTA EST PAR CONTRAT : chaque enfant a sa liste, et cocher pour
-     l'un ne coche rien pour l'autre. */
-  assert(casesSamedi.length === sheet.querySelectorAll('.samedis').length,
-    '§5.2 : une case par samedi éligible et par enfant (obtenu ' +
-    casesSamedi.length + ' cases pour ' + sheet.querySelectorAll('.samedis').length +
-    ' enfant(s))');
-  assert(casesSamedi.length >= 2,
-    'A5 : plusieurs contrats sont concernés, chacun avec son propre samedi');
-  assert(casesSamedi[0].checked === false,
+    txt(samedis[0]) + ' »)');
+  assert(samedis[0].getAttribute('aria-checked') === 'false',
     '§2.6 : rien n’est coché par défaut — c’est Maria qui arbitre');
-  assert(sansInsecable(txt(sheet)).indexOf('Décompte : 5 j') !== -1,
-    '§5.2 : le décompte affiché est celui du moteur');
+  assert(!!samediDe('Léa') && !!samediDe('Tom'),
+    'A5 : chaque enfant a SA ligne, nommée');
 
-  casesSamedi[0].checked = true;
-  casesSamedi[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  await pause(120);
-  assert(sansInsecable(txt(sheet)).indexOf('Décompte : 6 j') !== -1,
-    'A3 : cocher le samedi change la phrase toute seule — elle est rejouée par le moteur');
-  assert(txt(sheet).indexOf('il vous reste 4 samedis') !== -1,
+  samediDe('Léa').click();
+  await pause(150);
+  assert(grosDecompte().indexOf('de 5 à 6 j ouvrables') !== -1,
+    'A3 : cocher le samedi de Léa change le décompte, rejoué par le moteur — ' +
+    'et il diffère désormais d’un contrat à l’autre (obtenu « ' + grosDecompte() + ' »)');
+  assert(txt(samediDe('Léa')).indexOf('reste 4 sur 5') !== -1,
     '§5.2 : et le reste du quota descend d’autant');
-  assert(txt(sheet).indexOf('il vous reste 5 samedis') !== -1,
+  assert(txt(samediDe('Tom')).indexOf('reste 5 sur 5') !== -1,
     'A5 : le quota de l’autre enfant n’a pas bougé — il est par contrat');
 
-  boutonExact(sheet, 'Continuer').click();
-  await pause(300);
+  /* ==================================================================== */
+  /* « Pour qui — déjà réparti » : une carte par enfant                   */
+  /* ==================================================================== */
+  assert(txt(sheet).indexOf('Pour qui — déjà réparti') !== -1,
+    '§26.1 : la répartition est DÉJÀ FAITE par le moteur — Maria arbitre, ' +
+    'elle ne saisit pas');
+  assert(!!carteDe('Léa') && !!carteDe('Tom'),
+    'P1 : une carte par contrat, les deux sous les yeux en même temps');
+  assert(!!sheet.querySelector('.stick'),
+    '§26.1 : la barre fixe porte l’action, sans avoir à défiler');
+  assert(sansInsecable(txt(boutonPoser())).indexOf('Poser') === 0,
+    '§26.1 point 5 : le libellé du bouton récapitule (obtenu « ' +
+    txt(boutonPoser()) + ' »)');
 
-  assert(txt(sheet).indexOf('Léa') !== -1 && txt(sheet).indexOf('à répartir') !== -1,
-    'P1 : l’étape 2 s’ouvre sur le premier contrat');
-  assert(!!sheet.querySelector('.etapes'), 'P1 : la barre d’étapes est présente');
-  assert(txt(sheet).indexOf('Vos réserves pour ce contrat') !== -1,
-    'P1 : les réserves DE CE CONTRAT sont sous les yeux');
-
+  ouvrirCarte('Léa');
+  await pause(60);
   /* Répartition proposée par le moteur : Léa a 19 jours de CP, les 6 jours y
      tiennent entièrement. */
-  assert(valeurDe('Congés payés') === 6, 'P1 : la proposition par défaut met 6 sur les congés payés');
-  assert(valeurDe('Récupération') === 0, 'P1 : rien sur la récupération');
-  assert(valeurDe('Sans solde') === 0, 'P1 : rien sans solde');
-  assert(txt(sheet).indexOf('Reste à répartir') !== -1, 'P1 : le reste à répartir est affiché');
-  assert(!!sheet.querySelector('.reste.ok'), 'P1 : il est à zéro, donc conforme');
-  assert(boutonExact(sheet, 'Continuer').disabled === false, 'A2 : « Continuer » est actif');
+  assert(valeurDe('Léa', 'Congés payés') === 6,
+    'P1 : la proposition par défaut met 6 sur les congés payés');
+  assert(valeurDe('Léa', 'Récupération') === 0, 'P1 : rien sur la récupération');
+  assert(valeurDe('Léa', 'Sans solde') === 0, 'P1 : rien sans solde');
+  assert(sommeDe('Léa') === 6, 'P1 : la somme fait exactement le décompte');
+  assert(txt(carteDe('Léa')).indexOf('6 j payés') !== -1,
+    'P1 : et la carte le dit sans qu’il faille la déplier');
+  assert(boutonPoser().disabled === false, 'A2 : le bouton de pose est actif');
 
   /* ==================================================================== */
   /* P7 — Modification manuelle de la répartition                         */
   /* A3 — les bornes des compteurs                                        */
+  /* P8 — la somme ne peut plus s'écarter du décompte                     */
   /* ==================================================================== */
   console.log('\n--- P7 : Maria modifie la répartition ---');
-  cliquer('Congés payés', '−', 2);
-  await pause(30);
-  assert(valeurDe('Congés payés') === 4, 'P7 : les congés payés descendent à 4');
-  assert(!!sheet.querySelector('.reste.ko'), 'P8 : le reste n’est plus à zéro');
-  assert(boutonExact(sheet, 'Continuer').disabled === true,
-    'A2 : « Continuer » est INACTIF tant que le reste n’est pas nul');
+  cliquer('Léa', 'Congés payés', '−', 2);
+  await pause(60);
+  assert(valeurDe('Léa', 'Congés payés') === 4, 'P7 : les congés payés descendent à 4');
+  /* P8 — L'EXIGENCE EST RENFORCÉE : au lieu d'un « reste » non nul et d'un
+     bouton désactivé, les deux jours retirés sont RETOMBÉS sur le sans-solde.
+     La somme fait toujours le décompte, donc rien à refuser. */
+  assert(sommeDe('Léa') === 6,
+    'P8 : la somme reste égale au décompte — ajuster une ligne rééquilibre ' +
+    'les autres (obtenu ' + sommeDe('Léa') + ')');
+  assert(boutonPoser().disabled === false,
+    'A2 : le bouton reste actif, parce qu’une ventilation incomplète est ' +
+    'devenue impossible');
 
-  cliquer('Récupération', '+', 2);
-  await pause(30);
-  assert(valeurDe('Récupération') === 2, 'P7 : deux jours sur la récupération');
-  assert(!!sheet.querySelector('.reste.ok'), 'P7 : le compte est bon à nouveau');
-  assert(boutonExact(sheet, 'Continuer').disabled === false, 'A2 : « Continuer » se rouvre');
+  cliquer('Léa', 'Récupération', '+', 2);
+  await pause(60);
+  assert(valeurDe('Léa', 'Récupération') === 2, 'P7 : deux jours sur la récupération');
+  assert(sommeDe('Léa') === 6, 'P7 : et la somme fait toujours le compte');
 
   /* A3 — la récupération est BORNÉE par la réserve. On ne suppose pas sa
-     valeur exacte : elle dépend du mois rejoué par le moteur, qui ajoute les
-     heures supplémentaires acquises en juillet. Ce qui se vérifie, c'est qu'un
-     mur existe et qu'on ne le franchit pas. */
-  cliquer('Récupération', '+', 30);
-  await pause(30);
-  var plafondRecup = valeurDe('Récupération');
-  cliquer('Récupération', '+', 5);
-  await pause(30);
-  assert(valeurDe('Récupération') === plafondRecup,
+     valeur exacte : elle dépend du mois rejoué par le moteur. Ce qui se
+     vérifie, c'est qu'un mur existe et qu'on ne le franchit pas. */
+  cliquer('Léa', 'Récupération', '+', 30);
+  await pause(60);
+  var plafondRecup = valeurDe('Léa', 'Récupération');
+  cliquer('Léa', 'Récupération', '+', 5);
+  await pause(60);
+  assert(valeurDe('Léa', 'Récupération') === plafondRecup,
     'A3 : la récupération bute sur la réserve à ' + plafondRecup +
     ' jours et n’en bouge plus');
   assert(plafondRecup < 30, 'A3 : ce plafond est bien une contrainte, pas l’infini');
+  assert(sommeDe('Léa') === 6, 'P5 (piège n° 5) : et la somme n’a jamais dépassé le décompte');
 
-  /* Le reste peut être négatif à l'affichage — c'est justement ce que le
-     piège n° 5 met en garde. On vérifie que « Continuer » le refuse. */
-  if (resteAffiche() !== 0) {
-    assert(boutonExact(sheet, 'Continuer').disabled === true,
-      'P8 : « Continuer » refuse aussi un reste NÉGATIF');
-  }
-
-  /* On revient à la proposition du moteur pour la suite du parcours. */
-  remettreProposition();
-  await pause(30);
-  assert(!!sheet.querySelector('.reste.ok'), 'P7 : le compte est bon à nouveau');
-
-  boutonExact(sheet, 'Continuer').click();
-  await pause(300);
-  await passerSamedis();
+  /* On revient à la proposition du moteur pour la suite du parcours : tout
+     sur les congés payés, qui couvrent. */
+  cliquer('Léa', 'Congés payés', '+', 30);
+  await pause(60);
+  assert(valeurDe('Léa', 'Congés payés') === 6 && sommeDe('Léa') === 6,
+    'P7 : le compte est bon à nouveau');
 
   /* ==================================================================== */
   /* P6 — Réserves insuffisantes : le sans-solde, et son coût             */
   /* A4 — le montant vient de Engine.montantCentimes                      */
   /* ==================================================================== */
   console.log('\n--- P6 : Tom, réserves insuffisantes ---');
-  assert(txt(sheet).indexOf('Tom') !== -1, 'P6 : l’étape 2 passe au second contrat');
+  ouvrirCarte('Tom');
+  await pause(60);
+  assert(!!carteDe('Tom'), 'P6 : la carte de Tom est sur le même écran que celle de Léa');
   /* MISE À JOUR LOT 16 §16.1 d) — la phrase change et se CHIFFRE. « Les
-     réserves ne suffisent pas » disait le problème ; l'écran annonce
-     désormais le basculement en sans solde ET son coût, avant validation.
-     Découvrir une retenue sur le document du mois, c'est trop tard. */
+     réserves ne suffisent pas » disait le problème ; l'écran annonce le
+     basculement en sans solde ET son coût, avant le geste. Elle vivait dans
+     un encart par contrat plus un total sur le récapitulatif ; les deux
+     écrans ont disparu, la phrase est au-dessus de la barre fixe. */
   assert(txt(sheet).indexOf('Vos réserves ne couvrent pas toute la période') !== -1,
-    'P6 / §16.1 d) : l’écran DIT que les réserves de Tom ne couvrent pas la période');
+    'P6 / §16.1 d) : l’écran DIT que les réserves ne couvrent pas la période');
   assert(txt(sheet).indexOf('passent en sans solde') !== -1,
     '§16.1 d) : et que le solde bascule en sans solde');
-  assert(txt(sheet).indexOf('Vous pouvez changer avant de valider') !== -1,
+  assert(txt(sheet).indexOf('Vous pouvez changer avant de poser') !== -1,
     '§16.1 d) : rien n’est imposé — tout est annoncé');
-  var cpTom = valeurDe('Congés payés');
-  var supTom = valeurDe('Récupération');
-  var ssTom = valeurDe('Sans solde');
-  /* EXIGENCE CHANGÉE, ET C'EST LE CRITÈRE A5 EN ACTION. À l'étape des
-     samedis, le samedi de LÉA a été coché, celui de TOM non. Le quota étant
-     par contrat, la période de Tom compte 5 jours quand celle de Léa en
-     compte 6 : « sur une même période, Maria peut compter le samedi pour Léa
-     et pas pour Tom » (§2.4). La proposition couvre donc 5 jours, pas 6. */
-  assert(cpTom + supTom + ssTom === 5,
-    'A5 : la proposition de Tom couvre ses 5 jours — son samedi n’a pas été coché, ' +
-    'celui de Léa si (obtenu ' + (cpTom + supTom + ssTom) + ')');
-  assert(ssTom > 0,
-    'P6 : faute de réserves, une partie passe SANS SOLDE — c’est-à-dire en retenue ' +
-    'sur salaire (obtenu ' + ssTom + ' jour(s))');
-  assert(!!sheet.querySelector('.reste.ok'), 'P6 : le reste à répartir est nul');
 
-  assert(txt(sheet).indexOf('sans solde') !== -1, 'V8-11 : l’effet du sans-solde est annoncé');
-  assert(txt(sheet).indexOf('retenue de') !== -1,
-    'V8-11 : la retenue est chiffrée AVANT le choix, pas découverte sur le document');
+  var cpTom = valeurDe('Tom', 'Congés payés');
+  var supTom = valeurDe('Tom', 'Récupération');
+  var ssTom = valeurDe('Tom', 'Sans solde');
+  /* CRITÈRE A5 EN ACTION. Le samedi de LÉA a été coché, celui de TOM non. Le
+     quota étant par contrat, la période de Tom compte 5 jours quand celle de
+     Léa en compte 6 : « sur une même période, Maria peut compter le samedi
+     pour Léa et pas pour Tom » (§2.4). */
+  assert(cpTom + supTom + ssTom === 5,
+    'A5 : la proposition de Tom couvre ses 5 jours — son samedi n’a pas été ' +
+    'coché, celui de Léa si (obtenu ' + (cpTom + supTom + ssTom) + ')');
+  assert(ssTom > 0,
+    'P6 : faute de réserves, une partie passe SANS SOLDE — c’est-à-dire en ' +
+    'retenue sur salaire (obtenu ' + ssTom + ' jour(s))');
+  assert(carteDe('Tom').className.indexOf('warn') !== -1,
+    '§26.1 point 4 : la ligne de Tom passe en orange dès qu’il y a du sans solde');
+  assert(txt(carteDe('Tom')).indexOf('sans solde') !== -1,
+    'V8-11 : l’effet du sans-solde est annoncé sur la carte elle-même');
+
   /* A4 — le montant est bien celui du moteur, pas une règle de trois écrite
      dans l'écran. On le recalcule ici indépendamment. */
   var attendu = Engine.montantCentimes(200000, ssTom * 540);
   var euros = Format.centimesEnEuros(attendu);
-  assert(sansInsecable(txt(sheet)).indexOf(sansInsecable(euros)) !== -1,
-    'A4 : la retenue vaut ' + euros + ' — celle de Engine.montantCentimes (texte : « ' +
-    (sansInsecable(txt(sheet)).match(/retenue de [^ ]+ [^ ]+/) || [''])[0] + ' »)');
+  assert(sansInsecable(txt(carteDe('Tom'))).indexOf(sansInsecable(euros)) !== -1,
+    'A4 : la retenue vaut ' + euros + ' — celle de Engine.montantCentimes ' +
+    '(carte : « ' + sansInsecable(txt(carteDe('Tom'))) + ' »)');
+  assert(txt(sheet).indexOf('de retenue sur vos salaires') !== -1,
+    'V8-11 : et le TOTAL est chiffré au-dessus du bouton, avant l’appui');
 
   /* A3 — le sans-solde n'a PAS de borne de réserve : c'est le seul moyen de
      poser un congé quand les compteurs sont vides. Il est borné par la DURÉE
-     de la période, jamais au-delà (piège n° 5 : pas de reste négatif). */
-  cliquer('Congés payés', '−', 30);
-  cliquer('Récupération', '−', 30);
-  cliquer('Sans solde', '+', 30);
-  await pause(30);
-  /* Même raison qu'au-dessus : la période de Tom vaut 5 jours. La règle
-     vérifiée — le sans-solde couvre TOUTE la période et jamais au-delà — ne
-     change pas d'un mot. */
-  assert(valeurDe('Sans solde') === 5,
-    'A3 : le sans-solde peut couvrir toute la période (obtenu ' + valeurDe('Sans solde') + ')');
-  cliquer('Sans solde', '+', 5);
-  await pause(30);
-  assert(valeurDe('Sans solde') === 5,
-    'P5 (piège n° 5) : mais jamais AU-DELÀ — pas de reste négatif');
-  assert(resteAffiche() === 0, 'le reste est bien nul');
+     de la période, jamais au-delà (piège n° 5). */
+  cliquer('Tom', 'Sans solde', '+', 30);
+  await pause(60);
+  assert(valeurDe('Tom', 'Sans solde') === 5,
+    'A3 : le sans-solde peut couvrir toute la période (obtenu ' +
+    valeurDe('Tom', 'Sans solde') + ')');
+  cliquer('Tom', 'Sans solde', '+', 5);
+  await pause(60);
+  assert(valeurDe('Tom', 'Sans solde') === 5,
+    'P5 (piège n° 5) : mais jamais AU-DELÀ');
+  assert(sommeDe('Tom') === 5, 'et la somme fait exactement le décompte');
+  /* A4 — les congés payés ne passent JAMAIS en négatif, par aucun chemin. */
+  assert(valeurDe('Tom', 'Congés payés') >= 0 && valeurDe('Tom', 'Récupération') >= 0,
+    'A4 : aucune réserve ne passe en négatif');
 
   /* On revient à la proposition du moteur avant d'écrire. */
-  remettreProposition();
-  await pause(30);
-  assert(!!sheet.querySelector('.reste.ok'), 'la ventilation est complète');
-
-  boutonExact(sheet, 'Voir le récapitulatif').click();
-  await pause(250);
+  cliquer('Tom', 'Congés payés', '+', 30);
+  cliquer('Tom', 'Récupération', '+', 30);
+  await pause(60);
+  assert(sommeDe('Tom') === 5, 'la ventilation couvre exactement le décompte');
+  var ssFinalTom = valeurDe('Tom', 'Sans solde');
+  assert(ssFinalTom > 0, 'et Tom reste en sans-solde : ses réserves ne suffisent pas');
 
   /* ==================================================================== */
   /* Étape 3 — le récapitulatif, puis l'écriture                          */
   /* A6 — l'imputation porte la PÉRIODE, pas les journées                 */
   /* ==================================================================== */
-  console.log('\n--- Étape 3 : récapitulatif et écriture ---');
-  assert(txt(sheet).indexOf('Vérifiez avant de poser') !== -1, 'l’étape 3 s’ouvre');
-  assert(txt(sheet).indexOf('Léa') !== -1 && txt(sheet).indexOf('Tom') !== -1,
-    'les deux ventilations sont côte à côte');
+  console.log('\n--- L’écriture ---');
+  /* EXIGENCE CHANGÉE — LOT 26 §26.1 : LE RÉCAPITULATIF DISPARAÎT.
+     « Vérifiez avant de poser » montrait, sur un septième écran, ce que
+     l'écran de pose montre déjà : les deux ventilations, et le total du
+     sans-solde chiffré. Les vérifier deux fois n'ajoutait rien — sauf deux
+     appuis.
+     RIEN NE SE PERD : les deux ventilations sont côte à côte (vérifié
+     ci-dessus, cartes de Léa et de Tom), le total du sans-solde est au-dessus
+     du bouton, et RIEN n'est écrit avant l'appui — ce qui reste la garantie
+     de fond, et se vérifie ici. */
+  assert(!!carteDe('Léa') && !!carteDe('Tom'),
+    'les deux ventilations sont côte à côte, sur le même écran');
   assert(txt(sheet).indexOf('sans solde en tout') !== -1,
     'le total de sans-solde est rappelé en euros');
-  assert(appels.imputations.length === 0, 'RIEN n’est écrit avant confirmation');
+  assert(appels.imputations.length === 0, 'RIEN n’est écrit avant l’appui');
 
-  boutonExact(sheet, 'Poser ces congés').click();
-  await pause(350);
+  boutonPoser().click();
+  await pause(450);
 
   assert(appels.poser.length === 1, 'les journées partent en UNE écriture groupée');
   assert(appels.poser[0].type === 'conge_maria', 'type écrit : conge_maria');
@@ -633,23 +743,17 @@ function cliquer(libelle, signe, fois) {
   scene.imputations = {}; scene.journees = {};
   appels.imputations = []; appels.poser = [];
   await ouvrirConges();
-  boutonExact(corps, 'Poser des congés').click();
-  await pause(120);
-  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
-     le parcours en journées, lui, est inchangé à partir d'ici. */
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
-  await pause(200);
-  var ch2 = champsDates();
-  poserDate(ch2.du, '2026-07-15');
-  poserDate(ch2.au, '2026-07-15');
-  await pause(80);
-  assert(sansInsecable(txt(sheet)).indexOf('1 j ouvrables décomptés') !== -1,
-    'P2 : une journée isolée décompte 1 jour (obtenu « ' +
-    (sansInsecable(txt(sheet)).match(/\d+ j ouvrables/) || [''])[0] + ' »)');
-  boutonExact(sheet, 'Continuer').click();
-  await pause(300);
-  await passerSamedis();
-  assert(valeurDe('Congés payés') === 1, 'P2 : proposé sur les congés payés');
+  /* LOT 26 — LE CAS DE LA JOURNÉE UNIQUE. La phrase « pour une seule journée,
+     mettez la même date dans les deux champs » a disparu avec la feuille des
+     dates : les deux champs sont côte à côte et ARRIVENT DÉJÀ REMPLIS avec la
+     même date. Le geste est devenu évident ; ce qu'il produit est vérifié
+     ici, et c'est ce qui compte. */
+  await ouvrirPose('2026-07-15');
+  assert(grosDecompte().indexOf('1 j ouvrables') !== -1,
+    'P2 : une journée isolée décompte 1 jour (obtenu « ' + grosDecompte() + ' »)');
+  ouvrirCarte('Léa');
+  await pause(60);
+  assert(valeurDe('Léa', 'Congés payés') === 1, 'P2 : proposé sur les congés payés');
   window.Kit.fermerFeuille();
   await pause(50);
 
@@ -658,24 +762,12 @@ function cliquer(libelle, signe, fois) {
   /* ==================================================================== */
   console.log('\n--- P3 : période à cheval sur deux mois ---');
   await ouvrirConges();
-  boutonExact(corps, 'Poser des congés').click();
-  await pause(120);
-  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
-     le parcours en journées, lui, est inchangé à partir d'ici. */
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
-  await pause(200);
-  var ch3 = champsDates();
-  poserDate(ch3.du, '2026-07-29');
-  poserDate(ch3.au, '2026-08-04');
-  await pause(80);
+  await ouvrirPose('2026-07-29', '2026-08-04');
   var attenduCheval = Engine.decompterJoursOuvrables('2026-07-29', '2026-08-04');
-  assert(sansInsecable(txt(sheet)).indexOf(attenduCheval + ' j ouvrables décomptés') !== -1,
+  assert(grosDecompte().indexOf(attenduCheval + ' j ouvrables') !== -1,
     'P3 : le décompte d’une période à cheval vient du moteur — ' + attenduCheval +
-    ' jours (obtenu « ' + (sansInsecable(txt(sheet)).match(/\d+ j ouvrables/) || [''])[0] + ' »)');
-  boutonExact(sheet, 'Continuer').click();
-  await pause(300);
-  await passerSamedis();
-  assert(txt(sheet).indexOf('à répartir') !== -1, 'P3 : la ventilation s’ouvre normalement');
+    ' jours (obtenu « ' + grosDecompte() + ' »)');
+  assert(!!carteDe('Léa'), 'P3 : la répartition s’affiche normalement');
   window.Kit.fermerFeuille();
   await pause(50);
 
@@ -686,20 +778,16 @@ function cliquer(libelle, signe, fois) {
   scene.recaps[cle('c-lea', 2026, 7)] = { id: 'r1', contrat_id: 'c-lea', annee: 2026, mois: 7,
     statut: 'fige', donnees: {}, fige_le: '2026-07-31T18:00:00Z', transmis_le: null };
   await ouvrirConges();
-  boutonExact(corps, 'Poser des congés').click();
-  await pause(120);
-  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
-     le parcours en journées, lui, est inchangé à partir d'ici. */
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
-  await pause(200);
-  var ch4 = champsDates();
-  poserDate(ch4.du, '2026-07-20');
-  poserDate(ch4.au, '2026-07-24');
-  await pause(80);
+  /* EXIGENCE DÉPLACÉE — LOT 26 §26.1, « ce qui ne se perd pas » : la
+     vérification des mois clôturés ne s'intercale plus entre les dates et la
+     ventilation, mais À L'APPUI SUR « POSER ». Elle est ainsi lue au moment
+     où elle décide de quelque chose, et ses textes n'ont pas changé d'un mot.
+     LA GARANTIE EST LA MÊME, et se vérifie de la même façon : rien n'est posé
+     avant la réouverture. */
+  await ouvrirPose('2026-07-20', '2026-07-24');
   var avantImput = appels.imputations.length;
-  boutonExact(sheet, 'Continuer').click();
-  await pause(300);
-  await passerSamedis();
+  boutonPoser().click();
+  await pause(400);
 
   assert(txt(sheet).indexOf('est clôturé') !== -1,
     'A5 : la période recouvrant un mois clôturé est signalée');
@@ -712,13 +800,17 @@ function cliquer(libelle, signe, fois) {
   assert(!!boutonExact(sheet, 'Choisir d’autres dates'), 'A5 : « Choisir d’autres dates »');
 
   parTexte(sheet, 'button', 'Rouvrir juillet et continuer').click();
-  await pause(350);
-  await passerSamedis();
+  await pause(600);
   assert(appels.rouvrir.length === 1, 'P4 : la réouverture est demandée');
   assert(appels.rouvrir[0].motif === 'Congés posés après clôture',
     'P4 : avec le motif prévu — c’est lui qui rendra l’historique lisible dans six mois ' +
     '(obtenu « ' + appels.rouvrir[0].motif + ' »)');
-  assert(txt(sheet).indexOf('à répartir') !== -1, 'P4 : la ventilation s’ouvre ensuite');
+  /* LOT 26 — LA RÉOUVERTURE POSE ENSUITE, directement : les plans sont refaits
+     (les mois viennent de changer d'état) et l'écriture part. Le parcours ne
+     redemande pas une ventilation que Maria a déjà faite avant d'appuyer. */
+  assert(appels.imputations.length > avantImput,
+    'P4 : après la réouverture, les congés sont posés — sans redemander la ' +
+    'ventilation déjà faite');
   window.Kit.fermerFeuille();
   await pause(50);
 
@@ -729,26 +821,25 @@ function cliquer(libelle, signe, fois) {
   scene.recaps[cle('c-lea', 2026, 7)] = { id: 'r1', contrat_id: 'c-lea', annee: 2026, mois: 7,
     statut: 'fige', donnees: {}, fige_le: '2026-07-31T18:00:00Z', transmis_le: null };
   await ouvrirConges();
-  boutonExact(corps, 'Poser des congés').click();
-  await pause(120);
-  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
-     le parcours en journées, lui, est inchangé à partir d'ici. */
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
-  await pause(200);
-  var ch5 = champsDates();
-  poserDate(ch5.du, '2026-07-20');
-  poserDate(ch5.au, '2026-07-24');
-  await pause(80);
+  await ouvrirPose('2026-07-20', '2026-07-24');
   var avantRouvrir = appels.rouvrir.length;
-  boutonExact(sheet, 'Continuer').click();
-  await pause(300);
-  await passerSamedis();
+  var avantImput5 = appels.imputations.length;
+  boutonPoser().click();
+  await pause(400);
   boutonExact(sheet, 'Choisir d’autres dates').click();
-  await pause(200);
+  await pause(250);
 
   assert(appels.rouvrir.length === avantRouvrir, 'P5 : aucune réouverture');
-  assert(txt(sheet).indexOf('Quand serez-vous absente ?') !== -1,
+  assert(appels.imputations.length === avantImput5, 'P5 : et rien n’est posé');
+  /* EXIGENCE CHANGÉE — « on revient au choix des dates » : l'écran de pose est
+     TOUJOURS DERRIÈRE cette feuille, avec les dates que Maria vient de saisir.
+     Refermer suffit à y revenir, et elle les retrouve telles quelles au lieu
+     de les ressaisir. C'est plus fort que l'ancien retour, qui rouvrait une
+     feuille vide. */
+  assert(!!champsDates().du && !!champsDates().au,
     'P5 : on revient au choix des dates');
+  assert(grosDecompte().indexOf('j ouvrables') !== -1,
+    'P5 : et les dates saisies sont toujours là (obtenu « ' + grosDecompte() + ' »)');
   window.Kit.fermerFeuille();
   await pause(50);
   delete scene.recaps[cle('c-lea', 2026, 7)];
@@ -799,33 +890,15 @@ function cliquer(libelle, signe, fois) {
   scene.imputations = {}; scene.journees = {};
   appels.imputations = []; appels.poser = [];
   await ouvrirConges();
-  boutonExact(corps, 'Poser des congés').click();
-  await pause(120);
-  /* LOT 21 §21.1 — le parcours passe désormais par le choix du format ;
-     le parcours en journées, lui, est inchangé à partir d'ici. */
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
-  await pause(200);
-  var ch6 = champsDates();
-  poserDate(ch6.du, '2026-07-13');
-  poserDate(ch6.au, '2026-07-17');
-  await pause(80);
-  boutonExact(sheet, 'Continuer').click();
-  await pause(300);
-  await passerSamedis();
-  /* Le bouton de la DERNIÈRE étape s'appelle « Voir le récapitulatif », pas
-     « Continuer » : on traverse la ventilation quel que soit le nombre de
-     contrats plutôt que de supposer combien il y en a. */
-  for (var pas = 0; pas < 6; pas++) {
-    var bSuivant = boutonExact(sheet, 'Continuer') || boutonExact(sheet, 'Voir le récapitulatif');
-    if (!bSuivant) break;
-    bSuivant.click();
-    await pause(300);
-    if (boutonExact(sheet, 'Poser ces congés')) break;
-  }
-  assert(!!boutonExact(sheet, 'Poser ces congés'), 'P10 : l’étape 3 est atteinte');
+  /* LOT 26 — SIX ÉCRANS À TRAVERSER DEVIENNENT UN. La boucle qui enchaînait
+     « Continuer » jusqu'à trouver « Poser ces congés » n'a plus d'objet : le
+     bouton de la barre fixe est là dès que les dates sont posées. */
+  await ouvrirPose('2026-07-13', '2026-07-17');
+  assert(!!boutonPoser() && boutonPoser().disabled === false,
+    'P10 : le bouton de pose est atteint en un écran');
   scene.ecritureCassee = true;
-  boutonExact(sheet, 'Poser ces congés').click();
-  await pause(350);
+  boutonPoser().click();
+  await pause(450);
 
   assert(appels.imputations.length === 0, 'P10 : aucune imputation écrite');
   /* CORRECTIF B3 — le contrôle le plus important de ce cas, et il manquait :
@@ -841,7 +914,7 @@ function cliquer(libelle, signe, fois) {
     'B3 : et le message dit ce qui reste vrai, au lieu de l’affirmer à tort');
   assert(document.getElementById('sheetwrap').hidden === false,
     'P10 : la feuille reste ouverte, la saisie n’est pas perdue');
-  var bRetry = boutonExact(sheet, 'Poser ces congés');
+  var bRetry = boutonPoser();
   assert(bRetry && bRetry.disabled === false, 'P10 : on peut réessayer');
   scene.ecritureCassee = false;
   window.Kit.fermerFeuille();
@@ -918,40 +991,41 @@ function cliquer(libelle, signe, fois) {
   });
 
   await ouvrirConges();
-  boutonExact(corps, 'Poser des congés').click();
-  await pause(120);
-  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
-  await pause(200);
-  var ch7 = champsDates();
-  poserDate(ch7.du, '2026-10-19');
-  poserDate(ch7.au, '2026-10-23');
-  await pause(80);
-  boutonExact(sheet, 'Continuer').click();
-  await pause(400);
+  await ouvrirPose('2026-10-19', '2026-10-23');
 
-  assert(txt(sheet).indexOf('Les samedis de cette période') !== -1,
-    'A7 : l’étape des samedis s’ouvre');
-  assert(txt(sheet).indexOf('vous avez utilisé vos 5 samedis') !== -1,
+  /* EXIGENCE DÉPLACÉE — LOT 26 §26.1 : l'étape des samedis devient les lignes
+     du bloc vert, sous le chiffre qu'elles changent. Le libellé du reste passe
+     de la phrase « vous avez utilisé vos 5 samedis (1er juin 2026 – 31 mai
+     2027) », posée en tête de bloc, à la mention courte de la ligne elle-même
+     — « quota épuisé », puis « dépassement de 1 ». Il n'y a plus de place pour
+     une phrase à droite d'une case, et l'année de référence reste nommée dans
+     l'avertissement de dépassement, qui est l'endroit où elle décide de
+     quelque chose.
+     LA RÈGLE NE BOUGE PAS : le quota est réel, lu en base, par contrat ; la
+     ligne reste cochable ; le dépassement est nommé et permis. */
+  var lignesA7 = lignesSamedi();
+  assert(lignesA7.length > 0, 'A7 : le samedi reste proposé malgré le quota épuisé');
+  var ligneLea = samediDe('Léa') || lignesA7[0];
+  assert(txt(ligneLea).indexOf('quota épuisé') !== -1,
     'A7 : le quota épuisé est annoncé avant tout choix (obtenu « ' +
-    (txt(sheet).match(/vous avez utilisé[^(]{0,24}/) || [''])[0] + ' »)');
-
-  var casesA7 = sheet.querySelectorAll('.samedis input[type="checkbox"]');
-  assert(casesA7.length > 0, 'A7 : le samedi reste proposé malgré le quota épuisé');
-  assert(casesA7[0].disabled === false,
-    'A7 : et la case reste COCHABLE — l’application ne décide pas à la place de Maria');
-  casesA7[0].checked = true;
-  casesA7[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  await pause(150);
+    txt(ligneLea) + ' »)');
+  assert(ligneLea.disabled === false,
+    'A7 : et la ligne reste COCHABLE — l’application ne décide pas à la place de Maria');
+  ligneLea.click();
+  await pause(250);
 
   assert(txt(sheet).indexOf('C’est le 6ᵉ samedi compté') !== -1,
     'A7 : le dépassement est NOMMÉ (obtenu « ' +
     (txt(sheet).match(/C’est le [^.]{0,40}/) || [''])[0] + ' »)');
-  assert(txt(sheet).indexOf('Vous pouvez le compter quand même') !== -1,
-    'A7 : et il reste permis — même logique que la récupération négative du lot 21');
+  assert(txt(sheet).indexOf('1er juin 2026 – 31 mai 2027') !== -1,
+    'A6 : et l’année de référence est nommée, du 1er juin au 31 mai');
+  assert(txt(sheet).indexOf('vous pouvez le compter quand même') !== -1,
+    'A7 : il reste permis — même logique que la récupération négative du lot 21');
   assert(!!sheet.querySelector('.warnbox'),
     'A7 : l’avertissement est orange, comme les autres avertissements de l’application');
-  assert(txt(sheet).indexOf('vous dépassez de 1 samedi') !== -1,
-    'A7 : le compteur dit le dépassement ensuite');
+  var ligneApres = samediDe('Léa') || lignesSamedi()[0];
+  assert(txt(ligneApres).indexOf('dépassement de 1') !== -1,
+    'A7 : et la ligne dit le dépassement ensuite (obtenu « ' + txt(ligneApres) + ' »)');
 
   window.Kit.fermerFeuille();
   await pause(50);

@@ -1017,8 +1017,26 @@
       });
     }
 
+    /* LOT 26 (§26.1) — `poser` : un écran peut avoir besoin de DÉPLACER la
+       date, et pas seulement de la lire. L'écran de pose en a besoin : le
+       « Au » suit le « Du » quand celui-ci le dépasse, comme la maquette. Une
+       plage inversée n'est pas une erreur à signaler, c'est une plage qu'on
+       vient de déplacer — et un avertissement à la place d'un ajustement
+       ferait porter à Maria le travail de l'écran.
+       Le champ ne DÉCLENCHE PAS `onchange` en se posant : c'est l'appelant
+       qui vient de décider, il sait déjà. */
+    function poser(isoDate) {
+      var q = String(isoDate || '').slice(0, 10).split('-');
+      if (q.length !== 3) return;
+      selAnnee.value = String(Number(q[0]));
+      selMois.value = String(Number(q[1]));
+      majJours();
+      selJour.value = String(Number(q[2]));
+    }
+
     return {
       bloc: f,
+      poser: poser,
       valeur: function () {
         return iso(Number(selAnnee.value), Number(selMois.value), Number(selJour.value));
       }

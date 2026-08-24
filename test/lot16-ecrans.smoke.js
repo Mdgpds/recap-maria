@@ -303,22 +303,59 @@ var sheet = document.getElementById('sheet');
     'B1 : et elle dit à Maria que la valeur enregistrée était fausse, avant ' +
     'qu’elle ne réparte');
 
-  /* Le « reste à répartir » démarre à 1 : sa répartition d'origine est reprise
-     (5 sur les congés payés), et il lui reste le jour découvert à placer. */
-  var reste = sheet.querySelector('.reste');
-  assert(!!reste && txt(reste).indexOf('1') !== -1,
-    'B1 : « reste à répartir » démarre à 1 — le jour de plus, à elle de le placer');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 26 : « RESTE À RÉPARTIR » DISPARAÎT, ET C'EST PLUS
+     FORT QUE CE QU'IL PROTÉGEAIT.
+
+     La feuille de correction prend les composants de l'écran de pose : les
+     mêmes trois steppers, et le même rééquilibrage. La somme ne PEUT PLUS
+     s'écarter du décompte — ajuster une ligne ramène les autres. Il n'y a donc
+     plus de « reste » à afficher, ni de bouton à désactiver.
+
+     CE QUE LES DEUX ANCIENNES ASSERTIONS PROTÉGEAIENT : que le jour découvert
+     par le moteur ne parte pas non réparti, et qu'une ventilation incomplète
+     ne soit jamais enregistrée. Les deux sont vérifiées ici, et plus
+     directement : le sixième jour est DÉJÀ placé à l'ouverture, la somme fait
+     six, et c'est six qui part en base.
+
+     Le jour de plus tombe sur le sans-solde — la seule ligne sans plafond de
+     réserve. Maria le déplace ensuite vers les congés payés, comme avant. */
+  var lignesCorr = sheet.querySelectorAll('.cnt');
+  assert(lignesCorr.length === 3, 'B1 : les trois réserves sont proposées');
+  function valCorr(libelle) {
+    var c = Array.prototype.filter.call(sheet.querySelectorAll('.cnt'), function (x) {
+      return txt(x.querySelector('.cl')).indexOf(libelle) === 0;
+    })[0];
+    return c ? Number(txt(c.querySelector('.stp span'))) : null;
+  }
+  function pasCorr(libelle, signe) {
+    var c = Array.prototype.filter.call(sheet.querySelectorAll('.cnt'), function (x) {
+      return txt(x.querySelector('.cl')).indexOf(libelle) === 0;
+    })[0];
+    Array.prototype.filter.call(c.querySelectorAll('.stp button'), function (b) {
+      return txt(b) === signe;
+    })[0].click();
+  }
+  assert(valCorr('Congés payés') + valCorr('Récupération') + valCorr('Sans solde') === 6,
+    'B1 : le sixième jour est DÉJÀ placé — la somme fait le décompte du moteur, ' +
+    'toujours (obtenu ' + (valCorr('Congés payés') + valCorr('Récupération') +
+    valCorr('Sans solde')) + ')');
+  assert(valCorr('Congés payés') === 5,
+    'B1 : sa répartition d’origine est reprise — 5 sur les congés payés');
+
   var bValider = boutonExact(sheet, 'Enregistrer la répartition');
-  assert(!!bValider && bValider.disabled === true,
-    'B1 : tant qu’il reste un jour à placer, l’enregistrement est refusé');
+  assert(!!bValider && bValider.disabled === false,
+    'B1 : l’enregistrement est ouvert, parce qu’une ventilation incomplète est ' +
+    'devenue impossible');
 
-  /* Elle place le jour manquant sur les congés payés, puis valide. */
-  var plusCp = sheet.querySelectorAll('.compteur-jours')[0].querySelectorAll('button')[1];
-  plusCp.click();
+  /* Elle déplace le jour de plus sur les congés payés, puis valide. */
+  pasCorr('Congés payés', '+');
   await pause(60);
-  assert(bValider.disabled === false, 'B1 : le compte est bon, l’enregistrement s’ouvre');
+  assert(valCorr('Congés payés') === 6 &&
+         valCorr('Congés payés') + valCorr('Récupération') + valCorr('Sans solde') === 6,
+    'B1 : le jour de plus passe sur les congés payés, la somme fait toujours six');
 
-  bValider.click();
+  boutonExact(sheet, 'Enregistrer la répartition').click();
   await pause(250);
 
   egal(ecritures.ventilation.length, 1, 'B1 : une écriture est partie');
@@ -342,12 +379,18 @@ var sheet = document.getElementById('sheet');
 
   assert(txt(corps).indexOf('Du 10 au 14 août') !== -1,
     '§16.8 : la période est listée en UNE ligne, avec ses vraies bornes');
-  /* EXIGENCE CHANGÉE — la phrase ne dit plus « une semaine complète compte
-     6 jours ». Elle dit la règle des cinq samedis, et elle vient de la
-     constante partagée (§6.3, A12). L'assertion garde son objet : la phrase du
-     décompte est là, sous la liste des périodes. */
-  assert(txt(corps).indexOf(window.Kit.RESUME_RG06) !== -1,
-    '§16.8 : la phrase du décompte est là, et c’est la phrase partagée');
+  /* EXIGENCE DÉPLACÉE — LOT 26 §26.2 : la règle du décompte (28 mots) était
+     écrite DEUX FOIS sur cet écran, sous les périodes et dans la note du bas.
+     Elle en part, vers « Comment l'application compte » (lot 27).
+
+     RIEN NE SE PERD : elle reste écrite LÀ OÙ LE NOMBRE EST PRODUIT — le bloc
+     vert de l'écran de pose, vérifié dans lot10-conges.smoke.js — et sur
+     l'encart RG-06 de chaque document qui porte des congés. Ce sont les deux
+     endroits où le chiffre se conteste. Ce qui RESTE ici, parce que c'est
+     propre à CES périodes-là et à personne d'autre : les jours fériés qu'elles
+     contiennent, nommés — c'est l'assertion B2 juste en dessous, inchangée. */
+  assert(txt(corps).indexOf(window.Kit.RESUME_RG06) === -1,
+    '§26.2 : la règle générale du décompte a quitté « Mes congés »');
   assert(txt(corps).indexOf('15 août') !== -1,
     'B2 : LE SAMEDI FÉRIÉ EST NOMMÉ — sans lui, l’écran affiche « 5 j » sous ' +
     '« une semaine complète compte 6 jours » et rien ne l’explique');

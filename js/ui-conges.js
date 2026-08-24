@@ -258,31 +258,40 @@
               : Kit.jours(-ecartDecompte) + ' de moins à répartir.')));
         }
 
-        var res = Kit.pane('Vos réserves pour ce contrat');
-        var lr = Kit.lines(res);
-        Kit.ligne(lr, 'Congés payés', Kit.joursCp(cp, mpjc(cond)));
-        Kit.ligne(lr, 'Récupération', joursDeRecup(cond, sup));
-        corps.appendChild(res);
+        /* LOT 26 — CETTE FEUILLE PREND LES COMPOSANTS DE L'ÉCRAN DE POSE.
 
-        corps.appendChild(Kit.section('Comment les prendre ?'));
+           Elle avait ses propres compteurs (`compteur`), son « reste à
+           répartir » et son bouton qui refusait tant que le compte n'y était
+           pas. C'est le même geste que sur l'écran de pose — répartir N jours
+           entre trois réserves — et deux mécaniques différentes pour le même
+           geste, c'est deux endroits où corriger un défaut.
 
-        var reste = Kit.ce('div', 'reste');
+           Le « reste à répartir » DISPARAÎT, et c'est plus fort que ce qu'il
+           protégeait : la somme ne peut plus s'écarter du décompte, parce que
+           `rééquilibrer` la ramène à chaque appui. Un bouton qu'on désactive
+           dit « vous vous êtes trompée » ; une somme qui ne peut pas être
+           fausse ne le demande jamais. */
         var effet = Kit.ce('div', 'effet-sans-solde');
         var bValider = Kit.bouton('btn', function () {
           validerCorrection(bValider, imputation, p);
         });
         bValider.textContent = 'Enregistrer la répartition';
 
-        function majAffichage() {
-          var somme = p.choix.joursSurCp + p.choix.joursSurSup + p.choix.joursSansSolde;
-          var manque = p.jours - somme;
-          Kit.vider(reste);
-          reste.className = 'reste' + (manque === 0 ? ' ok' : ' ko');
-          reste.appendChild(Kit.ce('span', null, 'Reste à répartir'));
-          reste.appendChild(Kit.ce('b', null, String(manque)));
-          bValider.disabled = manque !== 0;
+        corps.appendChild(Kit.section('Comment les prendre ?'));
+        var lignes = Kit.ce('div', 'cd pad0');
+        corps.appendChild(lignes);
 
+        function redessiner() {
+          Kit.vider(lignes);
+          poserLignesVentilation(lignes, p, function (champ, v) {
+            p.choix[champ] = v;
+            rééquilibrer(p, champ);
+            redessiner();
+          });
           Kit.vider(effet);
+          /* « Vos réserves ne couvrent pas toute la période » — le
+             basculement en sans solde, annoncé AVANT validation, avec son
+             montant. Le montant vient du moteur (A4). */
           if (p.choix.joursSansSolde > 0) {
             var brut = brutDe(fiche);
             var minutes = p.choix.joursSansSolde * mpjc(cond);
@@ -297,19 +306,51 @@
           }
         }
 
-        corps.appendChild(compteur('Congés payés', p.choix, 'joursSurCp', maxCp, majAffichage,
-          'reste ' + Kit.joursCp(cp, mpjc(cond)) + ' au compteur'));
-        corps.appendChild(compteur('Récupération', p.choix, 'joursSurSup', maxSup, majAffichage,
-          'reste ' + joursDeRecup(cond, sup) + ' convertibles'));
-        corps.appendChild(compteur('Sans solde', p.choix, 'joursSansSolde', jours, majAffichage));
-
-        corps.appendChild(reste);
-        corps.appendChild(bascule(p));
         corps.appendChild(effet);
         corps.appendChild(bValider);
-
-        majAffichage();
+        /* LA VENTILATION ENREGISTRÉE EST RAMENÉE AU DÉCOMPTE DU MOTEUR AVANT
+           LE PREMIER AFFICHAGE. C'est tout l'objet de cette feuille : la
+           période compte six jours et la ligne en porte cinq. Ouvrir sur une
+           somme incomplète obligerait Maria à retrouver elle-même le jour
+           manquant ; le rééquilibrage le place — sur le sans-solde, la seule
+           ligne sans plafond de réserve — et elle le DÉPLACE si elle
+           préfère. L'écart, lui, est annoncé en tête de feuille. */
+        rééquilibrer(p);
+        redessiner();
       });
+  }
+
+  /* LES TROIS LIGNES DE VENTILATION — une seule définition, partagée par
+     l'écran de pose et la feuille de correction. Chaque ligne dit ce que sa
+     réserve couvre : le « + » qui s'éteint doit dire POURQUOI il s'éteint
+     (§16.1 d). */
+  function poserLignesVentilation(parent, p, onchange) {
+    var cond = p.cond;
+    ligneStepper(parent, 'Congés payés',
+      'reste ' + Kit.joursCp(p.cp, mpjc(cond)) + ' au compteur',
+      p.choix.joursSurCp, Math.min(p.maxCp, p.jours),
+      function (v) { onchange('joursSurCp', v); });
+    ligneStepper(parent, 'Récupération',
+      'reste ' + joursDeRecup(cond, p.sup) + ' convertibles',
+      p.choix.joursSurSup, Math.min(p.maxSup, p.jours),
+      function (v) { onchange('joursSurSup', v); });
+
+    /* LOT 18 §18.6 — LE PRIX D'UN JOUR, SOUS SON PROPRE COMPTEUR. C'est lui
+       qui fait hésiter, et c'est la seule ligne qui retire de l'argent à
+       Maria. Le montant vient du moteur (RG-08), aucun taux horaire n'est
+       écrit ici. */
+    var brutJour = brutDe(p.fiche);
+    var prixJour = brutJour ? Engine.montantCentimes(brutJour, mpjc(cond)) : null;
+    /* A3 — le sans solde n'a pas de plafond de réserve : c'est le seul moyen
+       de poser un congé quand elles sont épuisées. Sa borne BASSE est ce que
+       les réserves ne couvrent pas. */
+    ligneStepper(parent, 'Sans solde',
+      prixJour != null
+        ? '− ' + Kit.eur(prixJour) + ' par jour'
+        : 'retenue non chiffrable, le barème de ce contrat n’est pas renseigné',
+      p.choix.joursSansSolde, p.jours,
+      function (v) { onchange('joursSansSolde', v); },
+      Math.max(0, p.jours - p.maxCp - p.maxSup));
   }
 
   function validerCorrection(bouton, imputation, p) {
@@ -401,24 +442,36 @@
     corps.appendChild(panneauPoses());
     corps.appendChild(panneauReserves());
 
-    /* V8-08 — UN SEUL bouton. « Poser une semaine entière » et « Poser une
-       seule journée » ont disparu : le premier était un cas particulier du
-       second geste, et le second ne posait rien du tout — il expliquait
-       comment faire ailleurs. Trois boutons pour un geste, dont un qui ne fait
-       rien, c'est trois occasions de se tromper. */
-    /* LOT 18 §18.6 — CETTE PHRASE PASSE DEVANT LES BOUTONS.
-       Elle dit ce que le geste va faire — un congé posé une fois vaut pour
-       tous les contrats. Placée APRÈS les boutons, elle arrivait quand Maria
-       avait déjà appuyé : une explication lue trop tard n'évite aucune
-       erreur. */
-    corps.appendChild(Kit.note('Un congé vaut pour ' + libelleContrats(fiches.length),
-      'Vous le posez une fois, il s’applique partout — mais vous choisissez, pour chaque ' +
-      'enfant, comment il est décompté. ' + Kit.RESUME_RG06));
+    /* ======================================================================
+       LOT 26 §26.2 — MES CONGÉS S'ALLÈGE.
 
-    var bPoser = Kit.bouton('btn', function () { ouvrirParcours(); });
+       Trois textes quittent cet écran, et un seul reste.
+
+       CE QUI PART, ET OÙ (A.2) :
+       · la règle du décompte RG-06 (28 mots), qui était écrite DEUX FOIS
+         ici — sous les périodes posées, et dans la note du bas ;
+       · la note de 46 mots « Vous le posez une fois, il s'applique
+         partout… » ;
+       · « Les compteurs diffèrent car les contrats n'ont pas commencé en
+         même temps. »
+       Les trois vont dans « Comment l'application compte » (lot 27), l'endroit
+       unique des règles. En attendant, aucune n'est perdue : la règle du
+       décompte reste écrite là où le NOMBRE est produit — le bloc vert de
+       l'écran de pose — et sur l'encart RG-06 de chaque document qui porte
+       des congés. Ce sont les deux endroits où elle se conteste.
+
+       CE QUI RESTE : six mots. « Un congé vaut pour vos 4 contrats. » C'est
+       la seule chose que Maria doit savoir AVANT d'appuyer, et le §18.6 avait
+       déjà tranché qu'elle passe devant le bouton — une explication lue après
+       l'appui n'évite aucune erreur.
+       ====================================================================== */
+    var bPoser = Kit.bouton('btn', function () { feuillePose('journees'); });
     bPoser.textContent = 'Poser des congés';
     bPoser.disabled = enErreur.length > 0;
     corps.appendChild(bPoser);
+
+    corps.appendChild(Kit.ce('p', 'sb q centre',
+      'Un congé vaut pour ' + libelleContrats(fiches.length) + '.'));
 
     var bRetrait = Kit.bouton('btn nt', function () { feuilleRetrait(); });
     bRetrait.textContent = 'Retirer des congés';
@@ -444,8 +497,12 @@
      porte ses vraies bornes, son décompte RG-06 et sa ventilation. On ne
      regroupe surtout pas les journées consécutives à l'affichage, ce qui
      serait faux dès qu'un férié tombe au milieu. */
+  /* LOT 26 §26.2 — LE PANNEAU BLANC DEVIENT UN TITRE DE SECTION + UNE CARTE
+     DE LIGNES (`cd pad0`), comme la maquette. Le contenu ne bouge pas : une
+     ligne par période, nominative, avec son décompte à droite. */
   function panneauPoses() {
-    var p = Kit.pane('Posés en ' + Kit.libelleMois(vue.mois));
+    var p = Kit.ce('div');
+    p.appendChild(Kit.section('Posés en ' + Kit.libelleMois(vue.mois)));
 
     var illisible = vue.fiches.some(function (f) { return !f.erreur && f.imputations === null; });
     if (illisible) {
@@ -459,11 +516,14 @@
     var horaires = congesHoraires();
 
     if (!groupes.length && !horaires.length) {
-      p.appendChild(Kit.ce('div', 'sb q', 'Aucun congé posé ce mois-ci.'));
+      var vide = Kit.ce('div', 'cd');
+      vide.appendChild(Kit.ce('div', 'sb q', 'Aucun congé posé ce mois-ci.'));
+      p.appendChild(vide);
       return p;
     }
 
-    var l = Kit.lines(p);
+    var l = Kit.ce('div', 'cd pad0');
+    p.appendChild(l);
     groupes.forEach(function (g) { ligneperiode(l, g); });
     /* §21.3 — LA TRACE D'UN CONGÉ POSÉ À L'HEURE.
        « ½ journée le 8 octobre — Léa : récupération · Noah : sans solde ». Une
@@ -471,7 +531,14 @@
        en lire un seul — mais l'issue de chaque enfant est nommée, parce
        qu'elle diffère et que c'est tout l'objet du §21.2. */
     horaires.forEach(function (h) { ligneHoraire(l, h); });
-    if (groupes.length) p.appendChild(phraseDecompte(groupes));
+    /* §26.2 — LA RÈGLE DU DÉCOMPTE NE SE RÉPÈTE PLUS ICI. Elle vit là où le
+       nombre est produit (le bloc vert de la pose) et sur l'encart RG-06 du
+       document. Ce qui RESTE ici, parce que c'est propre à CES périodes-là et
+       à personne d'autre : les jours fériés qu'elles contiennent, nommés. */
+    if (groupes.length) {
+      var f = phraseDecompteFeries(groupes);
+      if (f) p.appendChild(f);
+    }
     return p;
   }
 
@@ -529,16 +596,8 @@
       return x.prenom + ' : ' + (LIBELLE_ISSUE[x.issue] || x.issue);
     }).join(' · ');
 
-    /* Ligne construite à la main, comme celle d'une période : `Kit.ligne` ne
-       prend qu'un libellé, et il faut ici un titre en gras suivi du sort de
-       chaque enfant. */
-    var ligne = Kit.ce('div', 'l');
-    var gauche = Kit.ce('span');
-    gauche.appendChild(Kit.ce('b', null, titre + ' ' + libellePlage(h.jour, h.jour)));
-    if (detail) gauche.appendChild(Kit.ce('div', 'sb', detail));
-    ligne.appendChild(gauche);
-    ligne.appendChild(Kit.ce('span', null, Kit.heures(h.minutes)));
-    l.appendChild(ligne);
+    Kit.ligneLn(l, titre + ' ' + libellePlage(h.jour, h.jour),
+      Kit.heures(h.minutes), { sous: detail || null });
   }
 
   /* Les périodes du mois, regroupées par bornes identiques. Maria pose ses
@@ -658,28 +717,31 @@
                                     : Kit.jourLong(d).toLowerCase();
         }).join(', '));
     }
-    var sous = uniforme ? detailVentilation(ref) : 'la répartition diffère d’un contrat à l’autre';
-    if (sous) textes.push(sous);
-
-    /* Ligne construite à la main : `Kit.ligne` ne prend qu'un libellé texte,
-       et il faut ici un titre en gras suivi d'un sous-texte. */
-    var ligne = Kit.ce('div', 'l');
-    var gauche = Kit.ce('span');
-    gauche.appendChild(Kit.ce('b', null, Kit.libellePeriode(groupe.debut, groupe.fin)));
-    if (textes.length) gauche.appendChild(Kit.ce('div', 'sb', textes.join(' · ')));
-    ligne.appendChild(gauche);
-    ligne.appendChild(Kit.ce('span', null, Kit.jours(ref.jours_ouvrables) + ' ouvrables'));
-    l.appendChild(ligne);
-
-    if (!uniforme) {
-      var det = Kit.ce('details', 'ventil-detail');
-      det.appendChild(Kit.ce('summary', null, 'Voir la répartition par enfant'));
-      groupe.lignes.forEach(function (x) {
-        det.appendChild(Kit.ce('div', 'sb', x.contrat.prenom_enfant + ' — ' +
-          (detailVentilation(x.imputation) || 'aucune répartition enregistrée')));
-      });
-      l.appendChild(det);
+    /* LOT 26 §26.2 — LA LIGNE EST NOMINATIVE, TOUJOURS.
+       Elle disait « 4 j payés · 2 j récup » quand tous les contrats
+       partageaient la même répartition, et « la répartition diffère d'un
+       contrat à l'autre » sinon — auquel cas il fallait déplier un volet pour
+       savoir laquelle. Or c'est justement le cas intéressant : les réserves ne
+       sont pas les mêmes d'un enfant à l'autre, et c'est ce que le lot 10 rend
+       à Maria. La ligne nomme donc chaque enfant et sa part, comme la
+       maquette : « Léa : 4 CP, 2 récup · Noah : sans solde ». Le volet
+       disparaît parce qu'il n'a plus rien à cacher. */
+    var parEnfant = groupe.lignes.map(function (x) {
+      return x.contrat.prenom_enfant + ' : ' +
+        (detailVentilation(x.imputation) || 'aucune répartition enregistrée');
+    });
+    if (uniforme && parEnfant.length > 2) {
+      /* Quand la répartition est la MÊME partout, la répéter quatre fois
+         n'apprend rien : on la dit une fois, et on dit qu'elle vaut pour
+         tous. */
+      textes.push(detailVentilation(ref) + ' — pour ' + libelleContrats(parEnfant.length));
+    } else {
+      parEnfant.forEach(function (t) { textes.push(t); });
     }
+
+    Kit.ligneLn(l, Kit.libellePeriode(groupe.debut, groupe.fin),
+      Kit.jours(ref.jours_ouvrables) + ' ouvrables',
+      { sous: textes.length ? textes.join(' · ') : null });
   }
 
 
@@ -687,15 +749,16 @@
      la mention des fériés n'apparaît que s'il y en a un dans une période —
      information demandée au moteur, jamais écrite en dur : `Engine` connaît
      les fériés, l'écran non. */
-  function phraseDecompte(groupes) {
-    var texte = Kit.RESUME_RG06;
+  /* Les fériés de CES périodes, nommés — ou `null` s'il n'y en a aucun.
+     C'est la seule moitié de l'ancienne phrase qui parle de ces périodes-là
+     et pas de la règle générale : elle reste. */
+  function phraseDecompteFeries(groupes) {
     var feries = feriesDesPeriodes(groupes);
-    if (feries.length) {
-      texte += ' Les jours fériés ne sont pas décomptés : ' +
-        feries.map(function (d) { return 'le ' + Kit.jourLong(d); }).join(', ') +
-        (feries.length > 1 ? ' ne comptent pas.' : ' ne compte pas.');
-    }
-    return Kit.ce('div', 'sb q', texte);
+    if (!feries.length) return null;
+    return Kit.ce('div', 'sb q',
+      'Les jours fériés ne sont pas décomptés : ' +
+      feries.map(function (d) { return 'le ' + Kit.jourLong(d); }).join(', ') +
+      (feries.length > 1 ? ' ne comptent pas.' : ' ne compte pas.'));
   }
 
   /* CORRECTION RELECTURE LOT 16 (B2). Cette fonction parcourait `debut` →
@@ -728,29 +791,37 @@
      version précédente n'affichait que les congés payés : Maria ne pouvait
      donc pas savoir, avant de poser, si sa récupération suffirait à éviter le
      sans-solde. Or c'est exactement l'arbitrage que le lot 10 lui rend. */
+  /* LOT 26 §26.2 — UNE LIGNE PAR ENFANT : le nom, le quota de samedis en
+     sous-texte, les deux réserves à droite.
+
+     LA VALEUR REDEVIENT UNE VALEUR. Elle était une PHRASE de trois membres
+     (« 22,5 j de congés payés · 93h30 de récupération · samedis comptés :
+     2 sur 5 cette année ») posée dans la colonne des montants, qu'il avait
+     fallu forcer à passer à la ligne pour qu'elle ne pousse pas l'écran de
+     côté. Le socle du lot 24 a la place où la mettre : le sous-texte du
+     libellé (`sb2`). Rien n'est retiré — les trois informations sont là, à
+     leur place.
+
+     §7 tient : le reste du quota de samedis est visible HORS de la pose.
+     Sans cela, Maria ne découvrirait combien il lui en reste qu'au moment de
+     poser, c'est-à-dire trop tard pour arbitrer. */
   function panneauReserves() {
-    var p = Kit.pane('Vos réserves');
-    var l = Kit.lines(p);
+    var p = Kit.ce('div');
+    p.appendChild(Kit.section('Vos réserves'));
+    var l = Kit.ce('div', 'cd pad0');
+    p.appendChild(l);
     vue.fiches.forEach(function (f) {
       if (f.erreur) {
-        Kit.ligne(l, f.contrat.prenom_enfant, 'indisponible', { alerte: true });
+        Kit.ligneLn(l, f.contrat.prenom_enfant, 'indisponible', { alerte: true });
         return;
       }
       var cp = cpDe(f);
       var sup = supDe(f);
       var cond = condDe(f);
-      /* §7 — LE RESTE DU QUOTA EST VISIBLE HORS DE LA POSE. Sans cela, Maria
-         ne découvrirait combien il lui reste de samedis qu'au moment de poser
-         un congé, c'est-à-dire trop tard pour arbitrer. */
-      Kit.ligne(l, f.contrat.prenom_enfant,
-        Kit.joursCp(cp, mpjc(cond)) + ' de congés payés · ' +
-        joursDeRecup(cond, sup) + ' de récupération · ' + phraseQuotaSamedis(f),
-        /* `phrase` : cette valeur est une phrase, pas un montant. Sans elle,
-           elle sortait de l'encadré et faisait glisser tout l'écran de côté. */
-        { alerte: Kit.cpEstBas(cp, cond), phrase: true });
+      Kit.ligneLn(l, f.contrat.prenom_enfant,
+        Kit.joursCp(cp, mpjc(cond)) + ' · ' + joursDeRecup(cond, sup),
+        { sous: phraseQuotaSamedis(f), alerte: Kit.cpEstBas(cp, cond) });
     });
-    p.appendChild(Kit.ce('div', 'sb q',
-      'Les compteurs diffèrent car les contrats n’ont pas commencé en même temps.'));
     return p;
   }
 
@@ -759,14 +830,14 @@
      chargés avec la fiche. `null` veut dire « pas pu lire » : on le dit, on
      ne le remplace pas par zéro (§8). */
   function phraseQuotaSamedis(f) {
-    if (f.samedis == null) return 'samedis comptés : non lus';
+    if (f.samedis == null) return 'samedis : non lus';
     var annee = Kit.anneeDeReferenceConges(
       vue.annee + '-' + String(vue.mois).padStart(2, '0') + '-15');
     var n = f.samedis.filter(function (x) {
       var d = String(x.date_samedi || x).slice(0, 10);
       return d >= annee.debut && d <= annee.fin;
     }).length;
-    return 'samedis comptés : ' + n + ' sur ' + Kit.QUOTA_SAMEDIS + ' cette année';
+    return 'samedis : ' + n + ' sur ' + Kit.QUOTA_SAMEDIS + ' cette année';
   }
 
   /* §7 — les samedis comptés d'UNE période, pour qu'elle les NOMME. */
@@ -946,44 +1017,697 @@
   /* correction dans l'une casserait l'autre.                            */
   /* ================================================================== */
 
-  var FORMATS = [
-    { cle: 'journees', titre: 'Une ou plusieurs journées',
-      sous: 'Des dates, puis la répartition famille par famille.' },
-    { cle: 'demi', titre: 'Une demi-journée',
-      sous: 'Une date, et la moitié d’une journée de congé.' },
-    { cle: 'libre', titre: 'Une durée libre',
-      sous: 'Une date, et la durée que vous voulez — 23 min, 1 h, 1 h 34…' }
+  /* ================================================================== */
+  /* LOT 26 (§26.1) — HUIT ÉCRANS DEVIENNENT UN.                        */
+  /*                                                                     */
+  /* Poser une semaine de congé demandait : « Je pose… » (choix du       */
+  /* format), les dates, les samedis, puis UNE FEUILLE DE VENTILATION    */
+  /* PAR ENFANT — quatre de plus — puis le récapitulatif. Huit écrans,   */
+  /* une vingtaine d'appuis, pour un geste que Maria fait chaque mois.   */
+  /*                                                                     */
+  /* Tout tient maintenant sur une feuille : le format en segmenté, le   */
+  /* quand, le décompte en bloc vert avec ses samedis, et « Pour qui »   */
+  /* DÉJÀ RÉPARTI par le moteur — une ligne par enfant, dépliable si     */
+  /* Maria veut arbitrer. La barre fixe récapitule et pose.              */
+  /*                                                                     */
+  /* AUCUNE RÈGLE NE CHANGE. Le décompte vient d'`Engine`, la            */
+  /* répartition proposée d'`Engine.imputerConges`, les samedis          */
+  /* éligibles d'`Engine.samedisEligibles`, l'écriture est celle du      */
+  /* correctif B3 (imputations d'abord, compensation à l'échec). Ce qui  */
+  /* change est le NOMBRE D'ÉCRANS, rien d'autre.                        */
+  /*                                                                     */
+  /* CE QUI NE SE PERD PAS, ET OÙ C'EST PASSÉ (A.2) :                    */
+  /*  · la vérification des mois clôturés s'intercale à l'appui sur      */
+  /*    « Poser », avec ses textes actuels (`feuilleMoisClos`) ;          */
+  /*  · l'avertissement de saisie manuelle écrasée aussi — au moment de  */
+  /*    poser, plus sur un huitième écran ;                              */
+  /*  · le total du sans-solde et sa retenue, qui vivaient sur le        */
+  /*    récapitulatif, s'affichent au-dessus de la barre fixe, et chaque */
+  /*    ligne d'enfant porte déjà le sien ;                              */
+  /*  · l'échec fermé du quota de samedis (§8) : si le compte ne se lit  */
+  /*    pas, les cases refusent et le disent ;                           */
+  /*  · les deux raccourcis de ventilation du §18.3 : « tout sur mes     */
+  /*    congés payés » / « tout sur ma récupération » deviennent le      */
+  /*    geste ORDINAIRE — la répartition est déjà faite, et les steppers */
+  /*    du repli la corrigent en un appui au lieu de six.                */
+  /* ================================================================== */
+
+  var FORMATS_SEG = [
+    ['journees', 'Des journées'],
+    ['demi', '½ journée'],
+    ['libre', 'Durée libre']
   ];
 
-  function ouvrirParcours() {
-    Kit.ouvrirFeuille('Je pose…', 'Trois façons de poser un congé.',
-      function (corps) {
-        FORMATS.forEach(function (f, i) {
-          Kit.choix(corps, 'c' + (i + 1), ['⬛', '◧', '⏱'][i], f.titre, f.sous,
-            function () { demarrerFormat(f.cle); });
-        });
-      });
+  /* Une pose neuve, dans le format demandé. L'état est UN SEUL objet : les
+     deux chemins (journées / à l'heure) ne partagent que la date de départ,
+     et les mélanger dans deux états séparés obligerait à les resynchroniser
+     à chaque bascule du segmenté. */
+  function nouvelEtatPose(format) {
+    var auj = global.App.aujourdhui();
+    return {
+      format: format,
+      /* --- chemin « journées » --- */
+      debut: auj, fin: auj,
+      plans: [],
+      ouvert: null,        // l'enfant dont le repli est ouvert
+      ajustes: {},         // les contrats dont Maria a touché la répartition
+      /* --- chemin « à l'heure » --- */
+      jour: auj,
+      minutes: format === 'demi' ? demiJournee().minutes : 90,
+      qui: {}, exclu: {}, cpt: {}, cptExplicite: {}
+    };
   }
 
-  function demarrerFormat(format) {
-    var auj = global.App.aujourdhui();
-    if (format === 'journees') {
-      parcours = { debut: auj, fin: auj, etape: 1, index: 0, plans: [] };
-      return etapeDates();
+  function feuillePose(format) {
+    parcours = nouvelEtatPose(format);
+    ouvrirEcranPose();
+  }
+
+  /* ROUVRIR L'ÉCRAN DE POSE SANS PERDRE CE QUI Y A ÉTÉ SAISI.
+
+     Il n'y a qu'une feuille à l'écran : celle des mois clôturés, comme celle
+     des journées qui vont être remplacées, REMPLACE l'écran de pose. En
+     revenir doit rendre à Maria ses dates, ses samedis cochés et sa
+     répartition — les ressaisir serait lui faire payer une vérification
+     qu'elle n'a pas demandée. `parcours` est resté en mémoire : on redessine
+     à partir de lui.
+
+     Les plans sont RECHARGÉS au passage (`dessinerJournees` appelle
+     `recharger`), donc les compteurs annoncés sont ceux d'après la
+     réouverture éventuelle — jamais ceux lus avant. */
+  function reouvrirPose() {
+    if (!parcours) return;
+    ouvrirEcranPose();
+  }
+
+  function ouvrirEcranPose() {
+    Kit.ouvrirFeuille('Poser un congé', null, function (corps) {
+      corps.classList.add('pose');
+      var zoneFormat = Kit.ce('div');
+      var zoneQuand = Kit.ce('div');
+      var pied = Kit.stick(corps);
+      corps.insertBefore(zoneFormat, pied);
+      corps.insertBefore(zoneQuand, pied);
+
+      var segFormat = Kit.seg(FORMATS_SEG, parcours.format, function (v) {
+        var etat = nouvelEtatPose(v);
+        /* La date déjà choisie survit au changement de format : c'est la
+           même absence qu'on décrit autrement. */
+        etat.debut = parcours.debut; etat.fin = parcours.fin;
+        etat.jour = parcours.format === 'journees' ? parcours.debut : parcours.jour;
+        parcours = etat;
+        dessiner();
+      });
+      zoneFormat.appendChild(segFormat.bloc);
+
+      /* Le message d'échec vit DANS la barre fixe, sous le bouton : c'est là
+         que Maria regarde après avoir appuyé, et la feuille reste ouverte
+         pour qu'aucune saisie ne se perde en silence (B.0-9). */
+      var msg = Kit.ce('div', 'msg');
+      var bouton = Kit.bouton('btn', function () { valider(bouton, msg); });
+      pied.appendChild(bouton);
+      pied.appendChild(msg);
+
+      function dessiner() {
+        Kit.vider(zoneQuand);
+        if (parcours.format === 'journees') dessinerJournees(zoneQuand, bouton);
+        else dessinerHeure(zoneQuand, bouton);
+      }
+
+      function valider(b, zoneMsg) {
+        zoneMsg.className = 'msg';
+        zoneMsg.textContent = '';
+        if (parcours.format === 'journees') return verifierPuisPoser(b);
+        return poserHoraire(b, zoneMsg);
+      }
+
+      dessiner();
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LE CHEMIN « JOURNÉES » : dates → décompte → répartition             */
+  /* ------------------------------------------------------------------ */
+
+  function dessinerJournees(zone, bouton) {
+    var maintenant = global.App.moisCourant();
+    var bornes = { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 };
+    var du = Kit.champDate('Du', parcours.debut, bornes);
+    var au = Kit.champDate('Au', parcours.fin, bornes);
+    zone.appendChild(du.bloc);
+    zone.appendChild(au.bloc);
+
+    var suite = Kit.ce('div');
+    zone.appendChild(suite);
+
+    du.bloc.addEventListener('change', function () {
+      parcours.debut = du.valeur();
+      /* Le « Au » SUIT le « Du » quand il le dépasse (maquette) : une plage
+         inversée n'est pas une erreur à signaler, c'est une plage qu'on
+         vient de déplacer. */
+      if (parcours.fin < parcours.debut) {
+        parcours.fin = parcours.debut;
+        au.poser(parcours.fin);
+      }
+      recharger();
+    });
+    au.bloc.addEventListener('change', function () {
+      parcours.fin = au.valeur();
+      if (parcours.fin < parcours.debut) {
+        parcours.debut = parcours.fin;
+        du.poser(parcours.debut);
+      }
+      recharger();
+    });
+
+    /* CHANGER DE DATES RECHARGE TOUT : les conditions du mois visé, les
+       journées déjà saisies sur la période, et le quota de samedis réel.
+       C'est le prix du guichet unique — et c'est le seul moyen que les
+       chiffres annoncés soient ceux du mois où l'écriture atterrira
+       (correction B1 des lots 20-22, tenue ici aussi). */
+    var jeton = 0;
+    function recharger() {
+      var mien = ++jeton;
+      Kit.vider(suite);
+      suite.appendChild(Kit.ce('div', 'attente', 'Calcul du décompte…'));
+      bouton.disabled = true;
+      bouton.textContent = 'Poser';
+
+      preparerPlans().then(function () {
+        if (mien !== jeton) return;                 // une saisie plus récente a gagné
+        return lireQuotas().then(function () {
+          if (mien !== jeton) return;
+          Kit.vider(suite);
+          dessinerDecompte(suite, bouton);
+        });
+      }).catch(function (e) {
+        if (mien !== jeton) return;
+        Kit.vider(suite);
+        /* §8 — ÉCHOUER FERMÉ. Sans les compteurs ou sans le quota, on ne
+           propose rien : un décompte crédible et faux est le pire résultat. */
+        suite.appendChild(Kit.warnbox('Impossible de préparer cette période',
+          ' ' + Kit.messageErreur(e) + ' Rien n’a été posé. Réessayez, ou ' +
+          'changez les dates.'));
+        var bRe = Kit.bouton('btn nt', recharger);
+        bRe.textContent = 'Réessayer';
+        suite.appendChild(bRe);
+      });
     }
-    parcours = {
-      format: format,
-      jour: auj,
-      cptExplicite: {},
-      /* La demi-journée est pré-remplie et non modifiable ; la durée libre
-         part d'une valeur ronde que Maria remplace. */
-      minutes: format === 'demi' ? demiJournee().minutes : 90,
-      qui: {},
-      /* Les contrats décochés PAR UN OBSTACLE, et non par Maria. */
-      exclu: {},
-      cpt: {}
+
+    recharger();
+  }
+
+  /* Les plans de ventilation, recalculés pour les dates courantes. Reprend
+     exactement la chaîne d'avant — conditions du mois de la période, journées
+     déjà saisies, puis `preparerVentilationsAvec`. */
+  function preparerPlans() {
+    if (parcours.fin < parcours.debut) {
+      parcours.plans = [];
+      return Promise.resolve();
+    }
+    var plage = { debut: parcours.debut, fin: parcours.fin };
+    var moisPeriode = Chaine.moisDeDate(plage.debut);
+    var memeMois = moisPeriode.annee === vue.annee && moisPeriode.mois === vue.mois;
+
+    var prepare = memeMois
+      ? Promise.resolve(vue.fiches)
+      : Promise.all(vue.fiches.map(function (f) {
+          if (f.erreur) return f;
+          return global.App.serie(f.contrat, moisPeriode).then(function (chaine) {
+            var e = global.App.moisDe(chaine, moisPeriode.annee, moisPeriode.mois);
+            return e ? { contrat: f.contrat, entree: e, journees: f.journees, erreur: null } : f;
+          }).catch(function (err) {
+            return { contrat: f.contrat, entree: null, journees: {}, erreur: err };
+          });
+        }));
+
+    return prepare
+      .then(function (fiches) { return avecJourneesDeLaPeriode(fiches, plage); })
+      .then(function (fiches) { construirePlans(fiches, plage); });
+  }
+
+  /* LE BLOC VERT : le décompte rejoué par le moteur, la période en toutes
+     lettres, et les samedis éligibles DEDANS (§26.1 point 3). */
+  function dessinerDecompte(zone, bouton) {
+    var plans = parcours.plans;
+
+    if (!plans.length) {
+      zone.appendChild(Kit.note('Aucun jour ouvrable sur ces dates',
+        'Aucun de vos contrats n’est gardé sur cette période : rien ne serait ' +
+        'décompté.'));
+      bouton.disabled = true;
+      bouton.textContent = 'Poser';
+      return;
+    }
+
+    var res = Kit.ce('div', 'res');
+    var gros = Kit.ce('div', 'big2');
+    var sub = Kit.ce('div', 'sub');
+    res.appendChild(gros);
+    res.appendChild(sub);
+    zone.appendChild(res);
+
+    var zoneSamedis = Kit.ce('div');
+    res.appendChild(zoneSamedis);
+
+    var titreQui = Kit.section('Pour qui — déjà réparti');
+    zone.appendChild(titreQui);
+    var zoneQui = Kit.ce('div');
+    zone.appendChild(zoneQui);
+
+    var zoneTotal = Kit.ce('div');
+    zone.appendChild(zoneTotal);
+
+    zone.appendChild(Kit.ce('p', 'sb q',
+      'Un congé vaut pour ' + libelleContrats(vue.fiches.length) + '.'));
+
+    /* LE CHOIX DES SAMEDIS EST PAR ENFANT — décision d'Adrien du 24 août 2026,
+       reconfirmée pour le redesign : « choix par enfant ».
+
+       ÉCART ASSUMÉ À LA MAQUETTE, ET IL EST DÉLIBÉRÉ. Elle montre UNE case par
+       samedi, qui vaudrait pour tous les contrats. Or le quota des cinq
+       samedis est PAR FAMILLE (§2.4) : une case unique retirerait à Maria la
+       possibilité de compter le samedi chez Léa, dont le quota est intact, et
+       pas chez Tom, qui l'a déjà épuisé. C'est le critère A5 du lot 23, et il
+       ne se perd pas pour tenir dans une ligne.
+
+       LA MAQUETTE EST SUIVIE QUAND ELLE PEUT L'ÊTRE : lorsqu'un seul contrat
+       peut compter ce samedi — le cas courant — la ligne ne le nomme pas, elle
+       dit « Compter le samedi 11 juillet », exactement comme la maquette. */
+    function samedisAChoisir() {
+      var out = [];
+      var dates = {};
+      plans.forEach(function (p) {
+        p.samedisEligibles.forEach(function (d) { dates[d] = true; });
+      });
+      Object.keys(dates).sort().forEach(function (d) {
+        var concernes = plans.filter(function (p) {
+          return p.samedisEligibles.indexOf(d) !== -1;
+        });
+        concernes.forEach(function (p) {
+          out.push({ date: d, plan: p, nomme: concernes.length > 1 });
+        });
+      });
+      return out;
+    }
+
+    /* Le reste du quota d'UN contrat pour l'année de référence de cette date,
+       en comptant ce qu'il a déjà coché sur cette pose. `p.quota` vaut `null`
+       tant qu'il n'a pas été lu : on refuse alors la case et on le dit (§8),
+       on ne suppose jamais un quota plein. */
+    function resteQuota(p, date) {
+      if (!p.quota) return null;
+      var cle = Kit.anneeDeReferenceConges(date).debut;
+      var n = p.quota[cle] || 0;
+      Object.keys(p.samedisChoisis).forEach(function (d) {
+        if (p.samedisChoisis[d] && Kit.anneeDeReferenceConges(d).debut === cle) n++;
+      });
+      return Kit.QUOTA_SAMEDIS - n;
+    }
+
+    function majDecompte() {
+      var nombres = plans.map(function (p) { return p.jours; });
+      var mini = Math.min.apply(null, nombres);
+      var maxi = Math.max.apply(null, nombres);
+      gros.textContent = mini === maxi
+        ? Kit.jours(maxi) + ' ouvrables'
+        : 'de ' + mini + ' à ' + Kit.jours(maxi) + ' ouvrables';
+      sub.textContent = libellePlage(parcours.debut, parcours.fin)
+        .replace(/^./, function (c) { return c.toUpperCase(); }) + '. ' +
+        /* §6.3 — LA RÈGLE DU DÉCOMPTE EST DITE LÀ OÙ LE NOMBRE EST PRODUIT,
+           et elle vient de la constante partagée (A12). C'est le chiffre que
+           les familles contestent : il ne s'affiche jamais nu. */
+        Kit.RESUME_RG06;
+      bouton.disabled = maxi === 0;
+      bouton.textContent = maxi === 0
+        ? 'Poser'
+        : 'Poser ' + Kit.jours(maxi) + ' sur ' + libelleContrats(plans.length);
+    }
+
+    function majSamedis() {
+      Kit.vider(zoneSamedis);
+
+      samedisAChoisir().forEach(function (x) {
+        var p = x.plan;
+        var coche = !!p.samedisChoisis[x.date];
+        var reste = resteQuota(p, x.date);
+        var ligne = Kit.bouton('sam', function () {
+          p.samedisChoisis[x.date] = !coche;
+          recalculerPlan(p);
+          /* La répartition proposée suit le décompte : un jour de plus ne
+             peut pas rester non réparti. Si Maria a arbitré ce contrat, son
+             choix n'est pas écrasé — il est rééquilibré. */
+          if (parcours.ajustes[p.contrat.id]) rééquilibrer(p);
+          majTout();
+        });
+        ligne.appendChild(Kit.ce('span', 'bx' + (coche ? ' on' : ''), coche ? '✓' : ''));
+        ligne.appendChild(Kit.ce('span', null,
+          'Compter le ' + Kit.jourLong(x.date).toLowerCase() +
+          (x.nomme ? ' · ' + p.contrat.prenom_enfant : '')));
+        /* §5.2 — LE RESTE DU QUOTA, RÉEL, à droite. */
+        ligne.appendChild(Kit.ce('span', 'q',
+          reste == null ? 'quota non lu'
+            : (reste > 0 ? 'reste ' + reste + ' sur ' + Kit.QUOTA_SAMEDIS
+                         : (reste === 0 ? 'quota épuisé'
+                                        : 'dépassement de ' + (-reste)))));
+        if (reste == null) ligne.disabled = true;
+        ligne.setAttribute('role', 'checkbox');
+        ligne.setAttribute('aria-checked', coche ? 'true' : 'false');
+        zoneSamedis.appendChild(ligne);
+      });
+
+      /* §5.2 — un samedi FÉRIÉ n'est pas un choix, et une phrase le dit
+         plutôt que de le laisser inexpliqué. La liste vient du moteur. */
+      var feriesSam = {};
+      plans.forEach(function (p) {
+        if (!p.bornes) return;
+        Engine.feriesDeLaPeriode(p.bornes.debut, p.bornes.fin, p.planning)
+          .forEach(function (d) {
+            if (Engine.jourSemaine(d) === 6) feriesSam[d] = true;
+          });
+      });
+      Object.keys(feriesSam).sort().forEach(function (d) {
+        var l = Kit.ce('div', 'sam mut');
+        l.appendChild(Kit.ce('span', 'q',
+          'Le ' + Kit.jourLong(d).toLowerCase() + ' est férié : jamais décompté.'));
+        zoneSamedis.appendChild(l);
+      });
+    }
+
+    /* §5.3 — LE DÉPASSEMENT RESTE PERMIS, MAIS DIT. Même logique que la
+       récupération négative : l'application ne décide pas à la place de
+       Maria, elle s'assure qu'elle sait. */
+    function alerteQuota() {
+      var messages = [];
+      plans.forEach(function (p) {
+        if (!p.quota) return;
+        var parAnnee = {};
+        Object.keys(p.samedisChoisis).forEach(function (d) {
+          if (!p.samedisChoisis[d]) return;
+          var k = Kit.anneeDeReferenceConges(d).debut;
+          parAnnee[k] = (parAnnee[k] || 0) + 1;
+        });
+        Object.keys(parAnnee).forEach(function (k) {
+          var total = (p.quota[k] || 0) + parAnnee[k];
+          if (total <= Kit.QUOTA_SAMEDIS) return;
+          messages.push('C’est le ' + total + 'ᵉ samedi compté pour ' +
+            p.contrat.prenom_enfant + ' sur ' + Kit.anneeDeReferenceConges(k).libelle +
+            '. La règle habituelle en prévoit ' + Kit.QUOTA_SAMEDIS +
+            ' ; vous pouvez le compter quand même.');
+        });
+      });
+      return messages;
+    }
+
+    function majQui() {
+      Kit.vider(zoneQui);
+      plans.forEach(function (p) { zoneQui.appendChild(carteEnfant(p, majTout)); });
+    }
+
+    /* Le total du sans solde et sa retenue — ce que portait le récapitulatif
+       supprimé. Il reste au-dessus de la barre fixe, où il est lu juste avant
+       l'appui. */
+    function majTotal() {
+      Kit.vider(zoneTotal);
+      alerteQuota().forEach(function (m) {
+        zoneTotal.appendChild(Kit.warnbox('Au-delà des ' + Kit.QUOTA_SAMEDIS + ' samedis', ' ' + m));
+      });
+
+      var joursSs = 0, retenue = 0, chiffrable = true;
+      plans.forEach(function (p) {
+        if (!p.choix.joursSansSolde) return;
+        joursSs += p.choix.joursSansSolde;
+        var brut = brutDe(p.fiche);
+        if (brut) retenue += Engine.montantCentimes(brut,
+          p.choix.joursSansSolde * mpjc(p.cond));
+        else chiffrable = false;
+      });
+      if (!joursSs) return;
+      /* LOT 16 §16.1 d) — LE BASCULEMENT EN SANS SOLDE EST ANNONCÉ AVANT LE
+         GESTE, AVEC SON COÛT. Ce texte vivait dans un encart par contrat
+         (`bascule`) plus un total sur le récapitulatif ; les deux écrans ont
+         disparu, la phrase reste — au-dessus de la barre fixe, lue juste avant
+         l'appui, et chaque carte d'enfant porte déjà son propre montant.
+         Le montant vient du moteur (A4) : aucun taux horaire ici. */
+      zoneTotal.appendChild(Kit.warnbox(
+        Kit.jours(joursSs) + ' sans solde en tout',
+        (chiffrable ? ' : ' + Kit.eur(retenue) + ' de retenue sur vos salaires.'
+                    : ' : la retenue ne peut pas être entièrement chiffrée, un barème manque.') +
+        ' Vos réserves ne couvrent pas toute la période : ces jours passent en ' +
+        'sans solde. Vous pouvez changer avant de poser.'));
+    }
+
+    function majTout() { majDecompte(); majSamedis(); majQui(); majTotal(); }
+    majTout();
+  }
+
+  /* UNE LIGNE PAR ENFANT, DÉJÀ REMPLIE PAR LE MOTEUR (§26.1 point 4).
+
+     L'en-tête dit ce qui va être décompté ; le chevron déplie trois steppers.
+     Les bornes des steppers sont des FONCTIONS : celle du sans solde dépend
+     de ce que les deux autres couvrent, et une borne figée à l'ouverture
+     laisserait Maria poser une somme qui ne fait pas le compte. */
+  function carteEnfant(p, apres) {
+    var c = p.contrat;
+    var ouvert = parcours.ouvert === c.id;
+    var ss = p.choix.joursSansSolde > 0;
+
+    var kid = Kit.ce('div', 'kid' + (ss ? ' warn' : '') + (ouvert ? ' open' : ''));
+    var hd = Kit.bouton('hd', function () {
+      parcours.ouvert = ouvert ? null : c.id;
+      apres();
+    });
+    hd.setAttribute('aria-expanded', ouvert ? 'true' : 'false');
+    hd.appendChild(Kit.avatar(c));
+    var gr = Kit.ce('span', 'gr');
+    gr.appendChild(Kit.ce('span', 'nm', c.prenom_enfant));
+    gr.appendChild(Kit.ce('span', 'dt', texteRepartition(p)));
+    hd.appendChild(gr);
+    hd.appendChild(Kit.ce('span', 'ch', '›'));
+    kid.appendChild(hd);
+
+    var adj = Kit.ce('div', 'adj');
+    kid.appendChild(adj);
+
+    /* Les mêmes trois lignes que la feuille de correction — une seule
+       définition (`poserLignesVentilation`). Le PLAFOND de chaque réserve
+       vient de `plafondsDe`, jamais d'un calcul refait ici : les congés payés
+       ne passent JAMAIS en négatif, par aucun chemin (A4). */
+    poserLignesVentilation(adj, p, function (champ, valeur) {
+      p.choix[champ] = valeur;
+      /* Le contrat est marqué AJUSTÉ : à partir de là, cocher un samedi ne
+         réécrit plus sa répartition en silence — il la rééquilibre. */
+      parcours.ajustes[c.id] = true;
+      rééquilibrer(p, champ);
+      parcours.ouvert = c.id;
+      apres();
+    });
+
+    return kid;
+  }
+
+  function ligneStepper(parent, nom, sous, valeur, maxi, onchange, mini) {
+    var l = Kit.ce('div', 'cnt');
+    var cl = Kit.ce('span', 'cl', nom);
+    if (sous) cl.appendChild(Kit.ce('i', null, sous));
+    l.appendChild(cl);
+    var st = Kit.stepper(valeur, {
+      min: mini || 0, max: maxi, libelle: nom, onchange: onchange
+    });
+    l.appendChild(st.bloc);
+    parent.appendChild(l);
+    return st;
+  }
+
+  /* LA SOMME RESTE TOUJOURS ÉGALE AU DÉCOMPTE (§26.1 point 4) : ajuster une
+     ligne rééquilibre les autres. Le « reste à répartir » de l'ancienne
+     feuille disparaît parce qu'il ne peut plus être non nul — c'est plus fort
+     qu'un bouton qu'on désactive.
+
+     L'ordre du rééquilibrage : on retire d'abord au sans solde, puis à la
+     récupération, puis aux congés payés — du moins désirable au plus. Ce qui
+     manque va au sans solde, seule ligne sans plafond de réserve. */
+  function rééquilibrer(p, saufChamp) {
+    var champs = ['joursSansSolde', 'joursSurSup', 'joursSurCp'];
+    var plafonds = {
+      joursSurCp: Math.min(p.maxCp, p.jours),
+      joursSurSup: Math.min(p.maxSup, p.jours),
+      joursSansSolde: p.jours
     };
-    etapeHeure();
+    champs.forEach(function (k) {
+      if (p.choix[k] < 0) p.choix[k] = 0;
+      if (p.choix[k] > plafonds[k]) p.choix[k] = plafonds[k];
+    });
+    function somme() {
+      return p.choix.joursSurCp + p.choix.joursSurSup + p.choix.joursSansSolde;
+    }
+    var trop = somme() - p.jours;
+    champs.forEach(function (k) {
+      if (trop <= 0 || k === saufChamp) return;
+      var pris = Math.min(p.choix[k], trop);
+      p.choix[k] -= pris;
+      trop -= pris;
+    });
+    if (trop > 0 && saufChamp) {
+      /* Même la ligne que Maria vient de toucher cède, si elle est seule à
+         pouvoir céder : la somme ne dépasse jamais le décompte. */
+      p.choix[saufChamp] -= trop;
+      if (p.choix[saufChamp] < 0) p.choix[saufChamp] = 0;
+    }
+    var manque = p.jours - somme();
+    if (manque > 0) p.choix.joursSansSolde += manque;
+  }
+
+  /* « 4 j payés · 2 j récup », et le montant quand du sans solde apparaît. */
+  function texteRepartition(p) {
+    var bouts = [];
+    if (p.choix.joursSurCp) bouts.push(p.choix.joursSurCp + ' j payés');
+    if (p.choix.joursSurSup) bouts.push(p.choix.joursSurSup + ' j récup');
+    if (p.choix.joursSansSolde) {
+      var brut = brutDe(p.fiche);
+      var retenue = brut
+        ? Engine.montantCentimes(brut, p.choix.joursSansSolde * mpjc(p.cond)) : null;
+      bouts.push(p.choix.joursSansSolde + ' j sans solde' +
+        (retenue != null ? ' — ' + Kit.eur(retenue) : ''));
+    }
+    return bouts.join(' · ') || 'rien à décompter';
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LE CHEMIN « À L'HEURE » : un jour, une durée, une issue par enfant  */
+  /* ------------------------------------------------------------------ */
+
+  function dessinerHeure(zone, bouton) {
+    var libre = parcours.format === 'libre';
+    var demi = demiJournee();
+    var maintenant = global.App.moisCourant();
+    var chJour = Kit.champDate('Le jour', parcours.jour,
+      { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 });
+    zone.appendChild(chJour.bloc);
+
+    var chDuree = null;
+    if (libre) {
+      chDuree = Kit.champHeureMinute('Durée', minutesEnIso(parcours.minutes));
+      zone.appendChild(chDuree.bloc);
+      var rang = Kit.ce('div', 'rrow');
+      [23, 60, 94].forEach(function (m) {
+        var b = Kit.bouton('btn sm nt', function () {
+          parcours.minutes = m;
+          chDuree.input.value = minutesEnIso(m);
+          majTout();
+        });
+        b.textContent = Kit.heures(m);
+        rang.appendChild(b);
+      });
+      zone.appendChild(rang);
+    } else {
+      zone.appendChild(Kit.fld('Durée', Kit.heures(demi.minutes) +
+        ' — la moitié d’une journée de congé'));
+      if (demi.divergent) {
+        zone.appendChild(Kit.ce('p', 'sb q',
+          'Vos contrats n’ont pas tous la même journée de référence : ' +
+          'la plus courte fait foi, pour qu’aucun compteur ne soit dépassé.'));
+      }
+    }
+
+    var alerte = Kit.ce('div');
+    zone.appendChild(alerte);
+    zone.appendChild(Kit.section('Pour qui, et sur quoi ?'));
+    var zoneQui = Kit.ce('div');
+    zone.appendChild(zoneQui);
+
+    chJour.bloc.addEventListener('change', function () {
+      parcours.jour = chJour.valeur();
+      chargerContexteDuJour().then(majTout);
+    });
+    if (chDuree) {
+      chDuree.input.addEventListener('change', function () {
+        parcours.minutes = isoEnMinutes(chDuree.valeur());
+        majTout();
+      });
+    }
+
+    function majTout() {
+      Kit.vider(alerte);
+      Kit.vider(zoneQui);
+
+      /* §21.1 — LES DEUX REFUS, ET LEUR PHRASE EXACTE. Le bouton reste
+         inactif tant que la durée n'est pas posable ; sans la phrase, un
+         bouton mort passerait pour une panne. */
+      var dureeOk = true;
+      if (libre) {
+        if (parcours.minutes >= demi.minutes && demi.minutes > 0) {
+          alerte.appendChild(Kit.warnbox(
+            Kit.heures(parcours.minutes) + ' : c’est une demi-journée ou plus',
+            ' À partir de ' + Kit.heures(demi.minutes) + ', choisissez « ½ journée » ' +
+            'ou « des journées ».'));
+          dureeOk = false;
+        } else if (parcours.minutes <= 0) {
+          alerte.appendChild(Kit.note('Saisissez une durée',
+            '1 h, 23 min, 1 h 34 — ce que vous voulez, en dessous de ' +
+            Kit.heures(demi.minutes) + '.'));
+          dureeOk = false;
+        }
+      } else if (demi.minutes <= 0) {
+        alerte.appendChild(Kit.warnbox('Journée de congé inconnue',
+          ' Aucun de vos contrats ne porte de conditions pour ce mois : ' +
+          'impossible de savoir ce que vaut une demi-journée.'));
+        dureeOk = false;
+      }
+
+      var minutes = libre ? parcours.minutes : demi.minutes;
+      var fiches = fichesDuJour(parcours.jour);
+      var retenus = [];
+
+      if (!fiches.length) {
+        zoneQui.appendChild(Kit.ce('p', 'vide',
+          'Aucun de vos contrats n’est gardé ce jour-là : il n’y a rien à poser.'));
+      }
+
+      fiches.forEach(function (f) {
+        var id = f.contrat.id;
+        var obstacle = obstacleDuJour(f, parcours.jour);
+
+        /* UN DÉCOCHAGE IMPOSÉ N'EST PAS UN CHOIX DE MARIA. La date se change
+           dans le même écran : si Maria déplace la pose sur une journée
+           libre, le contrat doit REVENIR de lui-même. */
+        if (obstacle) {
+          parcours.exclu[id] = true;
+          parcours.qui[id] = false;
+        } else if (parcours.exclu[id]) {
+          delete parcours.exclu[id];
+          delete parcours.qui[id];
+        }
+        var coche = parcours.qui[id] !== false && !obstacle;
+
+        var b = Kit.choix(zoneQui, 'c1', coche ? '●' : '○',
+          f.contrat.prenom_enfant,
+          obstacle ? 'Impossible : ' + obstacle + '.' : reservesLisibles(f),
+          function () {
+            if (obstacle) return;
+            parcours.qui[id] = !coche;
+            majTout();
+          });
+        if (coche) b.className += ' on';
+        if (obstacle) b.className += ' off';
+        b.setAttribute('role', 'checkbox');
+        b.setAttribute('aria-checked', coche ? 'true' : 'false');
+        if (!coche || !dureeOk || minutes <= 0) return;
+
+        retenus.push(f);
+        zoneQui.appendChild(blocIssue(f, minutes, majTout));
+      });
+
+      bouton.disabled = !dureeOk || !retenus.length;
+      bouton.textContent = (!dureeOk || !retenus.length)
+        ? 'Poser'
+        : 'Poser ' + Kit.heures(minutes) +
+          (retenus.length === 1
+            ? ' pour ' + retenus[0].contrat.prenom_enfant
+            : ' sur ' + retenus.length + ' contrats');
+    }
+
+    chargerContexteDuJour().then(majTout);
   }
 
   /* §21.1 — LA DEMI-JOURNÉE, ET LE SEUIL DE LA DURÉE LIBRE.
@@ -1058,160 +1782,6 @@
     return null;
   }
 
-  function etapeHeure() {
-    var libre = parcours.format === 'libre';
-    var demi = demiJournee();
-
-    Kit.ouvrirFeuille(libre ? 'Une durée libre' : 'Une demi-journée',
-      'La journée reste travaillée : seules les minutes posées sortent de vos compteurs.',
-      function (corps) {
-        var maintenant = global.App.moisCourant();
-        var chJour = Kit.champDate('Le jour', parcours.jour,
-          { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 });
-        corps.appendChild(chJour.bloc);
-
-        var chDuree = null;
-        if (libre) {
-          chDuree = Kit.champHeureMinute('Durée', minutesEnIso(parcours.minutes));
-          corps.appendChild(chDuree.bloc);
-          corps.appendChild(Kit.ce('p', 'sb q',
-            'Ce que vous voulez, à la minute près, en dessous de ' +
-            Kit.heures(demi.minutes) + '.'));
-          var raccourcis = Kit.ce('div', 'row');
-          [23, 60, 94].forEach(function (m) {
-            var b = Kit.bouton('btn sm nt', function () {
-              parcours.minutes = m;
-              chDuree.input.value = minutesEnIso(m);
-              majTout();
-            });
-            b.textContent = Kit.heures(m);
-            raccourcis.appendChild(b);
-          });
-          corps.appendChild(raccourcis);
-        } else {
-          corps.appendChild(Kit.fld('Durée', Kit.heures(demi.minutes) +
-            ' — la moitié d’une journée de congé'));
-          if (demi.divergent) {
-            corps.appendChild(Kit.ce('p', 'sb q',
-              'Vos contrats n’ont pas tous la même journée de référence : ' +
-              'la plus courte fait foi, pour qu’aucun compteur ne soit dépassé.'));
-          }
-        }
-
-        var alerte = Kit.ce('div');
-        corps.appendChild(alerte);
-        corps.appendChild(Kit.section('Pour qui, et sur quoi ?'));
-        corps.appendChild(Kit.ce('p', 'sb q',
-          'Chaque famille se règle individuellement.'));
-        var zoneQui = Kit.ce('div');
-        corps.appendChild(zoneQui);
-
-        var msg = Kit.ce('div', 'msg');
-        corps.appendChild(msg);
-        var bPoser = Kit.bouton('btn', function () { poserHoraire(bPoser, msg); });
-        corps.appendChild(bPoser);
-
-        chJour.bloc.addEventListener('change', function () {
-          parcours.jour = chJour.valeur();
-          chargerContexteDuJour().then(majTout);
-        });
-        if (chDuree) {
-          chDuree.input.addEventListener('change', function () {
-            parcours.minutes = isoEnMinutes(chDuree.valeur());
-            majTout();
-          });
-        }
-
-        function majTout() {
-          Kit.vider(alerte);
-          Kit.vider(zoneQui);
-          msg.className = 'msg';
-          msg.textContent = '';
-
-          /* §21.1 — LES DEUX REFUS, ET LEUR PHRASE EXACTE. Le bouton reste
-             inactif tant que la durée n'est pas posable ; sans la phrase, un
-             bouton mort passerait pour une panne. */
-          var dureeOk = true;
-          if (libre) {
-            if (parcours.minutes >= demi.minutes && demi.minutes > 0) {
-              alerte.appendChild(Kit.warnbox(
-                Kit.heures(parcours.minutes) + ' : c’est une demi-journée ou plus',
-                /* REMARQUE 4 — « au-delà de » excluait 4 h 30, qui est
-                   pourtant déjà refusé. La borne est stricte : on le dit. */
-                ' À partir de ' + Kit.heures(demi.minutes) + ', choisissez « une ' +
-                'demi-journée » ou « une ou plusieurs journées ».'));
-              dureeOk = false;
-            } else if (parcours.minutes <= 0) {
-              alerte.appendChild(Kit.note('Saisissez une durée',
-                '1 h, 23 min, 1 h 34 — ce que vous voulez, en dessous de ' +
-                Kit.heures(demi.minutes) + '.'));
-              dureeOk = false;
-            }
-          } else if (demi.minutes <= 0) {
-            alerte.appendChild(Kit.warnbox('Journée de congé inconnue',
-              ' Aucun de vos contrats ne porte de conditions pour ce mois : ' +
-              'impossible de savoir ce que vaut une demi-journée.'));
-            dureeOk = false;
-          }
-
-          var minutes = libre ? parcours.minutes : demi.minutes;
-          var fiches = fichesDuJour(parcours.jour);
-          var retenus = [];
-
-          if (!fiches.length) {
-            zoneQui.appendChild(Kit.ce('p', 'vide',
-              'Aucun de vos contrats n’est gardé ce jour-là : il n’y a rien à poser.'));
-          }
-
-          fiches.forEach(function (f) {
-            var id = f.contrat.id;
-            var obstacle = obstacleDuJour(f, parcours.jour);
-
-            /* UN DÉCOCHAGE IMPOSÉ N'EST PAS UN CHOIX DE MARIA.
-
-               L'obstacle décoche le contrat pour empêcher l'écriture. Mais la
-               date se change dans la même feuille : si Maria déplace la pose
-               sur une journée libre, le contrat doit REVENIR de lui-même. Sans
-               cette mémoire, il resterait exclu en silence — la feuille dirait
-               « Poser 1h00 sur 2 contrats » là où trois sont gardés, sans que
-               rien à l'écran n'explique le troisième absent. */
-            if (obstacle) {
-              parcours.exclu[id] = true;
-              parcours.qui[id] = false;
-            } else if (parcours.exclu[id]) {
-              delete parcours.exclu[id];
-              delete parcours.qui[id];
-            }
-            var coche = parcours.qui[id] !== false && !obstacle;
-
-            var b = Kit.choix(zoneQui, 'c1', coche ? '●' : '○',
-              f.contrat.prenom_enfant,
-              obstacle ? 'Impossible : ' + obstacle + '.' : reservesLisibles(f),
-              function () {
-                if (obstacle) return;
-                parcours.qui[id] = !coche;
-                majTout();
-              });
-            if (coche) b.className += ' on';
-            if (obstacle) b.className += ' off';
-            b.setAttribute('role', 'checkbox');
-            b.setAttribute('aria-checked', coche ? 'true' : 'false');
-            if (!coche || !dureeOk || minutes <= 0) return;
-
-            retenus.push(f);
-            zoneQui.appendChild(blocIssue(f, minutes, majTout));
-          });
-
-          bPoser.disabled = !dureeOk || !retenus.length;
-          bPoser.textContent = 'Poser ' + Kit.heures(dureeOk ? minutes : 0) +
-            (retenus.length === 1
-              ? ' pour ' + retenus[0].contrat.prenom_enfant
-              : (retenus.length > 1 ? ' sur ' + retenus.length + ' contrats' : ''));
-        }
-
-        chargerContexteDuJour().then(majTout);
-      });
-  }
 
   /* Les journées déjà saisies ce jour-là, pour chaque contrat : c'est ce qui
      dit si la pose est possible. Un échec de lecture ne laisse pas croire que
@@ -1470,106 +2040,25 @@
     return h * 60 + mn;
   }
 
-  /* --- Étape 1 : les dates ------------------------------------------- */
+  /* ------------------------------------------------------------------ */
+  /* L'APPUI SUR « POSER » — les deux garde-fous, puis l'écriture         */
+  /*                                                                     */
+  /* LOT 26 (§26.1, « ce qui ne se perd pas ») : les deux vérifications   */
+  /* qui vivaient sur des écrans du parcours s'intercalent ICI, au moment */
+  /* du geste. Elles ne sont pas allégées d'un mot — elles sont           */
+  /* rapprochées de ce qu'elles protègent.                                */
+  /*                                                                     */
+  /*   1. la période recouvre-t-elle un mois DÉJÀ CLÔTURÉ ? Depuis le lot */
+  /*      13 un mois clôturé peut être rouvert, mais jamais en silence :  */
+  /*      rouvrir, c'est faire diverger un document déjà remis à une      */
+  /*      famille. On le dit, on le trace, et on ne pose rien avant.      */
+  /*   2. la pose va-t-elle ÉCRASER UNE SAISIE MANUELLE ? Poser un congé  */
+  /*      passe par un `upsert` qui remet heures réelles et indemnité à   */
+  /*      `null` : une journée de familiarisation saisie heure par heure  */
+  /*      disparaîtrait sans retour possible et sans un mot.              */
+  /* ------------------------------------------------------------------ */
 
-  function etapeDates() {
-    var maintenant = global.App.moisCourant();
-    Kit.ouvrirFeuille('Quand serez-vous absente ?',
-      'Pour une seule journée, mettez la même date dans les deux champs.',
-      function (corps) {
-        var bornes = { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 };
-        var du = Kit.champDate('Du', parcours.debut, bornes);
-        var au = Kit.champDate('Au', parcours.fin, bornes);
-        corps.appendChild(du.bloc);
-        corps.appendChild(au.bloc);
-
-        var zone = Kit.ce('div');
-        corps.appendChild(zone);
-
-        var bSuite = Kit.bouton('btn', function () { verifierPuisVentiler(bSuite); });
-        bSuite.textContent = 'Continuer';
-        corps.appendChild(bSuite);
-
-        /* Le décompte se met à jour EN DIRECT. Sans cela, Maria découvre après
-           coup qu'une semaine du lundi au vendredi compte 6 jours — c'est
-           précisément le désaccord historique avec les familles, et il ne doit
-           surprendre personne. */
-        function rafraichirDecompte() {
-          parcours.debut = du.valeur();
-          parcours.fin = au.valeur();
-          Kit.vider(zone);
-
-          if (parcours.fin < parcours.debut) {
-            zone.appendChild(Kit.warnbox('La fin précède le début',
-              ' Choisissez une date de fin postérieure ou égale à la date de début.'));
-            bSuite.disabled = true;
-            return;
-          }
-
-          /* RG-06 — le décompte vient du MOTEUR, jamais recalculé ici.
-
-             CORRECTIF B2 DE LA RELECTURE PR9. Le commentaire qui tenait cette
-             place affirmait : « Le planning passé est celui de la RÈGLE
-             (lundi-samedi) ». C'était faux deux fois. Aucun planning n'était
-             passé, et le défaut du moteur est lundi-VENDREDI, pas
-             lundi-samedi. L'écran annonçait donc 4 jours là où le moteur en
-             compte 6 pour un contrat du lundi au jeudi — et écrivait ce 4
-             dans l'imputation, que le moteur aurait refusée.
-
-             Le décompte DÉPEND du planning : un jeudi d'absence coûte 3 jours
-             ouvrables à un contrat du lundi au jeudi (jeudi, vendredi,
-             samedi ; reprise le lundi) et 1 seul à un contrat du lundi au
-             vendredi. Il n'y a donc pas UN chiffre à annoncer ici, mais autant
-             que de plannings. On interroge le moteur pour chacun et on annonce
-             l'étendue réelle — exactement ce que fait déjà l'espace enfant. */
-          var servis = (vue.fiches || []).filter(function (f) {
-            return !f.erreur && joursDuContrat(f, parcours).length > 0;
-          });
-          var decomptes = servis.map(function (f) {
-            return Engine.decompterJoursOuvrables(parcours.debut, parcours.fin,
-              planningA(f, parcours.debut));
-          });
-          var mini = decomptes.length ? Math.min.apply(null, decomptes) : 0;
-          var maxi = decomptes.length ? Math.max.apply(null, decomptes) : 0;
-          parcours.jours = maxi;
-
-          var b = Kit.ce('div', 'decompte');
-          b.appendChild(Kit.ce('div', 'gros', mini === maxi
-            ? Kit.jours(maxi) + ' ouvrables décomptés'
-            : 'de ' + mini + ' à ' + Kit.jours(maxi) + ' ouvrables décomptés'));
-          b.appendChild(Kit.ce('div', 'q',
-            libellePlage(parcours.debut, parcours.fin).replace(/^./, function (c) {
-              return c.toUpperCase();
-            }) + '.'));
-          /* §6.3 — LA RÈGLE DU DÉCOMPTE EST DITE, PAS SOUS-ENTENDUE, et elle
-             vient de la constante partagée. Elle disait « samedi inclus »
-             jusqu'ici ; ce n'est plus vrai, et un chiffre qui baisse sans
-             explication est pire qu'un chiffre qu'on conteste. */
-          b.appendChild(Kit.ce('div', 'q', Kit.RESUME_RG06));
-          if (mini !== maxi) {
-            b.appendChild(Kit.ce('div', 'q',
-              'Le nombre dépend des jours de garde de chaque contrat. Le détail ' +
-              'vous sera donné enfant par enfant à l’étape suivante.'));
-          }
-          zone.appendChild(b);
-          bSuite.disabled = maxi === 0;
-          if (maxi === 0) {
-            zone.appendChild(Kit.ce('p', 'sb q',
-              'Cette période ne contient aucun jour ouvrable : rien ne serait décompté.'));
-          }
-        }
-
-        du.bloc.addEventListener('change', rafraichirDecompte);
-        au.bloc.addEventListener('change', rafraichirDecompte);
-        rafraichirDecompte();
-      });
-  }
-
-  /* Avant de ventiler : la période recouvre-t-elle un mois DÉJÀ CLÔTURÉ ?
-     Depuis le lot 13 un mois clôturé peut être rouvert, mais jamais en
-     silence : rouvrir, c'est faire diverger un document déjà remis à une
-     famille. On le dit, on le trace, et on ne pose rien avant. */
-  function verifierPuisVentiler(bouton) {
+  function verifierPuisPoser(bouton) {
     bouton.disabled = true;
     var plage = { debut: parcours.debut, fin: parcours.fin };
     var moisConcernes = moisDePeriode(plage);
@@ -1591,12 +2080,56 @@
 
       bouton.disabled = false;
       if (clos.length) return feuilleMoisClos(clos);
-      return preparerVentilations();
+      return confirmerEcrasementsPuisPoser(bouton);
     }).catch(function (e) {
       bouton.disabled = false;
       Kit.toast('Impossible de vérifier l’état des mois : ' + Kit.messageErreur(e) +
         ' Rien n’a été posé.', true);
     });
+  }
+
+  /* LOT 18 §18.4 (10·A5) — L'AVERTISSEMENT, AVANT LE GESTE QUI ÉCRIT.
+
+     Il vivait sur le récapitulatif, septième écran du parcours. Il s'affiche
+     désormais dans une feuille courte qui ne s'ouvre QUE s'il y a quelque
+     chose à écraser : dans le cas ordinaire — l'écrasante majorité — Maria ne
+     voit rien de plus et l'écriture part directement. Le texte, lui, n'a pas
+     changé d'un mot.
+
+     Ce n'est pas une phrase de confort, c'est une garde : elle protège la
+     seule donnée de l'application que personne ne peut recalculer. */
+  function confirmerEcrasementsPuisPoser(bouton) {
+    var avertissements = [];
+    parcours.plans.forEach(function (p) {
+      if (p.fiche && p.fiche.journeesPeriodeIncomplete) {
+        avertissements.push(Kit.warnbox(
+          'Impossible de vérifier les journées déjà saisies pour ' + p.contrat.prenom_enfant,
+          ' Une partie de ses journées n’a pas pu être lue. Si l’une d’elles porte des ' +
+          'heures saisies à la main, poser ce congé les effacera sans qu’on puisse ' +
+          'vous le signaler.'));
+        return;
+      }
+      var manuelles = journeesManuelles(p);
+      if (!manuelles.length) return;
+      avertissements.push(Kit.warnbox(
+        'Une saisie manuelle sera remplacée chez ' + p.contrat.prenom_enfant,
+        ' ' + manuelles.map(function (d) { return Kit.jourLong(d).toLowerCase(); }).join(', ') +
+        ' : ces journées portent des heures réelles ou une indemnité saisies à la main ' +
+        '(familiarisation). Poser un congé les efface sans possibilité de les retrouver.'));
+    });
+
+    if (!avertissements.length) return poser(bouton);
+
+    Kit.ouvrirFeuille('Des journées vont être remplacées',
+      libellePlage(parcours.debut, parcours.fin), function (corps) {
+        avertissements.forEach(function (w) { corps.appendChild(w); });
+        var b = Kit.bouton('btn', function () { poser(b); });
+        b.textContent = 'Poser ces congés quand même';
+        corps.appendChild(b);
+        var bAnnuler = Kit.bouton('btn nt', function () { reouvrirPose(); });
+        bAnnuler.textContent = 'Annuler';
+        corps.appendChild(bAnnuler);
+      });
   }
 
   /* CORRECTIF A4 (lot 10) DE LA RELECTURE PR9 — LA FEUILLE ANNONÇAIT UN MOIS
@@ -1639,19 +2172,22 @@
           ' Ils seront à clôturer à nouveau ensuite, et vous devrez renvoyer les ' +
           'récapitulatifs déjà transmis.'));
 
-        var bRouvrir = Kit.bouton('btn', function () { rouvrirPuisVentiler(clos, bRouvrir); });
+        var bRouvrir = Kit.bouton('btn', function () { rouvrirPuisPoser(clos, bRouvrir); });
         bRouvrir.textContent = nbReouvertures > 1
           ? 'Rouvrir ces ' + nbReouvertures + ' récapitulatifs et continuer'
           : 'Rouvrir ' + Kit.libelleMois(premier.mois) + ' et continuer';
         corps.appendChild(bRouvrir);
 
-        var bAutres = Kit.bouton('btn nt', function () { etapeDates(); });
+        /* LOT 26 — ON REVIENT À L'ÉCRAN DE POSE, avec les dates saisies, les
+           samedis cochés et la répartition arbitrée. L'ancien bouton rouvrait
+           une feuille de dates vide ; celui-ci rend à Maria son travail. */
+        var bAutres = Kit.bouton('btn nt', function () { reouvrirPose(); });
         bAutres.textContent = 'Choisir d’autres dates';
         corps.appendChild(bAutres);
       });
   }
 
-  function rouvrirPuisVentiler(clos, bouton) {
+  function rouvrirPuisPoser(clos, bouton) {
     bouton.disabled = true;
     var gestes = [];
     clos.forEach(function (x) {
@@ -1665,7 +2201,12 @@
     });
     Promise.all(gestes).then(function () {
       global.App.invalider();
-      return preparerVentilations();
+      /* Les mois viennent de changer d'état : on refait les plans avant
+         d'écrire, sinon la ventilation partirait sur des compteurs lus quand
+         le mois était encore clôturé. */
+      return preparerPlans().then(function () {
+        return confirmerEcrasementsPuisPoser(bouton);
+      });
     }).catch(function (e) {
       bouton.disabled = false;
       Kit.toast('La réouverture n’a pas abouti : ' + Kit.messageErreur(e) +
@@ -1689,36 +2230,6 @@
 
      On lit donc la chaîne au mois de DÉBUT DE LA PÉRIODE. C'est un aller-retour
      de plus, mis en cache par `App.serie`, et il n'a lieu que lorsque le mois
-     diffère. */
-  function preparerVentilations() {
-    var plage = { debut: parcours.debut, fin: parcours.fin };
-    var moisPeriode = Chaine.moisDeDate(plage.debut);
-    var memeMois = moisPeriode.annee === vue.annee && moisPeriode.mois === vue.mois;
-
-    var prepare = memeMois
-      ? Promise.resolve(vue.fiches)
-      : Promise.all(vue.fiches.map(function (f) {
-          if (f.erreur) return f;
-          return global.App.serie(f.contrat, moisPeriode).then(function (chaine) {
-            var e = global.App.moisDe(chaine, moisPeriode.annee, moisPeriode.mois);
-            /* Pas d'entrée pour ce mois : le contrat ne le couvre pas. On
-               garde la fiche telle quelle ; `joursDuContrat` l'écartera. */
-            return e ? { contrat: f.contrat, entree: e, journees: f.journees, erreur: null } : f;
-          }).catch(function (err) {
-            return { contrat: f.contrat, entree: null, journees: {}, erreur: err };
-          });
-        }));
-
-    return prepare
-      .then(function (fiches) { return avecJourneesDeLaPeriode(fiches, plage); })
-      .then(function (fiches) {
-      return preparerVentilationsAvec(fiches, plage);
-    }).catch(function (e) {
-      Kit.fermerFeuille();
-      Kit.toast('Impossible de lire vos compteurs pour cette période : ' +
-        Kit.messageErreur(e) + ' Rien n’a été posé.', true);
-    });
-  }
 
   /* LOT 18 §18.4 (10·A5) — DE QUOI RÉTABLIR L'AVERTISSEMENT DE SAISIE
      MANUELLE.
@@ -1777,7 +2288,7 @@
     return out;
   }
 
-  function preparerVentilationsAvec(fiches, plage) {
+  function construirePlans(fiches, plage) {
     parcours.plans = fiches.filter(function (f) { return !f.erreur; }).map(function (f) {
       var c = f.contrat;
       var joursPoses = joursDuContrat(f, plage);
@@ -1854,20 +2365,12 @@
       };
     }).filter(function (p) { return p.jours > 0 && p.joursPoses.length > 0; });
 
-    if (!parcours.plans.length) {
-      Kit.fermerFeuille();
-      Kit.toast('Aucun de vos contrats n’est concerné par ces dates.', true);
-      return;
-    }
-    parcours.index = 0;
-    /* §5.1 — LE CHOIX DES SAMEDIS VIENT APRÈS LES DATES ET AVANT LA
-       VENTILATION, et seulement s'il y a au moins un samedi éligible. Sinon,
-       rien : l'écran ne s'alourdit pas d'une section vide. */
-    var aChoisir = parcours.plans.some(function (p) {
-      return p.samedisEligibles.length > 0;
-    });
-    if (aChoisir) return etapeSamedis();
-    etapeVentilation();
+    /* LOT 26 — `construirePlans` ne DÉCIDE plus de rien : elle prépare, et
+       l'écran de pose se redessine avec ce qu'elle a produit. Une liste vide
+       n'est plus une impasse annoncée par un toast — c'est un état de l'écran
+       (« Aucun jour ouvrable sur ces dates »), corrigeable en changeant les
+       dates, sans rien refermer. Les samedis, qui avaient leur propre étape,
+       sont dans le bloc vert. */
   }
 
   /* ------------------------------------------------------------------ */
@@ -1930,356 +2433,18 @@
     });
   }
 
-  function etapeSamedis() {
-    /* La barre d'étapes de la ventilation est « une étape par enfant » : elle
-       n'a pas de sens ici, où l'on voit tous les enfants d'un coup. */
-    Kit.ouvrirFeuille('Les samedis de cette période',
-      libellePlage(parcours.debut, parcours.fin), function (corps) {
-        corps.appendChild(Kit.ce('div', 'attente', 'Lecture de vos samedis déjà comptés…'));
 
-        lireQuotas().then(function () {
-          Kit.vider(corps);
-          dessinerSamedis(corps);
-        }).catch(function (e) {
-          Kit.vider(corps);
-          corps.appendChild(Kit.warnbox(
-            'Impossible de lire vos samedis déjà comptés',
-            ' ' + Kit.messageErreur(e) + ' Sans ce compte, l’application ne peut ' +
-            'pas vous dire combien il vous en reste — et elle ne va pas le ' +
-            'deviner. Rien n’a été posé : réessayez, ou revenez aux dates.'));
-          var bReessayer = Kit.bouton('btn', function () { etapeSamedis(); });
-          bReessayer.textContent = 'Réessayer';
-          corps.appendChild(bReessayer);
-          var bDates = Kit.bouton('btn nt', function () { etapeDates(); });
-          bDates.textContent = 'Revenir aux dates';
-          corps.appendChild(bDates);
-        });
-      });
-  }
 
-  function dessinerSamedis(corps) {
-    corps.appendChild(Kit.note('Les samedis de cette période',
-      ' Un samedi que vous ne travaillez pas ne compte que si vous le ' +
-      'choisissez, dans la limite de ' + Kit.QUOTA_SAMEDIS + ' par an et par famille.'));
 
-    /* §5.2 — un samedi FÉRIÉ n'est pas un choix, et une phrase discrète le
-       dit plutôt que de le laisser inexpliqué. La liste vient du moteur. */
-    var ferisSamedis = {};
-    parcours.plans.forEach(function (p) {
-      if (!p.bornes) return;
-      Engine.feriesDeLaPeriode(p.bornes.debut, p.bornes.fin, p.planning)
-        .forEach(function (d) {
-          if (Engine.jourSemaine(d) === 6) ferisSamedis[d] = true;
-        });
-    });
-    var listeFeries = Object.keys(ferisSamedis).sort();
-    if (listeFeries.length) {
-      corps.appendChild(Kit.ce('p', 'sb q',
-        listeFeries.length > 1
-          ? 'Les samedis ' + listeFeries.map(function (d) {
-              return Kit.jourLong(d).toLowerCase();
-            }).join(' et ') + ' sont fériés : ils ne sont jamais décomptés.'
-          : 'Le ' + Kit.jourLong(listeFeries[0]).toLowerCase() +
-            ' est férié : il n’est jamais décompté.'));
-    }
 
-    parcours.plans.forEach(function (p) {
-      if (!p.samedisEligibles.length) return;
-      corps.appendChild(blocSamedisDuContrat(p));
-    });
-
-    var bSuite = Kit.bouton('btn', function () {
-      parcours.index = 0;
-      etapeVentilation();
-    });
-    bSuite.textContent = 'Continuer';
-    corps.appendChild(bSuite);
-
-    var bDates = Kit.bouton('btn nt', function () { etapeDates(); });
-    bDates.textContent = 'Revenir aux dates';
-    corps.appendChild(bDates);
-  }
-
-  function blocSamedisDuContrat(p) {
-    var bloc = Kit.pane(p.contrat.prenom_enfant);
-    var entete = Kit.ce('p', 'sb q');
-    bloc.appendChild(entete);
-    var cases = Kit.ce('div', 'samedis');
-    bloc.appendChild(cases);
-    var effet = Kit.ce('div', 'sb decompte-samedis');
-    bloc.appendChild(effet);
-    var alerte = Kit.ce('div');
-    bloc.appendChild(alerte);
-
-    /* Combien de samedis Maria a déjà comptés cette année-là, hors la période
-       en cours de pose, plus ceux qu'elle coche à l'instant. */
-    function comptePourAnnee(cleAnnee) {
-      var n = p.quota[cleAnnee] || 0;
-      Object.keys(p.samedisChoisis).forEach(function (d) {
-        if (!p.samedisChoisis[d]) return;
-        if (Kit.anneeDeReferenceConges(d).debut === cleAnnee) n++;
-      });
-      return n;
-    }
-
-    function majEntete() {
-      var annees = {};
-      p.samedisEligibles.forEach(function (d) {
-        var a = Kit.anneeDeReferenceConges(d);
-        annees[a.debut] = a;
-      });
-      var textes = Object.keys(annees).sort().map(function (k) {
-        var a = annees[k];
-        var utilises = comptePourAnnee(k);
-        var reste = Kit.QUOTA_SAMEDIS - utilises;
-        return (reste > 0
-          ? 'il vous reste ' + reste + (reste > 1 ? ' samedis' : ' samedi')
-          : (reste === 0 ? 'vous avez utilisé vos ' + Kit.QUOTA_SAMEDIS + ' samedis'
-                         : 'vous dépassez de ' + (-reste) +
-                           (-reste > 1 ? ' samedis' : ' samedi'))) +
-          ' (' + a.libelle + ')';
-      });
-      Kit.vider(entete);
-      entete.appendChild(document.createTextNode(textes.join(' · ')));
-    }
-
-    function majEffet() {
-      recalculerPlan(p);
-      Kit.vider(effet);
-      /* §5.2 — LE DÉCOMPTE AFFICHÉ EST REJOUÉ PAR LE MOTEUR. Cocher un samedi
-         change la phrase toute seule. */
-      effet.appendChild(Kit.ce('b', null, 'Décompte : ' + Kit.jours(p.jours)));
-
-      Kit.vider(alerte);
-      var annees = {};
-      Object.keys(p.samedisChoisis).forEach(function (d) {
-        if (p.samedisChoisis[d]) annees[Kit.anneeDeReferenceConges(d).debut] = true;
-      });
-      Object.keys(annees).sort().forEach(function (k) {
-        var utilises = comptePourAnnee(k);
-        if (utilises <= Kit.QUOTA_SAMEDIS) return;
-        /* §5.3 — LE DÉPASSEMENT EST PERMIS, MAIS DIT. Même logique que la
-           récupération négative du lot 21 : l'application ne décide pas à sa
-           place, elle s'assure qu'elle sait. */
-        alerte.appendChild(Kit.warnbox(
-          'C’est le ' + utilises + 'ᵉ samedi compté pour ' +
-          p.contrat.prenom_enfant + ' cette année.',
-          ' La règle habituelle en prévoit ' + Kit.QUOTA_SAMEDIS +
-          ' par année de référence (' + Kit.anneeDeReferenceConges(k).libelle +
-          '). Vous pouvez le compter quand même.'));
-      });
-      majEntete();
-    }
-
-    p.samedisEligibles.forEach(function (d) {
-      var lab = Kit.ce('label', 'coche-ligne');
-      var box = document.createElement('input');
-      box.type = 'checkbox';
-      box.checked = !!p.samedisChoisis[d];
-      box.addEventListener('change', function () {
-        p.samedisChoisis[d] = box.checked;
-        majEffet();
-      });
-      lab.appendChild(box);
-      var tx = Kit.ce('span', 'tx');
-      tx.appendChild(Kit.ce('b', null, Kit.jourLong(d).toLowerCase()));
-      lab.appendChild(tx);
-      cases.appendChild(lab);
-    });
-
-    majEffet();
-    return bloc;
-  }
-
-  function etapeVentilation() {
-    var p = parcours.plans[parcours.index];
-    var c = p.contrat;
-    var cond = p.cond;
-
-    Kit.ouvrirFeuille(c.prenom_enfant + ' — ' + Kit.jours(p.jours) + ' à répartir',
-      etiquetteEtapes(), function (corps) {
-        corps.appendChild(barreEtapes());
-
-        var res = Kit.pane('Vos réserves pour ce contrat');
-        var lr = Kit.lines(res);
-        Kit.ligne(lr, 'Congés payés', Kit.joursCp(p.cp, mpjc(cond)));
-        Kit.ligne(lr, 'Récupération', joursDeRecup(cond, p.sup));
-        corps.appendChild(res);
-
-        corps.appendChild(Kit.section('Comment les prendre ?'));
-
-        var reste = Kit.ce('div', 'reste');
-        var effet = Kit.ce('div', 'effet-sans-solde');
-        /* LOT 18 §18.3 — LES DEUX RACCOURCIS.
-           Une semaine de congé sur quatre contrats demandait jusqu'à
-           vingt-quatre appuis sur les « + » : six jours, quatre enfants, un
-           appui par jour. Ces deux boutons font le geste courant en un seul.
-
-           LA RÉPARTITION VIENT DU MOTEUR (B.0-5). Le raccourci ne calcule
-           rien : il rappelle `Engine.imputerConges` avec l'ordre demandé, la
-           même fonction qui a produit la proposition initiale. C'est ce qui
-           garantit qu'il ne dépasse JAMAIS le disponible — la borne est celle
-           du moteur, pas une borne réécrite ici. Ce qui ne tient pas dans la
-           réserve choisie suit l'ordre habituel, puis le sans solde, et
-           l'encart de bascule le dit déjà, avec son montant. */
-        corps.appendChild(raccourcis(p, function () { etapeVentilation(); }));
-
-        var bSuite = Kit.bouton('btn', function () { validerEtape(); });
-        bSuite.textContent = parcours.index === parcours.plans.length - 1
-          ? 'Voir le récapitulatif' : 'Continuer';
-
-        function majAffichage() {
-          var somme = p.choix.joursSurCp + p.choix.joursSurSup + p.choix.joursSansSolde;
-          var manque = p.jours - somme;
-          Kit.vider(reste);
-          reste.className = 'reste' + (manque === 0 ? ' ok' : ' ko');
-          reste.appendChild(Kit.ce('span', null, 'Reste à répartir'));
-          reste.appendChild(Kit.ce('b', null, String(manque)));
-
-          /* A2 — « Continuer » reste INACTIF tant que le reste n'est pas nul.
-             Une ventilation incomplète serait refusée par le moteur avec un
-             code d'erreur ; mieux vaut ne jamais la laisser partir. */
-          bSuite.disabled = manque !== 0;
-
-          Kit.vider(effet);
-          if (p.choix.joursSansSolde > 0) {
-            /* V8-11 — l'effet en euros, IMMÉDIATEMENT. Le sans-solde est une
-               retenue sur salaire : Maria doit le voir avant de choisir, pas
-               le découvrir sur le document du mois. Le montant vient du
-               moteur (A4). */
-            var brut = brutDe(p.fiche);
-            var minutes = p.choix.joursSansSolde * mpjc(cond);
-            var retenue = brut ? Engine.montantCentimes(brut, minutes) : null;
-            effet.appendChild(Kit.warnbox(
-              Kit.jours(p.choix.joursSansSolde) + ' sans solde',
-              retenue != null
-                ? ' : retenue de ' + Kit.eur(retenue) + ' sur le salaire de ' +
-                  c.prenom_enfant + '.'
-                : ' : la retenue ne peut pas être chiffrée, le barème de ce contrat ' +
-                  'n’est pas renseigné.'));
-          }
-        }
-
-        corps.appendChild(compteur('Congés payés', p.choix, 'joursSurCp', p.maxCp, majAffichage,
-          'reste ' + Kit.joursCp(p.cp, mpjc(cond)) + ' au compteur'));
-        corps.appendChild(compteur('Récupération', p.choix, 'joursSurSup', p.maxSup, majAffichage,
-          'reste ' + joursDeRecup(cond, p.sup) + ' convertibles'));
-        /* A3 — le sans-solde n'a pas de borne haute : c'est le seul moyen de
-           poser un congé quand les réserves sont épuisées. Il est borné par le
-           nombre de jours de la période, pas par une réserve. */
-        /* LOT 18 §18.6 — LE PRIX D'UN JOUR, SOUS SON PROPRE COMPTEUR.
-           Le total de la retenue s'affichait déjà, mais seulement APRÈS avoir
-           appuyé sur « + ». Le coût unitaire doit se voir AVANT : c'est lui
-           qui fait hésiter, et c'est la seule ligne de cet écran qui retire de
-           l'argent à Maria. Le montant vient du moteur (RG-08), aucun taux
-           horaire n'est écrit ici. */
-        var brutJour = brutDe(p.fiche);
-        var prixJour = brutJour ? Engine.montantCentimes(brutJour, mpjc(cond)) : null;
-        corps.appendChild(compteur('Sans solde', p.choix, 'joursSansSolde', p.jours, majAffichage,
-          prixJour != null
-            ? 'retenue de ' + Kit.eur(prixJour) + ' par jour'
-            : 'retenue non chiffrable, le barème de ce contrat n’est pas renseigné'));
-
-        corps.appendChild(reste);
-
-        /* LOT 16 §16.1 d) — LE BASCULEMENT EN SANS SOLDE EST ANNONCÉ AVANT
-           VALIDATION, avec son coût. La répartition proposée vient déjà du
-           moteur, qui fait déborder le solde en sans solde ; ce qui manquait,
-           c'est la phrase qui le dit. Maria peut modifier ensuite : rien n'est
-           imposé, tout est annoncé. */
-        corps.appendChild(bascule(p));
-        corps.appendChild(effet);
-
-        corps.appendChild(bSuite);
-
-        if (parcours.index > 0) {
-          var bRetour = Kit.bouton('btn nt', function () {
-            parcours.index--;
-            etapeVentilation();
-          });
-          bRetour.textContent = 'Revenir à ' + parcours.plans[parcours.index - 1].contrat.prenom_enfant;
-          corps.appendChild(bRetour);
-        }
-
-        majAffichage();
-      });
-  }
-
-  /* Les deux raccourcis de répartition (§18.3). Rien n'est écrit ici : la
-     ventilation est celle que le moteur produit pour l'ordre demandé. */
-  function raccourcis(p, apres) {
-    var bloc = Kit.ce('div', 'raccourcis');
-    [['cp_puis_sup', 'Tout sur mes congés payés'],
-     ['sup_puis_cp', 'Tout sur ma récupération']].forEach(function (o) {
-      var b = Kit.bouton('btn nt', function () {
-        var r = Engine.imputerConges(p.jours,
-          { minutesCp: p.cp, minutesSup: p.sup }, condAvecOrdre(p.cond, o[0]));
-        p.choix = {
-          joursSurCp: r.joursSurCp,
-          joursSurSup: r.joursSurSup,
-          joursSansSolde: r.joursSansSolde
-        };
-        apres();
-      });
-      b.textContent = o[1];
-      bloc.appendChild(b);
-    });
-    return bloc;
-  }
 
   /* Une COPIE des conditions, avec l'ordre demandé. On ne touche jamais aux
      conditions du contrat : un raccourci d'écran ne modifie pas un réglage
-     daté (RG-07), il ne fait que poser une question différente au moteur. */
-  function condAvecOrdre(cond, ordre) {
-    var copie = {};
-    for (var k in (cond || {})) copie[k] = cond[k];
-    copie.ordre_imputation = ordre;
-    return copie;
-  }
 
   /* Un compteur « − n + », borné. La borne haute est passée en paramètre
      parce qu'elle n'est pas la même pour les trois lignes : les réserves pour
      les deux premières, la durée de la période pour le sans-solde.
      Piège n° 5 de la spécification : un « reste à répartir » NÉGATIF signifie
-     que les bornes sont mal posées. La borne basse est zéro, toujours. */
-  function compteur(libelle, cible, champ, maximum, apres, sousTitre) {
-    var f = Kit.ce('div', 'compteur-jours');
-    var lb = Kit.ce('span', 'lb', libelle);
-    /* LOT 16 §16.1 d) — ce que la réserve couvre, sous son propre compteur :
-       le « + » qui s'éteint doit dire pourquoi il s'éteint. */
-    if (sousTitre) lb.appendChild(Kit.ce('span', 'sslb', sousTitre));
-    f.appendChild(lb);
-
-    var groupe = Kit.ce('div', 'grp');
-    var valeur = Kit.ce('b', 'val', String(cible[champ]));
-
-    function poser(delta) {
-      var v = cible[champ] + delta;
-      if (v < 0) v = 0;
-      if (v > maximum) v = maximum;
-      cible[champ] = v;
-      valeur.textContent = String(v);
-      moins.disabled = v <= 0;
-      plus.disabled = v >= maximum;
-      if (apres) apres();
-    }
-
-    var moins = Kit.bouton('pas', function () { poser(-1); });
-    moins.textContent = '−';
-    moins.setAttribute('aria-label', 'Retirer un jour de ' + libelle.toLowerCase());
-    var plus = Kit.bouton('pas', function () { poser(1); });
-    plus.textContent = '+';
-    plus.setAttribute('aria-label', 'Ajouter un jour de ' + libelle.toLowerCase());
-
-    groupe.appendChild(moins);
-    groupe.appendChild(valeur);
-    groupe.appendChild(plus);
-    f.appendChild(groupe);
-
-    moins.disabled = cible[champ] <= 0;
-    plus.disabled = cible[champ] >= maximum;
-    return f;
-  }
 
   /* CORRECTION C2 DE LA RELECTURE — `brutDe` NE RENDAIT JAMAIS `null`.
 
@@ -2317,120 +2482,12 @@
      taux horaire n'est écrit ici.
 
      Rend un nœud vide quand les réserves couvrent la période : le cas normal
-     ne doit rien afficher du tout. */
-  function bascule(p) {
-    var c = p.contrat;
-    var manquant = p.jours - p.maxCp - p.maxSup;
-    if (manquant <= 0) return Kit.ce('div');
 
-    var brut = brutDe(p.fiche);
-    var minutes = manquant * mpjc(p.cond);
-    var retenue = brut ? Engine.montantCentimes(brut, minutes) : null;
 
-    return Kit.note('Vos réserves ne couvrent pas toute la période',
-      c.prenom_enfant + ' a ' + Kit.joursCp(p.cp, mpjc(p.cond)) + ' de congés payés et ' +
-      joursDeRecup(p.cond, p.sup) + ' de récupération, pour ' + Kit.jours(p.jours) +
-      ' à couvrir. ' + Kit.jours(manquant) + ' passent en sans solde' +
-      (retenue != null ? ' : − ' + Kit.eur(retenue) + '.' :
-        ' ; la retenue ne peut pas être chiffrée, le barème de ce contrat n’est pas renseigné.') +
-      ' Vous pouvez changer avant de valider.');
-  }
 
-  function etiquetteEtapes() {
-    return 'Étape ' + (parcours.index + 1) + ' sur ' + parcours.plans.length +
-      ' · ' + libellePlage(parcours.debut, parcours.fin);
-  }
-
-  function barreEtapes() {
-    var b = Kit.ce('div', 'etapes');
-    parcours.plans.forEach(function (p, i) {
-      var classe = 'et' + (i < parcours.index ? ' fait' : '') + (i === parcours.index ? ' on' : '');
-      var e = Kit.ce('span', classe);
-      if (i < parcours.index) e.appendChild(Kit.ce('span', 'ck', '✓'));
-      e.appendChild(Kit.avatar(p.contrat, 'pt'));
-      e.appendChild(Kit.ce('span', null, p.contrat.prenom_enfant));
-      b.appendChild(e);
-    });
-    return b;
-  }
-
-  function validerEtape() {
-    if (parcours.index < parcours.plans.length - 1) {
-      parcours.index++;
-      etapeVentilation();
-      return;
-    }
-    etapeRecapitulatif();
-  }
 
   /* --- Étape 3 : le récapitulatif, avant d'écrire quoi que ce soit ---- */
 
-  function etapeRecapitulatif() {
-    Kit.ouvrirFeuille('Vérifiez avant de poser',
-      libellePlage(parcours.debut, parcours.fin), function (corps) {
-        var totalSansSolde = 0;
-        var retenueTotale = 0;
-        var chiffrable = true;
-
-        parcours.plans.forEach(function (p) {
-          var c = p.contrat;
-          var pane = Kit.pane(c.prenom_enfant);
-          var l = Kit.lines(pane);
-          if (p.choix.joursSurCp) Kit.ligne(l, 'Congés payés', Kit.jours(p.choix.joursSurCp));
-          if (p.choix.joursSurSup) Kit.ligne(l, 'Récupération', Kit.jours(p.choix.joursSurSup));
-          if (p.choix.joursSansSolde) {
-            Kit.ligne(l, 'Sans solde', Kit.jours(p.choix.joursSansSolde), { alerte: true });
-            totalSansSolde += p.choix.joursSansSolde;
-            var brut = brutDe(p.fiche);
-            if (brut) {
-              retenueTotale += Engine.montantCentimes(brut,
-                p.choix.joursSansSolde * mpjc(p.cond));
-            } else {
-              chiffrable = false;
-            }
-          }
-          Kit.ligne(l, 'Total décompté', Kit.jours(p.jours), { total: true });
-          corps.appendChild(pane);
-        });
-
-        if (totalSansSolde > 0) {
-          corps.appendChild(Kit.warnbox(
-            Kit.jours(totalSansSolde) + ' sans solde en tout',
-            chiffrable ? ' : ' + Kit.eur(retenueTotale) + ' de retenue sur vos salaires.'
-                       : ' : la retenue ne peut pas être entièrement chiffrée, un barème manque.'));
-        }
-
-        /* LOT 18 §18.4 (10·A5) — L'AVERTISSEMENT, AVANT LE BOUTON QUI ÉCRIT. */
-        parcours.plans.forEach(function (p) {
-          if (p.fiche && p.fiche.journeesPeriodeIncomplete) {
-            corps.appendChild(Kit.warnbox(
-              'Impossible de vérifier les journées déjà saisies pour ' + p.contrat.prenom_enfant,
-              ' Une partie de ses journées n’a pas pu être lue. Si l’une d’elles porte des ' +
-              'heures saisies à la main, poser ce congé les effacera sans qu’on puisse ' +
-              'vous le signaler.'));
-            return;
-          }
-          var manuelles = journeesManuelles(p);
-          if (!manuelles.length) return;
-          corps.appendChild(Kit.warnbox(
-            'Une saisie manuelle sera remplacée chez ' + p.contrat.prenom_enfant,
-            ' ' + manuelles.map(function (d) { return Kit.jourLong(d).toLowerCase(); }).join(', ') +
-            ' : ces journées portent des heures réelles ou une indemnité saisies à la main ' +
-            '(familiarisation). Poser un congé les efface sans possibilité de les retrouver.'));
-        });
-
-        var b = Kit.bouton('btn', function () { poser(b); });
-        b.textContent = 'Poser ces congés';
-        corps.appendChild(b);
-
-        var bRetour = Kit.bouton('btn nt', function () {
-          parcours.index = parcours.plans.length - 1;
-          etapeVentilation();
-        });
-        bRetour.textContent = 'Revenir à la répartition';
-        corps.appendChild(bRetour);
-      });
-  }
 
   /* L'écriture : les journées, puis l'imputation de chaque contrat.
 
