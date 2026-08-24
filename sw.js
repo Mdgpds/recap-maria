@@ -137,7 +137,20 @@
    nouvel écran de pose appelle `champDate().poser()`. Servi avec l'ancien
    `js/ui-kit.js`, le choix des dates lèverait au premier changement de
    date — c'est-à-dire au premier geste. */
-var CACHE = 'recap-redesign-conges-v1';
+/* LOT 27 (LE MENU, LA FICHE, LES RÈGLES) — NOM DE CACHE CHANGÉ.
+
+   Cinq fichiers servis changent : `js/ui-menu.js` (le Menu en cartes, « Comment
+   l'application compte », « Ajouter un enfant » en trois étapes),
+   `js/ui-contrat.js` (la fiche en trois blocs, l'avenant en tête),
+   `js/ui-kit.js` (`champsConditions` rend ses deux paquets de champs),
+   `js/app.js` (la route de l'écran des règles) et `css/style.css`.
+   Ils se RÉPONDENT : le Menu route vers `regles`, qui n'existe que si
+   `js/app.js` la connaît ; et « Ajouter un enfant » répartit les onze
+   conditions entre ses étapes 2 et 3 en lisant `conditions.temps` et
+   `conditions.argent`, que seul le socle neuf expose. Servir l'un avec
+   l'ancien de l'autre, c'est une entrée de Menu qui ne mène nulle part, ou
+   deux étapes vides. Aucun fichier ajouté. */
+var CACHE = 'recap-redesign-menu-fiche-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

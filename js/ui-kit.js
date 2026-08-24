@@ -835,59 +835,78 @@
     var bloc = ce('div', 'conditions');
     if (o.titre) bloc.appendChild(section(o.titre));
 
+    /* LOT 27 (§27.4) — LES ONZE CONDITIONS, EN DEUX PAQUETS.
+
+       « Ajouter un enfant » les demande en trois étapes — Qui, Quand,
+       Combien — et la fiche du contrat les groupe en trois blocs. Les deux
+       écrans ont besoin de la MÊME définition de chaque champ, du même
+       `valeurs()` et du même `erreur()` : les dupliquer, c'est se donner deux
+       endroits où un refus se formulera un jour différemment.
+
+       Les champs sont donc construits une fois, dans deux conteneurs — Le
+       temps, L'argent — que `bloc` contient l'un après l'autre. Un appelant
+       qui veut tout, comme la feuille d'avenant, prend `bloc` et ne voit
+       aucune différence. Un appelant qui veut les répartir prend `temps` et
+       `argent` et les déplace où il veut : déplacer un nœud ne le recrée pas,
+       donc les références des champs restent valides. */
+    var temps = ce('div');
+    var argent = ce('div');
+    bloc.appendChild(temps);
+    bloc.appendChild(argent);
+
     var planning = champPlanning('Jours de garde', v.jours_planning);
-    bloc.appendChild(planning.bloc);
+    temps.appendChild(planning.bloc);
 
     var arrivee = champHeure('Début d’accueil', v.heure_arrivee || '08:30');
-    bloc.appendChild(arrivee.bloc);
+    temps.appendChild(arrivee.bloc);
     /* §16.5 — « fin d'accueil », pas « heure de départ ». L'accueil s'arrête à
        17h30 ; les minutes supplémentaires viennent APRÈS, et c'est leur somme
        qui fait la référence d'une journée (§17.5). */
     var depart = champHeure('Fin d’accueil', v.heure_depart || '17:30',
       { aide: 'Les minutes supplémentaires ci-dessous viennent après cette heure.' });
-    bloc.appendChild(depart.bloc);
+    temps.appendChild(depart.bloc);
 
     var contractuelles = champDuree('Journée d’accueil prévue au contrat',
       v.minutes_contractuelles == null ? 540 : v.minutes_contractuelles);
-    bloc.appendChild(contractuelles.bloc);
+    temps.appendChild(contractuelles.bloc);
 
     var supJour = champDuree('Minutes supplémentaires par jour travaillé',
       v.minutes_sup_jour == null ? 30 : v.minutes_sup_jour);
-    bloc.appendChild(supJour.bloc);
+    temps.appendChild(supJour.bloc);
 
     var parJourConge = champDuree('Ce que consomme un jour de congé',
       v.minutes_par_jour_conge == null ? 540 : v.minutes_par_jour_conge,
       { aide: 'Sert à convertir vos compteurs en jours. Un jour de congé retire ' +
               'cette durée de vos réserves.' });
-    bloc.appendChild(parJourConge.bloc);
+    temps.appendChild(parJourConge.bloc);
 
     var entretien = champ('Indemnité d’entretien par jour de présence',
       v.entretien_centimes_jour == null ? '5,00'
         : centimesEnSaisie(v.entretien_centimes_jour),
       { inputmode: 'decimal', placeholder: '5,00' });
-    bloc.appendChild(entretien.bloc);
+    argent.appendChild(entretien.bloc);
 
     var supSiAbsent = champSelect(
       'Minutes supplémentaires dues quand l’enfant est absent',
       [['oui', 'Oui, elles restent dues'], ['non', 'Non']],
       v.sup_dues_si_enfant_absent === false ? 'non' : 'oui');
-    bloc.appendChild(supSiAbsent.bloc);
+    temps.appendChild(supSiAbsent.bloc);
 
     var ordre = champSelect('Vos congés se prennent d’abord sur',
       [['cp_puis_sup', 'Mes congés payés'], ['sup_puis_cp', 'Ma récupération']],
       v.ordre_imputation === 'sup_puis_cp' ? 'sup_puis_cp' : 'cp_puis_sup');
-    bloc.appendChild(ordre.bloc);
+    argent.appendChild(ordre.bloc);
 
-    bloc.appendChild(section('Rémunération'));
+
     var brut = champ('Salaire brut mensuel',
       v.brut_mensuel_centimes == null ? '' : centimesEnSaisie(v.brut_mensuel_centimes),
       { inputmode: 'decimal', placeholder: '1 401,20' });
-    bloc.appendChild(brut.bloc);
+    argent.appendChild(brut.bloc);
     var net = champ('Salaire net mensuel',
       v.net_mensuel_centimes == null ? '' : centimesEnSaisie(v.net_mensuel_centimes),
       { inputmode: 'decimal', placeholder: '1 094,60' });
-    bloc.appendChild(net.bloc);
-    bloc.appendChild(ce('p', 'sb q',
+    argent.appendChild(net.bloc);
+    argent.appendChild(ce('p', 'sb q',
       'Le net se lit sur la fiche de paie : il ne se calcule pas depuis le brut.'));
 
     function valeursSaisies() {
@@ -939,7 +958,8 @@
       return null;
     }
 
-    return { bloc: bloc, valeurs: valeursSaisies, erreur: erreur };
+    return { bloc: bloc, temps: temps, argent: argent,
+             valeurs: valeursSaisies, erreur: erreur };
   }
 
   /* Centimes -> saisie française, sans le symbole ni l'espace insécable :

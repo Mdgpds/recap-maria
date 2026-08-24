@@ -314,27 +314,65 @@ async function ouvrirFiche(id) {
   console.log('\n--- A2 : le champ coupable a disparu ---');
   await ouvrirFiche('c-lea');
 
-  assert(txt(corps).indexOf('Nom de l’enfant') !== -1,
-    'A2 : la fiche parle du nom de l’ENFANT');
-  var champsTexte = corps.querySelectorAll('input[type="text"], input:not([type])');
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 27 §27.3 : L'IDENTITÉ TIENT SUR UNE CARTE.
+
+     Elle occupait le premier écran entier de la fiche : un portrait, le bloc
+     photo avec son aperçu et ses trois lignes d'explication, le prénom, le
+     nom, le genre, la famille, « Changer de famille », la date de début, et
+     enfin « Modifier l'identité ». Neuf éléments pour des valeurs qui ne
+     changent jamais — sur une fiche dont le seul geste est « Faire un
+     avenant », qui arrivait tout en bas.
+
+     UNE CARTE, comme la maquette : l'avatar en grand, le nom complet, et le
+     sous-texte qui dit le reste — la famille, la date de début, et ce qu'elle
+     ouvre. Elle mène à « Modifier l'identité », où tout ce qui a quitté la
+     fiche se trouve déjà.
+
+     RIEN NE SE PERD (B.0-7), et c'est ce que vérifient les assertions
+     ci-dessous : ce qui était en LECTURE est dans le sous-texte ou dans la
+     feuille ; ce qui était MODIFIABLE l'est resté, à un appui. « Changer de
+     famille » y descend aussi (décision d'Adrien du 24 août : « non, on le
+     retire ») — il offrait un geste rare, qu'on ne fait que pour corriger une
+     erreur de saisie, juste à côté de la photo et du prénom.
+
+     CE QUE LE LOT 8 PROTÉGEAIT NE BOUGE PAS : il n'existe nulle part de champ
+     « Nom de la famille » qui renommerait le foyer entier sans le dire — ni
+     sur la fiche, ni dans la feuille. C'est tout l'objet de ce cas, et il est
+     exigé aux deux endroits.
+     ====================================================================== */
+  var carteIdentite = parTexte(corps, '.cd', 'Léa');
+  assert(!!carteIdentite, 'A2 : la fiche porte la carte d’identité de l’enfant');
+  assert(/famille \S+/.test(txt(carteIdentite)),
+    'A2 : le rattachement se LIT dans la fiche (obtenu « ' +
+    txt(carteIdentite) + ' »)');
+  assert(txt(carteIdentite).indexOf('depuis le') !== -1,
+    '§27.3 : et la date de début aussi');
   assert(!parTexte(corps, '.fld', 'Nom de la famille'),
     'A2 : plus aucun champ « Nom de la famille » dans la fiche contrat');
-  assert(!!parTexte(corps, '.fld', 'Famille'), 'A2 : le rattachement se LIT dans la fiche');
-  assert(!!boutonExact(corps, 'Changer de famille'),
-    'A2 : et se change par un geste dédié');
+  assert(!boutonExact(corps, 'Changer de famille'),
+    '§27.3 : le geste ne s’offre plus au milieu des gestes quotidiens');
 
   var avantRenommage = appels.renommer.length;
-  /* LOT 17 §17.4 — le bouton s’appelle « Modifier l’identité » : les horaires
-     sont sortis de cette feuille, ils passent par un avenant. */
-  boutonExact(corps, 'Modifier l’identité').click();
-  await pause(120);
+  /* LOT 27 §27.3 — la carte d'identité EST la porte de « Modifier
+     l'identité » : plus besoin d'un bouton en plus.
+     LOT 17 §17.4 — la feuille s'appelle « Modifier l'identité » : les horaires
+     en sont sortis, ils passent par un avenant. */
+  carteIdentite.click();
+  await pause(150);
+  assert(txt(sheet).indexOf('Modifier l’identité') !== -1,
+    '§27.3 : la carte ouvre la feuille d’identité');
   assert(txt(sheet).indexOf('Nom de l’enfant') !== -1,
-    'A2 : la feuille de modification propose le nom de l’enfant');
+    'A2 : elle parle du nom de l’ENFANT');
   assert(txt(sheet).indexOf('Nom de la famille') === -1,
     'A2 : et AUCUN champ « Nom de la famille » — c’est tout le lot');
   assert(txt(sheet).indexOf('Genre') !== -1, 'la feuille propose le genre');
   assert(sheet.querySelectorAll('.teinte').length === 6, 'six pastilles de couleur');
   assert(!!parTexte(sheet, '.fld', 'Photo'), 'la feuille propose la photo');
+  assert(!!parTexte(sheet, '.fld', 'Famille'),
+    '§27.3 : le rattachement se lit ici aussi');
+  assert(!!boutonExact(sheet, 'Changer de famille'),
+    'A2 : et il se change par un geste dédié — déplacé ici, pas supprimé');
   window.Kit.fermerFeuille();
   await pause(40);
   assert(appels.renommer.length === avantRenommage,
@@ -410,8 +448,14 @@ async function ouvrirFiche(id) {
   console.log('\n--- P3 : changer de famille ---');
   await ouvrirFiche('c-tom');
   var nomsAvant = Object.keys(FOYERS).map(function (k) { return FOYERS[k].nom; }).join('|');
-  boutonExact(corps, 'Changer de famille').click();
+  /* LOT 27 §27.3 — le geste passe par la carte d'identité, qui ouvre
+     « Modifier l'identité ». Ce que ce cas vérifie — la feuille, ses foyers,
+     l'écriture, et surtout qu'AUCUN nom de foyer ne change — est rejoué à
+     l'identique. */
+  parTexte(corps, '.cd', 'Tom').click();
   await pause(200);
+  boutonExact(sheet, 'Changer de famille').click();
+  await pause(250);
 
   assert(txt(sheet).indexOf('Ce geste ne renomme aucune famille') !== -1,
     'P3 : la feuille le dit d’emblée');
@@ -470,10 +514,19 @@ async function ouvrirFiche(id) {
   /* ==================================================================== */
   console.log('\n--- P6/P7 : la photo ---');
   await ouvrirFiche('c-lea');
-  /* LOT 17 §17.4 — le bouton s’appelle « Modifier l’identité » : les horaires
-     sont sortis de cette feuille, ils passent par un avenant. */
-  boutonExact(corps, 'Modifier l’identité').click();
-  await pause(150);
+  /* LOT 27 §27.3 — LA PHOTO DESCEND DANS « MODIFIER L'IDENTITÉ ».
+     Le lot 22 l'avait sortie du formulaire pour la mettre EN TÊTE DE LA FICHE,
+     parce qu'on ne pouvait la poser que depuis un écran de douze champs où
+     l'on croise la date de début du contrat et son statut : le geste le plus
+     anodin passait par l'écran le plus risqué, et personne ne l'avait jamais
+     fait. Ce motif TOMBE : la carte d'identité est le premier élément de la
+     fiche, et un seul appui l'ouvre — le geste coûte un appui de plus qu'au
+     lot 22, et cinq de moins qu'avant lui. Ce qui reste exigé est le fond :
+     la photo est ATTEIGNABLE, et elle dit où elle n'apparaît pas.
+     LOT 17 §17.4 — la feuille s'appelle « Modifier l'identité » : les horaires
+     en sont sortis, ils passent par un avenant. */
+  parTexte(corps, '.cd', 'Léa').click();
+  await pause(200);
   /* LOT 22 §22.2 — la phrase est reprise mot pour mot de la spécification :
      « Réduite et rangée avec le contrat. Jamais sur le récapitulatif ni dans
      l'export. » Elle dit la même chose que l'ancienne, en nommant les deux
@@ -648,14 +701,21 @@ async function ouvrirFiche(id) {
   assert(txt(corps).indexOf('Consulter') === -1, 'P10 : la rubrique « Consulter » a disparu');
   assert(txt(corps).indexOf('Gérer') !== -1, 'P10 : « Gérer » demeure');
   assert(txt(corps).indexOf('Compte') !== -1, 'P10 : « Compte » demeure');
-  assert(!parTexte(corps, '.menu', 'Récapitulatif sur une période'),
+  /* LOT 27 §27.2 — l'entrée de Menu est devenue la CARTE du socle (`cd tap`).
+     Même géométrie, même chevron ; un composant de moins à corriger. Ce que
+     ces assertions vérifient — telle entrée est là, telle autre n'y est
+     plus — ne change pas d'un mot. */
+  assert(!parTexte(corps, '.cd', 'Récapitulatif sur une période'),
     'P10 : le récapitulatif de période n’est plus dans le Menu');
-  assert(!parTexte(corps, '.menu', 'Anciens contrats'),
+  assert(!parTexte(corps, '.cd', 'Anciens contrats'),
     'P10 : « Anciens contrats » non plus');
   /* LOT 22 §22.1 — « Mes enfants » remplace « Familles » : Maria pense par
-     enfant. La vue par foyer est reprise en bas de la page « Mes enfants ». */
-  assert(!!parTexte(corps, '.menu', 'Mes enfants'), 'LOT 22 : « Mes enfants » est là');
-  assert(!!parTexte(corps, '.menu', 'Ajouter un enfant'), 'P10 : « Ajouter un enfant » aussi');
+     enfant. La vue par foyer est reprise en bas de la page « Mes enfants ».
+     LOT 27 §27.2 — et « Familles » a définitivement quitté le Menu. */
+  assert(!!parTexte(corps, '.cd', 'Mes enfants'), 'LOT 22 : « Mes enfants » est là');
+  assert(!parTexte(corps, '.cd', 'Familles'),
+    '§27.2 : « Familles » n’est plus une entrée du Menu');
+  assert(!!parTexte(corps, '.cd', 'Ajouter un enfant'), 'P10 : « Ajouter un enfant » aussi');
 
   /* ==================================================================== */
   console.log('');

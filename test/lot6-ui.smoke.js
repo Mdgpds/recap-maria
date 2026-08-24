@@ -711,17 +711,53 @@ var sheet = document.getElementById('sheet');
      justement l'endroit où l'on va chercher le passé. */
   assert(txt(corps).indexOf('Consulter') === -1,
     'LOT 8 : la rubrique « Consulter » a disparu du Menu');
-  assert(!parTexte(corps, '.menu', 'Anciens contrats'),
+  assert(!parTexte(corps, '.cd', 'Anciens contrats'),
     'LOT 8 : « Anciens contrats » n’est plus une entrée du Menu');
-  /* LOT 22 §22.1 — « Mes enfants » S'AJOUTE au Menu ; « Familles » y reste.
-     La spécification demande l'entrée « Mes enfants » et une page dédiée ;
-     elle ne demande nulle part de supprimer l'accès par famille. Correction C5
-     de la relecture : les deux entrées cohabitent. */
-  assert(!!parTexte(corps, '.menu', 'Familles'),
-    'LOT 22 : « Familles » reste une entrée du Menu');
-  var ligneEnfants = parTexte(corps, '.menu', 'Mes enfants');
-  assert(!!ligneEnfants, 'LOT 22 : et « Mes enfants » s’y ajoute');
-  assert(!!parTexte(corps, '.menu', 'Ajouter un enfant'), 'le Menu garde « Ajouter un enfant »');
+
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LOT 27 §27.2 : LE MENU EN CARTES, ET « FAMILLES » S'EN VA.
+
+     - `.menu` -> `.cd tap` : l'entrée de Menu était une ligne avec son propre
+       style, de même géométrie et de même chevron que la carte du socle. Un
+       composant de moins à corriger le jour où la carte change.
+     - « FAMILLES » QUITTE LE MENU. Le lot 22 l'avait remplacée par « Mes
+       enfants » (Maria pense par enfant), puis la relecture l'avait rétablie
+       « le temps qu'Adrien tranche ». Il a tranché le 23 août, et le §27.2 le
+       reprend : Gérer ne porte que Mes enfants, Ajouter un enfant, Comment
+       l'application compte.
+       RIEN NE SE PERD (B.0-7) : l'écran des familles existe toujours, et il
+       s'atteint par « Voir par famille » en bas de « Mes enfants » — le même
+       nombre d'appuis, depuis l'endroit où la question « qui vit ensemble ? »
+       se pose vraiment. Vérifié ci-dessous en franchissant le chemin.
+     - « Comment l'application compte » entre dans Gérer : c'est l'endroit
+       unique des règles, et c'est lui qui autorise les retraits des lots 25
+       et 26.
+     ====================================================================== */
+  var rubriques = Array.prototype.map.call(corps.querySelectorAll('.sec'), txt);
+  assert(rubriques.indexOf('Gérer') === 0,
+    'LOT 27 : le Menu commence par « Gérer » (obtenu ' + rubriques.join(' | ') + ')');
+  assert(rubriques.indexOf('Compte') !== -1, 'LOT 27 : puis « Compte »');
+
+  var ligneEnfants = parTexte(corps, '.cd', 'Mes enfants');
+  assert(!!ligneEnfants, 'LOT 22 : « Mes enfants » est la première entrée');
+  assert(!!parTexte(corps, '.cd', 'Ajouter un enfant'), 'le Menu garde « Ajouter un enfant »');
+  assert(!!parTexte(corps, '.cd', 'Comment l’application compte'),
+    '§27.1 : l’endroit unique des règles est atteignable depuis le Menu');
+  assert(!parTexte(corps, '.cd', 'Familles'),
+    '§27.2 : « Familles » a quitté le Menu — décision d’Adrien du 23 août');
+
+  /* RIEN NE SE PERD : on franchit le chemin de remplacement. */
+  ligneEnfants.click();
+  await pause(300);
+  var versFamilles = parTexte(corps, 'button', 'Voir par famille');
+  assert(!!versFamilles,
+    '§27.2 : « Voir par famille » est en bas de « Mes enfants »');
+  versFamilles.click();
+  await pause(300);
+  assert(txt(corps).indexOf('famille') !== -1 || txt(barre).indexOf('amille') !== -1,
+    '§27.2 : et il mène bien à l’écran des familles');
+  window.App.aller('menu', {}, true);
+  await pause(200);
 
   /* ---------- 7bis. Onglet Historique ---------- */
   window.App.aller('historique', {}, true);

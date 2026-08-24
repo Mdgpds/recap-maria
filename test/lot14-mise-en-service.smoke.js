@@ -549,7 +549,7 @@ async function lireDernierFichier() {
   console.log('\n--- P6 : l’export lisible ---');
   await ouvrir('menu');
 
-  var entreeExport = parTexte(corps, '.menu', 'Exporter tout mon historique');
+  var entreeExport = parTexte(corps, '.cd', 'Exporter tout mon historique');
   assert(!!entreeExport, 'P6 : l’export est dans le Menu, rubrique Compte');
   entreeExport.click();
   await pause(200);
@@ -623,7 +623,7 @@ async function lireDernierFichier() {
   /* ==================================================================== */
   console.log('\n--- P7 : l’export tableau ---');
   await ouvrir('menu');
-  parTexte(corps, '.menu', 'Exporter tout mon historique').click();
+  parTexte(corps, '.cd', 'Exporter tout mon historique').click();
   await pause(200);
   boutonQuiContient(sheet, 'Tableau').click();
   await pause(300);
@@ -649,7 +649,7 @@ async function lireDernierFichier() {
 
   /* La panne d'export : rien n'est écrit, et on le dit. */
   await ouvrir('menu');
-  parTexte(corps, '.menu', 'Exporter tout mon historique').click();
+  parTexte(corps, '.cd', 'Exporter tout mon historique').click();
   await pause(200);
   scene.exportCasse = true;
   var nbFichiers = appels.telechargements.length;
