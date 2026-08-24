@@ -150,7 +150,20 @@
    `conditions.argent`, que seul le socle neuf expose. Servir l'un avec
    l'ancien de l'autre, c'est une entrée de Menu qui ne mène nulle part, ou
    deux étapes vides. Aucun fichier ajouté. */
-var CACHE = 'recap-redesign-menu-fiche-v1';
+/* LOT 28 (« JOURNÉES À PART ») — NOM DE CACHE CHANGÉ.
+
+   Trois fichiers servis changent : `js/ui-kit.js` (les deux tables de
+   libellés d'un écart d'horaire, et `quantieme` exposé), `js/ui-enfant.js`
+   (le repli « Journées à part ») et `js/ui-document.js` (il lit désormais ces
+   libellés dans `js/ui-kit.js` au lieu de les redéfinir).
+
+   Ils se RÉPONDENT, et c'est le lot où l'ordre de service compte le plus :
+   `js/ui-document.js` lit `Kit.LIBELLE_EVENEMENT_ECART` À SON CHARGEMENT.
+   Servi avec un `js/ui-kit.js` d'avant ce lot, il obtiendrait `undefined` —
+   et le document remis à la famille perdrait la moitié de la phrase qui
+   explique une déduction sur une pièce opposable. C'est exactement le cas
+   que le changement de nom de cache empêche. Aucun fichier ajouté. */
+var CACHE = 'recap-journees-a-part-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

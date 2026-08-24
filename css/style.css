@@ -428,7 +428,27 @@ body {
   font-weight: 700; margin-top: 4px; padding-top: 12px;
 }
 .ln.tot b { font-weight: 700; }
-.ln.tap { cursor: pointer; }
+/* LOT 28 — DÉFAUT TROUVÉ EN VÉRIFIANT AU NAVIGATEUR, ANTÉRIEUR À CE LOT.
+
+   `.ln.tap` ne portait QUE `cursor: pointer`. Or `Kit.ligneLn` avec un
+   `onclick` fabrique un vrai `<button>` : sans remise à zéro, le navigateur
+   lui donne sa propre apparence — fond gris, bordure, texte centré, police
+   système. La ligne cessait d'être une ligne.
+
+   Invisible en jsdom, qui ne calcule aucune mise en page : c'est le rendu
+   Chromium à 390 px qui l'a montré. Le défaut est en production depuis le
+   lot 24 et touche le repli « Familiarisation », seul autre appelant de
+   `ligneLn` avec un `onclick` — les journées d'adaptation de Noah.
+
+   La remise à zéro est celle de `.cd.tap`, à l'identique. La bordure basse
+   est redonnée APRÈS `border: 0`, sinon la ligne perdrait son filet. */
+.ln.tap {
+  cursor: pointer; width: 100%; text-align: left;
+  background: none; border: 0; border-bottom: 1px solid var(--ln2);
+  font-family: inherit; font-size: 15px; color: inherit;
+  -webkit-appearance: none; appearance: none;
+}
+.ln.tap:last-child { border-bottom: 0; }
 .ln.tap:active { transform: scale(.985); }
 
 /* Les lignes héritées (`lines .l`) prennent la même géométrie : les écrans

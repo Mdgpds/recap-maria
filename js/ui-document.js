@@ -337,36 +337,21 @@
      La destination n'est nommée que lorsqu'elle change quelque chose pour le
      parent : une déduction sur les congés payés ou en sans solde ne se lit pas
      comme une déduction sur la récupération, et le sans-solde apparaît en plus
-     dans la retenue. */
-  var LIBELLE_DESTINATION_ECART = {
-    recuperation: 'déduite de ma récupération',
-    conges_payes: 'déduite de mes congés payés',
-    sans_solde: 'passée en sans solde'
-  };
+     dans la retenue.
 
-  /* CORRECTION DE LA REMARQUE 4 DE LA RELECTURE DU LOT 17 — LA PHRASE NOMME
-     L'ÉVÉNEMENT.
+     LOT 28 — LES DEUX TABLES DE LIBELLÉS ONT DÉMÉNAGÉ DANS `js/ui-kit.js`.
 
-     La spécification écrit « dont 1 h 30 déduite — LIBÉRATION ANTICIPÉE du
-     17 novembre ». Le document écrivait la DESTINATION : « déduite de ma
-     récupération ». Une libération anticipée et une arrivée décalée à la
-     demande de Maria donnaient donc la même phrase, alors que ce sont deux
-     gestes différents — et c'est le geste, pas la poche, qui explique au
-     parent pourquoi le temps a bougé.
+     Elles étaient ici parce que ce document était le seul écran à nommer un
+     écart. Le repli « Journées à part » de l'espace enfant le nomme désormais
+     lui aussi. Deux copies d'une même phrase finissent toujours par diverger,
+     et celle-ci sépare ce que Maria lit de ce que la famille lit sur une pièce
+     opposable : un seul exemplaire, comme `ENCART_RG06`.
 
-     La destination reste dite quand elle change quelque chose pour lui : une
-     déduction en sans solde apparaît aussi dans la retenue. */
-  var LIBELLE_EVENEMENT_ECART = {
-    liberation_anticipee: 'libération anticipée',
-    arrivee_decalee: 'arrivée décalée à ma demande',
-    retard_parent: 'retard à la reprise',
-    /* LOT 21 (§21.3) — le congé posé à l'heure emprunte la mécanique de
-       l'écart d'horaire, mais ce n'est PAS une libération anticipée : c'est un
-       congé, et le document doit le dire. C'est toute la raison d'être de la
-       migration `017` — sans elle, cette ligne aurait menti sur une pièce
-       opposable des années plus tard. */
-    conge_horaire: 'congé posé sur cette journée'
-  };
+     AUCUN LIBELLÉ N'EST MODIFIÉ. La phrase produite ici est identique au
+     caractère près à celle d'avant ce lot — c'est l'objet des assertions du
+     lot 17 et du lot 21, qui n'ont pas bougé d'une ligne. */
+  var LIBELLE_DESTINATION_ECART = Kit.LIBELLE_DESTINATION_ECART;
+  var LIBELLE_EVENEMENT_ECART = Kit.LIBELLE_EVENEMENT_ECART;
 
   function libelleEcartHoraire(e) {
     var quand = ' du ' + Kit.jourLong(e.jour).toLowerCase();

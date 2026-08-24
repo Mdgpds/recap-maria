@@ -378,7 +378,9 @@
   /*   2. UN ENCART AU MAXIMUM, les autres repliés derrière une ligne     */
   /*   3. le calendrier, directement                                      */
   /*   4. la ligne de synthèse chiffrée                                   */
-  /*   5. les replis : Le mois · Réserves · Mes notes · Depuis le début   */
+  /*   5. les replis : Le mois · Journées à part · Réserves · Mes notes · */
+  /*      Depuis le début  (« Journées à part » n'apparaît que si le mois */
+  /*      en compte au moins une — lot 28)                                */
   /*   6. la barre fixe : vérifier et clôturer                            */
   /*                                                                     */
   /* CE QUI DISPARAÎT, ET OÙ IL VIT MAINTENANT (A.2) :                    */
@@ -431,6 +433,14 @@
     if (fam && fam.actif) corps.appendChild(replisFamiliarisation(fam).bloc);
 
     corps.appendChild(replisLeMois().bloc);
+
+    /* LOT 28 — « Journées à part », JUSTE APRÈS « Le mois » et avant les
+       réserves : c'est le repli qui explique les chiffres du précédent, il se
+       lit dans la foulée. `null` quand le mois n'a rien à part — un repli vide
+       serait une case de plus à ouvrir pour lire « rien ». */
+    var aPart = replisJourneesAPart();
+    if (aPart) corps.appendChild(aPart.bloc);
+
     corps.appendChild(replisReserves().bloc);
     corps.appendChild(replisNotes().bloc);
     corps.appendChild(replisDepuisDebut().bloc);
@@ -835,6 +845,252 @@
     });
 
     Kit.ligneLn(l, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
+    return f;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 28 — « JOURNÉES À PART »                                        */
+  /*                                                                     */
+  /* LE DÉFAUT, SIGNALÉ PAR ADRIEN LE 24 AOÛT 2026 :                     */
+  /* « Maria a terminé à 12h30 et le temps restant a été déduit des      */
+  /*   heures supplémentaires, mais on ne voit rien dans le récap du     */
+  /*   mois. »                                                            */
+  /*                                                                     */
+  /* Il avait raison, et le chiffre, lui, était juste. Le 2 décembre     */
+  /* 2025 porte une libération anticipée déclarée à 12h30 : la référence */
+  /* du contrat étant 17h30 + 30 min = 18h00, l'écart vaut − 5 h 30, et  */
+  /* décembre affiche « Heures sup du mois — 5 h 00 » au lieu de         */
+  /* 10 h 30. Le total est NET, et il est exact.                          */
+  /*                                                                     */
+  /* Mais rien à l'écran ne disait d'où venait la différence. Le moteur  */
+  /* produit pourtant `ecartsDeclares` — la liste jour par jour, avec le */
+  /* geste déclaré — depuis le lot 17, et UN SEUL fichier la lisait :    */
+  /* `js/ui-document.js`, le document remis à la famille. Autrement dit  */
+  /* le parent voyait l'explication et Maria ne la voyait pas. C'est     */
+  /* l'exact inverse de ce que cette application existe pour faire.      */
+  /*                                                                     */
+  /* CE REPLI EST LA RÉCIPROQUE DE LA LOI « RIEN NE SE PERD » (A.2) :    */
+  /* un total amputé sans son détail est incontestable et inexplicable   */
+  /* en même temps.                                                      */
+  /*                                                                     */
+  /* CE QU'IL NE FAIT PAS : aucun calcul. Chaque chiffre affiché ici est */
+  /* une sortie du moteur — `ecartsDeclares`, `minutesSupBase`,          */
+  /* `minutesSupAjoutees`, `minutesSupRenoncees`,                        */
+  /* `minutesEcartRecuperation`, `minutesSupAcquises` — jamais une somme */
+  /* recomposée à l'écran (§4, B.0-5). La ligne de bas de repli se       */
+  /* CONTENTE de les mettre côte à côte, ce qui est précisément ce qui   */
+  /* la rend vérifiable : si elle ne se reconstitue pas, c'est le moteur */
+  /* qu'il faut regarder, pas cet écran.                                  */
+  /*                                                                     */
+  /* DEUX GRANULARITÉS, ET C'EST VOULU :                                 */
+  /*   · une LIGNE PAR JOUR pour ce que Maria a déclaré — un écart       */
+  /*     d'horaire, des minutes ajoutées, un renoncement, une reprise en */
+  /*     main de l'entretien ou des heures. C'est rare, daté, et ça       */
+  /*     touche un chiffre : ça mérite son jour et sa phrase.             */
+  /*   · une LIGNE PAR TYPE, avec les quantièmes, pour les journées sans */
+  /*     travail — congés, sans solde, absences de l'enfant, jours non   */
+  /*     travaillés. Trois semaines de congés d'été feraient sinon       */
+  /*     dix-huit lignes qui enterreraient la seule qui explique un       */
+  /*     chiffre. Le détail de ces journées-là vit déjà dans « Mes       */
+  /*     congés » et sur le calendrier : il n'est pas perdu, il n'est    */
+  /*     pas redit.                                                       */
+  /* ------------------------------------------------------------------ */
+
+  /* Les types de journée sans travail, dans l'ordre où le repli les cite, et
+     la phrase que chacun mérite. RG-04 (« aucune minute supplémentaire ») est
+     énoncée pour les deux types où elle est INCONDITIONNELLE — un congé et un
+     sans solde sont dans `TYPES_SANS_MINUTES` du moteur, toujours.
+
+     L'absence de l'enfant N'EN EST PAS : ses 30 minutes dépendent du réglage
+     du contrat (RG-09) et de la surcharge du jour, et son indemnité
+     d'entretien peut être rétablie à la main (§20.6). Écrire ici une phrase
+     générale sur son effet serait fausse un jour sur deux — la ligne se
+     contente donc de dater, et la journée s'ouvre d'un appui. */
+  var GROUPES_SANS_TRAVAIL = [
+    { type: 'conge_maria', titre: 'Mon congé', regle: 'Pas d’heures sup ces jours-là' },
+    { type: 'sans_solde', titre: 'Sans solde',
+      regle: 'Pas d’heures sup · retenue sur le salaire', alerte: true },
+    { type: 'absence_enfant', titre: 'L’enfant était absent', regle: null },
+    { type: 'hors_planning', titre: 'Journée non travaillée', regle: null }
+  ];
+
+  /* Une journée porte-t-elle une DÉCLARATION de Maria ? C'est le prédicat qui
+     décide d'une ligne à elle. Il couvre les mêmes colonnes que
+     `journeesManuellesEcrasees` (corrections C1 et C2 du lot 18) : les trois
+     de l'ajustement du lot 12, les quatre de l'écart du lot 17, la reprise en
+     main des heures réelles et de l'indemnité. La NOTE n'y est pas — elle a
+     son propre repli, et elle ne touche aucun chiffre. */
+  function porteUneDeclaration(ligne) {
+    if (!ligne) return false;
+    return (ligne.ecart_minutes != null && ligne.ecart_minutes !== 0) ||
+           (ligne.minutes_sup_exceptionnelles || 0) > 0 ||
+           (ligne.minutes_sup_renoncees || 0) > 0 ||
+           ligne.sup_dues_override != null ||
+           ligne.minutes_reelles != null ||
+           ligne.entretien_centimes != null;
+  }
+
+  /* La phrase d'une journée déclarée. Elle nomme le GESTE avant la poche : le
+     geste explique pourquoi le temps a bougé, la poche dit seulement où il est
+     allé (correction de la remarque 4 de la relecture du lot 17). Les libellés
+     viennent de `Kit`, en un seul exemplaire partagé avec le document remis à
+     la famille — pour que Maria et la famille lisent le même mot. */
+  function phraseDeclaration(d, ligne, detailSup) {
+    var bouts = [];
+
+    if (ligne.ecart_minutes != null && ligne.ecart_minutes !== 0) {
+      var geste = Kit.LIBELLE_EVENEMENT_ECART[ligne.ecart_evenement];
+      var heure = String(ligne.ecart_heure_reelle || '').slice(0, 5);
+      var phrase = geste
+        ? geste.charAt(0).toUpperCase() + geste.slice(1)
+        : 'Écart d’horaire déclaré';
+      if (heure) phrase += ' — ' + heure.replace(':', 'h');
+      /* La poche n'est nommée que lorsqu'elle change quelque chose : un écart
+         POSITIF n'en a pas à choisir, il va toujours à la récupération. */
+      if (detailSup.ecart < 0) {
+        var poche = Kit.LIBELLE_DESTINATION_ECART[detailSup.ecartImputeSur];
+        if (poche) phrase += ', ' + poche;
+      }
+      bouts.push(phrase);
+    }
+
+    if (detailSup.ajoutees > 0) {
+      bouts.push(Kit.duree(detailSup.ajoutees) + ' travaillées en plus');
+    }
+    if (detailSup.renoncees > 0) {
+      bouts.push(Kit.duree(detailSup.renoncees) + ' non réclamées, votre choix');
+    }
+    /* RG-09 au jour le jour (V8-19) : `null` veut dire « suivre le contrat »,
+       `false` et `true` sont deux décisions explicites de Maria. */
+    if (ligne.sup_dues_override === false) {
+      bouts.push('Vos ' + Kit.duree(reg('minutes_sup_jour', 0)) + ' non réclamées ce jour-là');
+    } else if (ligne.sup_dues_override === true) {
+      bouts.push('Vos ' + Kit.duree(reg('minutes_sup_jour', 0)) + ' réclamées malgré l’absence');
+    }
+    if (ligne.minutes_reelles != null) bouts.push('Heures saisies à la main');
+    if (ligne.entretien_centimes != null) bouts.push('Entretien saisi à la main');
+
+    return bouts.join(' · ');
+  }
+
+  /* La valeur chiffrée d'une journée déclarée : ce que le moteur retient POUR
+     CETTE JOURNÉE, signé. « − 5 h 00 » sur le 2 décembre, ce sont les 30 min
+     du contrat moins les 5 h 30 rendues — le nombre qui entre réellement dans
+     le total du mois, pas l'écart brut. C'est `Engine.minutesSupDuJour` qui le
+     dit, à travers `detailSupDuJour` : l'écran ne l'additionne pas. */
+  function valeurJourneeDeclaree(detailSup) {
+    var m = detailSup.base + detailSup.ajoutees - detailSup.renoncees +
+            detailSup.ecartSurRecuperation;
+    if (m === 0) return '0';
+    return (m > 0 ? '+ ' : '− ') + Kit.duree(m);
+  }
+
+  /* Le repli. Rend `null` quand le mois n'a AUCUNE journée à part et qu'il n'y
+     a donc rien à expliquer — un repli vide serait une case de plus à ouvrir
+     pour lire « rien ». */
+  function replisJourneesAPart() {
+    var r = vue.entree.resultat;
+    var c = vue.contrat;
+    var planning = planningDuMois();
+    var journees = vue.journees || {};
+
+    var declarees = [];
+    var groupes = {};
+    var nb = 0;
+
+    Engine.joursDuMois(vue.annee, vue.mois).forEach(function (d) {
+      /* Hors contrat : la journée n'existe pas pour ce mois. */
+      if ((c.date_debut && d < c.date_debut) || (c.date_fin && d > c.date_fin)) return;
+      /* §20.4 — la familiarisation a son propre repli, jour par jour. */
+      if (enFamiliarisation(d)) return;
+
+      var ligne = journees[d];
+      var type = Kit.typeDuJour(journees, d);
+
+      if (porteUneDeclaration(ligne)) {
+        declarees.push({ jour: d, ligne: ligne, type: type });
+        nb++;
+        return;
+      }
+
+      /* Un férié et un jour hors planning SANS ligne saisie ne sont pas des
+         journées « à part » : c'est le calendrier, pas une décision. */
+      if (type === 'ferie') return;
+      if (!ligne && planning.indexOf(Engine.jourSemaine(d)) === -1) return;
+      if (type === 'presence') return;
+
+      if (!groupes[type]) groupes[type] = [];
+      groupes[type].push(d);
+      nb++;
+    });
+
+    if (!nb) return null;
+
+    /* OUVERT D'OFFICE QUAND UN ÉCART D'HORAIRE A BOUGÉ LE TOTAL. C'est le cas
+       du 2 décembre, celui qui a fait remonter le défaut : un repli fermé
+       aurait laissé « 5 h 00 » sans explication à l'écran, ce qui est le
+       problème qu'on corrige. Les mois qui n'ont que des congés restent
+       fermés — il n'y a alors pas de chiffre surprenant à justifier. */
+    var f = Kit.fold('Journées à part', String(nb),
+      { ouvert: (r.ecartsDeclares || []).length > 0 });
+    var l = f.corps;
+
+    declarees.forEach(function (x) {
+      var conditions = cond();
+      var detailSup = conditions
+        ? Engine.detailSupDuJour(x.ligne, conditions)
+        : null;
+      /* Sans conditions, on ne prétend RIEN chiffrer : la journée est nommée,
+         sa valeur est dite illisible. Un repli silencieux sur zéro afficherait
+         un chiffre faux et crédible. */
+      Kit.ligneLn(l, Kit.jourLong(x.jour),
+        detailSup ? valeurJourneeDeclaree(detailSup) : '—', {
+          sous: detailSup ? phraseDeclaration(x.jour, x.ligne, detailSup) : null,
+          onclick: vue.lectureSeule ? null : function () { ouvrirJour(x.jour); }
+        });
+    });
+
+    GROUPES_SANS_TRAVAIL.forEach(function (g) {
+      var jours = groupes[g.type];
+      if (!jours || !jours.length) return;
+      var dates = jours.map(function (d) { return Kit.quantieme(d); }).join(', ') +
+        ' ' + Kit.libelleMois(vue.mois);
+      Kit.ligneLn(l, g.titre, jours.length + ' j', {
+        sous: g.regle ? dates + ' — ' + g.regle.toLowerCase() : dates,
+        alerte: !!g.alerte
+      });
+    });
+
+    /* LA RÉCONCILIATION. Quatre sorties du moteur mises côte à côte, et le
+       net qu'elles composent. C'est la ligne qui répond à « pourquoi 5 h 00
+       et pas 10 h 30 » sans qu'on ait à faire la soustraction de tête. */
+    var parts = [];
+    if (r.minutesSupBase > 0) parts.push(Kit.duree(r.minutesSupBase) + ' au contrat');
+    if (r.minutesSupAjoutees > 0) parts.push('+ ' + Kit.duree(r.minutesSupAjoutees) + ' en plus');
+    if (r.minutesSupRenoncees > 0) {
+      parts.push('− ' + Kit.duree(r.minutesSupRenoncees) + ' non réclamées');
+    }
+    if (r.minutesEcartRecuperation !== 0) {
+      parts.push((r.minutesEcartRecuperation > 0 ? '+ ' : '− ') +
+        Kit.duree(r.minutesEcartRecuperation) + ' déclarées');
+    }
+    Kit.ligneLn(l, 'Heures sup du mois', Kit.heures(r.minutesSupAcquises), {
+      sous: parts.length > 1 ? parts.join(' · ') : null,
+      total: true
+    });
+
+    /* Les minutes rendues qui ne sont PAS allées à la récupération ne se lisent
+       nulle part ailleurs dans cet écran : le total ci-dessus est déjà net
+       d'elles par construction, puisqu'elles n'y sont jamais entrées. Les
+       taire ferait disparaître un congé payé consommé ou une retenue. */
+    if (r.minutesEcartSurCp > 0) {
+      Kit.ligneLn(l, 'Déduit de vos congés payés', Kit.heures(r.minutesEcartSurCp));
+    }
+    if (r.minutesEcartSansSolde > 0) {
+      Kit.ligneLn(l, 'Passé en sans solde', Kit.heures(r.minutesEcartSansSolde),
+        { alerte: true });
+    }
+
     return f;
   }
 
