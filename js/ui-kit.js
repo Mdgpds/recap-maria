@@ -310,6 +310,68 @@
     return l;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* LE DÉCOMPTE DES CONGÉS, DIT UNE SEULE FOIS                          */
+  /*                                                                     */
+  /* Cette phrase est la raison d'être d'une bonne partie de              */
+  /* l'application : les familles comptent 5 jours pour une semaine,      */
+  /* Maria en compte 6, et c'est elle qui a raison.                       */
+  /*                                                                     */
+  /* Elle était RECOPIÉE dans au moins sept endroits — le document, le    */
+  /* texte à copier, l'image, l'écran « Mes congés » (trois fois), le     */
+  /* menu (deux fois), l'espace enfant. Le document à l'écran, le texte à */
+  /* copier et l'image sortent tous de l'application et arrivent chez la  */
+  /* famille : les laisser diverger ne se verrait qu'une fois le document */
+  /* parti. Elles viennent donc toutes d'ici, et d'ici seulement (§6.3).  */
+  /*                                                                     */
+  /* LA RÈGLE DES CINQ SAMEDIS L'A RENDUE FAUSSE (§6.1). « Une semaine    */
+  /* complète compte donc 6 jours, même si je ne travaille pas le         */
+  /* samedi » cesse d'être vrai le jour du déploiement : une semaine ne   */
+  /* compte plus 6 jours d'office. La laisser en l'état ferait mentir le  */
+  /* document remis aux familles — exactement ce que l'application existe */
+  /* pour empêcher.                                                       */
+  /* ------------------------------------------------------------------ */
+
+  var ENCART_RG06 =
+    'Les congés payés d’une assistante maternelle se comptent en jours ouvrables, ' +
+    'du lundi au samedi, dimanches et jours fériés exclus. Le samedi que je ne ' +
+    'travaille pas n’est décompté que lorsque je le choisis, dans la limite de cinq ' +
+    'par année de référence (1er juin – 31 mai) — c’est la règle dite des cinq samedis.';
+
+  /* La même règle en une ligne, pour les écrans où la phrase entière
+     n'entrerait pas. Elle dit la MÊME chose, en plus court — jamais autre
+     chose. */
+  var RESUME_RG06 =
+    'En jours ouvrables, du lundi au samedi. Un samedi non travaillé n’est ' +
+    'décompté que si vous le choisissez, dans la limite de cinq par an et par famille.';
+
+  /* L'ANNÉE DE RÉFÉRENCE DES CONGÉS PAYÉS : du 1er juin au 31 mai.
+
+     Elle ne vit PAS dans le moteur, et c'est voulu (§4.1) : le moteur ne
+     connaît ni l'année de référence ni le quota de cinq — il compte les
+     samedis qu'on lui donne. Ce n'est pas non plus un calcul métier : c'est
+     une fenêtre de dates, celle que la base interroge et que l'écran nomme.
+
+     Un samedi est rattaché à l'année de SA PROPRE DATE : une période à cheval
+     sur le 31 mai voit donc ses samedis répartis entre deux années, chacun
+     comptant dans la sienne (§2.3). */
+  function anneeDeReferenceConges(dateIso) {
+    var d = String(dateIso).slice(0, 10);
+    var annee = Number(d.slice(0, 4));
+    var mois = Number(d.slice(5, 7));
+    var premiere = (mois >= 6) ? annee : annee - 1;
+    return {
+      debut: premiere + '-06-01',
+      fin: (premiere + 1) + '-05-31',
+      libelle: '1er juin ' + premiere + ' – 31 mai ' + (premiere + 1)
+    };
+  }
+
+  /* Le quota de la règle : cinq samedis par année de référence ET PAR
+     FAMILLE. Il n'est pas dans le moteur non plus — c'est une affaire de base
+     et d'écran. */
+  var QUOTA_SAMEDIS = 5;
+
   function note(titre, texte) {
     var n = ce('div', 'note');
     if (titre) n.appendChild(ce('b', null, titre));
@@ -1257,6 +1319,11 @@
   /* ------------------------------------------------------------------ */
 
   global.Kit = {
+    /* §6.3 — la phrase du décompte, en un seul exemplaire. */
+    ENCART_RG06: ENCART_RG06,
+    RESUME_RG06: RESUME_RG06,
+    anneeDeReferenceConges: anneeDeReferenceConges,
+    QUOTA_SAMEDIS: QUOTA_SAMEDIS,
     ce: ce, vider: vider, bouton: bouton, ajouter: ajouter,
     eur: eur, eurCourt: eurCourt, heures: heures, joursCp: joursCp, jours: jours, duree: duree,
     cpDisponible: cpDisponible, supDisponible: supDisponible,

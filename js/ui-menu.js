@@ -1593,8 +1593,11 @@
        compter les samedis. Une saisie faite une seule fois, dont tout
        l'historique dérive, ne peut pas s'expliquer après coup. */
     p.appendChild(Kit.ce('p', 'sb q',
-      'En jours ouvrables, samedi inclus — c’est ainsi que se comptent les congés ' +
-      'd’une assistante maternelle. Une semaine complète vaut 6 jours.'));
+      /* §6.3 — la règle du décompte vient de `js/ui-kit.js`, en un seul
+         exemplaire : la reprise des compteurs et le document doivent dire la
+         même chose, sans quoi Maria saisit un chiffre selon une règle et
+         l'application en applique une autre. */
+      Kit.RESUME_RG06));
     p.appendChild(acquis.bloc);
     p.appendChild(pris.bloc);
 
@@ -1975,8 +1978,8 @@
     }
 
     out.push('==============================================================');
-    out.push('Les congés payés d’une assistante maternelle se comptent en jours');
-    out.push('ouvrables, du lundi au samedi. Une semaine complète compte 6 jours.');
+    /* §6.3 — l'export dit exactement ce que dit le document. */
+    out.push(Kit.ENCART_RG06);
     return out.join('\n');
   }
 

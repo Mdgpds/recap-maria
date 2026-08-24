@@ -18,6 +18,10 @@ var suites = [
      pas bougé d'un centime (§20.5, A1). Ce qu'il ajoute vient juste après. */
   { titre: 'Différentiel moteur avant/après le lot 20 (§20.5, A1)', suite: require('./lot20-differentiel.test.js') },
   { titre: 'La familiarisation en période, et l’entretien retirable (lot 20)', suite: require('./lot20-familiarisation.test.js') },
+  /* Même place, même rôle : la règle des cinq samedis rouvre le moteur sur
+     RG-06 — le décompte que les familles contestent. La première chose à
+     prouver est qu'avec tous les samedis passés, rien ne bouge (§4.2, A1). */
+  { titre: 'Différentiel moteur avant/après la règle des cinq samedis (§4.2, A1)', suite: require('./lot23-differentiel.test.js') },
   { titre: 'Chaîne des mois et agrégation de période (lot 5)', suite: require('./chaine.test.js') },
   { titre: 'Messages d’échec en français (lot 5)', suite: require('./messages.test.js') },
   { titre: 'Couche données : aucune colonne lue sans être demandée', suite: require('./couche-donnees.test.js') },

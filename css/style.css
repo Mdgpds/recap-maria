@@ -518,12 +518,47 @@ table.cal td.futur:active { transform: none; }
    Tous les choix d'une journée ont désormais la même allure : une pastille
    radio et un libellé. Ce qui se déplie une fois le choix fait vit dans
    `.detail-choix`, JUSTE SOUS la liste — et non dans le choix lui-même : la
-   liste ne bouge pas sous le doigt de Maria quand elle change d'avis. */
-.amorce { margin: 2px 0 9px; font-weight: 600; color: var(--ink2); }
-.liste-choix .choice { margin-bottom: 8px; }
+   liste ne bouge pas sous le doigt de Maria quand elle change d'avis.
+
+   LA LIGNE REPREND LES MESURES DE LA MAQUETTE (`.opt`), et pas seulement son
+   principe : premier rendu côte à côte, Adrien a répondu « ça ne ressemble
+   toujours pas ». Le composant `.choice` habillait sa pastille d'une tuile
+   verte de 34 px — juste pour l'icône d'un geste unique. Répétée sept fois,
+   elle fait une colonne de carrés verts là où la maquette pose sept lignes
+   claires. La pastille redevient un VRAI bouton radio : un cercle de 19 px,
+   qui se remplit de vert quand il est choisi. */
+.amorce { margin: 2px 0 9px; color: var(--ink3); }
+.liste-choix .choice,
+.detail-choix .choice {
+  gap: 10px; padding: 11px 12px; margin-bottom: 8px;
+  border-width: 1px; font-size: 15px;
+}
+.liste-choix .choice .ic,
+.detail-choix .choice .ic {
+  width: 19px; height: 19px; border-radius: 50%; box-sizing: border-box;
+  background: none; border: 2px solid var(--ln);
+  /* Le caractère « ● » / « ○ » que pose `poserOption` reste dans le DOM pour
+     les lecteurs d'écran qui liraient le contenu, mais la FORME du cercle dit
+     déjà l'état, et `aria-checked` le dit aux autres. */
+  font-size: 0;
+}
+.liste-choix .choice.on,
+.detail-choix .choice.on {
+  background: #fff; box-shadow: 0 0 0 2px rgba(13, 92, 70, .14);
+}
+.liste-choix .choice.on .ic,
+.detail-choix .choice.on .ic { border-color: var(--ac); border-width: 6px; }
+/* « Autre cas… » ouvre une autre feuille : un chevron, pas une pastille. */
+.liste-choix .choice.autre .ic { border: none; font-size: 19px; color: var(--ink3); }
 .detail-choix:not(:empty) { margin: 4px 0 2px; }
 .detail-choix .sec:first-child { margin-top: 14px; }
 .detail-choix .effet-heures { margin-top: 2px; }
+.detail-choix > .sb.q { font-size: 12.5px; margin: 2px 0 0; }
+/* UN BOUTON INACTIF DOIT AVOIR L'AIR INACTIF. `opacity: .55` sur un aplat
+   vert donne un vert un peu pâle : sur la capture, le bouton « Enregistrer »
+   d'une feuille où aucun choix n'est fait avait exactement l'air d'un bouton
+   qui attend qu'on appuie. La maquette le pose en gris ; on fait pareil. */
+.sheet .btn:disabled { background: #eef1f3; color: #9aa3ad; opacity: 1; }
 /* Lot 22 §22.2 — la photo en tête de la fiche : l'aperçu passe en grand,
    parce que c'est le portrait de l'enfant et non une vignette de formulaire. */
 .photo-fld.grand .apercu-photo { width: 96px; height: 96px; }

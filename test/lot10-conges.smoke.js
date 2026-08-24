@@ -110,6 +110,8 @@ var COMPTEURS = {
 };
 
 var scene = {
+  samedis: {},
+  samedisEcrits: [],
   contrats: [LEA, TOM],
   aujourdhui: '2026-07-01',
   moisCourant: { annee: 2026, mois: 7 },
@@ -167,6 +169,23 @@ var DB = {
   getJourneesMois: function (id) { return Promise.resolve(scene.journees[id] || {}); },
   getJourneesPeriode: function () { return Promise.resolve({}); },
   listImputations: function (id) { return Promise.resolve(scene.imputations[id] || []); },
+  /* LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026) — le décor expose les
+     trois fonctions neuves. Aucun samedi n'est compté au départ : c'est l'état
+     réel après la migration, décision d'Adrien du 24 août (« on ne coche rien,
+     les périodes passées perdent leur samedi »). */
+  listSamedisConge: function (id) { return Promise.resolve(scene.samedis[id] || []); },
+  compterSamedisAnnee: function (id, debut, fin) {
+    return Promise.resolve((scene.samedis[id] || []).filter(function (x) {
+      var d = String(x.date_samedi || x).slice(0, 10);
+      return d >= debut && d <= fin;
+    }).length);
+  },
+  enregistrerSamedis: function (imputationId, dates) {
+    scene.samedisEcrits.push({ imputationId: imputationId, dates: dates });
+    return Promise.resolve(dates.map(function (d) {
+      return { imputation_id: imputationId, date_samedi: d };
+    }));
+  },
   listImputationsPourMois: function (id) { return Promise.resolve(scene.imputations[id] || []); },
   getNoteMensuelle: function () { return Promise.resolve(null); },
     enregistrerNoteMensuelle: function (c, a, m, t) { return Promise.resolve({ texte: t }); },
@@ -273,6 +292,16 @@ function poserDate(bloc, iso) {
     s.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   });
 }
+/* §5.1 — L'étape des samedis s'intercale entre les dates et la ventilation
+   dès qu'un samedi est éligible. Les parcours qui ne l'examinent pas la
+   franchissent sans rien cocher : rien n'est coché par défaut. */
+async function passerSamedis() {
+  if (txt(sheet).indexOf('Les samedis de cette période') === -1) return false;
+  boutonExact(sheet, 'Continuer').click();
+  await pause(300);
+  return true;
+}
+
 function champsDates() {
   var blocs = sheet.querySelectorAll('.fld');
   return { du: blocs[0], au: blocs[1] };
@@ -351,14 +380,71 @@ function cliquer(libelle, signe, fois) {
   poserDate(ch.au, '2026-07-10');
   await pause(80);
 
-  assert(sansInsecable(txt(sheet)).indexOf('6 j ouvrables décomptés') !== -1,
-    'A1 : une semaine du lundi au vendredi décompte 6 JOURS (obtenu « ' +
+  /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
+
+     « Une semaine du lundi au vendredi décompte 6 JOURS » et « le samedi
+     inclus est dit » portaient sur la règle d'avant : le samedi comptait
+     d'office. Il ne compte plus que si Maria le choisit, et rien n'est coché
+     par défaut (décision d'Adrien du 24 août). La semaine annonce donc 5.
+
+     Les deux assertions ne disparaissent pas : la première change de valeur,
+     la seconde change de cible — l'écran doit toujours DIRE la règle du
+     décompte plutôt que la sous-entendre, et c'est désormais celle des cinq
+     samedis. La preuve que 6 reste atteignable est juste en dessous, sur
+     l'étape neuve. */
+  assert(sansInsecable(txt(sheet)).indexOf('5 j ouvrables décomptés') !== -1,
+    'A1 : sans samedi coché, une semaine du lundi au vendredi décompte 5 JOURS (obtenu « ' +
     (sansInsecable(txt(sheet)).match(/\d+ j ouvrables[^.]{0,20}/) || [''])[0] + ' »)');
-  assert(txt(sheet).indexOf('samedi inclus') !== -1,
-    'A1 : le samedi inclus est dit — c’est le désaccord historique avec les familles');
+  assert(txt(sheet).indexOf('que si vous le choisissez') !== -1,
+    'A1 : la règle du décompte est dite — c’est le désaccord historique avec les familles');
   /* Le décompte vient du moteur : on le recalcule ici indépendamment. */
-  assert(Engine.decompterJoursOuvrables('2026-07-06', '2026-07-10') === 6,
+  assert(Engine.decompterJoursOuvrables('2026-07-06', '2026-07-10') === 5,
     'A1 : et c’est bien ce que rend Engine.decompterJoursOuvrables');
+  assert(Engine.decompterJoursOuvrables('2026-07-06', '2026-07-10', null,
+    ['2026-07-11']) === 6, 'A1 : avec le samedi coché, il en rend 6');
+
+  boutonExact(sheet, 'Continuer').click();
+  await pause(400);
+
+  /* ==================================================================== */
+  /* §5 — L'ÉTAPE NEUVE : LES SAMEDIS DE CETTE PÉRIODE                    */
+  /* ==================================================================== */
+  console.log('\n--- §5 : les samedis de cette période ---');
+
+  assert(txt(sheet).indexOf('Les samedis de cette période') !== -1,
+    '§5.1 : le choix des samedis vient après les dates et avant la ventilation');
+  assert(txt(sheet).indexOf('dans la limite de 5 par an et par famille') !== -1,
+    '§5.2 : la règle est dite, avec son quota');
+  assert(txt(sheet).indexOf('il vous reste 5 samedis') !== -1,
+    '§5.2 : le reste du quota est réel, lu en base et affiché (obtenu « ' +
+    (txt(sheet).match(/il vous reste[^(]{0,24}/) || [''])[0] + ' »)');
+  assert(txt(sheet).indexOf('1er juin 2026 – 31 mai 2027') !== -1,
+    'A6 : l’année de référence est nommée, du 1er juin au 31 mai');
+  assert(txt(sheet).indexOf('samedi 11 juillet') !== -1,
+    '§5.2 : le samedi de la période est proposé, nommé en toutes lettres');
+  var casesSamedi = sheet.querySelectorAll('.samedis input[type="checkbox"]');
+  /* A5 — LE QUOTA EST PAR CONTRAT : chaque enfant a sa liste, et cocher pour
+     l'un ne coche rien pour l'autre. */
+  assert(casesSamedi.length === sheet.querySelectorAll('.samedis').length,
+    '§5.2 : une case par samedi éligible et par enfant (obtenu ' +
+    casesSamedi.length + ' cases pour ' + sheet.querySelectorAll('.samedis').length +
+    ' enfant(s))');
+  assert(casesSamedi.length >= 2,
+    'A5 : plusieurs contrats sont concernés, chacun avec son propre samedi');
+  assert(casesSamedi[0].checked === false,
+    '§2.6 : rien n’est coché par défaut — c’est Maria qui arbitre');
+  assert(sansInsecable(txt(sheet)).indexOf('Décompte : 5 j') !== -1,
+    '§5.2 : le décompte affiché est celui du moteur');
+
+  casesSamedi[0].checked = true;
+  casesSamedi[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await pause(120);
+  assert(sansInsecable(txt(sheet)).indexOf('Décompte : 6 j') !== -1,
+    'A3 : cocher le samedi change la phrase toute seule — elle est rejouée par le moteur');
+  assert(txt(sheet).indexOf('il vous reste 4 samedis') !== -1,
+    '§5.2 : et le reste du quota descend d’autant');
+  assert(txt(sheet).indexOf('il vous reste 5 samedis') !== -1,
+    'A5 : le quota de l’autre enfant n’a pas bougé — il est par contrat');
 
   boutonExact(sheet, 'Continuer').click();
   await pause(300);
@@ -424,6 +510,7 @@ function cliquer(libelle, signe, fois) {
 
   boutonExact(sheet, 'Continuer').click();
   await pause(300);
+  await passerSamedis();
 
   /* ==================================================================== */
   /* P6 — Réserves insuffisantes : le sans-solde, et son coût             */
@@ -444,7 +531,14 @@ function cliquer(libelle, signe, fois) {
   var cpTom = valeurDe('Congés payés');
   var supTom = valeurDe('Récupération');
   var ssTom = valeurDe('Sans solde');
-  assert(cpTom + supTom + ssTom === 6, 'P6 : la proposition couvre bien les 6 jours');
+  /* EXIGENCE CHANGÉE, ET C'EST LE CRITÈRE A5 EN ACTION. À l'étape des
+     samedis, le samedi de LÉA a été coché, celui de TOM non. Le quota étant
+     par contrat, la période de Tom compte 5 jours quand celle de Léa en
+     compte 6 : « sur une même période, Maria peut compter le samedi pour Léa
+     et pas pour Tom » (§2.4). La proposition couvre donc 5 jours, pas 6. */
+  assert(cpTom + supTom + ssTom === 5,
+    'A5 : la proposition de Tom couvre ses 5 jours — son samedi n’a pas été coché, ' +
+    'celui de Léa si (obtenu ' + (cpTom + supTom + ssTom) + ')');
   assert(ssTom > 0,
     'P6 : faute de réserves, une partie passe SANS SOLDE — c’est-à-dire en retenue ' +
     'sur salaire (obtenu ' + ssTom + ' jour(s))');
@@ -468,11 +562,14 @@ function cliquer(libelle, signe, fois) {
   cliquer('Récupération', '−', 30);
   cliquer('Sans solde', '+', 30);
   await pause(30);
-  assert(valeurDe('Sans solde') === 6,
+  /* Même raison qu'au-dessus : la période de Tom vaut 5 jours. La règle
+     vérifiée — le sans-solde couvre TOUTE la période et jamais au-delà — ne
+     change pas d'un mot. */
+  assert(valeurDe('Sans solde') === 5,
     'A3 : le sans-solde peut couvrir toute la période (obtenu ' + valeurDe('Sans solde') + ')');
   cliquer('Sans solde', '+', 5);
   await pause(30);
-  assert(valeurDe('Sans solde') === 6,
+  assert(valeurDe('Sans solde') === 5,
     'P5 (piège n° 5) : mais jamais AU-DELÀ — pas de reste négatif');
   assert(resteAffiche() === 0, 'le reste est bien nul');
 
@@ -551,6 +648,7 @@ function cliquer(libelle, signe, fois) {
     (sansInsecable(txt(sheet)).match(/\d+ j ouvrables/) || [''])[0] + ' »)');
   boutonExact(sheet, 'Continuer').click();
   await pause(300);
+  await passerSamedis();
   assert(valeurDe('Congés payés') === 1, 'P2 : proposé sur les congés payés');
   window.Kit.fermerFeuille();
   await pause(50);
@@ -576,6 +674,7 @@ function cliquer(libelle, signe, fois) {
     ' jours (obtenu « ' + (sansInsecable(txt(sheet)).match(/\d+ j ouvrables/) || [''])[0] + ' »)');
   boutonExact(sheet, 'Continuer').click();
   await pause(300);
+  await passerSamedis();
   assert(txt(sheet).indexOf('à répartir') !== -1, 'P3 : la ventilation s’ouvre normalement');
   window.Kit.fermerFeuille();
   await pause(50);
@@ -600,6 +699,7 @@ function cliquer(libelle, signe, fois) {
   var avantImput = appels.imputations.length;
   boutonExact(sheet, 'Continuer').click();
   await pause(300);
+  await passerSamedis();
 
   assert(txt(sheet).indexOf('est clôturé') !== -1,
     'A5 : la période recouvrant un mois clôturé est signalée');
@@ -613,6 +713,7 @@ function cliquer(libelle, signe, fois) {
 
   parTexte(sheet, 'button', 'Rouvrir juillet et continuer').click();
   await pause(350);
+  await passerSamedis();
   assert(appels.rouvrir.length === 1, 'P4 : la réouverture est demandée');
   assert(appels.rouvrir[0].motif === 'Congés posés après clôture',
     'P4 : avec le motif prévu — c’est lui qui rendra l’historique lisible dans six mois ' +
@@ -641,6 +742,7 @@ function cliquer(libelle, signe, fois) {
   var avantRouvrir = appels.rouvrir.length;
   boutonExact(sheet, 'Continuer').click();
   await pause(300);
+  await passerSamedis();
   boutonExact(sheet, 'Choisir d’autres dates').click();
   await pause(200);
 
@@ -709,6 +811,7 @@ function cliquer(libelle, signe, fois) {
   await pause(80);
   boutonExact(sheet, 'Continuer').click();
   await pause(300);
+  await passerSamedis();
   /* Le bouton de la DERNIÈRE étape s'appelle « Voir le récapitulatif », pas
      « Continuer » : on traverse la ventilation quel que soit le nombre de
      contrats plutôt que de supposer combien il y en a. */
@@ -800,6 +903,70 @@ function cliquer(libelle, signe, fois) {
     'A9 : et la répartition par défaut');
   assert(!/MINUTES_BASE|\/\s*151|\*\s*1\.5\b/.test(src),
     'A9 : aucune constante de calcul de salaire n’est écrite dans l’écran');
+
+  /* ==================================================================== */
+  /* A7 — LE SIXIÈME SAMEDI : COCHABLE, MAIS DIT                          */
+  /* A10 — RETIRER UNE PÉRIODE REND SES SAMEDIS AU QUOTA                  */
+  /* ==================================================================== */
+  console.log('\n--- A7 : le sixième samedi de l’année ---');
+
+  /* Cinq samedis déjà comptés pour Léa sur l'année de référence en cours
+     (1er juin 2026 – 31 mai 2027) : son quota est épuisé. */
+  scene.samedis['c-lea'] = ['2026-06-06', '2026-06-13', '2026-06-20',
+                            '2026-06-27', '2026-07-04'].map(function (d) {
+    return { imputation_id: 'i-vieille', date_samedi: d };
+  });
+
+  await ouvrirConges();
+  boutonExact(corps, 'Poser des congés').click();
+  await pause(120);
+  parTexte(sheet, 'button', 'Une ou plusieurs journées').click();
+  await pause(200);
+  var ch7 = champsDates();
+  poserDate(ch7.du, '2026-10-19');
+  poserDate(ch7.au, '2026-10-23');
+  await pause(80);
+  boutonExact(sheet, 'Continuer').click();
+  await pause(400);
+
+  assert(txt(sheet).indexOf('Les samedis de cette période') !== -1,
+    'A7 : l’étape des samedis s’ouvre');
+  assert(txt(sheet).indexOf('vous avez utilisé vos 5 samedis') !== -1,
+    'A7 : le quota épuisé est annoncé avant tout choix (obtenu « ' +
+    (txt(sheet).match(/vous avez utilisé[^(]{0,24}/) || [''])[0] + ' »)');
+
+  var casesA7 = sheet.querySelectorAll('.samedis input[type="checkbox"]');
+  assert(casesA7.length > 0, 'A7 : le samedi reste proposé malgré le quota épuisé');
+  assert(casesA7[0].disabled === false,
+    'A7 : et la case reste COCHABLE — l’application ne décide pas à la place de Maria');
+  casesA7[0].checked = true;
+  casesA7[0].dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  await pause(150);
+
+  assert(txt(sheet).indexOf('C’est le 6ᵉ samedi compté') !== -1,
+    'A7 : le dépassement est NOMMÉ (obtenu « ' +
+    (txt(sheet).match(/C’est le [^.]{0,40}/) || [''])[0] + ' »)');
+  assert(txt(sheet).indexOf('Vous pouvez le compter quand même') !== -1,
+    'A7 : et il reste permis — même logique que la récupération négative du lot 21');
+  assert(!!sheet.querySelector('.warnbox'),
+    'A7 : l’avertissement est orange, comme les autres avertissements de l’application');
+  assert(txt(sheet).indexOf('vous dépassez de 1 samedi') !== -1,
+    'A7 : le compteur dit le dépassement ensuite');
+
+  window.Kit.fermerFeuille();
+  await pause(50);
+  scene.samedis['c-lea'] = [];
+
+  /* A10 — la cascade. Elle n'est PAS écrite dans l'application : c'est la
+     clé étrangère `on delete cascade` de `018_samedis_comptes.sql` qui la
+     tient. Ce que ce test peut vérifier ici, c'est qu'aucun code de nettoyage
+     ne s'y substitue — un nettoyage écrit à la main serait une deuxième règle,
+     donc une règle à oublier. La cascade elle-même est vérifiée en base, sur
+     le catalogue PostgreSQL, à la mise en production. */
+  var srcConges = fs.readFileSync(path.join(racine, 'js', 'ui-conges.js'), 'utf8');
+  assert(srcConges.indexOf('supprimerSamedi') === -1 &&
+         srcConges.indexOf('retirerSamedis') === -1,
+    'A10 : aucun retrait de samedi écrit à la main — c’est la cascade qui rend le quota');
 
   /* ==================================================================== */
   console.log('');

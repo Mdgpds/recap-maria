@@ -577,8 +577,15 @@ async function lireDernierFichier() {
     'P6 : les montants sont lisibles, pas en centimes');
   assert(sansInsecable(doc.texte).indexOf('1h30') !== -1,
     'P6 : les heures aussi');
+  /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026, §6).
+     « compte 6 jours » devient faux : une semaine ne compte plus 6 jours
+     d'office. L'assertion n'est pas retirée — elle exige toujours que
+     l'EXPORT rappelle la règle du décompte, et exige EN PLUS (§6.3, A12)
+     qu'il dise exactement la même chose que le document, depuis la constante
+     partagée. */
   assert(doc.texte.indexOf('ouvrables, du lundi au samedi') !== -1 &&
-         doc.texte.indexOf('compte 6 jours') !== -1,
+         doc.texte.indexOf('règle dite des cinq samedis') !== -1 &&
+         doc.texte.indexOf(window.Kit.ENCART_RG06) !== -1,
     'RG-06 : le document rappelle la règle qui fâche — c’est elle qu’on ' +
     'ressort des années après');
 

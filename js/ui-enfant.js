@@ -1429,7 +1429,7 @@
              Un lecteur d'écran qui lirait « case non cochée » sur un geste qui
              ouvre un autre écran dirait faux (V8-01, V8-05) : le chevron et le
              rôle de bouton disent ce qu'il fait. La ligne, elle, est la même. */
-          Kit.choix(liste, 'c1', '›', 'Autre cas…',
+          Kit.choix(liste, 'c1 autre', '›', 'Autre cas…',
             'Jour non travaillé, sans solde, ajustement de vos heures',
             function () { feuilleAutresCas(d, servis); });
           dessinerDetail();
@@ -1853,7 +1853,8 @@
       if (e.attendu != null) {
         return plage + 'votre répartition couvre ' + Kit.jours(couvre) +
           ', alors que la période en compte ' + Kit.jours(e.attendu) +
-          ' — samedis inclus.';
+          /* §6.3 — plus de « samedis inclus » : ils ne le sont plus d'office. */
+          ', samedis comptés compris.';
       }
       return plage + 'votre répartition ne correspond pas au décompte de la période.';
     }

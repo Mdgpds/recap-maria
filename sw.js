@@ -96,7 +96,21 @@
    `css/style.css`. Ils se répondent — la liste de choix est écrite dans l'un
    et habillée par l'autre — et servir le script neuf avec l'ancienne feuille
    de style donnerait une liste sans son espacement ni sa pastille. */
-var CACHE = 'recap-mes-enfants-v3';
+/* LA LISTE DE CHOIX AUX MESURES DE LA MAQUETTE — NOM DE CACHE CHANGÉ.
+
+   Premier rendu côte à côte : « ça ne ressemble toujours pas à la maquette ».
+   La pastille radio et la ligne de choix changent dans `css/style.css`, et
+   `js/ui-enfant.js` pose une classe de plus. Les deux se répondent : servir
+   l'un sans l'autre donnerait un chevron sans son style. */
+/* LA RÈGLE DES CINQ SAMEDIS — NOM DE CACHE CHANGÉ.
+
+   Six fichiers servis changent : `js/engine.js`, `js/chaine-mois.js`,
+   `js/db.js`, `js/ui-kit.js`, `js/ui-conges.js`, `js/ui-document.js`,
+   `js/ui-menu.js` et `js/ui-enfant.js`. Ils se répondent tous : un moteur neuf
+   servi avec un écran ancien produirait des décomptes incohérents ET
+   CRÉDIBLES — le pire résultat possible sur le chiffre que les familles
+   contestent. */
+var CACHE = 'recap-mes-enfants-v5';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

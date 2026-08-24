@@ -33,6 +33,16 @@ var Decor = require('./decor-avenants.js');
 
 
 var Engine = require('../js/engine.js');
+
+/* Les samedis éligibles d'une période, demandés au moteur. */
+function samedisDe(debut, fin, planning) {
+  return Engine.samedisEligibles(debut, fin, planning || [1, 2, 3, 4, 5]);
+}
+/* Le planning du contrat du scénario en cours : les samedis éligibles en
+   dépendent (un contrat du lundi au jeudi reprend le lundi, son samedi de
+   prolongation n'est pas le même). */
+var planningCourant = [1, 2, 3, 4, 5];
+function planningDe() { return planningCourant; }
 global.Engine = Engine;
 
 var echecs = 0;
@@ -90,6 +100,24 @@ function baseSimulee(opts) {
     },
     listRecapsPeriode: function () { return Promise.resolve([]); },
     getRecap: function () { return Promise.resolve(null); },
+    /* LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026) — POURQUOI CE DÉCOR
+       COMPTE TOUS SES SAMEDIS.
+
+       Ce parcours de bout en bout vérifie que la ventilation choisie par Maria
+       traverse l'écran, la base et le moteur sans se perdre. Il a été écrit
+       quand RG-06 comptait tous les samedis d'office. Pour qu'il continue de
+       vérifier CE QU'IL VÉRIFIE, le décor déclare comptés tous les samedis
+       éligibles de ses périodes — convention du §4.2. Aucune valeur attendue
+       n'est touchée, aucune assertion ne disparaît. */
+    listSamedisConge: function (id, debut, fin) {
+      var out = [];
+      imputations.forEach(function (i) {
+        samedisDe(i.date_debut, i.date_fin, planningDe()).forEach(function (d) {
+          if (d >= debut && d <= fin) out.push({ imputation_id: i.id, date_samedi: d });
+        });
+      });
+      return Promise.resolve(out);
+    },
     listImputations: function (id, debut, fin) {
       return Promise.resolve(imputations.filter(function (i) {
         return i.date_debut <= fin && i.date_fin >= debut;
@@ -116,6 +144,7 @@ function moisDe(chaine, annee, mois) {
 /* On recharge la chaîne à chaque cas : elle lit `global.DB` à l'appel, pas au
    chargement, mais on évite tout état résiduel. */
 function chaine(opts, cible) {
+  planningCourant = ((opts.contrat || contrat()).jours_planning) || [1, 2, 3, 4, 5];
   global.DB = baseSimulee(opts);
   delete require.cache[require.resolve('../js/chaine-mois.js')];
   var Chaine = require('../js/chaine-mois.js');
@@ -135,16 +164,28 @@ function chaine(opts, cible) {
   var semaine = ['2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12'];
   var periode = { date_debut: '2026-06-08', date_fin: '2026-06-12' };
 
-  egal(Engine.decompterJoursOuvrables(periode.date_debut, periode.date_fin, [1, 2, 3, 4, 5]), 6,
+  egal(Engine.decompterJoursOuvrables(periode.date_debut, periode.date_fin, [1, 2, 3, 4, 5],
+    samedisDe(periode.date_debut, periode.date_fin, [1, 2, 3, 4, 5])), 6,
     'RG-06 : la semaine complète compte bien 6 jours ouvrables, samedi compris');
 
   /* Cas 1 — aucune imputation : l'ordre du contrat s'applique (RG-07).
      Le contrat a 2 jours de congés payés au compteur : il les consomme. */
   var sansChoix = await chaine({ journees: journeesConge(semaine), cpAcquis: 20, imputations: [] });
   var m1 = moisDe(sansChoix, 2026, 6).resultat;
-  egal(m1.joursCongesDecomptes, 6, 'sans choix : 6 jours décomptés');
+  /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
+
+     Ce cas n'a AUCUNE imputation : c'est le chemin « aucun choix », où
+     l'ordre du contrat s'applique. Sans imputation, il n'y a aucun samedi
+     coché — décision d'Adrien du 24 août : « rien n'est coché par défaut,
+     c'est Maria qui arbitre ». La semaine compte donc 5 jours et non 6, et la
+     ventilation par défaut porte sur 5.
+
+     Ce que ce cas vérifie ne change pas d'un mot : l'ordre du contrat consomme
+     d'abord les congés payés disponibles, le reste part en sans solde. */
+  egal(m1.joursCongesDecomptes, 5,
+    'sans choix : 5 jours décomptés — aucun samedi coché, aucun samedi compté');
   egal(m1.imputation.joursSurCp, 2, 'sans choix : l’ordre par défaut consomme les 2 jours de congés payés');
-  egal(m1.imputation.joursSansSolde, 4, 'sans choix : et met 4 jours sans solde');
+  egal(m1.imputation.joursSansSolde, 3, 'sans choix : et met le reste sans solde');
 
   /* Cas 2 — LE CAS QUI NE PASSAIT PAS. Maria choisit de tout mettre sans
      solde pour préserver ses deux jours de congés payés. */
@@ -192,7 +233,7 @@ function chaine(opts, cible) {
   var lundiJeudi = contrat([1, 2, 3, 4]);
   var joursLJ = ['2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11'];
 
-  var attendu = Engine.decompterJoursOuvrables('2026-06-08', '2026-06-11', [1, 2, 3, 4]);
+  var attendu = Engine.decompterJoursOuvrables('2026-06-08', '2026-06-11', [1, 2, 3, 4], samedisDe('2026-06-08', '2026-06-11', [1, 2, 3, 4]));
   egal(attendu, 6,
     'B2 : du lundi au jeudi, un contrat qui ne garde pas le vendredi décompte ' +
     '6 jours ouvrables — la reprise n’a lieu que le lundi suivant');
@@ -264,6 +305,12 @@ function chaine(opts, cible) {
     'de tomber, y compris celui qui lui permet de corriger');
 
   var mRepli = repli && moisDe(repli, 2026, 6);
+  /* INCHANGÉ, ET C'EST LE POINT INTÉRESSANT. La ligne fautive est écartée,
+     mais SES SAMEDIS RESTENT COMPTÉS : le décompte RG-06 d'une période ne
+     dépend pas de sa ventilation. Le mois vaut donc toujours 6 jours, répartis
+     dans l'ordre du contrat. Si les samedis suivaient le sort de la
+     ventilation, le décompte changerait sous les yeux de Maria à cause d'une
+     erreur de répartition — exactement ce que ce cas surveille. */
   egal(mRepli && mRepli.resultat.joursCongesDecomptes, 6,
     '§16.1 A2 : le mois est calculé avec le décompte réel du moteur');
   egal(mRepli && mRepli.resultat.imputation.joursSansSolde, 0,
@@ -289,9 +336,9 @@ function chaine(opts, cible) {
     imputations: [
       { id: 'bonne', contrat_id: 'c-test',
         date_debut: '2026-06-08', date_fin: '2026-06-09',
-        jours_ouvrables: Engine.decompterJoursOuvrables('2026-06-08', '2026-06-09', [1, 2, 3, 4]),
+        jours_ouvrables: Engine.decompterJoursOuvrables('2026-06-08', '2026-06-09', [1, 2, 3, 4], samedisDe('2026-06-08', '2026-06-09', [1, 2, 3, 4])),
         jours_sur_cp: 0, jours_sur_sup: 0,
-        jours_sans_solde: Engine.decompterJoursOuvrables('2026-06-08', '2026-06-09', [1, 2, 3, 4]) },
+        jours_sans_solde: Engine.decompterJoursOuvrables('2026-06-08', '2026-06-09', [1, 2, 3, 4], samedisDe('2026-06-08', '2026-06-09', [1, 2, 3, 4])) },
       { id: 'fautive', contrat_id: 'c-test',
         date_debut: '2026-06-22', date_fin: '2026-06-23',
         jours_ouvrables: 1, jours_sur_cp: 1, jours_sur_sup: 0, jours_sans_solde: 0 }
@@ -316,16 +363,16 @@ function chaine(opts, cible) {
     journees: journeesConge(aCheval), cpAcquis: 200,
     imputations: [{ id: 'i1', contrat_id: 'c-test',
       date_debut: '2026-07-29', date_fin: '2026-08-04',
-      jours_ouvrables: Engine.decompterJoursOuvrables('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5]),
+      jours_ouvrables: Engine.decompterJoursOuvrables('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5], samedisDe('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5])),
       jours_sur_cp: 0, jours_sur_sup: 0,
-      jours_sans_solde: Engine.decompterJoursOuvrables('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5]) }]
+      jours_sans_solde: Engine.decompterJoursOuvrables('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5], samedisDe('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5])) }]
   }, { annee: 2026, mois: 8 });
 
   var juillet = moisDe(chevalChaine, 2026, 7);
   var aout = moisDe(chevalChaine, 2026, 8);
   assert(!!juillet && !!aout, 'les deux mois sont dans la chaîne');
   var totalDecompte = juillet.resultat.joursCongesDecomptes + aout.resultat.joursCongesDecomptes;
-  egal(totalDecompte, Engine.decompterJoursOuvrables('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5]),
+  egal(totalDecompte, Engine.decompterJoursOuvrables('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5], samedisDe('2026-07-29', '2026-08-04', [1, 2, 3, 4, 5])),
     'la somme des deux mois vaut le décompte de la période entière — RG-06 ne ' +
     'se redécoupe pas mois par mois');
   egal(juillet.resultat.imputation.joursSurCp + aout.resultat.imputation.joursSurCp, 0,

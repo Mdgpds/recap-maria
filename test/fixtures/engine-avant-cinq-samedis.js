@@ -114,45 +114,14 @@
      d'absence posé. Le décompte court du premier jour d'absence au dernier
      jour ouvrable précédant la reprise (reprise = premier jour travaillé —
      jour du planning, non férié — strictement après `finStr`), en EXCLUANT
-     les dimanches et les jours fériés.
-
-     LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026, §2.2). Les samedis ne
-     sont plus inclus systématiquement. Un samedi que Maria NE TRAVAILLE PAS
-     n'est décompté que s'il figure dans `samedisComptes`. Un samedi qui est
-     dans le planning du contrat reste décompté d'office — c'est une vraie
-     journée de garde manquée —, et un samedi férié n'est jamais décompté.
-
-     `samedisComptes` : liste (ou objet indexé) de dates ISO. Le moteur ne va
-     jamais les chercher : elles lui ARRIVENT en donnée, comme les journées et
-     les avenants. Il ne connaît pas l'année de référence ni le quota de cinq —
-     ce sont des affaires de base et d'écran, pas de calcul.
-
-     Semaine complète lundi -> vendredi, reprise le lundi : 5 sans le samedi,
-     6 avec. Lundi -> mercredi, reprise le jeudi = 3. Un jour isolé = 1. */
-  function decompterJoursOuvrables(debutStr, finStr, joursPlanning, samedisComptes) {
-    var tranches = joursOuvrablesParMois(debutStr, finStr, joursPlanning, samedisComptes);
+     les dimanches et les jours fériés, en INCLUANT les samedis.
+     Une semaine complète lundi -> vendredi, reprise le lundi = 6.
+     Lundi -> mercredi, reprise le jeudi = 3. Un jour isolé = 1. */
+  function decompterJoursOuvrables(debutStr, finStr, joursPlanning) {
+    var tranches = joursOuvrablesParMois(debutStr, finStr, joursPlanning);
     var n = 0;
     for (var i = 0; i < tranches.length; i++) n += tranches[i].jours;
     return n;
-  }
-
-  /* `samedisComptes` peut arriver en tableau ou en objet indexé : on rend un
-     test d'appartenance, et `null`/absent vaut « aucun samedi compté ». */
-  function ensembleDeSamedis(samedisComptes) {
-    var vus = {};
-    if (!samedisComptes) return vus;
-    if (Object.prototype.toString.call(samedisComptes) === '[object Array]') {
-      for (var i = 0; i < samedisComptes.length; i++) {
-        if (samedisComptes[i]) vus[String(samedisComptes[i]).slice(0, 10)] = true;
-      }
-      return vus;
-    }
-    for (var k in samedisComptes) {
-      if (Object.prototype.hasOwnProperty.call(samedisComptes, k) && samedisComptes[k]) {
-        vus[String(k).slice(0, 10)] = true;
-      }
-    }
-    return vus;
   }
 
   /* Même décompte que ci-dessus, mais VENTILÉ par mois calendaire, dans
@@ -171,11 +140,9 @@
      congé n'est posée : ce jour ne serait imputé nulle part, et la semaine
      de Maria ne compterait plus que 5 jours au lieu de 6. C'est exactement
      le litige historique avec les familles. */
-  function joursOuvrablesParMois(debutStr, finStr, joursPlanning, samedisComptes) {
+  function joursOuvrablesParMois(debutStr, finStr, joursPlanning) {
     var planning = joursPlanning || PLANNING_DEFAUT;
     if (finStr < debutStr) throw new Error('joursOuvrablesParMois : fin < debut');
-    var comptes = ensembleDeSamedis(samedisComptes);
-    var samediTravaille = planning.indexOf(6) !== -1;
 
     var reprise = Feries.ajouterJours(finStr, 1);
     while (planning.indexOf(jourSemaine(reprise)) === -1 || Feries.estJourFerie(reprise)) {
@@ -187,47 +154,12 @@
     for (var d = debutStr; d < reprise; d = Feries.ajouterJours(d, 1)) {
       if (jourSemaine(d) === 7) continue;      // dimanche exclu
       if (Feries.estJourFerie(d)) continue;    // férié exclu
-      /* LA RÈGLE DES CINQ SAMEDIS, et sa limite exacte. Un samedi du planning
-         se décompte d'office (§2.5) ; un samedi non travaillé ne se décompte
-         que s'il a été choisi. Le quota de cinq n'est PAS vérifié ici : le
-         moteur compte ce qu'on lui donne, l'écran et la base tiennent le
-         quota. */
-      if (jourSemaine(d) === 6 && !samediTravaille && !comptes[d]) continue;
-      var cle = (d <= finStr) ? d.slice(0, 7) : moisDeFin;
+      var cle = (d <= finStr) ? d.slice(0, 7) : moisDeFin;   // samedi inclus
       var derniere = tranches[tranches.length - 1];
       if (derniere && derniere.cle === cle) derniere.jours++;
       else tranches.push({ cle: cle, jours: 1 });
     }
     return tranches;
-  }
-
-  /* LES SAMEDIS QU'UNE PÉRIODE PROPOSE AU CHOIX (§5.2).
-
-     Ce sont les samedis de la période — bornes du décompte comprises, donc
-     jusqu'à la veille de la reprise — qui ne sont NI dans le planning du
-     contrat, NI fériés. Les autres ne sont pas des choix : le premier se
-     décompte d'office, le second ne se décompte jamais.
-
-     Cette liste vit dans le moteur, à côté de la boucle qu'elle imite, pour
-     la même raison que `feriesDeLaPeriode` (lot 17) : un écran qui la
-     recalculerait redirait la règle RG-06 une deuxième fois, et les deux
-     divergeraient. */
-  function samedisEligibles(debutStr, finStr, joursPlanning) {
-    var planning = joursPlanning || PLANNING_DEFAUT;
-    if (finStr < debutStr) throw new Error('samedisEligibles : fin < debut');
-    if (planning.indexOf(6) !== -1) return [];   // samedi travaillé : aucun choix
-
-    var reprise = Feries.ajouterJours(finStr, 1);
-    while (planning.indexOf(jourSemaine(reprise)) === -1 || Feries.estJourFerie(reprise)) {
-      reprise = Feries.ajouterJours(reprise, 1);
-    }
-    var out = [];
-    for (var d = debutStr; d < reprise; d = Feries.ajouterJours(d, 1)) {
-      if (jourSemaine(d) !== 6) continue;
-      if (Feries.estJourFerie(d)) continue;
-      out.push(d);
-    }
-    return out;
   }
 
   /* Erreur porteuse d'un CODE, jamais d'une phrase : la traduction en
@@ -759,9 +691,8 @@
      dans chaque mois (§5.3 et piège n° 4 de la spec du lot 9).
      La SOMME des parts égale EXACTEMENT l'imputation posée : aucune perte
      d'arrondi, quel que soit le nombre de mois. */
-  function repartirImputationParMois(imputation, planning, samedisComptes) {
-    var tranches = joursOuvrablesParMois(imputation.date_debut, imputation.date_fin,
-      planning, samedisComptes);
+  function repartirImputationParMois(imputation, planning) {
+    var tranches = joursOuvrablesParMois(imputation.date_debut, imputation.date_fin, planning);
     var poidsTotal = 0;
     for (var t = 0; t < tranches.length; t++) poidsTotal += tranches[t].jours;
 
@@ -951,18 +882,6 @@
        ne les lit ni en base ni à l'horloge : c'est la couche d'appel qui les
        charge et les lui passe, comme les journées et les imputations. */
     var periodesFam = entrees.periodesFamiliarisation || [];
-
-    /* LA RÈGLE DES CINQ SAMEDIS (§4.1 des specs du 24 août 2026) — LES SAMEDIS
-       COMPTÉS, EN DONNÉE. Comme les journées, les imputations et les périodes
-       de familiarisation : le moteur ne va jamais les chercher. Ce sont les
-       samedis que Maria a cochés pour CE contrat ; leur année de référence et
-       leur quota de cinq ne le regardent pas.
-
-       Un même samedi n'appartient qu'à une seule période — deux périodes d'un
-       même contrat ne peuvent pas se chevaucher (contrainte
-       `imputation_sans_chevauchement`) — donc un ensemble plat suffit et ne
-       peut pas être ambigu. */
-    var samedisComptes = entrees.samedisComptes || [];
 
     var joursPresence = 0;
     var entretienCentimes = 0;
@@ -1257,7 +1176,7 @@
       if (impCouvrante && dejaImputees.indexOf(impCouvrante) !== -1) continue;
       if (impCouvrante) {
         dejaImputees.push(impCouvrante);
-        var parts = repartirImputationParMois(impCouvrante, planning, samedisComptes);
+        var parts = repartirImputationParMois(impCouvrante, planning);
         var partMois = null;
         for (var q = 0; q < parts.length; q++) {
           if (parts[q].cle === cleMois) partMois = parts[q];
@@ -1298,12 +1217,7 @@
            distinguer. `choixEcarte` porte la période choisie par Maria qui
            n'a pas pu s'appliquer. */
         plan.push({
-          /* Une période SANS ventilation enregistrée n'a pas d'imputation, donc
-             pas de samedi coché rattaché : l'ensemble du contrat est passé
-             quand même, pour que le décompte d'une période dont la
-             ventilation a été ÉCARTÉE reste celui de ses samedis choisis. */
-          nbJours: decompterJoursOuvrables(periode.debut, periode.fin, planning,
-            samedisComptes),
+          nbJours: decompterJoursOuvrables(periode.debut, periode.fin, planning),
           imposee: null,
           date_debut: periode.debut,
           date_fin: periode.fin,
@@ -1787,8 +1701,6 @@
     soldeFinContrat: soldeFinContrat,
     estJourFerie: estJourFerie,
     decompterJoursOuvrables: decompterJoursOuvrables,
-    /* §5.2 — les samedis d'une période qui sont un CHOIX, et non une règle. */
-    samedisEligibles: samedisEligibles,
     imputerConges: imputerConges,
     minutesSupDuJour: minutesSupDuJour,
     montantCentimes: montantCentimes,

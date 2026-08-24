@@ -139,8 +139,39 @@ function baseSimulee(opts) {
     listPeriodesFamiliarisationContrat: function () { return Promise.resolve([]); },
     getJourneesMois: function () { return Promise.resolve(opts.journees || {}); },
     listRecapsPeriode: function () { return Promise.resolve([]); },
-    listImputations: function () { return Promise.resolve(opts.imputations || []); }
+    listImputations: function () { return Promise.resolve(opts.imputations || []); },
+    /* LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026) — POURQUOI CE DÉCOR
+       COMPTE TOUS SES SAMEDIS.
+
+       Ce fichier vérifie que la ventilation CHOISIE par Maria atteint le
+       moteur, et que le repli du §16.1 n'invente rien. Il a été écrit quand
+       RG-06 comptait tous les samedis d'office, et ses périodes valent 6 jours.
+
+       Pour que ces cas continuent de vérifier ce qu'ils vérifient — le chemin
+       de la ventilation, pas la règle du samedi — le décor déclare tous les
+       samedis éligibles de ses périodes comptés. C'est la convention du §4.2 :
+       « avec tous les samedis éligibles passés en entrée, le décompte doit
+       être rigoureusement identique à celui d'avant ».
+
+       AUCUNE VALEUR ATTENDUE N'EST TOUCHÉE, aucune assertion ne disparaît. */
+    listSamedisConge: function () {
+      return Promise.resolve(samedisDesImputations(opts.imputations).map(function (d) {
+        return { imputation_id: null, date_samedi: d };
+      }));
+    }
   };
+}
+
+/* Tous les samedis éligibles des périodes déclarées par un décor. La liste
+   vient du moteur : un test qui la déduirait lui-même redirait RG-06. */
+function samedisDesImputations(imputations) {
+  var vus = {};
+  (imputations || []).forEach(function (i) {
+    Engine.samedisEligibles(i.date_debut, i.date_fin, PLANNING).forEach(function (d) {
+      vus[d] = true;
+    });
+  });
+  return Object.keys(vus).sort();
 }
 
 function chaine(opts, cible) {
@@ -167,7 +198,9 @@ function moisDe(s, annee, mois) {
      en production, à un décor fictif près. */
   var jours = ['2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12',
                '2026-06-15', '2026-06-16', '2026-06-17', '2026-06-18', '2026-06-19'];
-  var decompte = Engine.decompterJoursOuvrables('2026-06-08', '2026-06-19', PLANNING);
+  var SAMEDIS_A8 = Engine.samedisEligibles('2026-06-08', '2026-06-19', PLANNING);
+  var decompte = Engine.decompterJoursOuvrables('2026-06-08', '2026-06-19', PLANNING,
+    SAMEDIS_A8);
 
   var CINQ_JOURS_DE_RECUP = 5 * 540;   // minutes_par_jour_conge du décor
   var opts = {
@@ -193,7 +226,8 @@ function moisDe(s, annee, mois) {
         { brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }),
       journees: jours.map(function (d) { return opts.journees[d]; }),
       compteurEntree: { minutesSup: CINQ_JOURS_DE_RECUP, minutesCpAcquis: 0, minutesCpPris: 0 },
-      annee: 2026, mois: 6, imputations: opts.imputations
+      annee: 2026, mois: 6, imputations: opts.imputations,
+      samedisComptes: SAMEDIS_A8
     });
   } catch (e) { refus = e; }
   egal(refus && refus.code, 'IMPUTATION_DEPASSE_RESERVES',
@@ -269,9 +303,15 @@ function moisDe(s, annee, mois) {
      veille de la reprise). La question est de savoir combien tombent en
      juillet et combien en août — et de ne JAMAIS redécouper la période. */
   var imp = { date_debut: '2026-07-27', date_fin: '2026-08-07' };
-  var total = Engine.decompterJoursOuvrables(imp.date_debut, imp.date_fin, PLANNING);
-  var juillet = Chaine.partDuMois(Engine, imp, PLANNING, 2026, 7);
-  var aout = Chaine.partDuMois(Engine, imp, PLANNING, 2026, 8);
+  var total = Engine.decompterJoursOuvrables(imp.date_debut, imp.date_fin, PLANNING,
+    Engine.samedisEligibles(imp.date_debut, imp.date_fin, PLANNING));
+  /* EXIGENCE CHANGÉE — `partDuMois` reçoit désormais les samedis comptés,
+     comme le décompte lui-même : la part d'un mois ne peut pas être calculée
+     avec une règle et le total avec une autre. On lui passe donc les mêmes
+     samedis qu'au décompte ci-dessus, et les deux parts gardent leur valeur. */
+  var SAMEDIS_CHEVAL = Engine.samedisEligibles(imp.date_debut, imp.date_fin, PLANNING);
+  var juillet = Chaine.partDuMois(Engine, imp, PLANNING, 2026, 7, SAMEDIS_CHEVAL);
+  var aout = Chaine.partDuMois(Engine, imp, PLANNING, 2026, 8, SAMEDIS_CHEVAL);
 
   egal(juillet + aout, total,
     'La somme des parts vaut EXACTEMENT le décompte de la période — aucune ' +
@@ -283,8 +323,10 @@ function moisDe(s, annee, mois) {
     'pouvait pas montrer');
 
   var isolee = { date_debut: '2026-06-08', date_fin: '2026-06-12' };
-  egal(Chaine.partDuMois(Engine, isolee, PLANNING, 2026, 6),
-    Engine.decompterJoursOuvrables('2026-06-08', '2026-06-12', PLANNING),
+  egal(Chaine.partDuMois(Engine, isolee, PLANNING, 2026, 6,
+    Engine.samedisEligibles(isolee.date_debut, isolee.date_fin, PLANNING)),
+    Engine.decompterJoursOuvrables('2026-06-08', '2026-06-12', PLANNING,
+      Engine.samedisEligibles('2026-06-08', '2026-06-12', PLANNING)),
     'Une période d’un seul mois vaut son décompte entier');
   egal(Chaine.partDuMois(Engine, isolee, PLANNING, 2026, 7), 0,
     'Et rien ne déborde sur un mois qu’elle ne touche pas');

@@ -47,6 +47,13 @@
     return charger(ctx, contrat, m);
   }
 
+  /* Le mois, débordé d'un mois de chaque côté. */
+  function fenetreSamedis(m) {
+    var d = new Date(Date.UTC(m.annee, m.mois - 2, 1));
+    var f = new Date(Date.UTC(m.annee, m.mois + 1, 0));
+    return { debut: d.toISOString().slice(0, 10), fin: f.toISOString().slice(0, 10) };
+  }
+
   function charger(ctx, contrat, m) {
     if (!contrat) throw new Error('contrat introuvable');
 
@@ -57,13 +64,27 @@
 
     return Promise.all([
       global.App.serie(contrat, m),
-      global.App.journees(contrat.id, m.annee, m.mois)
+      global.App.journees(contrat.id, m.annee, m.mois),
+      /* §6.2 — LES SAMEDIS COMPTÉS DU MOIS. Une période qui compte un samedi
+         le NOMME sur le document : « du 19 au 24 octobre — 6 jours ouvrables,
+         dont le samedi 24 octobre ». Sans cette phrase, la famille lit un
+         6 qu'aucune ligne n'explique, et c'est exactement le litige que ce
+         document existe pour éteindre.
+
+         La fenêtre déborde du mois : un samedi qui prolonge une semaine de fin
+         de mois appartient au mois suivant. Une lecture qui échoue rend une
+         liste vide — le document reste juste, il est seulement moins bavard,
+         et aucun chiffre n'en dépend. */
+      (typeof global.DB.listSamedisConge === 'function'
+        ? global.DB.listSamedisConge(contrat.id, fenetreSamedis(m).debut,
+            fenetreSamedis(m).fin).catch(function () { return []; })
+        : Promise.resolve([]))
     ]).then(function (r) {
       var entree = global.App.moisDe(r[0], m.annee, m.mois);
       if (!entree) throw new Error('mois hors du contrat');
       vue = {
         contrat: contrat, annee: m.annee, mois: m.mois,
-        entree: entree, journees: r[1],
+        entree: entree, journees: r[1], samedis: r[2] || [],
         lectureSeule: !!contrat.archive
       };
       Kit.vider(ctx.corps);
@@ -229,6 +250,17 @@
     }
     if (r.joursCongesDecomptes > 0) {
       lignesConge.push(['Décompte en jours ouvrables', r.joursCongesDecomptes + ' j']);
+      /* §6.2 — la période NOMME son samedi. Une période sans samedi compté ne
+         dit rien de plus : le décompte parle seul. */
+      var samedisDits = samedisDuMois();
+      if (samedisDits.length) {
+        lignesConge.push(['— ' + (samedisDits.length > 1 ? 'dont les samedis ' : 'dont le ') +
+          samedisDits.map(function (d) {
+            return samedisDits.length > 1
+              ? Kit.jourLong(d).toLowerCase().replace('samedi ', '')
+              : Kit.jourLong(d).toLowerCase();
+          }).join(', '), '', { doux: true }]);
+      }
       lignesConge.push(['— sur congés payés', Kit.jours(imp.joursSurCp || 0)]);
       lignesConge.push(['— sur récupération', Kit.jours(imp.joursSurSup || 0)]);
       if ((imp.joursSansSolde || 0) > 0) lignesConge.push(['— sans solde', Kit.jours(imp.joursSansSolde)]);
@@ -547,6 +579,27 @@
      séparer ferait diverger la pièce papier de ce qu'on colle dans un message,
      et c'est exactement le genre d'écart qu'on ne voit qu'une fois le document
      parti. */
+  /* Les samedis comptés qui se rattachent aux congés de CE mois. Le rattachement
+     suit celui du décompte RG-06 : un samedi de prolongation appartient au mois
+     du dernier jour posé. On retient donc les samedis dont la période commence
+     dans le mois affiché, plus ceux qui y tombent. */
+  function samedisDuMois() {
+    var cle = vue.annee + '-' + String(vue.mois).padStart(2, '0');
+    var vus = {};
+    (vue.samedis || []).forEach(function (sm) {
+      var d = String(sm.date_samedi || sm).slice(0, 10);
+      vus[d] = true;
+    });
+    return Object.keys(vus).filter(function (d) {
+      /* Le samedi du mois, ou celui du 1er jour du mois suivant qui prolonge
+         la dernière semaine de congé du mois affiché. */
+      if (d.slice(0, 7) === cle) return true;
+      var veille = new Date(Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1,
+        Number(d.slice(8, 10)) - 1)).toISOString().slice(0, 10);
+      return veille.slice(0, 7) === cle;
+    }).sort();
+  }
+
   function encartCongesUtile() {
     var r = vue.entree && vue.entree.resultat;
     if (!r) return false;
@@ -557,10 +610,12 @@
     return !!(j && j.length);
   }
 
-  var ENCART_RG06 =
-    'Les congés payés d’une assistante maternelle se comptent en jours ouvrables, ' +
-    'du lundi au samedi, dimanches et jours fériés exclus. Une semaine complète compte ' +
-    'donc 6 jours, même si je ne travaille pas le samedi.';
+  /* §6.3 — UNE SEULE SOURCE, ET PAS HUIT. La phrase vivait ici, recopiée
+     ailleurs. Elle vit maintenant dans `js/ui-kit.js`, et le document à
+     l'écran, le texte à copier et l'image la lisent tous les trois au même
+     endroit. `UiDocument.ENCART_RG06` reste exporté : c'est ce que lisent les
+     tests, et le document reste le lieu où la phrase compte le plus. */
+  var ENCART_RG06 = Kit.ENCART_RG06;
 
   /* ------------------------------------------------------------------ */
   /* Rendu écran                                                         */

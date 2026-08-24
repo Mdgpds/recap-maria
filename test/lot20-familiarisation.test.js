@@ -341,9 +341,14 @@ test('B1 — un congé de Maria dans la période est décompté et imputé', fun
     /* Dix jours de congés payés au compteur : sans réserve, l'imputation
        tomberait en sans solde et on ne verrait pas ce qu'on teste. */
     compteurEntree: { minutesSup: 0, minutesCpAcquis: 5400, minutesCpPris: 0 },
-    annee: 2026, mois: 9, periodesFamiliarisation: PERIODE_1_19
+    annee: 2026, mois: 9, periodesFamiliarisation: PERIODE_1_19,
+    /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
+       Le samedi 12 ne compte plus d'office : on le coche pour que ce cas
+       continue de vérifier ce qu'il vérifie — qu'un congé de Maria DANS une
+       période de familiarisation est bien décompté et imputé. */
+    samedisComptes: ['2026-09-12']
   });
-  /* RG-06 : du 7 au 11, reprise le lundi 14 — le samedi 12 est inclus. */
+  /* RG-06 : du 7 au 11, reprise le lundi 14 — le samedi 12 est compté. */
   egal(r.joursCongesDecomptes, 6, 'jours ouvrables décomptés');
   egal(r.imputation.minutesCpConsommees, 3240, 'minutes de congés payés consommées');
   egal(r.imputation.joursSurCp, 6, 'jours imputés sur les congés payés');
@@ -400,6 +405,12 @@ test('B2 — la ventilation choisie par Maria n’est plus écartée', function 
     contrat: CONTRAT, conditions: conditions(), journees: journees,
     compteurEntree: { minutesSup: 0, minutesCpAcquis: 5400, minutesCpPris: 0 },
     annee: 2026, mois: 9, periodesFamiliarisation: PERIODE_1_19,
+    /* EXIGENCE CHANGÉE — même raison qu'au cas B1 ci-dessus : le samedi 19
+       septembre est celui qui porte le cinquième jour de cette période. Sans
+       lui, `jours_ouvrables: 5` ne correspondrait plus au décompte et la
+       ventilation serait écartée — ce qui masquerait précisément le défaut
+       que ce cas surveille. */
+    samedisComptes: ['2026-09-19'],
     imputations: [{
       date_debut: '2026-09-17', date_fin: '2026-09-22',
       jours_ouvrables: 5, jours_sur_cp: 0, jours_sur_sup: 0, jours_sans_solde: 5

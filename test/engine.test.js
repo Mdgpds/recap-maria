@@ -124,11 +124,44 @@ function conditionsDe(c, salaire) {
   return out;
 }
 
+/* LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026) — POURQUOI CES CAS
+   PASSENT DÉSORMAIS LEURS SAMEDIS AU MOTEUR.
+
+   Ce fichier vérifie les CHIFFRES DU CAHIER DES CHARGES : l'imputation, le
+   reliquat, les congés payés consommés, le prorata. Il a été écrit quand
+   RG-06 comptait tous les samedis d'office, et ses cas illustrent des
+   semaines de congé qui valent 6 jours.
+
+   Depuis la règle des cinq samedis, un samedi non travaillé ne compte que
+   s'il est choisi. Pour que ces cas continuent d'illustrer CE QU'ILS
+   ILLUSTRENT — l'arithmétique de l'imputation, pas la règle du samedi — leurs
+   entrées portent désormais tous les samedis. C'est exactement la convention
+   du §4.2 : « avec tous les samedis éligibles passés en entrée, le décompte
+   doit être rigoureusement identique à celui d'avant ».
+
+   AUCUNE VALEUR ATTENDUE N'EST TOUCHÉE, et aucune assertion ne disparaît. Un
+   cas qui veut vérifier la règle elle-même pose `samedisComptes` lui-même —
+   T8 le fait, sur ses deux branches. La règle est par ailleurs prouvée dans
+   `lot23-differentiel.test.js`. */
+function tousLesSamedisDuMois(annee, mois) {
+  var out = [];
+  var premier = annee + '-' + String(mois).padStart(2, '0') + '-01';
+  var d = Feries.ajouterJours(premier, -20);
+  var fin = Feries.ajouterJours(premier, 62);
+  for (; d <= fin; d = Feries.ajouterJours(d, 1)) {
+    if (Engine.jourSemaine(d) === 6) out.push(d);
+  }
+  return out;
+}
+
 /* Traduit une entrée écrite dans la forme d'avant le lot 17. */
 function entrees(o) {
   var out = {};
   var k;
   for (k in o) if (k !== 'salaire' && k !== 'compteurEntree') out[k] = o[k];
+  if (!Object.prototype.hasOwnProperty.call(o, 'samedisComptes')) {
+    out.samedisComptes = tousLesSamedisDuMois(o.annee, o.mois);
+  }
   out.conditions = conditionsDe(o.contrat, o.salaire);
   var ce = o.compteurEntree || {};
   out.compteurEntree = {
@@ -341,13 +374,26 @@ definir('T7 — Immuabilité et RG-15 (changement de salaire au 1er avril)', fun
 });
 
 definir('T8 — Décompte des jours ouvrables (RG-06)', function () {
-  /* lundi -> vendredi, reprise le lundi suivant : 6 (samedi inclus) */
-  egal(Engine.decompterJoursOuvrables('2025-09-01', '2025-09-05'), 6, 'T8.semaine complète');
+  /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
+
+     « lundi -> vendredi, reprise le lundi suivant : 6, samedi inclus » n'est
+     plus vrai d'office : le samedi ne compte que s'il est choisi. L'assertion
+     n'est pas retirée, elle est DÉDOUBLÉE — 5 sans le samedi, 6 avec — parce
+     que c'est désormais la règle entière. Les trois autres branches de ce cas
+     ne portent aucun samedi et ne bougent pas. */
+  egal(Engine.decompterJoursOuvrables('2025-09-01', '2025-09-05'), 5,
+    'T8.semaine complète sans samedi coché');
+  egal(Engine.decompterJoursOuvrables('2025-09-01', '2025-09-05', null,
+    ['2025-09-06']), 6, 'T8.semaine complète avec le samedi coché');
   /* lundi -> mercredi, reprise le jeudi : 3 */
   egal(Engine.decompterJoursOuvrables('2025-09-01', '2025-09-03'), 3, 'T8.lundi-mercredi');
   /* semaine contenant un férié en milieu de semaine (Ascension jeudi
      29/05/2025) : 5 */
-  egal(Engine.decompterJoursOuvrables('2025-05-26', '2025-05-30'), 5, 'T8.semaine avec férié');
+  /* Même dédoublement : sans le samedi 31 mai, il en reste 4. */
+  egal(Engine.decompterJoursOuvrables('2025-05-26', '2025-05-30'), 4,
+    'T8.semaine avec férié, sans samedi coché');
+  egal(Engine.decompterJoursOuvrables('2025-05-26', '2025-05-30', null,
+    ['2025-05-31']), 5, 'T8.semaine avec férié, samedi coché');
   /* un jour isolé : 1 */
   egal(Engine.decompterJoursOuvrables('2025-09-02', '2025-09-02'), 1, 'T8.jour isolé');
 });
@@ -594,7 +640,11 @@ definir('T18 — Période à cheval sur deux mois (28 juillet -> 4 août 2026)',
      Le décompte n'est JAMAIS refait mois par mois : c'est l'imputation
      posée sur la période qui est répartie, au prorata des jours ouvrables
      tombant dans chaque mois (4 en juillet, 3 en août). */
-  egal(Engine.decompterJoursOuvrables('2026-07-28', '2026-08-04'), 7, 'T18.décompte RG-06');
+  /* EXIGENCE CHANGÉE — le samedi 1er août ne compte que s'il est coché. Le
+     cas illustre la RÉPARTITION d'une période à cheval, pas la règle du
+     samedi : on le coche pour que la période reste celle du cahier. */
+  egal(Engine.decompterJoursOuvrables('2026-07-28', '2026-08-04', null,
+    ['2026-08-01']), 7, 'T18.décompte RG-06');
 
   var imputation = {
     date_debut: '2026-07-28', date_fin: '2026-08-04',
@@ -664,7 +714,11 @@ definir('T18bis — Le 6e jour d\'une semaine à cheval n\'est jamais perdu', fu
      mois où AUCUNE journée de congé n'est posée. Il doit rester imputé sur
      juillet — sinon la semaine de Maria ne compterait plus que 5 jours, ce
      qui est très exactement le litige historique avec les familles. */
-  egal(Engine.decompterJoursOuvrables('2026-07-27', '2026-07-31'), 6, 'T18bis.décompte RG-06');
+  /* EXIGENCE CHANGÉE — le 6ᵉ jour de cette semaine EST le samedi 1er août,
+     et c'est tout l'objet du cas : il ne doit pas se perdre dans un mois
+     d'août sans congé. Il faut donc le cocher pour qu'il existe. */
+  egal(Engine.decompterJoursOuvrables('2026-07-27', '2026-07-31', null,
+    ['2026-08-01']), 6, 'T18bis.décompte RG-06');
 
   var imputation = {
     date_debut: '2026-07-27', date_fin: '2026-07-31',
@@ -788,7 +842,11 @@ definir('T21 — A1 : le décompte RG-06 n\'est jamais écrasé par la ligne pos
      le récapitulatif afficherait « 5 jours de congés » à côté de l'encart qui
      explique qu'une semaine en compte 6 — le litige historique avec les
      familles, imprimé sur le document. */
-  egal(Engine.decompterJoursOuvrables('2026-07-27', '2026-07-31'), 6, 'T21.décompte réel');
+  /* EXIGENCE CHANGÉE — même semaine, même samedi coché : ce cas vérifie que
+     le décompte du moteur n'est jamais écrasé par le chiffre posé sur la
+     ligne, ce qui reste vrai quel que soit le nombre de samedis. */
+  egal(Engine.decompterJoursOuvrables('2026-07-27', '2026-07-31', null,
+    ['2026-08-01']), 6, 'T21.décompte réel');
 
   var journees = [
     { jour: '2026-07-27', type: 'conge_maria' },
@@ -849,7 +907,11 @@ definir('T22 — A2 : un choix écarté ne se confond pas avec une absence de ch
     date_debut: '2026-07-06', date_fin: '2026-07-17',
     jours_ouvrables: 11, jours_sur_cp: 0, jours_sur_sup: 11, jours_sans_solde: 0
   };
-  egal(Engine.decompterJoursOuvrables('2026-07-06', '2026-07-17'), 11, 'T22.décompte RG-06');
+  /* EXIGENCE CHANGÉE — deux samedis dans cette quinzaine (11 et 18 juillet),
+     plus le 14 juillet férié qui ne compte pas. Le cas distingue « aucun
+     choix » de « choix écarté » : il lui faut la période du cahier. */
+  egal(Engine.decompterJoursOuvrables('2026-07-06', '2026-07-17', null,
+    ['2026-07-11', '2026-07-18']), 11, 'T22.décompte RG-06');
 
   var joursConformes = ['2026-07-06', '2026-07-07', '2026-07-08', '2026-07-09', '2026-07-10',
                         '2026-07-13', '2026-07-15', '2026-07-16', '2026-07-17'];

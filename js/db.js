@@ -1113,6 +1113,67 @@
       .then(deballer);
   }
 
+  /* ------------------------------------------------------------------ */
+  /* LA RÈGLE DES CINQ SAMEDIS (§3 des specs du 24 août 2026)            */
+  /*                                                                     */
+  /* Une ligne de `samedi_conge` = un samedi NON TRAVAILLÉ effectivement  */
+  /* décompté sur une période. Le contrat n'y est pas dupliqué : il se    */
+  /* lit par jointure sur `imputation_conge`, parce qu'une donnée         */
+  /* dénormalisée est une donnée qui peut diverger.                       */
+  /* ------------------------------------------------------------------ */
+
+  var CHAMPS_SAMEDI = 'imputation_id, date_samedi';
+
+  /* Les samedis comptés d'UN contrat sur une fenêtre de dates. C'est ce que
+     la chaîne passe au moteur (§4.1). La jointure remonte le contrat depuis
+     l'imputation ; PostgREST la fait en une requête. */
+  function listSamedisConge(contratId, debutIso, finIso) {
+    return client.from('samedi_conge')
+      .select(CHAMPS_SAMEDI + ', imputation_conge!inner(contrat_id)')
+      .eq('imputation_conge.contrat_id', contratId)
+      .gte('date_samedi', debutIso)
+      .lte('date_samedi', finIso)
+      .order('date_samedi', { ascending: true })
+      .then(deballer);
+  }
+
+  /* LE QUOTA, LU EN BASE ET JAMAIS SUPPOSÉ (§5.2 et §8).
+
+     Combien de samedis ce contrat a-t-il déjà comptés sur cette année de
+     référence. L'appelant donne les bornes : le moteur ne connaît pas l'année
+     de référence, et la base non plus — c'est une fenêtre de dates, rien de
+     plus.
+
+     Une lecture qui ÉCHOUE remonte son erreur : l'écran doit alors refuser le
+     choix plutôt que de supposer un quota plein. Un garde-fou qui échoue
+     ouvert n'est pas un garde-fou (défaut B7 d'août, défaut B2 du lot 17). */
+  function compterSamedisAnnee(contratId, debutIso, finIso) {
+    return listSamedisConge(contratId, debutIso, finIso).then(function (l) {
+      return (l || []).length;
+    });
+  }
+
+  /* Écrit les samedis comptés d'UNE période, en une seule insertion.
+
+     `owner` est posé par défaut en base (auth.uid()) et filtré par RLS : on ne
+     le transmet jamais depuis le client. Une liste vide n'écrit rien — et
+     n'est pas une erreur : c'est le cas normal, puisque rien n'est coché par
+     défaut (décision d'Adrien du 24 août 2026).
+
+     Aucun nettoyage n'est prévu ici : retirer la période rend ses samedis par
+     la CASCADE de la clé étrangère. Une suppression écrite à la main serait
+     une deuxième règle, donc une règle à oublier. */
+  function enregistrerSamedis(imputationId, dates) {
+    var lignes = (dates || []).filter(Boolean).map(function (d) {
+      return { imputation_id: imputationId, date_samedi: String(d).slice(0, 10) };
+    });
+    if (!lignes.length) return Promise.resolve([]);
+    return client.from('samedi_conge')
+      .insert(lignes)
+      .select()
+      .then(deballer);
+  }
+
   /* Raccourci sur listImputations avec les bornes d'un mois — c'est l'appel
      dominant, et cela évite que chaque écran recalcule les bornes. */
   function listImputationsPourMois(contratId, annee, mois) {
@@ -1511,6 +1572,10 @@
     poserAbsenceMaria: poserAbsenceMaria,
     retirerAbsenceMaria: retirerAbsenceMaria,
     listImputations: listImputations,
+    /* Règle des cinq samedis (§3 des specs du 24 août 2026). */
+    listSamedisConge: listSamedisConge,
+    compterSamedisAnnee: compterSamedisAnnee,
+    enregistrerSamedis: enregistrerSamedis,
     listImputationsPourMois: listImputationsPourMois,
     enregistrerImputation: enregistrerImputation,
     majVentilationImputation: majVentilationImputation,

@@ -432,6 +432,14 @@ var sheet = document.getElementById('sheet');
   assert(!!bSuivant, '§18.3 : l’étape des dates s’ouvre');
   bSuivant.click();
   await pause(400);
+  /* §5.1 (règle des cinq samedis) — l'étape du choix des samedis s'intercale
+     entre les dates et la ventilation dès qu'un samedi est éligible. Ce
+     parcours ne l'examine pas : il la franchit sans rien cocher, ce qui est
+     le comportement par défaut. */
+  if (txt(sheet).indexOf('Les samedis de cette période') !== -1) {
+    boutonExact(sheet, 'Continuer').click();
+    await pause(400);
+  }
 
   var bTout = boutonExact(sheet, 'Tout sur ma récupération');
   assert(!!boutonExact(sheet, 'Tout sur mes congés payés') && !!bTout,
@@ -461,8 +469,13 @@ var sheet = document.getElementById('sheet');
   Array.prototype.forEach.call(compteurs, function (c) {
     somme += Number(txt(c.querySelector('.val'))) || 0;
   });
-  assert(somme === 6,
-    '§18.3 : le raccourci couvre la période entière — 6 jours ouvrables répartis ' +
+  /* EXIGENCE CHANGÉE — LA RÈGLE DES CINQ SAMEDIS (specs du 24 août 2026).
+     Ce parcours franchit l'étape des samedis sans rien cocher : la semaine
+     compte donc 5 jours et non 6. Ce que ce cas vérifie — que le raccourci
+     couvre la période ENTIÈRE, sans reste à répartir — ne change pas d'un
+     mot ; seul le nombre de jours de la période a changé. */
+  assert(somme === 5,
+    '§18.3 : le raccourci couvre la période entière — 5 jours ouvrables répartis ' +
     '(obtenu ' + somme + ')');
 
   /* ==================================================================== */
