@@ -83,7 +83,12 @@ var COLONNES_ATTENDUES = {
                lit ; oubliée du select, elle arriverait `undefined`, ne serait
                donc jamais `false`, et l'indemnité serait payée sur une
                journée dont Maria l'a explicitement retirée. */
-            'entretien_du'],
+            'entretien_du',
+            /* Familiarisation en arrivée puis départ (migration 019) — les deux
+               heures saisies. Le moteur ne les lit pas ; l'écran, si : oubliées
+               du select, l'arrivée enregistrée le matin ne reviendrait pas le
+               soir, et le calendrier ne dirait jamais « en cours ». */
+            'fam_heure_arrivee', 'fam_heure_depart'],
   imputation_conge: ['id', 'contrat_id', 'date_debut', 'date_fin', 'jours_ouvrables',
                      'jours_sur_cp', 'jours_sur_sup', 'jours_sans_solde'],
   /* Lot 20 — la période de familiarisation (§20.2). Quatre colonnes, et les

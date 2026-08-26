@@ -143,11 +143,17 @@
      jour est due, et le moteur la lit : oubliée du select, elle arriverait
      `undefined`, le moteur la lirait comme « non fausse », et l'indemnité
      serait payée sur une journée dont Maria l'a retirée. */
+  /* FAMILIARISATION EN ARRIVÉE PUIS DÉPART (migration 019) — les deux heures
+     saisies sur la feuille du jour de familiarisation. Ce sont la TRACE de la
+     saisie, pas une donnée de calcul : le moteur ne les lit pas, la durée
+     payée reste `minutes_reelles`. Elles sont lues pour que l'arrivée
+     enregistrée le matin revienne le soir, et pour que le calendrier dise
+     « en cours » tant que le départ manque. */
   var CHAMPS_JOURNEE =
     'id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
     'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override, ' +
     'ecart_minutes, ecart_evenement, ecart_heure_reelle, ecart_impute_sur, ' +
-    'entretien_du';
+    'entretien_du, fam_heure_arrivee, fam_heure_depart';
 
   /* LOT 20 (§20.2) — les périodes de familiarisation. */
   var CHAMPS_PERIODE_FAM = 'id, contrat_id, date_debut, date_fin';
@@ -925,9 +931,14 @@
        jamais transmise à `null` — la colonne est `not null` en base, et
        « je ne me prononce pas » n'existe pas pour elle : l'indemnité est due
        ou elle ne l'est pas. */
+    /* FAMILIARISATION EN ARRIVÉE PUIS DÉPART (migration 019) — les deux
+       heures suivent la règle des quatre colonnes d'écart : absentes, elles
+       ne sont pas touchées ; présentes à `null`, elles sont EFFACÉES. C'est
+       ce qui permet à « Retirer cette déclaration » de ne laisser aucune
+       heure orpheline derrière une durée remise à `null`. */
     ['minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',
      'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur',
-     'entretien_du']
+     'entretien_du', 'fam_heure_arrivee', 'fam_heure_depart']
       .forEach(function (champ) {
         if (Object.prototype.hasOwnProperty.call(ligne, champ) && ligne[champ] !== undefined) {
           payload[champ] = ligne[champ];
