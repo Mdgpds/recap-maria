@@ -973,16 +973,29 @@ table.cal td.hors-sel:active { transform: none; }
   border: none; background: none; color: var(--ink); min-width: 0; flex: 1;
   padding: 0; -webkit-appearance: none; appearance: none;
 }
-/* CORRECTIF 26 août — `min-width: 0` et `flex: 1` MANQUAIENT ici. Sans eux,
-   un champ d'heure garde sa largeur intrinsèque : il déborde de son cadre, et
-   le `overflow: hidden` du cadre le rogne. Sur un écran de 390 px, le Départ
-   — plus large que l'Arrivée parce qu'il est VIDE — passait entièrement sous
-   la coupe et devenait intouchable. */
+/* LE CHAMP D'HEURE — trois pièges, tous corrigés ici. L'application est
+   MOBILE ET TABLETTE : c'est Safari iOS qui fait foi, pas le navigateur d'un
+   ordinateur.
+
+   1. `-webkit-appearance: none` est PROSCRIT sur un champ d'heure. Sur iOS,
+      ce contrôle est rendu nativement ; lui retirer son apparence lui retire
+      aussi sa taille propre, et un champ VIDE — le Départ, justement — se
+      réduit alors à rien : plus de zone à toucher. Sur un ordinateur, rien
+      ne se voit. C'est la raison pour laquelle le Départ s'ouvrait sur
+      ordinateur et restait mort sur iPhone.
+   2. `min-width: 0` laissait le champ se comprimer jusqu'à disparaître. Il
+      lui faut une largeur tactile GARANTIE : 6,5 em tient « 08:30 » et son
+      horloge, et passe encore dans un cadre d'iPhone SE (320 px).
+   3. `flex: 1` lui donne le reste de la place, sans quoi il gardait sa
+      largeur naturelle, débordait du cadre et se faisait rogner par son
+      `overflow: hidden`.
+
+   La hauteur minimale garantit la cible du doigt : 24 px de contenu plus le
+   padding du cadre dépassent les 44 px recommandés. */
 .fld input[type=time] {
   margin-left: auto; font: inherit; font-weight: 600; text-align: right;
   border: none; background: none; color: var(--ink); padding: 0;
-  min-width: 0; flex: 1;
-  -webkit-appearance: none; appearance: none;
+  flex: 1 1 auto; min-width: 6.5em; min-height: 24px;
 }
 .fld select { text-align: left; text-align-last: right; }
 .fld input:focus, .fld select:focus { outline: 2px solid var(--acl); outline-offset: 4px; border-radius: 12px; }
