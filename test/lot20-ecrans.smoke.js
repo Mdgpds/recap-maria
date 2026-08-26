@@ -446,10 +446,15 @@ function celluleDu(numero) {
   window.App.invalider();
   window.App.aller('familiarisation', { contratId: 'c-noah' });
   await pause(400);
-  contient(corps, 'Période non modifiable', 'la période est verrouillée');
-  contient(corps, 'septembre 2026', 'et le refus NOMME le mois clôturé');
-  assert(!boutonExact(corps, 'Corriger les dates'),
-    'aucune action de correction n’est proposée');
+  /* LOT 30 (§30.3) — EXIGENCE CHANGÉE : plus de refus sec. La période reste
+     corrigeable ; l'écran NOMME le mois clôturé et annonce que corriger
+     proposera de le rouvrir, puis continuera. Rien n'est écrit tant que le
+     mois n'est pas rouvert (vérifié par `lot30-rouvrir.smoke.js`). */
+  contient(corps, 'Mois déjà clôturé', 'le mois clôturé est dit d’avance');
+  contient(corps, 'septembre 2026', 'et l’écran NOMME le mois clôturé');
+  contient(corps, 'proposera de le rouvrir', 'et dit que corriger proposera la réouverture');
+  assert(!!boutonExact(corps, 'Corriger les dates'),
+    '§30.3 : la correction reste proposée — la réouverture sera proposée à la validation');
   recaps = [];
   window.App.invalider();
 

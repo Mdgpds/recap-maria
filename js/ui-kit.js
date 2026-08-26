@@ -1149,6 +1149,11 @@
   function champMoisListe(libelle, isoDefaut, opts) {
     opts = opts || {};
     var interdits = opts.interdits || {};
+    /* LOT 30 (§30.3) — `signales` : des mois NOMMÉS avec leur raison, mais
+       choisissables. C'est le cas d'un mois clôturé pour un avenant : le
+       choisir propose de le rouvrir au moment de valider, il n'est plus
+       barré. */
+    var signales = opts.signales || {};
     var de = opts.deMois || { annee: Number(String(isoDefaut).slice(0, 4)) - 1, mois: 1 };
     var a = opts.aMois || { annee: de.annee + 3, mois: 12 };
 
@@ -1180,7 +1185,7 @@
         op.textContent = '— ' + etiquette + ' (' + interdits[cle] + ')';
         op.disabled = true;
       } else {
-        op.textContent = etiquette;
+        op.textContent = signales[cle] ? etiquette + ' (' + signales[cle] + ')' : etiquette;
         if (premierLibre === null && courant.annee * 12 + courant.mois >= rangVoulu) {
           premierLibre = op.value;
         }
@@ -1426,8 +1431,19 @@
     cloture:    'clôturé'
   };
 
+  /* LOT 30 (§30.4) — UN MOIS ROUVERT SE RECONNAÎT À SON RÉCAPITULATIF :
+     statut « brouillon » ET un instantané conservé (`donnees`), celui du
+     document remis. Un mois jamais clôturé n'a pas d'instantané. */
+  function moisRouvert(recap) {
+    return !!(recap && recap.statut === 'brouillon' && recap.donnees);
+  }
+
   function etatDuMois(annee, mois, recap, aujourdhuiIso) {
     if (recap && recap.statut === 'fige') return ETAT_CLOTURE;
+    /* LOT 30 (§30.4) — un mois rouvert est À RECLÔTURER, quelle que soit la
+       date : il ne redevient pas un brouillon ordinaire qu'on oublie. C'est
+       ce qui le fait entrer dans « Aujourd'hui » et dans la pastille. */
+    if (moisRouvert(recap)) return ETAT_A_CLOTURER;
 
     var p = String(aujourdhuiIso || '').split('-');
     var anAuj   = Number(p[0]);
@@ -1621,7 +1637,9 @@
     choix: choix,
     toast: toast, messageErreur: messageErreur, copierTexte: copierTexte,
     joursPlanning: joursPlanning, joursTravailles: joursTravailles, typeDuJour: typeDuJour,
-    etatDuMois: etatDuMois, joursTravaillesRestants: joursTravaillesRestants,
+    etatDuMois: etatDuMois,
+    /* LOT 30 — le prédicat d'un mois rouvert, à un seul endroit. */
+    moisRouvert: moisRouvert, joursTravaillesRestants: joursTravaillesRestants,
     pastilleEtat: pastilleEtat, LIBELLE_ETAT: LIBELLE_ETAT,
     JOUR_BASCULE_CLOTURE: JOUR_BASCULE_CLOTURE,
     /* LOT 17 §17.4 — le formulaire des onze conditions, partagé par la

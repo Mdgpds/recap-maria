@@ -190,7 +190,21 @@
    absence de l'enfant). Ils se répondent avec le moteur du lot 28, qui
    ignore déjà tout écart porté par une absence : un écran ancien laisserait
    encore écrire des journées que le moteur n'entend plus. */
-var CACHE = 'recap-calculs-justes-lot29-v1';
+/* CORRECTIFS DE CALCUL, LOT 30 (« LA SOUPLESSE DE LA SAISIE ») — NOM DE
+   CACHE CHANGÉ.
+
+   Huit fichiers servis changent : `js/ui-reouverture.js` (la feuille « rouvrir
+   et continuer », le bandeau du mois rouvert, le motif après coup),
+   `js/ui-kit.js` (`moisRouvert`, un mois rouvert est « à clôturer »,
+   `signales` du sélecteur de mois), `js/db.js` (`audit_note` lu, le motif
+   écrit), `js/ui-enfant.js`, `js/ui-document.js`, `js/ui-accueil.js`,
+   `js/ui-contrat.js` et `js/ui-familiarisation.js`.
+   Ils se RÉPONDENT : cinq écrans appellent
+   `UiReouverture.feuilleRouvrirEtContinuer`, qui n'existe que dans le
+   nouveau `js/ui-reouverture.js` ; servi avec l'ancien, toucher un jour d'un
+   mois clôturé lèverait — au lieu de proposer la réouverture qui est tout
+   l'objet du lot. Aucun fichier ajouté. */
+var CACHE = 'recap-calculs-justes-lot30-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

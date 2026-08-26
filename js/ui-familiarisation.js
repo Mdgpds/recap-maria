@@ -195,12 +195,21 @@
         Kit.messageErreur(vue.recaps.erreur) + '). La période n’est pas ' +
         'modifiable tant que cette vérification n’a pas abouti.';
     }
-    var clos = moisClosRecouverts(vue.periode.date_debut, vue.periode.date_fin);
-    if (clos && clos.length) {
-      return 'Mois déjà clôturé(s) — ' + listeMois(clos) + '. Un mois clôturé ne ' +
-        'se recalcule pas : la période ne peut plus être déplacée.';
-    }
+    /* LOT 30 (§30.3) — un mois clôturé ne verrouille plus la période : la
+       corriger PROPOSE de le rouvrir, puis poursuit. Seuls un contrat rangé
+       et une lecture des mois clôturés qui a échoué (A6) verrouillent. */
     return null;
+  }
+
+  /* §30.3 — les mois clôturés que la période recouvre, pour le dire d'avance
+     sous les dates : ils seront proposés à la réouverture. */
+  function phraseMoisClos() {
+    if (!vue.periode || !vue.recaps.ok) return null;
+    var clos = moisClosRecouverts(vue.periode.date_debut, vue.periode.date_fin);
+    if (!clos || !clos.length) return null;
+    return 'Mois déjà clôturé' + (clos.length > 1 ? 's' : '') + ' — ' + listeMois(clos) +
+      '. Corriger les dates proposera de ' + (clos.length > 1 ? 'les' : 'le') +
+      ' rouvrir, puis continuera.';
   }
 
   /* ------------------------------------------------------------------ */
@@ -235,6 +244,8 @@
     if (verrou) {
       corps.appendChild(Kit.note('Période non modifiable', verrou));
     } else {
+      var avertClos = phraseMoisClos();
+      if (avertClos) corps.appendChild(Kit.ce('p', 'sb q', avertClos));
       var bModif = Kit.bouton('btn nt', function () { feuillePeriode(vue.periode); });
       bModif.textContent = 'Corriger les dates';
       corps.appendChild(bModif);
@@ -447,33 +458,66 @@
                 if (clos.indexOf(r) === -1) clos.push(r);
               });
           }
+
+          function ecrire(bouton) {
+            var promesse = creation
+              ? global.DB.enregistrerPeriodeFamiliarisation({
+                  contrat_id: c.id, date_debut: debut, date_fin: fin
+                })
+              : global.DB.majPeriodeFamiliarisation(periode.id,
+                  { date_debut: debut, date_fin: fin });
+            return promesse.then(function () {
+              global.App.invalider();
+              Kit.fermerFeuille();
+              Kit.toast(creation ? 'Période enregistrée' : 'Dates corrigées');
+              global.App.remplacer('familiarisation', { contratId: c.id });
+            }).catch(function (e) {
+              /* La feuille RESTE ouverte : la saisie en cours ne disparaît
+                 jamais en silence (B.0-9). */
+              if (bouton) {
+                bouton.disabled = false;
+                echec('Rien n’a été enregistré — ' + Kit.messageErreur(e));
+              } else {
+                Kit.toast('Les mois sont rouverts mais la période n’a pas été enregistrée : ' +
+                  Kit.messageErreur(e), true);
+                feuillePeriode(periode);
+              }
+            });
+          }
+
+          /* LOT 30 (§30.3) — LE MODÈLE DU CONGÉ, GÉNÉRALISÉ. Déplacer une
+             période HORS d'un mois clôturé le recalculerait tout autant que
+             l'y faire entrer : les deux jeux de dates sont vérifiés, les mois
+             sont NOMMÉS, la réouverture proposée, et les dates s'écrivent
+             ensuite. Plus de refus sec. */
           if (clos.length) {
-            return echec('Mois déjà clôturé(s) — ' + listeMois(clos) +
-              '. Un mois clôturé ne se recalcule pas : choisissez des dates qui ' +
-              'ne les recouvrent pas.');
+            clos.sort(function (x, y) { return Chaine.cmpMois(x.annee, x.mois, y.annee, y.mois); });
+            return global.UiReouverture.feuilleRouvrirEtContinuer({
+              mois: clos.map(function (r) {
+                return { contrat: c, annee: r.annee, mois: r.mois, recap: r };
+              }),
+              question: (creation ? 'Cette période' : 'Ces dates') + ' recouvre' +
+                (creation ? '' : 'nt') + ' ' + listeMois(clos) + ', déjà clôturé' +
+                (clos.length > 1 ? 's' : '') + '. Rouvrir ' +
+                (clos.length > 1 ? 'ces mois' : 'ce mois') + ' et continuer ?',
+              bouton: clos.length > 1
+                ? 'Rouvrir ces ' + clos.length + ' récapitulatifs et enregistrer la période'
+                : 'Rouvrir ' + Kit.libelleMois(clos[0].mois) + ' et enregistrer la période',
+              motif: creation ? 'Période de familiarisation posée' : 'Période de familiarisation corrigée',
+              continuer: function () {
+                return global.DB.listRecapsContrat(c.id).then(function (liste) {
+                  vue.recaps = { ok: true, liste: liste || [] };
+                  return ecrire(null);
+                });
+              },
+              annuler: function () { feuillePeriode(periode); }
+            });
           }
 
           msg.className = 'msg';
           msg.textContent = '';
           b.disabled = true;
-          var promesse = creation
-            ? global.DB.enregistrerPeriodeFamiliarisation({
-                contrat_id: c.id, date_debut: debut, date_fin: fin
-              })
-            : global.DB.majPeriodeFamiliarisation(periode.id,
-                { date_debut: debut, date_fin: fin });
-
-          promesse.then(function () {
-            global.App.invalider();
-            Kit.fermerFeuille();
-            Kit.toast(creation ? 'Période enregistrée' : 'Dates corrigées');
-            global.App.remplacer('familiarisation', { contratId: c.id });
-          }).catch(function (e) {
-            /* La feuille RESTE ouverte : la saisie en cours ne disparaît
-               jamais en silence (B.0-9). */
-            b.disabled = false;
-            echec('Rien n’a été enregistré — ' + Kit.messageErreur(e));
-          });
+          ecrire(b);
         });
         b.textContent = creation ? 'Enregistrer la période' : 'Corriger';
         corps.appendChild(b);
@@ -484,20 +528,35 @@
             if (!vue.recaps.ok) {
               return echec('Impossible de vérifier vos mois clôturés. Rien n’a été retiré.');
             }
+            function retirer(bouton) {
+              return global.DB.supprimerPeriodeFamiliarisation(periode.id).then(function () {
+                global.App.invalider();
+                Kit.fermerFeuille();
+                Kit.toast('Période retirée');
+                global.App.remplacer('familiarisation', { contratId: c.id });
+              }).catch(function (e) {
+                if (bouton) { bouton.disabled = false; echec('Rien n’a été retiré — ' + Kit.messageErreur(e)); }
+                else Kit.toast('Les mois sont rouverts mais la période n’a pas été retirée : ' +
+                  Kit.messageErreur(e), true);
+              });
+            }
+            /* §30.3 — retirer une période qui recouvre un mois clôturé le
+               recalcule : on propose de rouvrir, puis on retire. */
             if (clos.length) {
-              return echec('Mois déjà clôturé(s) — ' + listeMois(clos) +
-                '. La période ne peut pas être retirée.');
+              return global.UiReouverture.feuilleRouvrirEtContinuer({
+                mois: clos.map(function (r) {
+                  return { contrat: c, annee: r.annee, mois: r.mois, recap: r };
+                }),
+                question: 'Retirer cette période change ' + listeMois(clos) + ', déjà clôturé' +
+                  (clos.length > 1 ? 's' : '') + '. Rouvrir et continuer ?',
+                bouton: 'Rouvrir et retirer la période',
+                motif: 'Période de familiarisation retirée',
+                continuer: function () { return retirer(null); },
+                annuler: function () { feuillePeriode(periode); }
+              });
             }
             bSup.disabled = true;
-            global.DB.supprimerPeriodeFamiliarisation(periode.id).then(function () {
-              global.App.invalider();
-              Kit.fermerFeuille();
-              Kit.toast('Période retirée');
-              global.App.remplacer('familiarisation', { contratId: c.id });
-            }).catch(function (e) {
-              bSup.disabled = false;
-              echec('Rien n’a été retiré — ' + Kit.messageErreur(e));
-            });
+            retirer(bSup);
           });
           bSup.textContent = 'Retirer cette période';
           corps.appendChild(bSup);

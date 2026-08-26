@@ -257,6 +257,20 @@
         corps: corps || null
       };
       vue.lectureSeule = vue.range || vue.clos;
+      /* LOT 30 (§30.2) — UN MOIS CLÔTURÉ N'EST PLUS UN ÉCRAN MORT : ses
+         cases s'ouvrent sur la feuille « Ce mois est clôturé — le rouvrir
+         pour corriger ce jour ? ». Seul un contrat rangé reste en lecture
+         seule. */
+      vue.rouvrable = vue.clos && !vue.range;
+      /* §30.4 — un mois rouvert porte son bandeau, daté par l'historique. */
+      vue.rouvert = !!(entree && global.Kit.moisRouvert(entree.recap));
+      vue.reouvertureLe = null;
+      if (vue.rouvert && global.UiReouverture) {
+        return global.UiReouverture.dateReouverture(entree.recap).then(function (quand) {
+          vue.reouvertureLe = quand;
+          return vue;
+        });
+      }
       return vue;
     });
   }
@@ -364,7 +378,10 @@
        Le bouton n'apparaît pas sur un mois clôturé, un contrat rangé ou un
        mois à venir : un bouton qui refuse est pire qu'un bouton absent, il
        laisse croire à une panne. */
-    if (!vue || (!vue.lectureSeule && !vue.aVenir && vue.entree)) {
+    /* LOT 30 (§30.2) — sur un mois CLÔTURÉ d'un contrat en cours, le ⋯
+       reste : la multi-sélection propose la réouverture au moment de
+       valider, comme la feuille du jour. */
+    if (!vue || ((!vue.lectureSeule || vue.rouvrable) && !vue.aVenir && vue.entree)) {
       var plus = Kit.bouton(null, function () { entrerSelection(); });
       plus.textContent = '⋯';
       plus.setAttribute('aria-label', 'Marquer plusieurs jours');
@@ -640,7 +657,22 @@
       points.push({
         ton: '',
         titre: 'Mois clôturé' +
-          (recapClos && recapClos.fige_le ? ' le ' + Kit.dateLongue(recapClos.fige_le) : ''),
+          (recapClos && recapClos.fige_le ? ' le ' + Kit.dateLongue(recapClos.fige_le) : '') +
+          (vue.rouvrable ? ' — touchez un jour pour le rouvrir' : ''),
+        action: function () {
+          global.App.aller('document', {
+            contratId: c.id, annee: vue.annee, mois: vue.mois
+          });
+        }
+      });
+    } else if (vue.rouvert) {
+      /* LOT 30 (§30.4) — UN MOIS ROUVERT NE S'OUBLIE PAS. Le point mène au
+         document, où le bandeau complet et le bouton « Reclôturer » vivent. */
+      points.push({
+        ton: 'w',
+        titre: 'Mois rouvert' +
+          (vue.reouvertureLe ? ' le ' + Kit.dateLongue(vue.reouvertureLe) : '') +
+          ' — à clôturer à nouveau',
         action: function () {
           global.App.aller('document', {
             contratId: c.id, annee: vue.annee, mois: vue.mois
@@ -1560,6 +1592,20 @@
     var marque = vue.selection.marque;
     var retour = { contrats: [c.id], jours: jours };
 
+    /* LOT 30 (§30.2) — LA MULTI-SÉLECTION SUR UN MOIS CLÔTURÉ propose la
+       réouverture, puis reprend la sélection telle quelle et l'écrit. */
+    if (vue.rouvrable) {
+      var sauvegarde = { jours: jours.slice(), marque: marque };
+      return proposerReouverture(null, function () {
+        if (!vue || vue.rouvrable) return;
+        entrerSelection();
+        vue.selection.marque = sauvegarde.marque;
+        sauvegarde.jours.forEach(function (j) { vue.selection.jours[j] = true; });
+        redessiner();
+        return validerSelection(null);
+      });
+    }
+
     if (marque === 'presence') {
       /* CORRECTION C2 DE LA RELECTURE DU LOT 18 — LA NOTE SURVIT AU RETOUR À
          LA PRÉSENCE.
@@ -1601,11 +1647,13 @@
       (aDeclarer ? ' warn' : '') +
       (d > vue.aujourdhui ? ' futur' : '') +
       (d === vue.aujourdhui ? ' auj' : '') +
-      (vue.lectureSeule ? ' no' : ''));
+      (vue.lectureSeule && !vue.rouvrable ? ' no' : ''));
     td.appendChild(Kit.ce('div', 'num', String(jour)));
     td.appendChild(Kit.ce('div', 'mini', mini));
     if (d === vue.aujourdhui) td.setAttribute('aria-current', 'date');
-    if (vue.selection || vue.lectureSeule) {
+    /* §30.2 — un mois clôturé reste touchable : le toucher propose de le
+       rouvrir. */
+    if (vue.selection || (vue.lectureSeule && !vue.rouvrable)) {
       if (vue.selection) td.className += ' hors-sel';
       return td;
     }
@@ -1681,7 +1729,7 @@
     var td = Kit.ce('td', classe +
       (aVenir ? ' futur' : '') +
       (d === vue.aujourdhui ? ' auj' : '') +
-      (touchable && vue.lectureSeule ? ' no' : ''));
+      (touchable && vue.lectureSeule && !vue.rouvrable ? ' no' : ''));
     td.appendChild(Kit.ce('div', 'num', String(jour)));
     if (mini) td.appendChild(Kit.ce('div', 'mini', mini));
     if (annotee || ajustee || congePose) {
@@ -1704,7 +1752,7 @@
        et se retire depuis « Mes congés », jamais depuis le calendrier d'un
        seul enfant (décision V8-09). */
     if (vue.selection) {
-      if (touchable && !vue.lectureSeule && selectionnable(d, type)) {
+      if (touchable && (!vue.lectureSeule || vue.rouvrable) && selectionnable(d, type)) {
         var choisi = !!vue.selection.jours[d];
         if (choisi) td.className += ' sel';
         td.setAttribute('role', 'checkbox');
@@ -1721,10 +1769,11 @@
       return td;
     }
 
-    if (touchable && !vue.lectureSeule) {
+    if (touchable && (!vue.lectureSeule || vue.rouvrable)) {
       td.setAttribute('role', 'button');
       td.setAttribute('tabindex', '0');
-      td.setAttribute('aria-label', Kit.jourLong(d));
+      td.setAttribute('aria-label', Kit.jourLong(d) +
+        (vue.rouvrable ? ' — mois clôturé, toucher pour rouvrir' : ''));
       td.addEventListener('click', function () { ouvrirJour(d); });
       td.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrirJour(d); }
@@ -1806,7 +1855,41 @@
       });
   }
 
+  /* LOT 30 (§30.2) — la feuille courte, puis le geste qui continue. Après la
+     réouverture, l'écran est rechargé (le mois a changé d'état) et la feuille
+     du jour s'ouvre d'elle-même sur le même jour. */
+  function proposerReouverture(d, apresReouverture) {
+    var c = vue.contrat;
+    var m = { annee: vue.annee, mois: vue.mois };
+    if (!vue.entree || !vue.entree.recap) {
+      Kit.toast('Impossible de vérifier l’état de ce mois : rien n’a été modifié.', true);
+      return;
+    }
+    return global.UiReouverture.feuilleRouvrirEtContinuer({
+      mois: [{ contrat: c, annee: m.annee, mois: m.mois, recap: vue.entree.recap }],
+      titre: 'Ce mois est clôturé',
+      question: d
+        ? 'Le rouvrir pour corriger le ' + Kit.jourLong(d).toLowerCase() + ' ?'
+        : 'Le rouvrir pour marquer ces journées ?',
+      bouton: d ? 'Rouvrir et corriger ce jour' : 'Rouvrir et marquer ces journées',
+      motif: null,
+      continuer: function () {
+        return global.App.rafraichir().then(function () {
+          if (typeof apresReouverture === 'function') return apresReouverture();
+          if (d && vue && !vue.rouvrable) return ouvrirJour(d);
+        });
+      }
+    });
+  }
+
   function ouvrirJour(d) {
+    /* LOT 30 (§30.2) — TOUCHER UN JOUR D'UN MOIS CLÔTURÉ OUVRE UNE FEUILLE
+       COURTE, au lieu de ne rien faire : « Ce mois est clôturé. Le rouvrir
+       pour corriger le mardi 14 avril ? ». Un appui : le mois est rouvert ET
+       la feuille du jour s'ouvre, prête. Maria n'a pas quitté son calendrier.
+       Le motif n'est pas demandé : il se saisit après coup, depuis le
+       bandeau. */
+    if (vue.rouvrable) return proposerReouverture(d);
     if (vue.lectureSeule) return;
     /* §20.4 — un jour de la période n'a qu'un seul geste : déclarer ses
        heures. Lui proposer la liste ci-dessous offrirait des choix que le

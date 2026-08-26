@@ -1002,6 +1002,25 @@
     return out;
   }
 
+  /* LOT 30 (§30.3) — LES MOIS CLÔTURÉS QU'UN AVENANT GOUVERNERAIT, une fois
+     écrit : ceux dont `Engine.conditionsApplicables` retiendrait cet avenant
+     dans la liste rejouée avec lui, plus ceux qu'il gouverne déjà s'il est
+     corrigé. La même règle de sélection que le moteur, jamais réécrite. */
+  function moisClosGouvernesPar(champs, avenants, existant, recaps) {
+    var simule = { id: existant ? existant.id : '__nouveau__', date_effet: champs.date_effet };
+    var liste = avenants.filter(function (a) { return !existant || a.id !== existant.id; })
+      .concat([simule]);
+    var out = [];
+    listeRecaps(recaps).forEach(function (r) {
+      if (r.statut !== 'fige') return;
+      var apres = Engine.conditionsApplicables(liste, r.annee, r.mois);
+      var avant = existant ? Engine.conditionsApplicables(avenants, r.annee, r.mois) : null;
+      if ((apres && apres.id === simule.id) || (avant && avant.id === simule.id)) out.push(r);
+    });
+    out.sort(function (a, b) { return Chaine.cmpMois(a.annee, a.mois, b.annee, b.mois); });
+    return out;
+  }
+
   /* Les mois clôturés, indexés 'YYYY-MM' -> raison. Sert au sélecteur de
      date : les mois interdits sont MONTRÉS et barrés, avec ce qui les bloque. */
   function moisInterdits(recaps) {
@@ -1296,7 +1315,10 @@
      servi à calculer, et toute réouverture le reclôturerait en silence sur de
      nouveaux montants. Les mois clôturés sont MONTRÉS et barrés, avec leur
      raison — un mois absent de la liste n'apprend rien. */
-  function feuilleAvenant(contrat, avenants, recaps, existant) {
+  /* LOT 30 (§30.3) — `brouillon` : les valeurs saisies par Maria quand la
+     feuille est rouverte après un « Revenir en arrière » depuis la
+     proposition de réouverture. Rien de ce qu'elle a tapé ne se perd. */
+  function feuilleAvenant(contrat, avenants, recaps, existant, brouillon) {
     var tries = trierAvenants(avenants);
     var m = global.App.moisCourant();
     var prochain = Chaine.moisSuivant(m.annee, m.mois);
@@ -1311,7 +1333,7 @@
     /* Les conditions à pré-remplir : celles de l'avenant qu'on corrige, sinon
        celles en vigueur au mois visé — « un avenant ne change QUE ce qu'il
        change, et le reste est repris tel quel ». */
-    var depart = existant
+    var depart = brouillon || existant
       || Engine.conditionsApplicables(tries, prochain.annee, prochain.mois)
       || tries[tries.length - 1]
       || null;
@@ -1320,28 +1342,25 @@
       contrat.prenom_enfant, function (corps) {
 
         if (bloquants.length) {
-          /* « Sinon, refus qui NOMME les mois et propose de les rouvrir.
-             Jamais un bouton grisé sans explication. » */
-          corps.appendChild(Kit.warnbox(
-            'Cet avenant ne peut pas être modifié',
-            'Il sert de conditions à des mois déjà clôturés : ' +
-            listeMois(bloquants) + '. Les modifier changerait des documents ' +
-            'qui sont partis chez la famille. Rouvrez ces mois d’abord si vous ' +
-            'devez vraiment corriger cet avenant.'));
-          var bRouvrir = Kit.bouton('btn nt', function () {
-            Kit.fermerFeuille();
-            global.App.aller('historique', { contratId: contrat.id });
-          });
-          bRouvrir.textContent = 'Ouvrir l’historique pour rouvrir ces mois';
-          corps.appendChild(bRouvrir);
-          return;
+          /* LOT 30 (§30.3) — PLUS DE REFUS SEC. La feuille s'ouvre ; à la
+             validation, l'application NOMME les mois à rouvrir, propose de
+             le faire, et poursuit. Ici on le dit d'avance. */
+          corps.appendChild(Kit.note(
+            'Cet avenant sert à des mois déjà clôturés',
+            listeMois(bloquants) + '. Le corriger les rouvrira : à la validation, ' +
+            'l’application vous le proposera, puis enregistrera l’avenant. Chaque ' +
+            'réouverture laisse une trace dans l’historique du mois.'));
         }
 
         var borneBasse = Chaine.moisDeDate(contrat.date_debut);
+        /* §30.3 — les mois clôturés ne sont plus barrés dans la liste : en
+           choisir un propose de le rouvrir au moment de valider. */
         var date = Kit.champMoisListe('À partir du 1er',
-          existant ? existant.date_effet : Kit.iso(prochain.annee, prochain.mois, 1),
+          brouillon ? brouillon.date_effet
+            : (existant ? existant.date_effet : Kit.iso(prochain.annee, prochain.mois, 1)),
           {
-            interdits: interdits,
+            /* §30.3 — nommés, expliqués, mais choisissables. */
+            signales: interdits,
             deMois: borneBasse,
             /* Aucune limite vers le futur, dit le §17.4 : trois ans suffisent
                à couvrir toute négociation réelle sans faire une liste illisible. */
@@ -1430,14 +1449,6 @@
           var refus = conditions.erreur();
           if (refus) { erreur(refus); return; }
           var cle = date.valeur().slice(0, 7);
-          if (interdits[cle]) {
-            /* CORRECTION C3 — « Le mois de 2026-06 est clôturé » : un format
-               machine à l'écran, alors que `Kit.libelleMoisAnnee` est utilisé
-               partout ailleurs sur cet écran. */
-            erreur('Le mois ' + Kit.deMoisAnnee(Number(cle.slice(0, 4)), Number(cle.slice(5, 7))) +
-              ' est clôturé : un avenant n’est jamais rétroactif.');
-            return;
-          }
           /* Deux avenants au même mois : la base le refuse
              (`unique (contrat_id, date_effet)`), et le dire ici évite un
              message technique. */
@@ -1454,19 +1465,67 @@
           var vals = conditions.valeurs();
           Object.keys(vals).forEach(function (k) { champs[k] = vals[k]; });
 
+          /* LOT 30 (§30.3) — LE MODÈLE DU CONGÉ, GÉNÉRALISÉ. Un avenant n'est
+             jamais rétroactif sur un mois CLÔTURÉ : ce mois-là lit son
+             instantané et ne sera pas recalculé. Plutôt que de refuser, on
+             NOMME les mois clôturés que cet avenant gouvernerait — ceux dont
+             les conditions applicables, une fois l'avenant écrit, seraient
+             lui — et ceux qu'il gouverne déjà (en correction), on propose de
+             les rouvrir, et l'avenant s'enregistre ensuite, sans repartir de
+             zéro. Si la lecture des mois clôturés a échoué, on refuse (A6). */
+          if (!recapsLus(recaps)) {
+            erreur('Impossible de vérifier les mois déjà clôturés : l’avenant ne peut pas ' +
+              'être enregistré tant que cette vérification n’a pas abouti.');
+            return;
+          }
+          var aRouvrir = moisClosGouvernesPar(champs, tries, existant, recaps);
+          if (aRouvrir.length) {
+            global.UiReouverture.feuilleRouvrirEtContinuer({
+              mois: aRouvrir.map(function (r) {
+                return { contrat: contrat, annee: r.annee, mois: r.mois, recap: r };
+              }),
+              titre: aRouvrir.length > 1
+                ? aRouvrir.length + ' mois clôturés sont concernés' : 'Un mois clôturé est concerné',
+              question: 'Cet avenant change les conditions de ' + listeMois(aRouvrir) +
+                ', déjà clôturé' + (aRouvrir.length > 1 ? 's' : '') + '. Rouvrir ' +
+                (aRouvrir.length > 1 ? 'ces mois' : 'ce mois') + ' pour qu’il s’y applique ?',
+              bouton: aRouvrir.length > 1
+                ? 'Rouvrir ces ' + aRouvrir.length + ' récapitulatifs et enregistrer l’avenant'
+                : 'Rouvrir ' + Kit.libelleMois(aRouvrir[0].mois) + ' et enregistrer l’avenant',
+              motif: existant ? 'Avenant n° ' + existant.numero + ' corrigé' : 'Nouvel avenant',
+              continuer: function () { return ecrireAvenant(champs); },
+              annuler: function () {
+                feuilleAvenant(contrat, avenants, recaps, existant, champs);
+              }
+            });
+            return;
+          }
+
           b.disabled = true;
           msg.className = 'msg';
           msg.textContent = 'Enregistrement…';
+          ecrireAvenant(champs, b);
+        }
+
+        function ecrireAvenant(champs, bouton) {
           var p = existant
             ? global.DB.majAvenant(existant.id, champs)
             : global.DB.ajouterAvenant(contrat.id, champs);
-          p.then(function () {
+          return p.then(function () {
             global.App.invalider();
             Kit.fermerFeuille();
             Kit.toast(existant ? 'Avenant enregistré' : 'Avenant créé');
             return global.App.rafraichir();
           }).catch(function (e) {
-            b.disabled = false;
+            if (bouton) bouton.disabled = false;
+            if (!bouton) {
+              /* Les mois sont rouverts, l'avenant n'est pas écrit : on le dit
+                 tel quel, et on rend la feuille à Maria pour réessayer. */
+              Kit.toast('Les mois sont rouverts mais l’avenant n’a pas été enregistré : ' +
+                Kit.messageErreur(e), true);
+              feuilleAvenant(contrat, avenants, recaps, existant, champs);
+              return;
+            }
             erreur('Enregistrement impossible : ' + Kit.messageErreur(e) +
               ' Votre saisie est conservée.');
           });
@@ -1546,11 +1605,11 @@
       contrat.prenom_enfant + ' — à partir du ' + Kit.dateLongue(avenant.date_effet),
       function (corps) {
         if (bloquants.length) {
-          corps.appendChild(Kit.warnbox('Suppression impossible',
-            'Cet avenant sert de conditions à des mois déjà clôturés : ' +
-            listeMois(bloquants) + '. Rouvrez ces mois d’abord si vous devez ' +
-            'vraiment le supprimer.'));
-          return;
+          /* LOT 30 (§30.3) — plus de refus sec : on nomme, on propose, on
+             poursuit. */
+          corps.appendChild(Kit.note('Cet avenant sert à des mois déjà clôturés',
+            listeMois(bloquants) + '. Le supprimer les rouvrira : l’application vous ' +
+            'le proposera, puis supprimera l’avenant.'));
         }
         corps.appendChild(Kit.ce('p', 'sb q',
           precedent
@@ -1570,20 +1629,49 @@
           ' seront recalculés.'));
         var msg = Kit.ce('div', 'msg');
         corps.appendChild(msg);
-        var b = Kit.bouton('btn dg', function () {
-          b.disabled = true;
-          msg.className = 'msg';
-          msg.textContent = 'Suppression…';
-          global.DB.supprimerAvenant(avenant.id).then(function () {
+        function supprimer(bouton) {
+          return global.DB.supprimerAvenant(avenant.id).then(function () {
             global.App.invalider();
             Kit.fermerFeuille();
             Kit.toast('Avenant supprimé');
             return global.App.rafraichir();
           }).catch(function (e) {
-            b.disabled = false;
-            msg.className = 'msg ko';
-            msg.textContent = 'Suppression impossible : ' + Kit.messageErreur(e);
+            if (bouton) {
+              bouton.disabled = false;
+              msg.className = 'msg ko';
+              msg.textContent = 'Suppression impossible : ' + Kit.messageErreur(e);
+            } else {
+              Kit.toast('Les mois sont rouverts mais l’avenant n’a pas été supprimé : ' +
+                Kit.messageErreur(e), true);
+            }
           });
+        }
+        var b = Kit.bouton('btn dg', function () {
+          if (bloquants.length) {
+            if (!recapsLus(recaps)) {
+              msg.className = 'msg ko';
+              msg.textContent = 'Impossible de vérifier les mois déjà clôturés : rien n’a été supprimé.';
+              return;
+            }
+            global.UiReouverture.feuilleRouvrirEtContinuer({
+              mois: bloquants.map(function (r) {
+                return { contrat: contrat, annee: r.annee, mois: r.mois, recap: r };
+              }),
+              question: 'Supprimer l’avenant n° ' + avenant.numero + ' change les conditions de ' +
+                listeMois(bloquants) + '. Rouvrir ' + (bloquants.length > 1 ? 'ces mois' : 'ce mois') + ' ?',
+              bouton: bloquants.length > 1
+                ? 'Rouvrir ces ' + bloquants.length + ' récapitulatifs et supprimer l’avenant'
+                : 'Rouvrir ' + Kit.libelleMois(bloquants[0].mois) + ' et supprimer l’avenant',
+              motif: 'Avenant n° ' + avenant.numero + ' supprimé',
+              continuer: function () { return supprimer(null); },
+              annuler: function () { feuilleSuppressionAvenant(contrat, avenant, avenants, recaps); }
+            });
+            return;
+          }
+          b.disabled = true;
+          msg.className = 'msg';
+          msg.textContent = 'Suppression…';
+          supprimer(b);
         });
         b.textContent = 'Supprimer cet avenant';
         corps.appendChild(b);
@@ -2007,12 +2095,49 @@
       'Dernier jour de garde : ' + Kit.dateLongue(dateFin),
       function (corps) {
         if (closDuMois.length) {
+          /* LOT 30 (§30.3) — LE DERNIER MOIS EST DÉJÀ CLÔTURÉ : il a été
+             calculé sans cette date de fin et ne sera pas recalculé. Plutôt
+             que d'avertir et de laisser deux documents se contredire, on
+             propose de le rouvrir, de ranger le contrat, et d'aller le
+             reclôturer — il portera alors le prorata du dernier mois, et la
+             reclôture montrera les écarts (décision d'Adrien, 26 août : un
+             contrat rangé peut reclôturer un mois rouvert). */
+          var r0 = closDuMois[0];
           corps.appendChild(Kit.warnbox(
-            'Le récapitulatif ' + Kit.deMoisAnnee(closDuMois[0].annee, closDuMois[0].mois) +
-            ' est déjà clôturé',
-            'Il a été calculé sans cette date de fin et ne sera PAS recalculé : le document ' +
-            'remis aux parents fait foi. Seuls les récapitulatifs de période tiendront compte ' +
-            'de la date de fin — les deux ne diront donc pas la même chose sur ce mois.'));
+            'Le récapitulatif ' + Kit.deMoisAnnee(r0.annee, r0.mois) + ' est déjà clôturé',
+            'Il a été calculé sans cette date de fin et ne sera pas recalculé tant qu’il reste ' +
+            'clôturé. Rouvrez-le pour que la date de fin y entre, puis clôturez-le à nouveau ' +
+            'depuis son document.'));
+          var bRouvrir = Kit.bouton('btn', function () {
+            global.UiReouverture.feuilleRouvrirEtContinuer({
+              mois: [{ contrat: contrat, annee: r0.annee, mois: r0.mois, recap: r0 }],
+              question: 'Rouvrir ' + Kit.libelleMoisAnnee(r0.annee, r0.mois) +
+                ' pour que la date de fin y entre, puis ranger le contrat ?',
+              bouton: 'Rouvrir ' + Kit.libelleMois(r0.mois) + ' et ranger le contrat',
+              motif: 'Fin de contrat au ' + Kit.dateLongue(dateFin),
+              continuer: function () {
+                return global.DB.archiverContrat(contrat.id, dateFin)
+                  .then(function () { return global.App.rechargerContrats(); })
+                  .then(function () {
+                    Kit.toast('Contrat de ' + contrat.prenom_enfant + ' rangé — ' +
+                      Kit.libelleMoisAnnee(r0.annee, r0.mois) + ' est à clôturer à nouveau.');
+                    return global.App.aller('document', {
+                      contratId: contrat.id, annee: r0.annee, mois: r0.mois
+                    }, true);
+                  })
+                  .catch(function (e) {
+                    Kit.toast('Le mois est rouvert mais le contrat n’a pas été rangé : ' +
+                      Kit.messageErreur(e) + ' Vérifiez avant de réessayer.', true);
+                  });
+              },
+              annuler: function () { ouvrirConfirmationFin(contrat, dateFin, closDuMois); }
+            });
+          });
+          bRouvrir.textContent = 'Rouvrir ' + Kit.libelleMois(r0.mois) + ' et ranger le contrat';
+          corps.appendChild(bRouvrir);
+          corps.appendChild(Kit.ce('p', 'sb q',
+            'Ou ranger sans rouvrir : le document remis fait foi tel quel, et seuls les ' +
+            'récapitulatifs de période tiendront compte de la date de fin.'));
         }
         corps.appendChild(Kit.warnbox('Avez-vous noté les deux soldes ?',
           'Congés payés restants (payés sans majoration) et heures supplémentaires ' +
@@ -2036,7 +2161,7 @@
                 ' Vérifiez avant de réessayer.', true);
             });
         });
-        b.textContent = 'Oui, ranger ce contrat';
+        b.textContent = closDuMois.length ? 'Ranger sans rouvrir' : 'Oui, ranger ce contrat';
         corps.appendChild(b);
       });
   }

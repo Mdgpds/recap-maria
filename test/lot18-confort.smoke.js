@@ -813,9 +813,14 @@ function entrerSelection() {
      les deux textes au bout. Un pavé présent dont les boutons ne mènent nulle
      part passait l'ancienne assertion.
      ====================================================================== */
+  /* LOT 30 (§30.2) — EXIGENCE CHANGÉE : sur un mois clôturé d'un contrat en
+     cours, le ⋯ RESTE. La multi-sélection propose la réouverture au moment
+     de valider, comme la feuille du jour ; rien n'est écrit tant que le mois
+     n'est pas rouvert (vérifié par `lot30-rouvrir.smoke.js`). Un contrat
+     RANGÉ, lui, reste sans ⋯. */
   assert(!boutonExact(corps, 'Choisir plusieurs jours') &&
-         !document.getElementById('barre').querySelector('button[aria-label="Marquer plusieurs jours"]'),
-    '§18.1 : sur un mois clôturé, le ⋯ n’apparaît pas du tout');
+         !!document.getElementById('barre').querySelector('button[aria-label="Marquer plusieurs jours"]'),
+    '§30.2 : sur un mois clôturé, le ⋯ reste — valider proposera de rouvrir');
   assert(txt(corps).indexOf('Rien à faire les jours normaux') === -1,
     '§18.6 : et la phrase qui invite à toucher des jours inertes a disparu');
   var encClos = parTexte(corps, '.enc', 'Mois clôturé');

@@ -317,7 +317,7 @@ cas.push({
 });
 
 cas.push({
-  nom: 'Lot 13 (C2) — les six postes du document PLUS les quatre compteurs, et eux seuls',
+  nom: 'Lot 13 (C2) — les six postes du document PLUS les compteurs, et eux seuls (lot 30 : l’acquisition aussi)',
   fn: function () {
     /* Le §5.4 de la spécification énumérait six postes : ceux qui figurent sur
        le document remis à la famille. La relecture (C2) a montré ce qu'ils
@@ -326,12 +326,17 @@ cas.push({
        payés au lieu de la récupération. Le mois se lit pareil, et deux
        compteurs que RG-12 interdit de remettre à zéro ont changé de poche en
        silence. Ajout délibéré, hors lettre de la spécification. */
-    egal(Chaine.POSTES_COMPARES.length, 10, 'dix postes');
+    /* LOT 30 (§30.5) — DOUZE POSTES : l'acquisition des congés payés du mois et
+       le cumul acquis rejoignent la liste. Le lot 28 rend aux mois leurs 2,5
+       jours ; les mois clôturés qui les ont perdus se rattrapent en rouvrant
+       puis reclôturant — et cette reclôture-là aurait eu « aucun écart ». */
+    egal(Chaine.POSTES_COMPARES.length, 12, 'douze postes');
     egal(Chaine.POSTES_COMPARES.map(function (p) { return p.cle; }).join(','),
       'joursPresence,entretienCentimes,salaireNetProrataCentimes,totalAVerserCentimes,' +
       'minutesSupAcquises,joursCongesDecomptes,' +
       'imputation.minutesCpConsommees,imputation.minutesSupConsommees,' +
-      'compteurSortie.minutesCpPris,compteurSortie.minutesSup',
+      'compteurSortie.minutesCpPris,compteurSortie.minutesSup,' +
+      'minutesCpAcquis,compteurSortie.minutesCpAcquis',
       'ordre et contenu des postes');
 
     /* Les six premiers restent en tête, et dans l'ordre du document : l'écran
@@ -359,10 +364,17 @@ cas.push({
       egal(typeof p.libelle === 'string' && p.libelle.length > 0, true, 'libellé : ' + p.cle);
     });
 
-    /* Un poste hors liste n'est pas comparé, même s'il diffère. */
-    var a = instantane(); a.minutesCpAcquis = 25;
-    var b = instantane(); b.minutesCpAcquis = 0;
+    /* Un poste hors liste n'est pas comparé, même s'il diffère.
+       LOT 30 — `minutesCpAcquis` est ENTRÉ dans la liste : l'exemple change
+       de poste (le brut contractuel n'y est pas, et n'a pas à y être : c'est
+       le net dû qui est comparé), et l'ancien exemple devient un écart VU. */
+    var a = instantane(); a.salaireBrutCentimes = 137289;
+    var b = instantane(); b.salaireBrutCentimes = 140000;
     egal(Chaine.ecartsInstantanes(a, b).length, 0, 'un poste hors liste est ignoré');
+    var a2 = instantane(); a2.minutesCpAcquis = 0;
+    var b2 = instantane(); b2.minutesCpAcquis = 1350;
+    egal(Chaine.ecartsInstantanes(a2, b2).length, 1,
+      'lot 30 : les congés payés récupérés par une reclôture sont un écart vu');
   }
 });
 

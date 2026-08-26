@@ -1182,7 +1182,14 @@
     { cle: 'imputation.minutesCpConsommees', libelle: 'Congés payés décomptés ce mois', format: 'cp' },
     { cle: 'imputation.minutesSupConsommees', libelle: 'Récupération utilisée ce mois', format: 'minutes' },
     { cle: 'compteurSortie.minutesCpPris',   libelle: 'Congés payés pris, en tout',     format: 'cp' },
-    { cle: 'compteurSortie.minutesSup',      libelle: 'Récupération restante',          format: 'minutes' }
+    { cle: 'compteurSortie.minutesSup',      libelle: 'Récupération restante',          format: 'minutes' },
+    /* LOT 30 (§30.5) — L'ACQUISITION, ELLE AUSSI. Le lot 28 rend aux mois
+       leurs 2,5 jours ; les mois clôturés qui les ont perdus se rattrapent en
+       rouvrant puis reclôturant. Sans ces deux postes, cette reclôture-là
+       n'aurait « aucun écart » et s'écrirait sans écran de comparaison —
+       alors que c'est précisément un compteur qui change. */
+    { cle: 'minutesCpAcquis',                libelle: 'Congés payés acquis ce mois',    format: 'cp' },
+    { cle: 'compteurSortie.minutesCpAcquis', libelle: 'Congés payés acquis, en tout',   format: 'cp' }
   ];
 
   /* CORRECTION B4 — LE NET ET LE BRUT DU MOIS, EN UN SEUL ENDROIT.
