@@ -193,7 +193,10 @@ var DB = {
     var ligne = { id: 'j-' + l.jour, contrat_id: l.contrat_id, jour: l.jour, type: l.type };
     ['minutes_reelles', 'entretien_centimes', 'commentaire', 'entretien_du',
      'minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',
-     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur']
+     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur',
+     /* Arrivée puis départ (migration 019) — même règle que les colonnes
+        d'écart : absentes, gardées ; présentes à `null`, effacées. */
+     'fam_heure_arrivee', 'fam_heure_depart']
       .forEach(function (k) {
         ligne[k] = Object.prototype.hasOwnProperty.call(l, k) ? l[k] : garde[k];
       });
@@ -227,6 +230,21 @@ window.App.aujourdhui = function () { return '2026-09-10'; };
 
 var corps = document.getElementById('corps');
 var sheet = document.getElementById('sheet');
+
+/* Le champ d'heure d'une paire Arrivée / Départ, par son libellé. */
+function champHeure(racineEl, libelle) {
+  var fld = Array.prototype.filter.call(racineEl.querySelectorAll('.fld'), function (f) {
+    var lb = f.querySelector('.lb');
+    return lb && txt(lb).trim() === libelle;
+  })[0];
+  return fld ? fld.querySelector('input[type="time"]') : null;
+}
+function poserHeure(input, valeur) {
+  input.value = valeur;
+  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+}
+function toast() { return document.getElementById('toast'); }
 
 function celluleDu(numero) {
   return Array.prototype.filter.call(
@@ -302,6 +320,23 @@ function celluleDu(numero) {
   /* ==================================================================== */
   console.log('\n--- §20.4 c : déclarer 2 h 30, entretien compté ---');
 
+  /* ==========================================================================
+     EXIGENCE CHANGÉE — LA FAMILIARISATION SE SAISIT EN ARRIVÉE PUIS DÉPART
+     (retour d'Adrien du 26 août 2026). Les trois raccourcis de durée
+     (2 h 30 / 3 h 00 / 4 h 30) ont DISPARU : une durée de familiarisation
+     n'est pas usuelle (RG-14), et trois durées proposées d'avance invitaient à
+     cocher au lieu de relever. Ancienne assertion : « le raccourci 2 h 30
+     existe », suivie d'un clic dessus. Nouvelle : aucun bouton de raccourci,
+     et les 150 minutes viennent de deux heures saisies — 8 h 45 → 11 h 15.
+     LE CHIFFRE VÉRIFIÉ EST LE MÊME (150 minutes, 18,00 € à 7,20 € de l'heure,
+     rejoué par le moteur), l'indemnité comptée par défaut aussi, et le montant
+     de l'indemnité toujours pas surchargé : aucune assertion de comportement
+     n'est affaiblie, seule la façon d'arriver aux 150 minutes change.
+
+     ET L'ENREGISTREMENT SE FAIT EN DEUX TEMPS : l'arrivée seule le matin,
+     le départ le soir. C'est vérifié ici, dans l'ordre où Maria le vit.
+     ====================================================================== */
+
   /* L'ENCART EST LA PORTE : on l'ouvre, et la règle est là. */
   (encFam.tagName === 'BUTTON' ? encFam : encFam.querySelector('button')).click();
   await pause(250);
@@ -309,27 +344,126 @@ function celluleDu(numero) {
   contient(sheet, 'seules les heures déclarées sont payées',
     'et elle dit la règle, là où Maria déclare');
   contient(sheet, 'Rémunération à l’heure', 'elle rappelle la règle');
+  contient(sheet, 'Les heures faites', 'la section « Les heures faites »');
+  contient(sheet, 'Arrivée et départ, à la minute près.', 'et sa phrase d’appui');
   contient(sheet, 'Arrivée', 'le champ d’arrivée est là');
   contient(sheet, 'Départ', 'et celui de départ');
   contient(sheet, 'Indemnité d’entretien du jour', 'l’entretien se choisit');
   contient(sheet, 'Montant plein du jour', 'et le montant est PLEIN, jamais au prorata');
 
-  var b230 = boutonExact(sheet, '2h30');
-  assert(!!b230, 'le raccourci 2 h 30 existe');
-  b230.click();
+  /* Aucun raccourci de durée, sous aucune forme. */
+  assert(!boutonExact(sheet, '2h30') && !boutonExact(sheet, '3h') &&
+         !boutonExact(sheet, '3h00') && !boutonExact(sheet, '4h30'),
+    'aucun bouton de raccourci de durée dans la feuille');
+  absent(sheet, 'Heures faites', 'l’ancien bloc « Heures faites » a disparu');
+  absent(sheet, 'Ou saisissez', 'et la phrase « Ou saisissez… » avec lui');
+  egal(sheet.querySelectorAll('input[type="time"]').length, 2,
+    'deux champs d’heure, et deux seulement');
+
+  var arrivee = champHeure(sheet, 'Arrivée');
+  var depart = champHeure(sheet, 'Départ');
+  assert(!!arrivee && !!depart, 'les deux champs sont des champs d’heure à la minute');
+  egal(arrivee.value, '08:30',
+    'l’arrivée est pré-remplie avec l’heure d’arrivée des conditions du mois');
+  egal(depart.value, '', 'le départ est vide');
+
+  /* --- 1. L'ARRIVÉE SEULE S'ENREGISTRE ---------------------------------- */
+  var bArr = boutonExact(sheet, 'Enregistrer l’arrivée');
+  assert(!!bArr, 'avec l’arrivée seule, le bouton dit « Enregistrer l’arrivée »');
+  assert(bArr && bArr.disabled === false, 'et il est ACTIF : Maria peut noter le matin');
+  contient(sheet, 'Tant que rien n’est déclaré, ce jour ne paie rien',
+    'et l’encart du montant dit que rien n’est payé');
+
+  poserHeure(arrivee, '08:45');
   await pause(120);
+  bArr = boutonExact(sheet, 'Enregistrer l’arrivée');
+  assert(!!bArr && bArr.disabled === false, 'l’arrivée changée, le bouton reste « Enregistrer l’arrivée »');
+  bArr.click();
+  await pause(500);
+
+  var ecritArr = ecritures.journees[ecritures.journees.length - 1];
+  egal(ecritArr.type, 'familiarisation', 'l’arrivée est écrite sur une journée de familiarisation');
+  egal(ecritArr.fam_heure_arrivee, '08:45', 'avec l’heure d’arrivée');
+  egal(ecritArr.fam_heure_depart, null, 'sans départ');
+  egal(ecritArr.minutes_reelles, null,
+    'et `minutes_reelles` reste `null` : RIEN n’est payé sur une arrivée seule');
+  egal(ecritArr.entretien_du, true, 'l’indemnité reste comptée par défaut');
+  contient(toast(), 'Arrivée enregistrée', 'la feuille se ferme sur « Arrivée enregistrée »');
+
+  /* La case du calendrier dit « en cours », et garde son orange. */
+  contient(celluleDu(10), 'en cours', 'la case du 10 dit « en cours »');
+  assert(celluleDu(10).className.indexOf('warn') !== -1,
+    'et garde son orange : il manque le départ');
+  absent(celluleDu(10), 'à décl.', 'elle ne dit plus « à décl. »');
+  contient(corps, 'arrivée à 8h45 — départ à déclarer',
+    'l’encart de l’espace enfant ne réclame plus que le départ');
+
+  /* Rien de payé : le récapitulatif ne compte aucun jour déclaré. */
+  contient(corps, '0 j déclaré', 'la synthèse ne compte aucun jour déclaré');
+
+  /* --- 2. ROUVRIR LE JOUR : L'ARRIVÉE REVIENT ---------------------------- */
+  celluleDu(10).click();
+  await pause(250);
+  arrivee = champHeure(sheet, 'Arrivée');
+  depart = champHeure(sheet, 'Départ');
+  egal(arrivee.value, '08:45', 'en rouvrant, l’arrivée enregistrée revient');
+  egal(depart.value, '', 'et le départ est toujours vide');
+  contient(sheet, 'Arrivée enregistrée à 8h45',
+    'l’encart du montant dit l’arrivée enregistrée');
+  contient(sheet, 'payé quand vous aurez enregistré le départ',
+    'et que le jour sera payé quand le départ sera enregistré');
+  assert(!!boutonExact(sheet, 'Enregistrer l’arrivée'),
+    'le bouton propose encore d’enregistrer l’arrivée');
+  assert(!!boutonExact(sheet, 'Retirer cette déclaration'),
+    'et l’arrivée seule peut se retirer');
+
+  /* --- 3. DÉPART ANTÉRIEUR À L'ARRIVÉE : LE MOTEUR REFUSE ---------------- */
+  poserHeure(depart, '08:00');
+  await pause(120);
+  assert(!!sheet.querySelector('.msg.ko') && txt(sheet.querySelector('.msg.ko')).length > 0,
+    'un départ antérieur à l’arrivée affiche le message du moteur');
+  var bApresRefus = boutonExact(sheet, 'Enregistrer l’arrivée');
+  assert(!!bApresRefus && bApresRefus.disabled === false,
+    'et le bouton retombe sur « Enregistrer l’arrivée » — l’arrivée reste enregistrable');
+  absent(sheet, 'Rémunération du jour', 'aucun montant n’est chiffré sur un départ refusé');
+
+  /* --- 4. DÉPART SEUL, SANS ARRIVÉE : RIEN NE S'ENREGISTRE --------------- */
+  poserHeure(depart, '11:15');
+  poserHeure(arrivee, '');
+  await pause(120);
+  var bSansArrivee = boutonExact(sheet, 'Enregistrer');
+  assert(!!bSansArrivee && bSansArrivee.disabled === true,
+    'départ seul : le bouton dit « Enregistrer » et il est INACTIF');
+  contient(sheet, 'Enregistrez d’abord l’heure d’arrivée.',
+    'et la feuille dit d’enregistrer d’abord l’arrivée');
+
+  /* --- 5. ARRIVÉE + DÉPART : LA JOURNÉE ---------------------------------- */
+  poserHeure(arrivee, '08:45');
+  await pause(120);
+  absent(sheet, 'Enregistrez d’abord', 'l’arrivée revenue, le message disparaît');
   contient(sheet, 'Rémunération du jour : 18,00 €',
     'A2 : 150 minutes à 7,20 € de l’heure, rejoué par le moteur');
+  var bJournee = boutonExact(sheet, 'Enregistrer la journée — 2h30');
+  assert(!!bJournee, 'le bouton nomme la journée et sa durée : « Enregistrer la journée — 2h30 »');
+  assert(bJournee && bJournee.disabled === false, 'et il est actif');
+  egal(Array.prototype.filter.call(sheet.querySelectorAll('button'), function (b) {
+         return txt(b).trim().indexOf('Enregistrer') === 0;
+       }).length, 1, 'un seul bouton d’enregistrement');
 
-  boutonExact(sheet, 'Enregistrer').click();
+  bJournee.click();
   await pause(500);
 
   var ecrit = ecritures.journees[ecritures.journees.length - 1];
   egal(ecrit.type, 'familiarisation', 'la journée est écrite en familiarisation');
   egal(ecrit.minutes_reelles, 150, 'avec ses 150 minutes');
+  egal(ecrit.fam_heure_arrivee, '08:45', 'l’arrivée est réécrite avec la ligne entière');
+  egal(ecrit.fam_heure_depart, '11:15', 'et le départ est écrit');
   egal(ecrit.entretien_du, true, 'et l’indemnité comptée par défaut');
   egal(ecrit.entretien_centimes, null,
     'le MONTANT de l’indemnité vient de l’avenant, jamais surchargé ici');
+  contient(toast(), 'Journée déclarée', 'la feuille se ferme sur « Journée déclarée »');
+  contient(celluleDu(10), '2h30', 'la case du 10 porte la durée');
+  absent(celluleDu(10), 'en cours', 'et ne dit plus « en cours »');
 
   /* ==================================================================== */
   /* A8 — LA CARTE SE MET À JOUR                                          */
@@ -435,6 +569,64 @@ function celluleDu(numero) {
   contient(sheet, 'Familiarisation — ', 'et il ouvre bien la feuille du jour');
   window.Kit.fermerFeuille();
   await pause(120);
+
+  /* ==================================================================== */
+  /* ARRIVÉE PUIS DÉPART — RETIRER EFFACE LES TROIS COLONNES              */
+  /* ==================================================================== */
+  console.log('\n--- arrivée puis départ : retirer, et la journée d’avant la migration ---');
+
+  window.App.aller('enfant', { contratId: 'c-noah', annee: 2026, mois: 9 });
+  await pause(400);
+  celluleDu(10).click();
+  await pause(250);
+  egal(champHeure(sheet, 'Arrivée').value, '08:45', 'la journée déclarée rouvre sur son arrivée');
+  egal(champHeure(sheet, 'Départ').value, '11:15', 'et sur son départ');
+  assert(!!boutonExact(sheet, 'Enregistrer la journée — 2h30'),
+    'le bouton porte la durée de la journée déclarée');
+  var bRetirer = boutonExact(sheet, 'Retirer cette déclaration');
+  assert(!!bRetirer, '« Retirer cette déclaration » est proposé');
+  bRetirer.click();
+  await pause(500);
+  var retire = ecritures.journees[ecritures.journees.length - 1];
+  egal(retire.minutes_reelles, null, 'retirer remet la durée à `null`');
+  egal(retire.fam_heure_arrivee, null, 'et l’arrivée à `null`');
+  egal(retire.fam_heure_depart, null, 'et le départ à `null` : aucune heure orpheline');
+  contient(celluleDu(10), 'à décl.', 'la case du 10 redit « à décl. »');
+  absent(celluleDu(10), 'en cours', 'et surtout pas « en cours »');
+
+  /* Une journée déclarée AVANT la migration 019 : une durée, aucune heure.
+     Elle n'est pas dégradée en « en cours » — `minutes_reelles > 0` suffit à
+     la dire déclarée — et sa durée ne bouge pas toute seule. */
+  journees['2026-09-03'] = {
+    id: 'j-2026-09-03', contrat_id: 'c-noah', jour: '2026-09-03', type: 'familiarisation',
+    minutes_reelles: 120, entretien_centimes: null, commentaire: null, entretien_du: true,
+    fam_heure_arrivee: null, fam_heure_depart: null
+  };
+  window.App.invalider();
+  window.App.aller('enfant', { contratId: 'c-noah', annee: 2026, mois: 9 });
+  await pause(400);
+  contient(celluleDu(3), '2h00', 'la journée d’avant la migration garde sa durée sur le calendrier');
+  absent(celluleDu(3), 'en cours', 'et n’est pas dégradée en « en cours »');
+  celluleDu(3).click();
+  await pause(250);
+  contient(sheet, 'Rémunération du jour : 14,40 €',
+    'elle s’ouvre avec son montant : 120 minutes à 7,20 €');
+  contient(sheet, '2h00 déclarées', 'et sa durée');
+  egal(champHeure(sheet, 'Arrivée').value, '08:30',
+    'l’arrivée est pré-remplie comme aujourd’hui, depuis les conditions');
+  egal(champHeure(sheet, 'Départ').value, '', 'le départ est vide');
+  assert(!!boutonExact(sheet, 'Enregistrer la journée — 2h00'),
+    'le bouton porte la durée de la base — elle ne varie pas toute seule');
+  /* Saisir les deux heures la met à jour, par le moteur. */
+  poserHeure(champHeure(sheet, 'Départ'), '11:30');
+  await pause(120);
+  assert(!!boutonExact(sheet, 'Enregistrer la journée — 3h00'),
+    'les deux heures saisies, la durée vient du moteur : 8 h 30 → 11 h 30 = 3 h');
+  contient(sheet, 'Rémunération du jour : 21,60 €', 'et le montant suit : 180 minutes à 7,20 €');
+  window.Kit.fermerFeuille();
+  await pause(120);
+  delete journees['2026-09-03'];
+  window.App.invalider();
 
   /* ==================================================================== */
   /* §20.4 — LA PÉRIODE SE VERROUILLE SUR UN MOIS CLÔTURÉ, ET LE NOMME    */

@@ -301,6 +301,15 @@
     return !!(vue && vue.famJours && vue.famJours[d]);
   }
 
+  /* ARRIVÉE PUIS DÉPART (migration 019) — l'heure d'arrivée enregistrée sur
+     ce jour, « HH:MM », ou `''`. C'est une lecture de la ligne, pas du
+     moteur : le moteur ne connaît pas les deux heures, et n'a pas à les
+     connaître — `declare` reste son seul mot sur ce qui est payé. */
+  function arriveeSeule(d) {
+    var l = vue && vue.journees && vue.journees[d];
+    return (l && l.fam_heure_arrivee) ? String(l.fam_heure_arrivee).slice(0, 5) : '';
+  }
+
   /* Redessine l'écran à partir de ce qui est DÉJÀ en mémoire. Aucun appel
      réseau : c'est ce qui rend l'entrée et la sortie du mode sélection
      instantanées, et ce qui garantit que les chiffres affichés sont les mêmes
@@ -639,7 +648,12 @@
         ton: fj.declare ? '' : 'w',
         titre: fj.declare
           ? 'Aujourd’hui — ' + Kit.heures(fj.minutes) + ' déclarées'
-          : 'Aujourd’hui : heures à déclarer',
+          /* ARRIVÉE PUIS DÉPART — l'arrivée est enregistrée : l'encart ne
+             réclame plus que le départ, sinon Maria croirait que son geste
+             du matin n'a pas été pris. */
+          : fj.arrivee
+            ? 'Aujourd’hui : arrivée à ' + heureEnTexte(fj.arrivee) + ' — départ à déclarer'
+            : 'Aujourd’hui : heures à déclarer',
         action: function () { feuilleFamiliarisation(fj.jour); }
       });
     }
@@ -777,7 +791,10 @@
     if (!d || d.slice(0, 7) !== vue.annee + '-' + String(vue.mois).padStart(2, '0')) return null;
     var etat = vue.famJours && vue.famJours[d];
     if (!etat) return null;
-    return { jour: d, declare: !!etat.declare, minutes: etat.minutes || 0 };
+    return { jour: d, declare: !!etat.declare, minutes: etat.minutes || 0,
+             /* ARRIVÉE PUIS DÉPART — l'arrivée déjà enregistrée, s'il y en a
+                une : l'encart dit alors qu'il ne manque que le départ. */
+             arrivee: etat.declare ? '' : arriveeSeule(d) };
   }
 
   /* ------------------------------------------------------------------ */
@@ -1660,7 +1677,8 @@
     td.setAttribute('role', 'button');
     td.setAttribute('tabindex', '0');
     td.setAttribute('aria-label', Kit.jourLong(d) + ' — familiarisation, ' +
-      (aDeclarer ? 'heures à déclarer' : mini));
+      (mini === 'en cours' ? 'arrivée enregistrée, départ à déclarer'
+        : aDeclarer ? 'heures à déclarer' : mini));
     td.addEventListener('click', function () { feuilleFamiliarisation(d); });
     td.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); feuilleFamiliarisation(d); }
@@ -1691,10 +1709,16 @@
     if (fam && !horsBornes && !horsPlanning) {
       var etatFam = vue.famJours[d];
       classe = 'ok';
+      /* ARRIVÉE PUIS DÉPART — une arrivée enregistrée sans départ est une
+         journée « en cours » : elle GARDE l'orange, il manque le départ et
+         l'application a toujours quelque chose à réclamer. Rien n'est payé :
+         le moteur ne voit que `minutes_reelles`, restée `null`. */
+      var enCours = !etatFam.declare && !!arriveeSeule(d);
       mini = etatFam.declare ? Kit.heures(etatFam.minutes)
+           : enCours ? 'en cours'
            : (d > vue.aujourdhui ? 'à venir' : 'à décl.');
       var td0 = celluleFamiliarisation(d, jour, classe, mini,
-        !etatFam.declare && d <= vue.aujourdhui);
+        !etatFam.declare && (d <= vue.aujourdhui || enCours));
       return td0;
     }
     if (horsBornes) { classe = 'we no'; }
@@ -3211,12 +3235,27 @@
   /* l'indemnité d'entretien est comptée. Le montant du jour s'affiche   */
   /* au fur et à mesure, REJOUÉ PAR LE MOTEUR — jamais recomposé ici :   */
   /* si le taux change par un avenant, la phrase change toute seule.     */
+  /*                                                                     */
+  /* ARRIVÉE PUIS DÉPART (retour d'Adrien du 26 août 2026). Les heures   */
+  /* faites ne se déclarent plus que d'UNE façon : l'arrivée et le       */
+  /* départ, à la minute. Les trois raccourcis de durée ont disparu —    */
+  /* une durée de familiarisation n'est pas usuelle (RG-14, horaires     */
+  /* variables), et trois durées proposées d'avance invitaient à cocher  */
+  /* au lieu de relever. Et l'enregistrement se fait EN DEUX TEMPS : le  */
+  /* matin l'arrivée seule, le soir le départ. Une arrivée seule est     */
+  /* gardée en base (`fam_heure_arrivee`, migration 019) ; la journée    */
+  /* est alors « en cours » : rien n'est payé, `minutes_reelles` reste   */
+  /* `null`, exactement l'état d'une journée à déclarer. Le moteur ne    */
+  /* lit jamais les deux heures — `declare: minutesJour > 0` reste le    */
+  /* seul juge de ce qui est payé.                                       */
   /* ------------------------------------------------------------------ */
 
-  /* Les raccourcis de la maquette. Ce sont des durées de familiarisation
-     usuelles (RG-14 : 5 à 10 jours, horaires variables), pas une règle : Maria
-     peut toujours saisir l'arrivée et le départ à la minute. */
-  var RACCOURCIS_FAMILIARISATION = [150, 180, 270];
+  /* « 08:45 » → « 8h45 », pour une phrase. */
+  function heureEnTexte(hhmm) {
+    var t = String(hhmm || '').slice(0, 5);
+    if (!t) return '';
+    return Number(t.slice(0, 2)) + 'h' + t.slice(3, 5);
+  }
 
   function feuilleFamiliarisation(d) {
     var c = vue.contrat;
@@ -3224,14 +3263,31 @@
     var ligne = (vue.journees || {})[d] || {};
     var etatJour = (vue.famJours && vue.famJours[d]) || null;
 
+    /* Ce que la base porte déjà. `minutesBase` est la durée déclarée AVANT
+       cette feuille ; elle n'est jamais recalculée toute seule depuis une
+       arrivée pré-remplie — une journée déclarée avant la migration 019 (une
+       durée, aucune heure) garde sa durée tant que les deux heures ne sont
+       pas saisies. */
+    var minutesBase = (ligne.minutes_reelles != null && ligne.minutes_reelles > 0)
+      ? ligne.minutes_reelles : null;
+    var arriveeBase = ligne.fam_heure_arrivee ? String(ligne.fam_heure_arrivee).slice(0, 5) : '';
+    var departBase = ligne.fam_heure_depart ? String(ligne.fam_heure_depart).slice(0, 5) : '';
+
     /* État local de la feuille. `entretien` suit le défaut de la base : dû,
-       sauf si Maria l'a explicitement retiré (§20.6 — retirer est un choix). */
+       sauf si Maria l'a explicitement retiré (§20.6 — retirer est un choix).
+       `arrivee` : celle enregistrée, sinon l'heure d'arrivée des conditions
+       du mois, `09:00` à défaut. `depart` : celui enregistré, sinon vide.
+       `minutes` : ce qui SERA ÉCRIT dans `minutes_reelles` — la durée du
+       moteur quand les deux heures sont là, la durée de la base sinon. */
     var etat = {
-      minutes: (ligne.minutes_reelles != null && ligne.minutes_reelles > 0)
-        ? ligne.minutes_reelles : null,
+      minutes: minutesBase,
       entretien: ligne.entretien_du !== false,
-      arrivee: (conditions && String(conditions.heure_arrivee || '').slice(0, 5)) || '09:00',
-      depart: ''
+      arrivee: arriveeBase ||
+        (conditions && String(conditions.heure_arrivee || '').slice(0, 5)) || '09:00',
+      depart: departBase,
+      /* Le départ saisi est-il refusé par le moteur ? Il n'est alors pas
+         écrit : l'arrivée, elle, reste enregistrable (§3.4). */
+      departRefuse: false
     };
 
     Kit.ouvrirFeuille('Familiarisation — ' + Kit.jourLong(d),
@@ -3241,23 +3297,9 @@
           'Rémunération à l’heure, au taux du contrat. Pas de minutes ' +
           'supplémentaires. Vos congés s’acquièrent normalement.'));
 
-        /* --- les heures faites ---------------------------------------- */
-        var blocRaccourcis = Kit.ce('div', 'fld');
-        blocRaccourcis.appendChild(Kit.ce('span', 'lb', 'Heures faites'));
-        var rangee = Kit.ce('div', 'row');
-        var boutons = [];
-        RACCOURCIS_FAMILIARISATION.forEach(function (m) {
-          var bt = Kit.bouton('btn sm nt', function () {
-            etat.minutes = m;
-            etat.depart = '';
-            majTout();
-          });
-          bt.textContent = Kit.heures(m);
-          boutons.push({ el: bt, minutes: m });
-          rangee.appendChild(bt);
-        });
-        blocRaccourcis.appendChild(rangee);
-        corps.appendChild(blocRaccourcis);
+        /* --- les heures faites : arrivée et départ, rien d'autre --------- */
+        corps.appendChild(Kit.section('Les heures faites'));
+        corps.appendChild(Kit.ce('p', 'sb q', 'Arrivée et départ, à la minute près.'));
 
         var arr = Kit.champHeureMinute('Arrivée', etat.arrivee);
         var dep = Kit.champHeureMinute('Départ', etat.depart);
@@ -3265,23 +3307,35 @@
         paire.appendChild(arr.bloc);
         paire.appendChild(dep.bloc);
         corps.appendChild(paire);
-        corps.appendChild(Kit.ce('p', 'sb q',
-          'Ou saisissez l’arrivée et le départ, à la minute près.'));
 
         var msgHeures = Kit.ce('div', 'msg');
         corps.appendChild(msgHeures);
 
+        /* Relit les deux champs et en tire ce qui sera écrit. La durée n'est
+           calculée QUE si les deux heures sont là : une arrivée seule laisse
+           la durée telle que la base la porte (`null` sur un jour vierge). */
         function lireLesDeuxHeures() {
           var a = arr.valeur();
           var b2 = dep.valeur();
-          if (!a || !b2) return;
+          etat.departRefuse = false;
+          msgHeures.className = 'msg';
+          msgHeures.textContent = '';
+          if (!a && b2) {
+            /* Départ saisi sans arrivée : rien ne s'enregistre, et on le dit. */
+            etat.minutes = minutesBase;
+            msgHeures.className = 'msg ko';
+            msgHeures.textContent = 'Enregistrez d’abord l’heure d’arrivée.';
+            return;
+          }
+          if (!a || !b2) { etat.minutes = minutesBase; return; }
           try {
             /* La durée est une RÈGLE : le moteur, et lui seul (B.0-5). */
             etat.minutes = Engine.dureeEntreHeures(a, b2);
-            msgHeures.className = 'msg';
-            msgHeures.textContent = '';
           } catch (e) {
-            etat.minutes = null;
+            /* Départ antérieur ou égal à l'arrivée : message du moteur, le
+               départ n'est pas écrit, la durée retombe sur celle de la base. */
+            etat.minutes = minutesBase;
+            etat.departRefuse = true;
             msgHeures.className = 'msg ko';
             msgHeures.textContent = Kit.messageErreur(e);
           }
@@ -3310,8 +3364,10 @@
 
         /* Retirer une déclaration faite par erreur. Sans ce bouton, une
            journée déclarée à 4 h au lieu de 40 min ne pourrait que se
-           corriger, jamais s'effacer — et un jour non venu resterait payé. */
-        if (etatJour && etatJour.declare) {
+           corriger, jamais s'effacer — et un jour non venu resterait payé.
+           Une arrivée seule se retire aussi : « en cours » n'est pas payé,
+           mais la case du calendrier réclame un départ tant qu'elle est là. */
+        if ((etatJour && etatJour.declare) || arriveeBase) {
           var bRetirer = Kit.bouton('btn nt', function () { retirer(bRetirer); });
           bRetirer.textContent = 'Retirer cette déclaration';
           corps.appendChild(bRetirer);
@@ -3321,11 +3377,13 @@
 
         avertirClos(corps, d);
 
-        function majTout() {
-          boutons.forEach(function (x) {
-            x.el.className = 'btn sm' + (etat.minutes === x.minutes ? '' : ' nt');
-          });
+        /* Le départ que la feuille porte, prêt à être écrit : celui des deux
+           champs s'il est là et accepté par le moteur, `null` sinon. */
+        function departAEcrire() {
+          return (etat.depart && !etat.departRefuse) ? etat.depart : null;
+        }
 
+        function majTout() {
           Kit.vider(effet);
           if (etat.minutes && conditions && conditions.brut_mensuel_centimes != null) {
             var brut = Engine.montantCentimes(conditions.brut_mensuel_centimes, etat.minutes);
@@ -3337,6 +3395,12 @@
             effet.appendChild(Kit.ce('div', 'sb q',
               'La rémunération ne peut pas être chiffrée : les conditions de ce ' +
               'mois ne portent pas de salaire.'));
+          } else if (arriveeBase) {
+            /* L'arrivée est enregistrée, le départ manque : la journée est
+               « en cours », et rien n'est payé tant que le départ n'est pas là. */
+            effet.appendChild(Kit.ce('div', 'sb q',
+              'Arrivée enregistrée à ' + heureEnTexte(arriveeBase) + '. Ce jour sera ' +
+              'payé quand vous aurez enregistré le départ.'));
           } else {
             effet.appendChild(Kit.ce('div', 'sb q',
               'Tant que rien n’est déclaré, ce jour ne paie rien.'));
@@ -3351,41 +3415,72 @@
           poserOption(choixEntretien, !etat.entretien, 'Non comptée', '0,00 €',
             function () { etat.entretien = false; majTout(); });
 
-          bEnr.textContent = 'Enregistrer';
-          bEnr.disabled = !etat.minutes;
+          /* UN SEUL BOUTON, dont le libellé nomme le geste qu'il va faire, et
+             qui s'active dès qu'UNE heure est saisie :
+               rien                        → « Enregistrer », inactif ;
+               arrivée seule               → « Enregistrer l'arrivée » ;
+               arrivée + départ valides    → « Enregistrer la journée — 4h15 » ;
+               départ seul, sans arrivée   → « Enregistrer », inactif + message ;
+               départ refusé par le moteur → « Enregistrer l'arrivée » : le
+                                             message est affiché, l'arrivée
+                                             reste enregistrable. */
+          if (!etat.arrivee) {
+            bEnr.textContent = 'Enregistrer';
+            bEnr.disabled = true;
+          } else if (etat.minutes) {
+            bEnr.textContent = 'Enregistrer la journée — ' + Kit.heures(etat.minutes);
+            bEnr.disabled = false;
+          } else {
+            bEnr.textContent = 'Enregistrer l’arrivée';
+            bEnr.disabled = false;
+          }
         }
 
+        /* Un enregistrement écrit TOUJOURS la ligne entière telle que la
+           feuille la porte : l'arrivée, le départ s'il est là, la durée si
+           elle est calculable, et l'indemnité d'entretien. Il n'y a pas deux
+           écritures à maintenir — le second appui complète la même ligne. */
         function enregistrer() {
-          if (!etat.minutes) {
+          if (!etat.arrivee) {
             msg.className = 'msg ko';
-            msg.textContent = 'Déclarez les heures faites : choisissez une durée, ' +
-              'ou saisissez l’arrivée et le départ.';
+            msg.textContent = etat.depart
+              ? 'Enregistrez d’abord l’heure d’arrivée.'
+              : 'Saisissez l’heure d’arrivée, puis l’heure de départ quand vous la connaîtrez.';
             return;
           }
+          var depart = departAEcrire();
           ecrire(global.DB.enregistrerJournee({
             contrat_id: c.id, jour: d, type: 'familiarisation',
-            minutes_reelles: etat.minutes,
+            minutes_reelles: etat.minutes == null ? null : etat.minutes,
             /* Le MONTANT de l'indemnité n'est pas surchargé ici : c'est
                l'avenant qui le porte (§7 des instructions). `entretien_du`
                répond à l'autre question — est-elle due. */
             entretien_centimes: null,
             entretien_du: etat.entretien,
             commentaire: ligne.commentaire == null ? null : ligne.commentaire,
+            /* La trace de la saisie, jamais une donnée de calcul. */
+            fam_heure_arrivee: etat.arrivee,
+            fam_heure_depart: depart,
             /* Une journée de la période ne porte aucun écart d'horaire :
                le moteur les ignore, les laisser en base les rendrait
                visibles le jour où la période serait raccourcie. */
             ecart_minutes: null, ecart_evenement: null,
             ecart_heure_reelle: null, ecart_impute_sur: null
-          }), bEnr, 'Journée déclarée', { contrats: [c.id], jours: [d] });
+          }), bEnr, etat.minutes ? 'Journée déclarée' : 'Arrivée enregistrée',
+          { contrats: [c.id], jours: [d] });
         }
 
+        /* Retirer remet la durée ET les deux heures à `null` : une
+           déclaration retirée ne laisse pas d'heure orpheline. */
         function retirer(bouton) {
           ecrire(global.DB.enregistrerJournee({
             contrat_id: c.id, jour: d, type: 'familiarisation',
             minutes_reelles: null,
             entretien_centimes: null,
             entretien_du: true,
-            commentaire: ligne.commentaire == null ? null : ligne.commentaire
+            commentaire: ligne.commentaire == null ? null : ligne.commentaire,
+            fam_heure_arrivee: null,
+            fam_heure_depart: null
           }), bouton, 'Déclaration retirée', { contrats: [c.id], jours: [d] });
         }
 
@@ -3504,7 +3599,12 @@
            comprise : une absence remet `entretien_du` à vrai, l'annulation
            doit pouvoir le remettre à faux. La colonne est `not null` en base :
            on ne la transmet que si l'ancienne ligne la portait. */
-        entretien_du: l.entretien_du == null ? undefined : l.entretien_du
+        entretien_du: l.entretien_du == null ? undefined : l.entretien_du,
+        /* ARRIVÉE PUIS DÉPART (migration 019) — les deux heures reviennent
+           aussi, et à `null` si l'ancienne ligne n'en portait pas : une
+           annulation rend l'état EXACT d'avant, heures comprises. */
+        fam_heure_arrivee: l.fam_heure_arrivee == null ? null : l.fam_heure_arrivee,
+        fam_heure_depart: l.fam_heure_depart == null ? null : l.fam_heure_depart
       });
     });
     return Promise.all(gestes)

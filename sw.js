@@ -204,7 +204,17 @@
    nouveau `js/ui-reouverture.js` ; servi avec l'ancien, toucher un jour d'un
    mois clôturé lèverait — au lieu de proposer la réouverture qui est tout
    l'objet du lot. Aucun fichier ajouté. */
-var CACHE = 'recap-calculs-justes-lot30-v1';
+/* LA FAMILIARISATION EN ARRIVÉE PUIS DÉPART — NOM DE CACHE CHANGÉ.
+
+   Deux fichiers servis changent : `js/db.js` (deux colonnes de plus lues et
+   écrites sur `journee` — `fam_heure_arrivee`, `fam_heure_depart`, migration
+   019) et `js/ui-enfant.js` (la feuille du jour de familiarisation sans
+   raccourcis, l'enregistrement en deux temps, la case « en cours »). Ils se
+   RÉPONDENT : l'écran lit sur la ligne une arrivée que seul le nouveau
+   `js/db.js` demande. Servi avec l'ancien, l'arrivée enregistrée le matin ne
+   reviendrait jamais le soir — exactement le défaut que ce changement
+   corrige. Aucun fichier ajouté. */
+var CACHE = 'recap-familiarisation-arrivee-depart-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
