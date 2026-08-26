@@ -180,7 +180,17 @@
    `minutesCpRestantesApresConsommation` à `undefined`. Sur les chiffres que
    ce lot existe pour rendre justes, une incohérence crédible est le pire
    résultat possible. Aucun fichier ajouté. */
-var CACHE = 'recap-calculs-justes-lot28-v1';
+/* CORRECTIFS DE CALCUL, LOT 29 (« LA JOURNÉE QUI SE CORRIGE VRAIMENT ») — NOM
+   DE CACHE CHANGÉ.
+
+   Deux fichiers servis changent : `js/ui-enfant.js` (déclarer un écart sur
+   une absence remet la journée en présence ; marquer une absence efface
+   l'écart et rend l'indemnité ; l'écran l'annonce avant ; « Annuler » rend
+   l'indemnité aussi) et `js/ui-conges.js` (aucun congé à l'heure sur une
+   absence de l'enfant). Ils se répondent avec le moteur du lot 28, qui
+   ignore déjà tout écart porté par une absence : un écran ancien laisserait
+   encore écrire des journées que le moteur n'entend plus. */
+var CACHE = 'recap-calculs-justes-lot29-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

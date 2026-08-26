@@ -1805,6 +1805,14 @@
     if (l && l.type === 'familiarisation') {
       return 'cette journée est en familiarisation, payée à l’heure';
     }
+    /* LOT 29 (§29.2, 5) — une absence de l'enfant ne porte jamais d'écart,
+       congé à l'heure compris : le moteur l'ignorerait (`TYPES_SANS_MINUTES`)
+       et le congé serait accepté puis oublié. Ce jour-là, la journée est
+       payée, sans minutes ni entretien : il n'y a rien à déduire. */
+    if (l && l.type === 'absence_enfant') {
+      return 'l’enfant est noté absent ce jour-là : la journée est payée, ' +
+        'il n’y a rien à déduire';
+    }
     if (l && TYPES_ABSENCE_MARIA.indexOf(l.type) !== -1) {
       return 'vous êtes déjà absente toute la journée';
     }

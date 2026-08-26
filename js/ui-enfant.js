@@ -1843,8 +1843,14 @@
     var absenceMaria = TYPES_ABSENCE_MARIA.indexOf(type) !== -1;
     /* RG-04 : ces journées ne portent aucune minute, écart compris. Proposer
        la déclaration dessus laisserait croire à un effet qui n'existe pas. */
+    /* LOT 29 (§29.2, 1) — SUR UNE ABSENCE, LA DÉCLARATION EST OFFERTE QUAND
+       MÊME : « si j'ai mis absent je ne peux pas vraiment corriger et dire
+       que l'enfant est parti plus tôt » (Adrien). Elle ne pose pas l'écart
+       sur l'absence — elle remet la journée en présence, et l'écran l'annonce
+       avant. `TYPES_SANS_ECART` dit ce qu'une journée peut PORTER ; ici on
+       décide ce que Maria peut DÉCLARER. */
     var ecartsPossibles = !!conditions && !congeHoraire &&
-      TYPES_SANS_ECART.indexOf(type) === -1;
+      (type === 'absence_enfant' || TYPES_SANS_ECART.indexOf(type) === -1);
 
     var etat = {
       choix: null,
@@ -1937,7 +1943,12 @@
             if (ecartsPossibles) {
               CHOIX_ECART.forEach(function (x) { poser(x.cle, x.libelle); });
             }
-            poser('absence_enfant', 'Absence de ' + c.prenom_enfant);
+            /* LOT 29 — marquer une absence EFFACE l'écart de la journée
+               (§29.2, 2). Un congé posé à l'heure vit sur les mêmes colonnes
+               et ne se retire que depuis « Mes congés » (garde-fou B2) : on
+               n'offre donc pas l'absence par-dessus, sinon elle l'effacerait
+               en silence. L'encart au-dessus dit où le retirer. */
+            if (!congeHoraire) poser('absence_enfant', 'Absence de ' + c.prenom_enfant);
           }
           poser('note', 'Une note sur la journée');
           if (!absenceMaria && !congeHoraire) {
@@ -1989,6 +2000,18 @@
           var matin = evt === 'arrivee_decalee';
           var reference = Engine.heureDeReference(conditions);
           var arrivee = Engine.heureEnMinutes(conditions.heure_arrivee);
+
+          /* LOT 29 (§29.2, 1 et 3) — L'ÉCRAN ANNONCE CE QUI SERA EFFACÉ, AVANT.
+             Sur une journée d'absence, déclarer un écart remet la journée en
+             présence : l'absence disparaît, l'enfant était là. Une ligne le
+             dit, sur le modèle de l'avertissement du marquage groupé. */
+          if (type === 'absence_enfant') {
+            detail.appendChild(Kit.warnbox(
+              'L’absence de ' + c.prenom_enfant + ' sera retirée',
+              ' Déclarer ce qui s’est passé, c’est dire que ' + c.prenom_enfant +
+              ' était là : la journée redevient une présence, avec son entretien ' +
+              'et ses minutes, moins ce que vous déclarez ici. Votre note, elle, reste.'));
+          }
 
           /* DÉCISION D'ADRIEN, 23 AOÛT : PAS DE RACCOURCIS D'HEURE.
              La maquette en proposait trois (18 h 01 · 18 h 15 · 18 h 30), et
@@ -2116,12 +2139,14 @@
                (B.0-5). On lui donne la journée telle qu'elle sera enregistrée.
                CORRECTION C1 DE LA RELECTURE DU LOT 17 conservée :
                `minutesSupDuJour` vient du moteur, elle n'est pas recopiée. */
+            /* §29.2 — la journée telle qu'elle sera ÉCRITE : une absence
+               redevient une présence. */
+            var typeEcrit = type === 'absence_enfant' ? 'presence' : type;
             var simule = {
-              type: type,
+              type: typeEcrit,
               minutes_sup_exceptionnelles: ligne.minutes_sup_exceptionnelles || 0,
               minutes_sup_renoncees: ligne.minutes_sup_renoncees || 0,
-              sup_dues_override: ligne.sup_dues_override === undefined
-                ? null : ligne.sup_dues_override,
+              sup_dues_override: null,
               ecart_minutes: minutes,
               ecart_impute_sur: etat.destination
             };
@@ -2160,7 +2185,7 @@
               var rejoue = null;
               try {
                 rejoue = simulerAvecLigne(d, {
-                  contrat_id: c.id, jour: d, type: type,
+                  contrat_id: c.id, jour: d, type: typeEcrit,
                   minutes_reelles: ligne.minutes_reelles == null ? null : ligne.minutes_reelles,
                   entretien_centimes: ligne.entretien_centimes == null ? null : ligne.entretien_centimes,
                   entretien_du: etat.entretien !== false,
@@ -2238,6 +2263,20 @@
         /* --- 4 : l'absence de l'enfant ------------------------------ */
 
         function dessinerAbsence() {
+          /* LOT 29 (§29.2, 2 et 3) — MARQUER UNE ABSENCE EFFACE L'ÉCART, ET
+             L'ÉCRAN LE DIT AVANT. « La déclaration de 17h00 sera retirée. »
+             — sur le modèle de l'avertissement du marquage groupé. L'entretien
+             retiré avec cette déclaration revient (RG-09 le retire à son
+             tour, pour l'absence, mais la colonne repart à vrai). */
+          if (SIGNE_ATTENDU[ligne.ecart_evenement]) {
+            var heureDecl = String(ligne.ecart_heure_reelle || '').slice(0, 5);
+            detail.appendChild(Kit.warnbox(
+              'La déclaration ' + (heureDecl ? 'de ' + heureDecl.replace(':', 'h') : 'd’horaire') +
+              ' sera retirée',
+              ' Une journée d’absence ne porte pas d’écart d’horaire : ' +
+              (Kit.LIBELLE_EVENEMENT_ECART[ligne.ecart_evenement] || 'la déclaration') +
+              ' du jour est effacée avec ce geste. Votre note, elle, reste.'));
+          }
           /* §25.2 — UNE LIGNE DE RÉSULTAT CHIFFRÉE, plus un paragraphe.
              « entretien − 5,00 € · 30 min toujours dues » au lieu de deux
              phrases. Le contenu est le MÊME et vient du même rejeu par le
@@ -2658,8 +2697,13 @@
   /* Les types de journée qui n'ont pas d'horaire de référence : RG-04 leur
      retire toute minute, écart compris. Proposer la déclaration dessus
      laisserait croire à un effet qui n'existe pas. */
+  /* LOT 29 (§29.2, 5) — `absence_enfant` REJOINT LA LISTE : une absence ne
+     PORTE jamais d'écart. Déclarer un écart sur une journée d'absence reste
+     possible — c'est même le geste de correction du §29.1 —, mais il REMET
+     la journée en présence : l'écart n'est jamais posé sur l'absence. C'est
+     `Engine.TYPES_SANS_MINUTES` côté moteur, la même liste. */
   var TYPES_SANS_ECART = ['ferie', 'conge_maria', 'sans_solde',
-                          'familiarisation', 'hors_planning'];
+                          'familiarisation', 'hors_planning', 'absence_enfant'];
 
 
   /* §21.3 — CE QUE LA JOURNÉE PORTE, ET OÙ IL SE RETIRE. Une note, pas un
@@ -2711,9 +2755,16 @@
        ENSEMBLE. Une ligne à demi effacée — un événement sans minutes — serait
        refusée par la contrainte `journee_ecart_coherent`, et surtout elle se
        relirait de travers. */
+    /* LOT 29 (§29.2, 1) — DÉCLARER UN ÉCART SUR UNE ABSENCE REMET LA JOURNÉE
+       EN PRÉSENCE. `type: ligne.type || 'presence'` laissait la journée en
+       `absence_enfant` avec un écart par-dessus : l'écran continuait de dire
+       « absent », et le moteur comptait l'écart — une libération d'une heure
+       sur une journée où l'enfant n'était pas là retirait 60 minutes de
+       récupération. La déclaration dit que l'enfant était là. */
+    var typeEcrit = ligne.type === 'absence_enfant' ? 'presence' : (ligne.type || 'presence');
     var champs = {
       contrat_id: c.id, jour: d,
-      type: ligne.type || 'presence',
+      type: typeEcrit,
       minutes_reelles: ligne.minutes_reelles == null ? null : ligne.minutes_reelles,
       entretien_centimes: ligne.entretien_centimes == null ? null : ligne.entretien_centimes,
       commentaire: ligne.commentaire == null ? null : ligne.commentaire,
@@ -3365,7 +3416,12 @@
         ecart_minutes: l.ecart_minutes == null ? null : l.ecart_minutes,
         ecart_evenement: l.ecart_evenement == null ? null : l.ecart_evenement,
         ecart_heure_reelle: l.ecart_heure_reelle == null ? null : l.ecart_heure_reelle,
-        ecart_impute_sur: l.ecart_impute_sur == null ? null : l.ecart_impute_sur
+        ecart_impute_sur: l.ecart_impute_sur == null ? null : l.ecart_impute_sur,
+        /* LOT 29 (A6) — « Annuler » rend l'état EXACT d'avant, l'indemnité
+           comprise : une absence remet `entretien_du` à vrai, l'annulation
+           doit pouvoir le remettre à faux. La colonne est `not null` en base :
+           on ne la transmet que si l'ancienne ligne la portait. */
+        entretien_du: l.entretien_du == null ? undefined : l.entretien_du
       });
     });
     return Promise.all(gestes)
@@ -3452,10 +3508,18 @@
        EFFAÇAIT la note que Maria avait écrite sur la journée, sans un mot,
        alors que poser une note, elle, préservait l'écart déclaré. Une absence
        d'enfant ne dit rien de ce que Maria avait noté : la note reste. */
+    /* LOT 29 (§29.2, 2) — L'ABSENCE EFFACE LES QUATRE COLONNES DE L'ÉCART et
+       rend l'indemnité (`entretien_du: true`), comme le fait déjà le retrait
+       d'une déclaration. `enregistrerJournee` ne touche pas aux colonnes
+       absentes : l'écart SURVIVAIT au marquage, et la journée restait
+       incohérente par l'autre bout. La note reste (décision du 23 août). */
     ecrire(global.DB.enregistrerJournee({
       contrat_id: vue.contrat.id, jour: d, type: 'absence_enfant',
       minutes_reelles: null, entretien_centimes: null,
-      commentaire: ligne.commentaire == null ? null : ligne.commentaire
+      commentaire: ligne.commentaire == null ? null : ligne.commentaire,
+      ecart_minutes: null, ecart_evenement: null,
+      ecart_heure_reelle: null, ecart_impute_sur: null,
+      entretien_du: true
     }), bouton, vue.contrat.prenom_enfant + ' ' + Kit.accordDe(vue.contrat, 'noté') +
       ' ' + Kit.accordDe(vue.contrat, 'absent'),
       { contrats: [vue.contrat.id], jours: [d] });
