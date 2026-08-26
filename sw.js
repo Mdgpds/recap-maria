@@ -214,7 +214,7 @@
    `js/db.js` demande. Servi avec l'ancien, l'arrivée enregistrée le matin ne
    reviendrait jamais le soir — exactement le défaut que ce changement
    corrige. Aucun fichier ajouté. */
-var CACHE = 'recap-familiarisation-arrivee-depart-v1';
+var CACHE = 'recap-champ-heure-depart-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

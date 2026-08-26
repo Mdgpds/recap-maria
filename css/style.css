@@ -973,9 +973,15 @@ table.cal td.hors-sel:active { transform: none; }
   border: none; background: none; color: var(--ink); min-width: 0; flex: 1;
   padding: 0; -webkit-appearance: none; appearance: none;
 }
+/* CORRECTIF 26 août — `min-width: 0` et `flex: 1` MANQUAIENT ici. Sans eux,
+   un champ d'heure garde sa largeur intrinsèque : il déborde de son cadre, et
+   le `overflow: hidden` du cadre le rogne. Sur un écran de 390 px, le Départ
+   — plus large que l'Arrivée parce qu'il est VIDE — passait entièrement sous
+   la coupe et devenait intouchable. */
 .fld input[type=time] {
   margin-left: auto; font: inherit; font-weight: 600; text-align: right;
   border: none; background: none; color: var(--ink); padding: 0;
+  min-width: 0; flex: 1;
   -webkit-appearance: none; appearance: none;
 }
 .fld select { text-align: left; text-align-last: right; }

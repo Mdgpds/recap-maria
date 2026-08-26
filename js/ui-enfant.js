@@ -3303,10 +3303,13 @@
 
         var arr = Kit.champHeureMinute('Arrivée', etat.arrivee);
         var dep = Kit.champHeureMinute('Départ', etat.depart);
-        var paire = Kit.ce('div', 'row');
-        paire.appendChild(arr.bloc);
-        paire.appendChild(dep.bloc);
-        corps.appendChild(paire);
+        /* CORRECTIF 26 août — les deux champs sont EMPILÉS, jamais côte à
+           côte. Dans une `.row` de 390 px chaque cadre tombait à 173 px, le
+           libellé en prenait 46 %, et il ne restait pas de quoi afficher une
+           heure : le Départ était rogné hors de son cadre. Empilés, ils font
+           166 px de champ à 390 px, et 128 px sur le plus petit iPhone. */
+        corps.appendChild(arr.bloc);
+        corps.appendChild(dep.bloc);
 
         var msgHeures = Kit.ce('div', 'msg');
         corps.appendChild(msgHeures);
