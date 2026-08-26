@@ -33,7 +33,12 @@ var suites = [
      charger ui-kit.js sous Node. Il ne doit pas polluer les suites pures. */
   { titre: 'État d’avancement d’un mois (lot 7)', suite: require('./etat-mois.test.js') },
   /* Même décor global que le précédent, mêmes précautions : en dernier. */
-  { titre: 'Le socle du redesign : quatre tailles, deux rayons, zéro couleur en dur (lot 24)', suite: require('./lot24-socle.test.js') }
+  { titre: 'Le socle du redesign : quatre tailles, deux rayons, zéro couleur en dur (lot 24)', suite: require('./lot24-socle.test.js') },
+  /* LOT 28 — les calculs rendus justes, et leur différentiel contre le
+     moteur figé d'avant le lot. En dernier : les cas de chaîne posent un
+     décor `DB` global. */
+  { titre: 'Les calculs rendus justes (lot 28, §28.1 à §28.9)', suite: require('./lot28-calculs.test.js') },
+  { titre: 'Différentiel moteur avant/après le lot 28 — chaque écart nommé', suite: require('./lot28-differentiel.test.js') }
 ];
 
 var reussis = 0;
@@ -41,22 +46,32 @@ var echoues = 0;
 
 console.log('Récap Maria — tests\n');
 
-suites.forEach(function (s) {
-  console.log(s.titre);
-  for (var i = 0; i < s.suite.cas.length; i++) {
-    var t = s.suite.cas[i];
-    try {
-      t.fn();
-      console.log('  ✓ ' + t.nom);
-      reussis++;
-    } catch (e) {
-      console.error('  ✗ ' + t.nom);
-      console.error('      ' + e.message);
-      echoues++;
+/* LOT 28 — UN CAS PEUT RENDRE UNE PROMESSE. La chaîne des mois est
+   asynchrone (elle lit un décor de base), et ses règles nouvelles — le
+   plafond sur l'exercice, la fenêtre des samedis, la troncature — se
+   vérifient en l'appelant. Un cas synchrone ne change pas d'un iota : sa
+   valeur de retour est ignorée, comme avant. Les cas restent joués UN PAR UN,
+   dans l'ordre : deux cas asynchrones qui partageraient un décor global ne
+   doivent jamais se chevaucher. */
+(async function () {
+  for (var si = 0; si < suites.length; si++) {
+    var s = suites[si];
+    console.log(s.titre);
+    for (var i = 0; i < s.suite.cas.length; i++) {
+      var t = s.suite.cas[i];
+      try {
+        await t.fn();
+        console.log('  ✓ ' + t.nom);
+        reussis++;
+      } catch (e) {
+        console.error('  ✗ ' + t.nom);
+        console.error('      ' + e.message);
+        echoues++;
+      }
     }
+    console.log('');
   }
-  console.log('');
-});
 
-console.log(reussis + ' réussi(s), ' + echoues + ' échec(s)');
-process.exit(echoues === 0 ? 0 : 1);
+  console.log(reussis + ' réussi(s), ' + echoues + ' échec(s)');
+  process.exit(echoues === 0 ? 0 : 1);
+})();

@@ -309,8 +309,14 @@ var toast = document.getElementById('toast');
   /* Retour à l'espace enfant pour la suite du cas. */
   window.App.aller('enfant', { contratId: 'c-lea', annee: 2026, mois: 5 });
   await pause(200);
-  assert(corps.querySelectorAll('table.cal td[role="button"]').length === 0,
-    'B1 : aucune journée n’est touchable sur un mois clôturé (obtenu ' +
+  /* LOT 30 (§30.2) — EXIGENCE CHANGÉE : les journées d'un mois clôturé
+     restent touchables, et les toucher OUVRE LA FEUILLE « Ce mois est
+     clôturé — le rouvrir pour corriger ce jour ? » au lieu de ne rien faire.
+     Ce que B1 protégeait — aucune écriture sur un mois clôturé sans
+     réouverture — reste vrai : la feuille ne modifie rien tant que Maria
+     n'a pas rouvert (vérifié par `lot30-rouvrir.smoke.js`). */
+  assert(corps.querySelectorAll('table.cal td[role="button"]').length > 0,
+    'B1 (§30.2) : les journées d’un mois clôturé restent touchables — pour proposer la réouverture (obtenu ' +
     corps.querySelectorAll('table.cal td[role="button"]').length + ')');
   assert(!!parTexte(corps, 'button', 'Revoir le mois clôturé'),
     'B1 : le bouton devient « Revoir le mois clôturé »');

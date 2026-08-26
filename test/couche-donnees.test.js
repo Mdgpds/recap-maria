@@ -67,7 +67,11 @@ var COLONNES_ATTENDUES = {
                    'net_mensuel_centimes', 'sup_dues_si_enfant_absent',
                    'ordre_imputation'],
   recap_mensuel: ['id', 'contrat_id', 'annee', 'mois', 'statut', 'donnees',
-                  'fige_le', 'transmis_le'],
+                  'fige_le', 'transmis_le',
+                  /* LOT 30 (§30.2) — le motif d'une réouverture, saisi après
+                     coup dans le champ d'audit : le bandeau du mois rouvert le
+                     lit. Oublié du select, il ne s'afficherait jamais. */
+                  'audit_note'],
   journee: ['id', 'contrat_id', 'jour', 'type', 'minutes_reelles',
             'entretien_centimes', 'commentaire',
             'minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',

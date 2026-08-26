@@ -294,6 +294,12 @@
     Kit.ligne(l1, 'Jours de présence', Kit.jours(agr.joursPresence));
     Kit.ligne(l1, 'Indemnité d’entretien', Kit.eur(agr.entretienCentimes));
     Kit.ligne(l1, 'Salaires nets', Kit.eur(agr.salaireNetCentimes));
+    /* LOT 28 (§28.4) — la part de familiarisation de l'année : sans elle, le
+       total versé ne se reconstituait pas à partir des lignes au-dessus. */
+    if (agr.familiarisationNetCentimes || agr.familiarisationEntretienCentimes) {
+      Kit.ligne(l1, 'Familiarisation — heures déclarées', Kit.eur(agr.familiarisationNetCentimes));
+      Kit.ligne(l1, 'Familiarisation — entretien', Kit.eur(agr.familiarisationEntretienCentimes));
+    }
     if (agr.retenueSansSoldeCentimes > 0) {
       Kit.ligne(l1, 'Retenues sans solde', '−' + Kit.eur(agr.retenueSansSoldeCentimes), { alerte: true });
     }

@@ -303,14 +303,18 @@
     fiches.forEach(function (f) {
       if (f.erreur) return;
       f.retards.forEach(function (e) {
-        aCloturer.push({ contrat: f.contrat, annee: e.annee, mois: e.mois, echu: true });
+        aCloturer.push({ contrat: f.contrat, annee: e.annee, mois: e.mois, echu: true,
+          /* LOT 30 (§30.4) — un mois rouvert rejoint « Aujourd'hui » au
+             même titre qu'un mois échu, et la carte le dit. */
+          rouvert: Kit.moisRouvert(e.recap) });
       });
     });
     fiches.forEach(function (f) {
       if (f.erreur || !f.entree) return;
       if (f.entree.salaireManquant || !f.entree.resultat.salaireNetCentimes) return;
       if (f.etat !== 'a_cloturer') return;
-      aCloturer.push({ contrat: f.contrat, annee: m.annee, mois: m.mois, echu: false });
+      aCloturer.push({ contrat: f.contrat, annee: m.annee, mois: m.mois, echu: false,
+        rouvert: Kit.moisRouvert(f.entree.recap) });
     });
     aCloturer.sort(function (a, b) {
       return (a.annee * 12 + a.mois) - (b.annee * 12 + b.mois);
@@ -330,9 +334,11 @@
       corps.appendChild(carteAujourdhui('!',
         Kit.moisCapitale(x.annee, x.mois).split(' ')[0] +
           ' à clôturer pour ' + x.contrat.prenom_enfant,
-        x.echu
-          ? 'Terminé depuis le ' + Kit.dateLongue(dernierJourDuMois(x.annee, x.mois)) + '.'
-          : 'Vérifiez les journées, puis clôturez le mois.',
+        x.rouvert
+          ? 'Rouvert pour correction : à clôturer à nouveau.'
+          : (x.echu
+            ? 'Terminé depuis le ' + Kit.dateLongue(dernierJourDuMois(x.annee, x.mois)) + '.'
+            : 'Vérifiez les journées, puis clôturez le mois.'),
         function () {
           global.App.aller('document', {
             contratId: x.contrat.id, annee: x.annee, mois: x.mois
@@ -595,6 +601,18 @@
       Kit.ligne(lignes, 'Mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
         partiel.joursDuMois + ' au contrat', '', { discret: true });
     }
+    /* LOT 28 (§28.4) — LA PART DE FAMILIARISATION, SUR L'ÉCRAN QUI PRÉCÈDE
+       LA CLÔTURE. Le net et l'entretien ci-dessus sont ceux de la garde
+       mensualisée ; le total ajoute la familiarisation. Sans ces deux lignes,
+       les lignes ne reconstituaient pas le total — 164,70 € invisibles. */
+    var fam = Chaine.partFamiliarisation(r);
+    if (fam.actif) {
+      Kit.ligne(lignes, 'Familiarisation — heures déclarées', Kit.eur(fam.netCentimes));
+      Kit.ligne(lignes, 'Familiarisation — indemnité d’entretien', Kit.eur(fam.entretienCentimes));
+    }
+    if (r.retenueSansSoldeCentimes > 0) {
+      Kit.ligne(lignes, 'Retenue pour jour(s) sans solde', '− ' + Kit.eur(r.retenueSansSoldeCentimes));
+    }
     Kit.ligne(lignes, 'Heures supplémentaires du mois', Kit.heures(r.minutesSupAcquises));
     Kit.ligne(lignes, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
     ctx.corps.appendChild(p);
@@ -710,6 +728,34 @@
         });
       })
       .then(function (donnees) {
+        /* LOT 30 (§30.5) — LA RECLÔTURE MONTRE CE QUI A CHANGÉ, PAR CE CHEMIN
+           AUSSI. Le document le faisait ; la fin de mois guidée écrivait
+           directement. Un mois rouvert reclôturé ici sans voir ses écarts,
+           c'est un document déjà remis qui change en silence. La comparaison
+           est celle de `chaine-mois.js`, pure et testée. */
+        var ecarts = global.UiReouverture
+          ? global.UiReouverture.ecarts(entree.recap, donnees) : [];
+        if (!ecarts.length) return donnees;
+        return new Promise(function (resoudre, rejeter) {
+          global.UiReouverture.feuilleEcarts({
+            contrat: cible.contrat, annee: cible.annee, mois: cible.mois,
+            recap: entree.recap, ecarts: ecarts,
+            minutesParJourConge: (entree.conditions && entree.conditions.minutes_par_jour_conge) || 0,
+            confirmer: function (b) { if (b) b.disabled = true; Kit.fermerFeuille(); resoudre(donnees); }
+          });
+          /* La feuille se ferme sans confirmer (« Annuler », ou un appui à
+             côté) : on ne clôture pas, et le bouton de l'étape redevient
+             utilisable. La fermeture se voit sur l'attribut `hidden` du
+             conteneur — c'est le seul signal que la feuille émet. */
+          var wrap = document.getElementById('sheetwrap');
+          if (!wrap || typeof MutationObserver === 'undefined') return;
+          var obs = new MutationObserver(function () {
+            if (wrap.hidden) { obs.disconnect(); rejeter({ annule: true }); }
+          });
+          obs.observe(wrap, { attributes: true, attributeFilter: ['hidden'] });
+        });
+      })
+      .then(function (donnees) {
         return global.DB.recloturerRecap(cible.contrat.id, cible.annee, cible.mois, donnees);
       })
       .then(function (r) {
@@ -730,6 +776,10 @@
       .catch(function (e) {
         /* B.0-9 : l'échec est visible, et il dit ce qui reste vrai. */
         if (bouton) { bouton.disabled = false; bouton.textContent = 'Clôturer et continuer'; }
+        if (e && e.annule) {
+          Kit.toast('Clôture annulée : le mois reste ouvert.');
+          return;
+        }
         Kit.toast('Ce mois n’a pas été clôturé. ' + Kit.messageErreur(e) +
           ' Vous pouvez réessayer.', true);
       });

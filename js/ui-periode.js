@@ -356,6 +356,12 @@
       Kit.ligne(l, 'Retenues sans solde', '−' + Kit.eur(t.retenueSansSoldeCentimes), { alerte: true });
     }
     Kit.ligne(l, 'Salaires nets', Kit.eur(t.salaireNetCentimes));
+    /* LOT 28 (§28.4) — la part de familiarisation, pour que le total soit la
+       somme des lignes au-dessus. Absente quand elle est nulle. */
+    if (t.familiarisationNetCentimes || t.familiarisationEntretienCentimes) {
+      Kit.ligne(l, 'Familiarisation — heures déclarées', Kit.eur(t.familiarisationNetCentimes));
+      Kit.ligne(l, 'Familiarisation — entretien', Kit.eur(t.familiarisationEntretienCentimes));
+    }
     Kit.ligne(l, 'Total versé', Kit.eur(t.totalAVerserCentimes), { total: true });
     pane.appendChild(Kit.ce('div', 'sb q',
       'Les soldes d’heures et de congés payés ne figurent pas ici : ils ne s’additionnent ' +
@@ -403,6 +409,9 @@
     var l1 = Kit.lines(p1);
     Kit.ligne(l1, 'Jours de présence', Kit.jours(a.joursPresence));
     Kit.ligne(l1, 'Indemnité d’entretien', Kit.eur(a.entretienCentimes));
+    if (a.familiarisationEntretienCentimes) {
+      Kit.ligne(l1, 'Familiarisation — entretien', Kit.eur(a.familiarisationEntretienCentimes));
+    }
     Kit.ligne(l1, 'Heures supplémentaires', Kit.heures(a.minutesSupAcquises));
     Kit.ligne(l1, 'Congés posés', Kit.jours(a.joursCongesDecomptes));
     if (a.retenueSansSoldeCentimes > 0) {
@@ -417,6 +426,12 @@
     } else {
       Kit.ligne(l2, 'Mois entiers', String(ae.nbMois));
       Kit.ligne(l2, 'Salaires nets', Kit.eur(ae.salaireNetCentimes));
+      /* LOT 28 (§28.4) — la part de familiarisation des mois entiers : sans
+         elle, le total de ce bloc ne se reconstituait pas. */
+      if (ae.familiarisationNetCentimes || ae.familiarisationEntretienCentimes) {
+        Kit.ligne(l2, 'Familiarisation — heures déclarées', Kit.eur(ae.familiarisationNetCentimes));
+        Kit.ligne(l2, 'Familiarisation — entretien', Kit.eur(ae.familiarisationEntretienCentimes));
+      }
       Kit.ligne(l2, 'Congés payés acquis',
         Kit.joursCp(ae.minutesCpAcquis, ae.minutesParJourConge));
       Kit.ligne(l2, 'Total versé sur ces mois', Kit.eur(ae.totalAVerserCentimes), { total: true });

@@ -85,10 +85,18 @@
       vue = {
         contrat: contrat, annee: m.annee, mois: m.mois,
         entree: entree, journees: r[1], samedis: r[2] || [],
-        lectureSeule: !!contrat.archive
+        lectureSeule: !!contrat.archive,
+        reouvertureLe: null
       };
-      Kit.vider(ctx.corps);
-      rendre(ctx.corps);
+      /* §30.4 — la date de réouverture, lue dans l'historique du mois. */
+      var quand = (global.UiReouverture && Kit.moisRouvert(entree.recap))
+        ? global.UiReouverture.dateReouverture(entree.recap)
+        : Promise.resolve(null);
+      return quand.then(function (q) {
+        vue.reouvertureLe = q;
+        Kit.vider(ctx.corps);
+        rendre(ctx.corps);
+      });
     });
   }
 
@@ -361,6 +369,14 @@
         (evenement ? ' — ' + evenement : '');
     }
     var destination = LIBELLE_DESTINATION_ECART[e.imputeSur] || '';
+    /* LOT 28 (§28.3) — QUAND LES CONGÉS PAYÉS N'ONT COUVERT QU'UNE PARTIE, le
+       document le dit : « 2 h 00 déduites de mes congés payés, 3 h 00 de ma
+       récupération ». Le moteur a borné, le document explique — un total
+       amputé sans son détail est incontestable et inexplicable à la fois. */
+    if (e.imputeSur === 'conges_payes' && e.minutesSurRecuperation > 0 && e.minutesSurCp > 0) {
+      destination = Kit.heures(e.minutesSurCp) + ' déduites de mes congés payés, ' +
+        Kit.heures(e.minutesSurRecuperation) + ' de ma récupération';
+    }
     return 'Dont ' + Kit.heures(-e.minutes) + ' que je n’ai pas gardée' + quand +
       (evenement ? ' — ' + evenement : '') +
       (destination ? ', ' + destination : '');
@@ -659,6 +675,19 @@
       return;
     }
 
+    /* LOT 30 (§30.4) — UN MOIS ROUVERT NE S'OUBLIE PAS : son bandeau dit
+       quand il a été rouvert, si le récapitulatif avait été transmis, et
+       porte le bouton qui reclôture — lequel montre les écarts avec le
+       document remis (§30.5) avant d'écrire. */
+    if (Kit.moisRouvert(e.recap) && global.UiReouverture) {
+      corps.appendChild(global.UiReouverture.bandeauMoisRouvert({
+        recap: e.recap, contrat: vue.contrat, annee: vue.annee, mois: vue.mois,
+        rouvertLe: vue.reouvertureLe || null,
+        recloturer: (!e.salaireManquant && !netManquant && !(e.imputationsEcartees || []).length)
+          ? demanderCloture : null
+      }));
+    }
+
     if (e.avantInitialisation) {
       corps.appendChild(Kit.warnbox('Ce mois ne peut pas être clôturé',
         'Il est antérieur à la reprise de vos compteurs : les soldes y repartent de zéro. ' +
@@ -667,7 +696,12 @@
       return;
     }
 
-    if (vue.lectureSeule) {
+    /* LOT 30 (§30.3, fin de contrat) — UN CONTRAT RANGÉ PEUT RECLÔTURER UN
+       MOIS ROUVERT : ranger un contrat dont le dernier mois était clôturé
+       propose de le rouvrir pour que la date de fin y entre ; il faut
+       ensuite pouvoir le refermer depuis ce document (décision d'Adrien,
+       26 août). Tout le reste d'un contrat rangé reste en lecture seule. */
+    if (vue.lectureSeule && !Kit.moisRouvert(e.recap)) {
       corps.appendChild(Kit.note('Ancien contrat — lecture seule',
         'Ce contrat est rangé : ses mois ne se clôturent plus. Le document reste disponible.'));
       corps.appendChild(sectionPartage());

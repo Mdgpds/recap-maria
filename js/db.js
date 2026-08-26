@@ -567,7 +567,7 @@
         .select(CHAMPS_JOURNEE)
         .order('jour', { ascending: true }).then(deballer),
       client.from('recap_mensuel')
-        .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
+        .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le, audit_note')
         .order('annee', { ascending: true }).then(deballer),
       client.from('imputation_conge').select(CHAMPS_IMPUTATION).then(deballer),
       client.from('evenement_recap').select('id, recap_id, type, survenu_le, motif')
@@ -1340,7 +1340,7 @@
   /* Lit le récap d'un mois (brouillon ou figé), ou null s'il n'existe pas. */
   function getRecap(contratId, annee, mois) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le, audit_note')
       .eq('contrat_id', contratId)
       .eq('annee', annee)
       .eq('mois', mois)
@@ -1359,6 +1359,30 @@
       .select()
       .then(deballer)
       .then(function (r) { return r[0]; });
+  }
+
+  /* LOT 30 (§30.2) — LE MOTIF D'UNE RÉOUVERTURE, APRÈS COUP.
+
+     Le motif n'est plus demandé au moment de rouvrir : demander une
+     justification avant d'autoriser un geste légitime est la friction à
+     retirer. Il se saisit ensuite, depuis le bandeau du mois rouvert. Il
+     n'a plus d'événement où aller — l'historique est indélébile, même pour
+     l'application (migration 006) — et aucune migration n'est permise : il
+     vit dans le champ d'audit du récapitulatif (`audit_note`, migration 001),
+     prévu pour « la trace d'une correction exceptionnelle, sans altérer les
+     valeurs du document », que le trigger d'immuabilité laisse modifiable
+     même une fois le mois reclôturé. `audit_le` est daté par le téléphone :
+     cette date ne sert qu'à lire la note, jamais un calcul. */
+  function noterMotifRecap(contratId, annee, mois, motif) {
+    var note = String(motif == null ? '' : motif).trim() || null;
+    return client.from('recap_mensuel')
+      .update({ audit_note: note, audit_le: note ? new Date().toISOString() : null })
+      .eq('contrat_id', contratId)
+      .eq('annee', annee)
+      .eq('mois', mois)
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le, audit_note')
+      .then(deballer)
+      .then(function (r) { return r[0] || null; });
   }
 
   /* `figerRecap` / `figerVraiment` ONT ÉTÉ SUPPRIMÉES ICI (relecture lot 13,
@@ -1384,7 +1408,7 @@
      chaîne des mois (un appel au lieu d'un par mois). */
   function listRecapsContrat(contratId) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le, audit_note')
       .eq('contrat_id', contratId)
       .order('annee', { ascending: false })
       .order('mois', { ascending: false })
@@ -1396,7 +1420,7 @@
      ne pas tout ramener). */
   function listRecapsPeriode(contratId, anneeMin, anneeMax) {
     return client.from('recap_mensuel')
-      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le')
+      .select('id, contrat_id, annee, mois, statut, donnees, fige_le, transmis_le, audit_note')
       .eq('contrat_id', contratId)
       .gte('annee', anneeMin)
       .lte('annee', anneeMax)
@@ -1617,6 +1641,8 @@
     listFamillesAvecContrats: listFamillesAvecContrats,
     enregistrerRecapBrouillon: enregistrerRecapBrouillon,
     rouvrirRecap: rouvrirRecap,
+    /* LOT 30 — le motif d'une réouverture, saisi après coup. */
+    noterMotifRecap: noterMotifRecap,
     recloturerRecap: recloturerRecap,
     listEvenementsRecap: listEvenementsRecap,
     marquerTransmis: marquerTransmis,

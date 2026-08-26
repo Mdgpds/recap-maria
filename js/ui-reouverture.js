@@ -156,6 +156,194 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* 2 bis. LOT 30 — ROUVRIR DEPUIS LÀ OÙ ON EST, ET POURSUIVRE LE GESTE  */
+  /*                                                                     */
+  /* « J'aimerais facilement pouvoir rouvrir un mois qui a été clôturé,  */
+  /* je trouve que l'app manque de souplesse dans la saisie. » (Adrien)  */
+  /*                                                                     */
+  /* Le bon modèle existait à UN seul endroit : la pose d'un congé sur un */
+  /* mois clôturé propose « Rouvrir ces N récapitulatifs et continuer ». */
+  /* Partout ailleurs, un mois clôturé produisait un refus sec ou une     */
+  /* cellule morte. Cette feuille est ce modèle, généralisé : elle NOMME  */
+  /* ce qu'il faut rouvrir, PROPOSE de le faire, et POURSUIT le geste     */
+  /* commencé. Le motif n'est plus demandé ici — demander une             */
+  /* justification avant d'autoriser un geste légitime est la friction à  */
+  /* retirer (§30.2) ; la base écrit l'événement de réouverture elle-même */
+  /* (migration 006), motif ou non (A5).                                  */
+  /*                                                                     */
+  /* Ce qui ne s'assouplit pas : si la lecture des mois clôturés a        */
+  /* échoué, l'appelant n'arrive pas ici — il refuse (A6, défaut B7).     */
+  /* ------------------------------------------------------------------ */
+
+  /* opts = {
+       mois:      [{ contrat, annee, mois, recap }] — les récapitulatifs à
+                  rouvrir (un par contrat et par mois) ;
+       titre:     titre de la feuille (défaut : « Ce mois est clôturé » ou
+                  « N mois sont clôturés ») ;
+       question:  la phrase qui nomme le geste (« Le rouvrir pour corriger le
+                  mardi 14 avril ? ») ;
+       bouton:    libellé du bouton (« Rouvrir et corriger ce jour ») ;
+       motif:     motif inscrit dans l'historique, ou null ;
+       continuer: function () -> Promise, appelée UNE FOIS les mois rouverts ;
+       annuler:   function (), facultative — rendre à Maria son formulaire.
+     } */
+  function feuilleRouvrirEtContinuer(opts) {
+    var liste = (opts.mois || []).filter(Boolean);
+    if (!liste.length) return Promise.resolve(opts.continuer());
+
+    var moisNommes = [];
+    var vus = {};
+    liste.forEach(function (x) {
+      var cle = x.annee + '-' + x.mois;
+      if (vus[cle]) return;
+      vus[cle] = true;
+      moisNommes.push(Kit.libelleMoisAnnee(x.annee, x.mois));
+    });
+    var transmis = liste.filter(function (x) { return x.recap && x.recap.transmis_le; });
+    var n = liste.length;
+    var premier = liste[0];
+    var titre = opts.titre || (moisNommes.length > 1
+      ? moisNommes.length + ' mois sont clôturés'
+      : 'Ce mois est clôturé');
+
+    Kit.ouvrirFeuille(titre,
+      liste.length === 1
+        ? premier.contrat.prenom_enfant + ' — ' + Kit.libelleMoisAnnee(premier.annee, premier.mois)
+        : moisNommes.join(', '),
+      function (corps) {
+        if (opts.question) corps.appendChild(Kit.ce('p', 'regle', opts.question));
+        corps.appendChild(Kit.ce('p', 'sb q',
+          (n > 1
+            ? 'Cela rouvre ' + n + ' récapitulatifs — ' + moisNommes.join(', ') + '. '
+            : '') +
+          'La réouverture laisse une trace définitive dans l’historique du mois. ' +
+          (n > 1 ? 'Ils seront' : 'Il sera') + ' à clôturer à nouveau ensuite.'));
+        if (transmis.length) {
+          corps.appendChild(Kit.warnbox(
+            transmis.length > 1
+              ? transmis.length + ' récapitulatifs ont déjà été transmis à la famille'
+              : 'Ce récapitulatif a déjà été transmis à la famille' +
+                (transmis[0].recap.transmis_le
+                  ? ' le ' + Kit.dateLongue(transmis[0].recap.transmis_le) : ''),
+            ' Si les chiffres changent, il faudra renvoyer la version corrigée.'));
+        }
+
+        var b = Kit.bouton('btn', function () { rouvrirTout(b); });
+        b.textContent = opts.bouton || (n > 1
+          ? 'Rouvrir ces ' + n + ' récapitulatifs et continuer'
+          : 'Rouvrir ' + Kit.libelleMois(premier.mois) + ' et continuer');
+        corps.appendChild(b);
+
+        if (typeof opts.annuler === 'function') {
+          var bRetour = Kit.bouton('btn nt', function () { opts.annuler(); });
+          bRetour.textContent = opts.libelleAnnuler || 'Revenir en arrière';
+          corps.appendChild(bRetour);
+        }
+      });
+
+    function rouvrirTout(bouton) {
+      bouton.disabled = true;
+      var gestes = liste.map(function (x) {
+        return global.DB.rouvrirRecap(x.contrat.id, x.annee, x.mois, opts.motif || null);
+      });
+      return Promise.all(gestes).then(function () {
+        global.App.invalider();
+        Kit.fermerFeuille();
+        Kit.toast(n > 1
+          ? n + ' récapitulatifs rouverts — à clôturer à nouveau ensuite.'
+          : Kit.moisCapitale(premier.annee, premier.mois) + ' est rouvert — à clôturer à nouveau ensuite.');
+        return opts.continuer();
+      }).catch(function (e) {
+        bouton.disabled = false;
+        /* Plusieurs réouvertures ont pu aboutir avant l'échec : on ne
+           promet pas que rien n'a bougé, on dit ce qu'on sait. */
+        Kit.toast('La réouverture n’a pas abouti : ' + Kit.messageErreur(e) +
+          (n > 1 ? ' Vérifiez l’état de chaque mois avant de recommencer.'
+                 : ' Le mois reste clôturé, rien n’a été modifié.'), true);
+      });
+    }
+  }
+
+  /* LOT 30 (§30.4) — UN MOIS ROUVERT SE RECONNAÎT À SON RÉCAPITULATIF :
+     statut « brouillon » ET un instantané conservé (`donnees`), celui du
+     document remis. Un mois jamais clôturé n'a pas de récapitulatif du tout,
+     ou pas d'instantané. */
+  function moisRouvert(recap) { return Kit.moisRouvert(recap); }
+
+  /* La date de la dernière réouverture d'un récapitulatif, lue dans son
+     historique — la base l'écrit, l'écran la lit. `null` si l'historique ne
+     peut pas être lu : le bandeau dit alors « rouvert » sans date, il ne
+     devine pas. */
+  function dateReouverture(recap) {
+    if (!moisRouvert(recap) || !recap.id) return Promise.resolve(null);
+    if (typeof global.DB.listEvenementsRecap !== 'function') return Promise.resolve(null);
+    return global.DB.listEvenementsRecap(recap.id).then(function (evenements) {
+      var derniere = null;
+      (evenements || []).forEach(function (ev) {
+        if (ev.type === 'reouverture') derniere = ev.survenu_le;
+      });
+      return derniere;
+    }).catch(function () { return null; });
+  }
+
+  /* LOT 30 (§30.4) — LE BANDEAU D'UN MOIS ROUVERT, tant qu'il n'est pas
+     reclôturé : la date de réouverture, la transmission s'il y a lieu, et le
+     bouton qui reclôture. Rendu par l'appelant là où il veut. */
+  function bandeauMoisRouvert(opts) {
+    var recap = opts.recap;
+    var bloc = Kit.warnbox(
+      'Mois rouvert' + (opts.rouvertLe ? ' le ' + Kit.dateLongue(opts.rouvertLe) : '') +
+      ' — à clôturer à nouveau',
+      recap && recap.transmis_le
+        ? ' Le récapitulatif avait été transmis à la famille le ' +
+          Kit.dateLongue(recap.transmis_le) + ' : elle devra recevoir la version corrigée.'
+        : ' Ses chiffres peuvent encore bouger tant qu’il n’est pas reclôturé.');
+    /* §30.2 — le motif, facultatif, se saisit ICI, après coup. */
+    if (recap && recap.audit_note) {
+      bloc.appendChild(Kit.ce('div', 'sb q', 'Motif : ' + recap.audit_note));
+    }
+    if (typeof opts.recloturer === 'function') {
+      var b = Kit.bouton('btn', function () { opts.recloturer(); });
+      b.textContent = 'Reclôturer ' + Kit.libelleMois(opts.mois);
+      bloc.appendChild(b);
+    }
+    if (opts.contrat && typeof global.DB.noterMotifRecap === 'function') {
+      var bMotif = Kit.bouton('btn nt', function () { feuilleMotif(opts); });
+      bMotif.textContent = recap && recap.audit_note ? 'Changer le motif' : 'Ajouter un motif';
+      bloc.appendChild(bMotif);
+    }
+    return bloc;
+  }
+
+  function feuilleMotif(opts) {
+    Kit.ouvrirFeuille('Pourquoi ce mois est-il rouvert ?',
+      opts.contrat.prenom_enfant + ' — ' + Kit.libelleMoisAnnee(opts.annee, opts.mois),
+      function (corps) {
+        var champ = Kit.champ('Motif (facultatif)', (opts.recap && opts.recap.audit_note) || '',
+          { placeholder: 'Oubli d’une absence, erreur de saisie…' });
+        corps.appendChild(champ.bloc);
+        corps.appendChild(Kit.ce('p', 'sb q',
+          'Pour vous seule. Il reste lisible sur ce mois, même une fois reclôturé.'));
+        var b = Kit.bouton('btn', function () {
+          b.disabled = true;
+          global.DB.noterMotifRecap(opts.contrat.id, opts.annee, opts.mois, champ.input.value)
+            .then(function () {
+              global.App.invalider();
+              Kit.fermerFeuille();
+              Kit.toast('Motif enregistré');
+              return global.App.rafraichir();
+            })
+            .catch(function (e) {
+              b.disabled = false;
+              Kit.toast('Motif non enregistré : ' + Kit.messageErreur(e), true);
+            });
+        });
+        b.textContent = 'Enregistrer le motif';
+        corps.appendChild(b);
+      });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* 3. Historique d'un mois                                            */
   /* ------------------------------------------------------------------ */
 
@@ -244,7 +432,16 @@
      directement, sans écran intermédiaire. */
   function feuilleEcarts(opts) {
     var famille = nomDeLaFamille(opts.contrat);
-    Kit.ouvrirFeuille('Ce qui change par rapport au document déjà établi',
+    var nb = (opts.ecarts || []).length;
+    /* LOT 30 (§30.5) — LE TITRE COMPTE ET DATE : « 3 écarts avec le document
+       remis le 3 mai ». Plus il est facile de rouvrir, plus il doit être
+       impossible de reclôturer sans voir ce qu'on a changé. */
+    var reference = opts.recap && opts.recap.transmis_le
+      ? 'remis le ' + Kit.dateLongue(opts.recap.transmis_le)
+      : (opts.recap && opts.recap.fige_le
+          ? 'établi le ' + Kit.dateLongue(opts.recap.fige_le) : 'déjà établi');
+    Kit.ouvrirFeuille(
+      (nb > 1 ? nb + ' écarts' : '1 écart') + ' avec le document ' + reference,
       Kit.libelleMoisAnnee(opts.annee, opts.mois) + ' · ' + opts.contrat.prenom_enfant,
       function (corps) {
         var lignes = Kit.ce('div', 'lines');
@@ -278,6 +475,11 @@
   global.UiReouverture = {
     actionsMoisCloture: actionsMoisCloture,
     feuilleRouvrir: feuilleRouvrir,
+    /* LOT 30 — le modèle du congé, généralisé. */
+    feuilleRouvrirEtContinuer: feuilleRouvrirEtContinuer,
+    moisRouvert: moisRouvert,
+    dateReouverture: dateReouverture,
+    bandeauMoisRouvert: bandeauMoisRouvert,
     feuilleHistorique: feuilleHistorique,
     feuilleEcarts: feuilleEcarts,
     ecarts: ecarts,

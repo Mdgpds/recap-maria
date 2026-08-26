@@ -85,6 +85,12 @@
     [/HEURE_INVALIDE/,
       'cette heure n’est pas lisible. Choisissez-la dans la liste plutôt que ' +
       'de la taper.'],
+    /* LOT 28 (§28.9) — un planning vide ne se remplace pas en silence par le
+       lundi-vendredi : il payait un mois entier pour zéro jour de garde. */
+    [/PLANNING_VIDE/,
+      'aucun jour de garde n’est coché pour ce mois. Ouvrez la fiche du contrat ' +
+      'et cochez les jours de garde de l’avenant en vigueur — sans eux, ce mois ' +
+      'ne peut pas être calculé.'],
     /* LOT 20 (§20.4) — les trois refus de la familiarisation. Chacun nomme le
        geste qui corrige : une phrase qui ne dit pas quoi faire laisse Maria
        dehors, la feuille ouverte et la journée non déclarée. */

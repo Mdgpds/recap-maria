@@ -402,16 +402,21 @@ var sheet = document.getElementById('sheet');
   assert(txt(sheet).indexOf('ne changeront pas') !== -1,
     '§17.4 : ce qui NE changera pas est dit sous le champ de date');
 
-  /* LES ONZE RÉGLAGES sont saisissables (A1). */
+  /* LES ONZE RÉGLAGES sont saisissables (A1).
+     LOT 28 (§28.2) — EXIGENCE CHANGÉE : « Minutes supplémentaires dues quand
+     l'enfant est absent » n'est plus un choix mais une règle (aucune minute,
+     décision d'Adrien du 25 août 2026). Le formulaire la DIT au lieu de la
+     proposer ; dix réglages restent saisissables, et l'onzième est énoncé. */
   ['Jours de garde', 'Début d’accueil', 'Fin d’accueil',
    'Journée d’accueil prévue au contrat', 'Minutes supplémentaires par jour',
    'Ce que consomme un jour de congé', 'Indemnité d’entretien par jour de présence',
-   'Minutes supplémentaires dues quand l’enfant est absent',
    'Vos congés se prennent d’abord sur', 'Salaire brut mensuel', 'Salaire net mensuel']
     .forEach(function (libelle) {
       assert(!!parTexte(sheet, '.lb', libelle),
         '§17.4 A1 : « ' + libelle +' » est saisissable');
     });
+  assert(txt(sheet).indexOf('aucune minute supplémentaire n’est due') !== -1,
+    '§28.2 : le formulaire énonce la règle pour l’enfant absent');
 
   /* L'ENCART D'EFFET, REJOUÉ PAR LE MOTEUR. */
   await pause(400);

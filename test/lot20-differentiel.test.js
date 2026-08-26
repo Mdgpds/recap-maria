@@ -35,7 +35,17 @@
 'use strict';
 
 var Avant = require('./fixtures/engine-avant-lot20.js');
-var Apres = require('../js/engine.js');
+/* LOT 28 — CE DIFFÉRENTIEL DEVIENT UNE PREUVE HISTORIQUE, FIGÉE. Il
+   confrontait le moteur d'avant ce lot-ci au moteur COURANT. Le lot 28 change
+   des règles (acquisition des congés payés, minutes quand l'enfant est absent,
+   renoncement borné, congés payés jamais négatifs) : le moteur courant ne
+   rend plus ces chiffres-là, et c'est voulu. La preuve reste vraie entre les
+   deux moteurs qu'elle comparait : `engine-avant-lot28.js` est la copie
+   exacte de `js/engine.js` au commit `f2f9ac7`, celui que ce fichier testait.
+   La preuve du lot 28 lui-même, contre le moteur courant, est
+   `lot28-differentiel.test.js`. Aucune assertion n'est affaiblie : elle
+   change de référence, pas de contenu. */
+var Apres = require('./fixtures/engine-avant-lot28.js');
 var FeriesSamedis = require('../js/feries.js');
 
 var cas = [];

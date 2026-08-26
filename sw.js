@@ -163,7 +163,48 @@
    et le document remis à la famille perdrait la moitié de la phrase qui
    explique une déduction sur une pièce opposable. C'est exactement le cas
    que le changement de nom de cache empêche. Aucun fichier ajouté. */
-var CACHE = 'recap-journees-a-part-v1';
+/* CORRECTIFS DE CALCUL, LOT 28 (« LES CALCULS ») — NOM DE CACHE CHANGÉ.
+
+   Onze fichiers servis changent : `js/engine.js` (acquisition des congés
+   payés, absence de l'enfant sans minute, congés payés jamais négatifs,
+   renoncement borné, congé horaire en période, planning vide refusé),
+   `js/chaine-mois.js` (cumul d'exercice, fenêtre des samedis, troncature,
+   part de familiarisation agrégée), `js/messages.js`, `js/ui-kit.js`,
+   `js/ui-enfant.js`, `js/ui-conges.js`, `js/ui-accueil.js`, `js/ui-periode.js`,
+   `js/ui-historique.js`, `js/ui-document.js`, `js/ui-contrat.js` et
+   `js/ui-menu.js`.
+
+   Ils se RÉPONDENT : un moteur neuf servi avec un écran ancien annoncerait un
+   disponible de congés payés que le moteur ne servira pas, et un écran neuf
+   avec le moteur ancien lirait `acquisitionCp` ou
+   `minutesCpRestantesApresConsommation` à `undefined`. Sur les chiffres que
+   ce lot existe pour rendre justes, une incohérence crédible est le pire
+   résultat possible. Aucun fichier ajouté. */
+/* CORRECTIFS DE CALCUL, LOT 29 (« LA JOURNÉE QUI SE CORRIGE VRAIMENT ») — NOM
+   DE CACHE CHANGÉ.
+
+   Deux fichiers servis changent : `js/ui-enfant.js` (déclarer un écart sur
+   une absence remet la journée en présence ; marquer une absence efface
+   l'écart et rend l'indemnité ; l'écran l'annonce avant ; « Annuler » rend
+   l'indemnité aussi) et `js/ui-conges.js` (aucun congé à l'heure sur une
+   absence de l'enfant). Ils se répondent avec le moteur du lot 28, qui
+   ignore déjà tout écart porté par une absence : un écran ancien laisserait
+   encore écrire des journées que le moteur n'entend plus. */
+/* CORRECTIFS DE CALCUL, LOT 30 (« LA SOUPLESSE DE LA SAISIE ») — NOM DE
+   CACHE CHANGÉ.
+
+   Huit fichiers servis changent : `js/ui-reouverture.js` (la feuille « rouvrir
+   et continuer », le bandeau du mois rouvert, le motif après coup),
+   `js/ui-kit.js` (`moisRouvert`, un mois rouvert est « à clôturer »,
+   `signales` du sélecteur de mois), `js/db.js` (`audit_note` lu, le motif
+   écrit), `js/ui-enfant.js`, `js/ui-document.js`, `js/ui-accueil.js`,
+   `js/ui-contrat.js` et `js/ui-familiarisation.js`.
+   Ils se RÉPONDENT : cinq écrans appellent
+   `UiReouverture.feuilleRouvrirEtContinuer`, qui n'existe que dans le
+   nouveau `js/ui-reouverture.js` ; servi avec l'ancien, toucher un jour d'un
+   mois clôturé lèverait — au lieu de proposer la réouverture qui est tout
+   l'objet du lot. Aucun fichier ajouté. */
+var CACHE = 'recap-calculs-justes-lot30-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

@@ -425,7 +425,10 @@ function boutonEnregistrer() { return boutonExact(sheet, 'Enregistrer'); }
   contient(sheet, 'entretien − ',
     'l’entretien retiré est annoncé avec son signe, rejoué par le moteur');
   contient(sheet, '5,00', 'et chiffré : l’indemnité du contrat');
-  contient(sheet, 'restent dues', 'RG-09 : vos 30 min restent dues');
+  /* LOT 28 (§28.2) — EXIGENCE CHANGÉE : quand l'enfant est absent, aucune
+     minute n'est due (décision d'Adrien du 25 août 2026). Même rejeu par le
+     moteur, phrase inverse. */
+  contient(sheet, 'ne sont pas dues', '§28.2 : vos 30 min ne sont pas dues');
   boutonEnregistrer().click();
   await pause(300);
   var abs = ecritures.journees[ecritures.journees.length - 1];

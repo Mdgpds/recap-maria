@@ -356,8 +356,12 @@ async function ouvrirDocumentDeMai() {
   await pause(120);
 
   var avantRecloture = appels.recloturer.length;
-  assert(txt(sheet).indexOf('Ce qui change par rapport au document déjà établi') !== -1,
-    'P4/P5 : l’écran de comparaison s’affiche');
+  /* LOT 30 (§30.5) — EXIGENCE CHANGÉE : le titre COMPTE et DATE les écarts
+     — « N écarts avec le document établi le … » (ou « remis le … » quand il
+     a été transmis). L'écran de comparaison est le même. */
+  assert(/écarts? avec le document (établi|remis|déjà)/.test(txt(sheet)),
+    'P4/P5 : l’écran de comparaison s’affiche, et son titre compte les écarts (obtenu « ' +
+    txt(sheet.querySelector('.h')) + ' »)');
   assert(appels.recloturer.length === avantRecloture,
     'P4/P5 : RIEN n’est écrit avant confirmation');
   assert(txt(sheet).indexOf('Jours de présence') !== -1, 'P4 : l’écart de présence est listé');

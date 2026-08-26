@@ -925,11 +925,15 @@
       { inputmode: 'decimal', placeholder: '5,00' });
     argent.appendChild(entretien.bloc);
 
-    var supSiAbsent = champSelect(
-      'Minutes supplémentaires dues quand l’enfant est absent',
-      [['oui', 'Oui, elles restent dues'], ['non', 'Non']],
-      v.sup_dues_si_enfant_absent === false ? 'non' : 'oui');
-    temps.appendChild(supSiAbsent.bloc);
+    /* LOT 28 (§28.2) — LE CHOIX « MINUTES DUES QUAND L'ENFANT EST ABSENT »
+       A DISPARU DU FORMULAIRE. Règle d'Adrien du 25 août 2026, confirmée le
+       26 : quand l'enfant est absent, ni indemnité d'entretien, ni minute
+       supplémentaire — pour tous les contrats. Le moteur ne lit plus ce
+       réglage ; la colonne reste en base (aucune migration) et un avenant
+       écrit désormais `false`. Le libellé, lui, dit la règle. */
+    temps.appendChild(ce('p', 'sb q',
+      'Quand l’enfant est absent, aucune minute supplémentaire n’est due, ni ' +
+      'indemnité d’entretien : c’est la règle, pour tous les contrats.'));
 
     var ordre = champSelect('Vos congés se prennent d’abord sur',
       [['cp_puis_sup', 'Mes congés payés'], ['sup_puis_cp', 'Ma récupération']],
@@ -957,7 +961,7 @@
         minutes_sup_jour: supJour.valeur(),
         minutes_par_jour_conge: parJourConge.valeur(),
         entretien_centimes_jour: parseEuros(entretien.input.value),
-        sup_dues_si_enfant_absent: supSiAbsent.select.value === 'oui',
+        sup_dues_si_enfant_absent: false,   // §28.2 — la règle, pas un choix
         ordre_imputation: ordre.select.value,
         brut_mensuel_centimes: brut.input.value.trim() ? parseEuros(brut.input.value) : null,
         net_mensuel_centimes: net.input.value.trim() ? parseEuros(net.input.value) : null
@@ -1145,6 +1149,11 @@
   function champMoisListe(libelle, isoDefaut, opts) {
     opts = opts || {};
     var interdits = opts.interdits || {};
+    /* LOT 30 (§30.3) — `signales` : des mois NOMMÉS avec leur raison, mais
+       choisissables. C'est le cas d'un mois clôturé pour un avenant : le
+       choisir propose de le rouvrir au moment de valider, il n'est plus
+       barré. */
+    var signales = opts.signales || {};
     var de = opts.deMois || { annee: Number(String(isoDefaut).slice(0, 4)) - 1, mois: 1 };
     var a = opts.aMois || { annee: de.annee + 3, mois: 12 };
 
@@ -1176,7 +1185,7 @@
         op.textContent = '— ' + etiquette + ' (' + interdits[cle] + ')';
         op.disabled = true;
       } else {
-        op.textContent = etiquette;
+        op.textContent = signales[cle] ? etiquette + ' (' + signales[cle] + ')' : etiquette;
         if (premierLibre === null && courant.annee * 12 + courant.mois >= rangVoulu) {
           premierLibre = op.value;
         }
@@ -1422,8 +1431,19 @@
     cloture:    'clôturé'
   };
 
+  /* LOT 30 (§30.4) — UN MOIS ROUVERT SE RECONNAÎT À SON RÉCAPITULATIF :
+     statut « brouillon » ET un instantané conservé (`donnees`), celui du
+     document remis. Un mois jamais clôturé n'a pas d'instantané. */
+  function moisRouvert(recap) {
+    return !!(recap && recap.statut === 'brouillon' && recap.donnees);
+  }
+
   function etatDuMois(annee, mois, recap, aujourdhuiIso) {
     if (recap && recap.statut === 'fige') return ETAT_CLOTURE;
+    /* LOT 30 (§30.4) — un mois rouvert est À RECLÔTURER, quelle que soit la
+       date : il ne redevient pas un brouillon ordinaire qu'on oublie. C'est
+       ce qui le fait entrer dans « Aujourd'hui » et dans la pastille. */
+    if (moisRouvert(recap)) return ETAT_A_CLOTURER;
 
     var p = String(aujourdhuiIso || '').split('-');
     var anAuj   = Number(p[0]);
@@ -1617,7 +1637,9 @@
     choix: choix,
     toast: toast, messageErreur: messageErreur, copierTexte: copierTexte,
     joursPlanning: joursPlanning, joursTravailles: joursTravailles, typeDuJour: typeDuJour,
-    etatDuMois: etatDuMois, joursTravaillesRestants: joursTravaillesRestants,
+    etatDuMois: etatDuMois,
+    /* LOT 30 — le prédicat d'un mois rouvert, à un seul endroit. */
+    moisRouvert: moisRouvert, joursTravaillesRestants: joursTravaillesRestants,
     pastilleEtat: pastilleEtat, LIBELLE_ETAT: LIBELLE_ETAT,
     JOUR_BASCULE_CLOTURE: JOUR_BASCULE_CLOTURE,
     /* LOT 17 §17.4 — le formulaire des onze conditions, partagé par la

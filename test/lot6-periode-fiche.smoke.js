@@ -287,7 +287,11 @@ var sheet = document.getElementById('sheet');
     return o.textContent.indexOf('avril 2026') !== -1;
   })[0];
   assert(!!optAvril, '§17.4 : le mois clôturé est MONTRÉ, pas caché');
-  assert(optAvril.disabled === true, '§17.4 : et il n’est pas choisissable');
+  /* LOT 30 (§30.3) — EXIGENCE CHANGÉE : le mois clôturé n'est plus barré.
+     Le choisir propose de le rouvrir au moment de valider, puis l'avenant
+     s'enregistre (« aucun refus sec ne subsiste »). Il reste NOMMÉ avec sa
+     raison, comme avant. */
+  assert(optAvril.disabled === false, '§30.3 : et il est choisissable — la réouverture sera proposée');
   assert(optAvril.textContent.indexOf('clôturé') !== -1,
     '§17.4 : la raison est dite (obtenu « ' + optAvril.textContent + ' »)');
   assert(selMois.value.slice(0, 7) !== '2026-04',

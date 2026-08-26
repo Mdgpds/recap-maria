@@ -221,9 +221,12 @@
     var enregistres = imputation.jours_ouvrables == null ? jours : imputation.jours_ouvrables;
     var ecartDecompte = jours - enregistres;
 
-    var cp = cpDe(fiche);
+    /* §28.3 — en correction, le compteur d'ENTRÉE (`brut`) : la propre
+       consommation de cette période ne doit pas lui être retirée. Le moteur,
+       lui, confronte toujours la ventilation aux réserves à l'écriture. */
+    var cp = cpDe(fiche, true);
     var sup = supDe(fiche);
-    var plafonds = plafondsDe(fiche);
+    var plafonds = plafondsDe(fiche, true);
     var maxCp = plafonds.maxCp;
     var maxSup = plafonds.maxSup;
 
@@ -923,8 +926,34 @@
     return (c && c.jours_planning) || [1, 2, 3, 4, 5];
   }
 
-  function cpDe(fiche) {
-    return Kit.cpDisponible(fiche.entree && fiche.entree.compteurEntree);
+  /* LOT 28 (§28.3) — LE DISPONIBLE TIENT COMPTE DE CE QUE LE MOIS A DÉJÀ
+     CONSOMMÉ. Cet écran lisait le compteur d'ENTRÉE du mois : une période
+     déjà ventilée sur les congés payés, ou un congé à l'heure déjà posé,
+     n'en était pas déduit, et la même réserve pouvait être dépensée deux
+     fois. Le moteur expose désormais ce qu'il reste APRÈS avoir servi le mois
+     (`minutesCpRestantesApresConsommation`, avant l'acquisition du mois) :
+     c'est ce compteur-là que la pose lit. La récupération, elle, garde son
+     compteur d'entrée : elle a le droit de passer sous zéro, et l'écran le
+     dit déjà.
+
+     `brut` = lire le compteur d'entrée tel quel : c'est ce qu'il faut pour
+     CORRIGER une période déjà ventilée, dont la propre consommation ne doit
+     pas être déduite du disponible qu'on lui présente. */
+  function compteurPourPose(entree, brut) {
+    var ce = (entree && entree.compteurEntree) || null;
+    var r = entree && entree.resultat;
+    if (brut || !ce || !r || entree.fige ||
+        typeof r.minutesCpRestantesApresConsommation !== 'number') {
+      return ce;
+    }
+    return {
+      minutesSup: ce.minutesSup || 0,
+      minutesCpAcquis: r.minutesCpRestantesApresConsommation,
+      minutesCpPris: 0
+    };
+  }
+  function cpDe(fiche, brut) {
+    return Kit.cpDisponible(compteurPourPose(fiche.entree, brut));
   }
   function supDe(fiche) {
     return Kit.supDisponible(fiche.entree && fiche.entree.compteurEntree);
@@ -944,8 +973,8 @@
      `Math.floor(cp / 10)` ne lève aucune erreur — il annonce simplement 54
      jours disponibles au lieu de 10. Deux divisions par 10 dans un écran sont
      exactement ce qu'on oublie. */
-  function plafondsDe(fiche) {
-    var r = Chaine.reservesEnJours(condDe(fiche), fiche.entree && fiche.entree.compteurEntree);
+  function plafondsDe(fiche, brut) {
+    var r = Chaine.reservesEnJours(condDe(fiche), compteurPourPose(fiche.entree, brut));
     return { maxCp: r.joursCp, maxSup: r.joursSup };
   }
 
@@ -1776,6 +1805,14 @@
     if (l && l.type === 'familiarisation') {
       return 'cette journée est en familiarisation, payée à l’heure';
     }
+    /* LOT 29 (§29.2, 5) — une absence de l'enfant ne porte jamais d'écart,
+       congé à l'heure compris : le moteur l'ignorerait (`TYPES_SANS_MINUTES`)
+       et le congé serait accepté puis oublié. Ce jour-là, la journée est
+       payée, sans minutes ni entretien : il n'y a rien à déduire. */
+    if (l && l.type === 'absence_enfant') {
+      return 'l’enfant est noté absent ce jour-là : la journée est payée, ' +
+        'il n’y a rien à déduire';
+    }
     if (l && TYPES_ABSENCE_MARIA.indexOf(l.type) !== -1) {
       return 'vous êtes déjà absente toute la journée';
     }
@@ -1836,8 +1873,8 @@
     return f.entreeDuJour || f.entree || null;
   }
   function cpDuJour(f) {
-    var e = entreeDuJour(f);
-    return Kit.cpDisponible(e && e.compteurEntree);
+    /* §28.3 — ce qu'il reste APRÈS ce que le mois de la date a déjà consommé. */
+    return Kit.cpDisponible(compteurPourPose(entreeDuJour(f)));
   }
   function supDuJour(f) {
     var e = entreeDuJour(f);

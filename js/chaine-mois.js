@@ -278,7 +278,11 @@
          le mois de repli sans les samedis choisis, et une semaine de six jours
          en vaudrait cinq le temps d'un repli — sur le chiffre même que les
          familles contestent. */
-      samedisComptes: params.samedisComptes
+      samedisComptes: params.samedisComptes,
+      /* LOT 28 (§28.1) — le cumul de l'exercice suit le repli, comme tout ce
+         qui n'est pas une imputation : sans lui, le mois de repli ignorerait
+         le plafond des 30 jours. */
+      minutesCpAcquisesExercice: params.minutesCpAcquisesExercice
     };
   }
 
@@ -684,18 +688,58 @@
 
       var total = nbMoisEntre(debutChaine.annee, debutChaine.mois, cible.annee, cible.mois);
       var tronquee = false;
-      if (total > MAX_MOIS) { total = MAX_MOIS; tronquee = true; }
+      /* LOT 28 (§28.9) — LA TRONCATURE GARDE LES MOIS LES PLUS RÉCENTS.
+         Elle gardait les plus anciens : la boucle partait de `debutChaine` et
+         s'arrêtait 600 mois plus loin, avant le mois demandé — qui était donc
+         le premier supprimé, pendant que l'écran annonçait « seuls les 600
+         derniers mois ont été rejoués ». C'est le message qui disait vrai et
+         la troncature qui mentait : on avance le début de chaîne, et le mois
+         demandé est toujours le dernier calculé. */
+      if (total > MAX_MOIS) {
+        tronquee = true;
+        var aSauter = total - MAX_MOIS;
+        for (var sk = 0; sk < aSauter; sk++) {
+          debutChaine = moisSuivant(debutChaine.annee, debutChaine.mois);
+        }
+        total = MAX_MOIS;
+      }
 
       var avantDepart = cmpMois(debutChaine.annee, debutChaine.mois, depart.annee, depart.mois) < 0;
       var compteur = avantDepart ? zero : compteurInitial;
 
+      var finChaine = dernierJour(cible.annee, cible.mois);
       return Promise.all([
-        chargerJournees(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
+        chargerJournees(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), finChaine),
         chargerRecaps(DB, contrat.id, debutChaine.annee, cible.annee),
-        chargerImputations(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
-        chargerPeriodesFamiliarisation(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois)),
-        chargerSamedisConge(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), dernierJour(cible.annee, cible.mois))
-      ]).then(function (charge) {
+        chargerImputations(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), finChaine),
+        chargerPeriodesFamiliarisation(DB, contrat.id, premierJour(debutChaine.annee, debutChaine.mois), finChaine)
+      ]).then(function (charge4) {
+        /* LOT 28 (§28.8) — LA FENÊTRE DES SAMEDIS S'ÉTEND JUSQU'À LA VEILLE
+           DE LA REPRISE, pas à la fin du mois affiché.
+
+           Une période finissant le vendredi 31 juillet compte son samedi le
+           1er août. L'écran mensuel de juillet chargeait les samedis jusqu'au
+           31 : le samedi coché n'entrait pas, la semaine valait 5 jours ; sur
+           l'historique, qui charge l'année, elle en valait 6. Deux écrans
+           voisins, deux décomptes, deux ventilations — et c'est l'écran
+           mensuel qui clôture.
+
+           La borne vient des imputations elles-mêmes (les samedis cochés leur
+           appartiennent) et de la règle de reprise du moteur, avec le planning
+           en vigueur au mois de la période. */
+        var imputationsChargees = charge4[2] || [];
+        var finSamedis = finChaine;
+        imputationsChargees.forEach(function (imp) {
+          if (!imp || !imp.date_fin || imp.date_fin < imp.date_debut) return;
+          var mf = moisDeDate(imp.date_fin);
+          var cd = Engine.conditionsApplicables(avenants, mf.annee, mf.mois);
+          var veille = Engine.veilleDeLaReprise(imp.date_fin, cd && cd.jours_planning);
+          if (veille > finSamedis) finSamedis = veille;
+        });
+        return chargerSamedisConge(DB, contrat.id,
+          premierJour(debutChaine.annee, debutChaine.mois), finSamedis)
+          .then(function (samedis) { return charge4.concat([samedis]); });
+      }).then(function (charge) {
         var journeesParMois = charge[0] || {};
         var recapsParMois = charge[1];
         var imputations = charge[2] || [];
@@ -705,6 +749,18 @@
         var entrees = [];
         var cur = { annee: debutChaine.annee, mois: debutChaine.mois };
         var seq = Promise.resolve();
+        /* LOT 28 (§28.1) — LE CUMUL ACQUIS SUR L'EXERCICE, pour le plafond des
+           30 jours. L'exercice des congés payés va du 1er juin au 31 mai
+           (`Kit.anneeDeReferenceConges`, la même règle que les samedis) : le
+           cumul repart de zéro au mois de juin. Un mois clôturé y entre par
+           son instantané — c'est le chiffre parti chez les parents qui fait
+           foi. Si la chaîne commence au milieu d'un exercice, les mois d'avant
+           ne sont pas connus : le cumul part de zéro, et le plafond ne peut
+           alors que mordre plus tard qu'il ne devrait — jamais retirer à tort
+           un droit acquis. En pratique 12 × 2,5 = 30 : il ne mord que sur une
+           donnée aberrante. */
+        var cumulExercice = 0;
+        var MOIS_OUVRANT_EXERCICE_CP = 6;
 
         for (var i = 0; i < total; i++) {
           (function (mm, rang) {
@@ -720,6 +776,7 @@
                 if (cmpMois(mm.annee, mm.mois, depart.annee, depart.mois) === 0) {
                   compteur = compteurInitial;
                 }
+                if (mm.mois === MOIS_OUVRANT_EXERCICE_CP) cumulExercice = 0;
                 var avant = cmpMois(mm.annee, mm.mois, depart.annee, depart.mois) < 0;
                 /* Mois hors de la période d'activité du contrat : il est
                    rejoué pour ne pas rompre la continuité des compteurs, mais
@@ -813,7 +870,9 @@
                        liste entière : un samedi hors des périodes du mois
                        n'entre dans aucun décompte, et le filtrer ici
                        supposerait de redire RG-06 une deuxième fois. */
-                    samedisComptes: samedisComptes
+                    samedisComptes: samedisComptes,
+                    /* §28.1 — le cumul de l'exercice, pour le plafond. */
+                    minutesCpAcquisesExercice: cumulExercice
                   });
                   var r = rep.resultat;
                   compteur = r.compteurSortie;
@@ -833,6 +892,14 @@
                   };
                 }
 
+                /* Le cumul AVANT ce mois est posé sur le maillon : un écran qui
+                   rejoue le mois hors de la chaîne (l'aperçu de l'espace
+                   enfant) doit passer au moteur exactement ce que la chaîne
+                   lui a passé. */
+                entree.minutesCpAcquisesExercice = cumulExercice;
+                if (entree.resultat && typeof entree.resultat.minutesCpAcquis === 'number') {
+                  cumulExercice += entree.resultat.minutesCpAcquis;
+                }
                 entrees.push(entree);
                 if (typeof opts.onProgress === 'function') opts.onProgress(rang + 1, total);
               });
@@ -915,6 +982,15 @@
          le sans solde et le prorata en sont déjà déduits, mois par mois. */
       brutDuCentimes: 0,
       totalAVerserCentimes: 0,
+      /* LOT 28 (§28.4) — LA PART DE FAMILIARISATION, AGRÉGÉE ELLE AUSSI.
+         `salaireNetCentimes` et `entretienCentimes` ne portent que la garde
+         mensualisée ; `totalAVerserCentimes` porte tout. Sur une période
+         contenant un mois de familiarisation, les lignes affichées ne
+         reconstituaient donc pas le total — l'écart était invisible. Ces deux
+         champs le rendent visible : un total est toujours la somme des lignes
+         affichées au-dessus. */
+      familiarisationNetCentimes: 0,
+      familiarisationEntretienCentimes: 0,
       compteurEntree: null,
       compteurSortie: null,
       moisProvisoires: [],
@@ -996,6 +1072,9 @@
         ? (r.salaireNetCentimes || 0)
         : r.salaireNetProrataCentimes;
       somme.totalAVerserCentimes += r.totalAVerserCentimes || 0;
+      var fam = partFamiliarisation(r);
+      somme.familiarisationNetCentimes += fam.netCentimes;
+      somme.familiarisationEntretienCentimes += fam.entretienCentimes;
 
       if (e.fige && r.prenomEnfant) {
         somme.nomsFiges.push({
@@ -1046,10 +1125,14 @@
       joursPresence: 0, entretienCentimes: 0, minutesSupAcquises: 0,
       joursCongesDecomptes: 0, retenueSansSoldeCentimes: 0,
       salaireBrutCentimes: 0, salaireNetCentimes: 0, totalAVerserCentimes: 0,
+      /* §28.4 — la part de familiarisation, totalisée elle aussi. */
+      familiarisationNetCentimes: 0, familiarisationEntretienCentimes: 0,
       nbMoisProvisoires: 0
     };
     (agregats || []).forEach(function (a) {
       if (!a) return;
+      t.familiarisationNetCentimes += a.familiarisationNetCentimes || 0;
+      t.familiarisationEntretienCentimes += a.familiarisationEntretienCentimes || 0;
       t.nbContrats++;
       t.nbMois += a.nbMois;
       t.joursPresence += a.joursPresence;
@@ -1099,7 +1182,14 @@
     { cle: 'imputation.minutesCpConsommees', libelle: 'Congés payés décomptés ce mois', format: 'cp' },
     { cle: 'imputation.minutesSupConsommees', libelle: 'Récupération utilisée ce mois', format: 'minutes' },
     { cle: 'compteurSortie.minutesCpPris',   libelle: 'Congés payés pris, en tout',     format: 'cp' },
-    { cle: 'compteurSortie.minutesSup',      libelle: 'Récupération restante',          format: 'minutes' }
+    { cle: 'compteurSortie.minutesSup',      libelle: 'Récupération restante',          format: 'minutes' },
+    /* LOT 30 (§30.5) — L'ACQUISITION, ELLE AUSSI. Le lot 28 rend aux mois
+       leurs 2,5 jours ; les mois clôturés qui les ont perdus se rattrapent en
+       rouvrant puis reclôturant. Sans ces deux postes, cette reclôture-là
+       n'aurait « aucun écart » et s'écrirait sans écran de comparaison —
+       alors que c'est précisément un compteur qui change. */
+    { cle: 'minutesCpAcquis',                libelle: 'Congés payés acquis ce mois',    format: 'cp' },
+    { cle: 'compteurSortie.minutesCpAcquis', libelle: 'Congés payés acquis, en tout',   format: 'cp' }
   ];
 
   /* CORRECTION B4 — LE NET ET LE BRUT DU MOIS, EN UN SEUL ENDROIT.
@@ -1138,6 +1228,31 @@
     return (r.salaireBrutProrataCentimes == null)
       ? (r.salaireBrutCentimes || 0)
       : r.salaireBrutProrataCentimes;
+  }
+
+  /* LOT 28 (§28.4) — LA PART DE FAMILIARISATION D'UN MOIS, LUE AU BON ENDROIT.
+
+     `netDuMois` et `entretienCentimes` disent la GARDE MENSUALISÉE, et elle
+     seule ; `totalAVerserCentimes` ajoute le net et l'entretien de la
+     familiarisation. Quatre écrans lisaient les deux premiers à côté du
+     troisième : sur un mois de familiarisation, la somme des lignes ne faisait
+     pas le total, et 164,70 € manquaient sans qu'aucune ligne ne les nomme —
+     sur l'écran qui précède immédiatement la clôture.
+
+     Comme `netDuMois`, cette lecture ne calcule rien : elle choisit deux champs
+     et dit s'ils ont lieu d'être affichés. Un instantané d'avant le lot 20 ne
+     porte pas le bloc : la part vaut zéro et `actif` est faux. */
+  function partFamiliarisation(resultat) {
+    var f = (resultat && resultat.familiarisation) || null;
+    var net = (f && f.netCentimes) || 0;
+    var entretien = (f && f.entretienCentimes) || 0;
+    return {
+      actif: !!(f && f.actif),
+      netCentimes: net,
+      entretienCentimes: entretien,
+      /* Ce qui manque aux lignes de garde pour retomber sur le total. */
+      totalCentimes: net + entretien
+    };
   }
 
   /* Le mois est-il partiel, et dans quelle proportion ? Rend `null` quand le
@@ -1237,6 +1352,8 @@
     POSTES_COMPARES: POSTES_COMPARES,
     /* §17.7 / correction B4 — le montant du mois, lu au bon endroit. */
     netDuMois: netDuMois, brutDuMois: brutDuMois, proratOuNull: proratOuNull,
+    /* LOT 28 §28.4 — la part de familiarisation, lue ici par les cinq écrans. */
+    partFamiliarisation: partFamiliarisation,
     brutDuCentimes: brutDuCentimes,
     /* Exportée pour être testable : c'est l'inverse littéral du chaînage, et
        la correction C6 y ajoute un terme qu'aucun test ne pouvait voir. */

@@ -66,11 +66,21 @@
       ['Le décompte des congés',
         Kit.ENCART_RG06 + ' Le quota de cinq vaut PAR FAMILLE : sur une même ' +
         'période, vous pouvez compter le samedi pour un enfant et pas pour un autre.'],
+      /* LOT 28 (§28.1) — la règle qui manquait, et qui faisait perdre des congés. */
+      ['Les congés payés s’acquièrent chaque mois',
+        '2,5 jours ouvrables par mois travaillé, comme pour toute salariée — ' +
+        'jusqu’à 30 jours par an (du 1er juin au 31 mai), et ce qui n’est pas pris ' +
+        'se cumule sans jamais revenir à zéro. Un congé, un jour férié, une ' +
+        'absence de l’enfant ou la familiarisation comptent comme du travail. ' +
+        'Seul un mois entièrement sans solde n’acquiert rien ; le mois où un contrat ' +
+        'commence ou finit acquiert au prorata des jours de garde.'],
+      /* LOT 28 (§28.2) — décision d'Adrien du 25 août 2026. */
       ['Les 30 minutes',
         'Votre journée va au-delà de la fin d’accueil : 30 minutes par jour sont ' +
-        'dues, enfant présent ou non. Un parent en retard en ajoute, une ' +
-        'libération anticipée que vous demandez en rend. La durée exacte est ' +
-        'celle de chaque contrat — elle se lit sur sa fiche.'],
+        'dues quand l’enfant est présent. Un parent en retard en ajoute, une ' +
+        'libération anticipée que vous demandez en rend. Quand l’enfant est ' +
+        'absent, rien n’est dû — ni minutes, ni indemnité d’entretien. La durée ' +
+        'exacte est celle de chaque contrat — elle se lit sur sa fiche.'],
       ['L’entretien',
         'Dû au montant plein chaque jour de présence. Il ne se retire qu’hors du ' +
         'cadre : une absence, un écart d’horaire déclaré, ou la familiarisation.'],
@@ -263,7 +273,9 @@
     minutes_sup_jour: 30,
     minutes_par_jour_conge: 540,
     entretien_centimes_jour: 500,
-    sup_dues_si_enfant_absent: true,
+    /* §28.2 — quand l'enfant est absent, aucune minute n'est due : le défaut
+       change de camp, et le moteur ne lit plus ce réglage. */
+    sup_dues_si_enfant_absent: false,
     ordre_imputation: 'cp_puis_sup'
   };
 
@@ -1349,6 +1361,15 @@
         out.push('    Indemnité d’entretien  : ' + Kit.eur(v.entretienCentimes || 0));
         /* CORRECTION B4 — le net DÛ, celui qui figure sur le document. */
         out.push('    Salaire net            : ' + Kit.eur(Chaine.netDuMois(v)));
+        /* §28.4 — la part de familiarisation, quand elle existe. */
+        var fam = Chaine.partFamiliarisation(v);
+        if (fam.actif) {
+          out.push('    Familiarisation (net)  : ' + Kit.eur(fam.netCentimes));
+          out.push('    Familiarisation (entr.): ' + Kit.eur(fam.entretienCentimes));
+        }
+        if ((v.retenueSansSoldeCentimes || 0) > 0) {
+          out.push('    Retenue sans solde     : − ' + Kit.eur(v.retenueSansSoldeCentimes));
+        }
         out.push('    Total à verser         : ' + Kit.eur(v.totalAVerserCentimes || 0));
         out.push('    Heures supplémentaires : ' + Kit.heures(v.minutesSupAcquises || 0));
         out.push('    Congés décomptés       : ' + (v.joursCongesDecomptes || 0) + ' j ouvrables');
@@ -1419,9 +1440,8 @@
         out.push('    Minutes supplémentaires: ' + Kit.duree(a.minutes_sup_jour) + ' par jour travaillé');
         out.push('    Un jour de congé vaut  : ' + Kit.duree(a.minutes_par_jour_conge));
         out.push('    Entretien par présence : ' + Kit.eur(a.entretien_centimes_jour));
-        out.push('    Si l’enfant est absent : ' + (a.sup_dues_si_enfant_absent === false
-          ? 'les minutes supplémentaires ne sont pas dues'
-          : 'les minutes supplémentaires restent dues'));
+        /* §28.2 — la règle, pour tous les contrats. */
+        out.push('    Si l’enfant est absent : ni minutes supplémentaires, ni indemnité d’entretien');
         out.push('    Congés déduits d’abord : ' + (a.ordre_imputation === 'sup_puis_cp'
           ? 'sur la récupération' : 'sur les congés payés'));
         out.push('    Rémunération           : ' +
@@ -1606,6 +1626,9 @@
     var lignes = [['enfant', 'famille', 'annee', 'mois', 'statut',
       'jours_presence', 'entretien_centimes', 'salaire_net_centimes',
       'total_a_verser_centimes', 'minutes_sup_acquises', 'jours_conges_decomptes',
+      /* §28.4 — la part de familiarisation, sans quoi les colonnes ne
+         reconstituent pas le total. */
+      'familiarisation_net_centimes', 'familiarisation_entretien_centimes',
       /* Conditions applicables — datées à partir du lot 17. */
       'avenant_numero', 'avenant_date_effet',
       'jours_de_garde', 'accueil_debut', 'accueil_fin', 'minutes_journee',
@@ -1637,6 +1660,7 @@
            plus. */
         v.joursPresence || 0, v.entretienCentimes || 0, Chaine.netDuMois(v),
         v.totalAVerserCentimes || 0, v.minutesSupAcquises || 0, v.joursCongesDecomptes || 0,
+        Chaine.partFamiliarisation(v).netCentimes, Chaine.partFamiliarisation(v).entretienCentimes,
         a.numero == null ? '' : a.numero,
         csv(a.date_effet || ''),
         csv((a.jours_planning || []).join(' ')),

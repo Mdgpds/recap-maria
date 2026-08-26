@@ -596,25 +596,20 @@ function choixParLibelle(morceau) {
   det6.open = true;
   await pause(60);
 
+  /* LOT 28 (§28.2) — EXIGENCE CHANGÉE. Le choix au cas par cas (« mes
+     minutes restent dues / je ne les compte pas ») a disparu : quand l'enfant
+     est absent, aucune minute n'est due, pour tous les contrats (décision
+     d'Adrien du 25 août 2026, confirmée le 26). Le panneau le DIT au lieu
+     d'offrir un compteur sans effet, et n'écrit rien. La colonne
+     `sup_dues_override` reste en base, sans effet. */
   var selOverride = parTexte(sheet, '.fld', 'ce jour-là');
-  assert(!!selOverride, 'P6 : le choix au cas par cas est proposé sur une absence');
-  assert(txt(sheet).indexOf('le réglage de la fiche contrat ne change pas') !== -1,
-    'A8 : et l’écran dit que le contrat n’est pas touché');
-
-  var sel = selOverride.querySelector('select');
-  sel.value = 'false';
-  sel.dispatchEvent(new dom.window.Event('change'));
-  await pause(60);
-  assert(sansInsecable(txt(sheet)).indexOf('Ce jour : 0 min') !== -1,
-    'P6 : l’effet est immédiat');
-
-  boutonExact(sheet, 'Enregistrer cet ajustement').click();
-  await pause(350);
-  var surcharge = appels.journee[appels.journee.length - 1];
-  assert(surcharge.sup_dues_override === false,
-    'P6 : la surcharge est écrite sur la JOURNÉE (obtenu ' + surcharge.sup_dues_override + ')');
+  assert(!selOverride, '§28.2 : plus aucun choix au cas par cas sur une absence');
+  assert(txt(sheet).indexOf('aucune minute n’est due ce jour-là') !== -1,
+    '§28.2 : le panneau dit la règle — aucune minute quand l’enfant est absent');
+  assert(!parTexte(sheet, 'button', 'Enregistrer cet ajustement'),
+    '§28.2 : rien à enregistrer sur une absence');
   assert(LEA.sup_dues_si_enfant_absent === true,
-    'A8 : et le réglage du CONTRAT n’a pas bougé');
+    'A8 : et le réglage du CONTRAT n’a pas bougé (il n’a plus d’effet)');
 
   /* ==================================================================== */
   /* P7 — Le document AVEC renoncement                                    */

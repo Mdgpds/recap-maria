@@ -424,8 +424,12 @@ function entrerSelection() {
   var annonce = txt(corps.querySelector('.selbar .sb-ef'));
   assert(annonce.indexOf('25,00') !== -1,
     '§18.1 : l’effet chiffré est annoncé avant validation (obtenu « ' + annonce + ' »)');
-  assert(annonce.indexOf('restent dues') !== -1,
-    '§18.1 : et il dit ce que RG-09 fait des 30 minutes');
+  /* LOT 28 (§28.2) — EXIGENCE CHANGÉE : quand l'enfant est absent, aucune
+     minute n'est due (décision d'Adrien du 25 août 2026). L'annonce, rejouée
+     par le moteur, dit désormais que les 5 × 30 minutes ne sont pas dues. */
+  assert(annonce.indexOf('non dues') !== -1 && annonce.indexOf('2h30') !== -1,
+    '§28.2 : et il dit que les 30 minutes de chaque jour ne sont pas dues (obtenu « ' +
+    annonce + ' »)');
 
   /* La comparaison qui compte : ce que le moteur donne pour ce mois avec ces
      cinq absences. L'écran ne doit pas annoncer autre chose. */
@@ -809,9 +813,14 @@ function entrerSelection() {
      les deux textes au bout. Un pavé présent dont les boutons ne mènent nulle
      part passait l'ancienne assertion.
      ====================================================================== */
+  /* LOT 30 (§30.2) — EXIGENCE CHANGÉE : sur un mois clôturé d'un contrat en
+     cours, le ⋯ RESTE. La multi-sélection propose la réouverture au moment
+     de valider, comme la feuille du jour ; rien n'est écrit tant que le mois
+     n'est pas rouvert (vérifié par `lot30-rouvrir.smoke.js`). Un contrat
+     RANGÉ, lui, reste sans ⋯. */
   assert(!boutonExact(corps, 'Choisir plusieurs jours') &&
-         !document.getElementById('barre').querySelector('button[aria-label="Marquer plusieurs jours"]'),
-    '§18.1 : sur un mois clôturé, le ⋯ n’apparaît pas du tout');
+         !!document.getElementById('barre').querySelector('button[aria-label="Marquer plusieurs jours"]'),
+    '§30.2 : sur un mois clôturé, le ⋯ reste — valider proposera de rouvrir');
   assert(txt(corps).indexOf('Rien à faire les jours normaux') === -1,
     '§18.6 : et la phrase qui invite à toucher des jours inertes a disparu');
   var encClos = parTexte(corps, '.enc', 'Mois clôturé');
