@@ -110,7 +110,111 @@
    servi avec un écran ancien produirait des décomptes incohérents ET
    CRÉDIBLES — le pire résultat possible sur le chiffre que les familles
    contestent. */
-var CACHE = 'recap-mes-enfants-v6';
+/* LOT 24 (REDESIGN, LE SOCLE) — NOM DE CACHE CHANGÉ.
+
+   Quatre fichiers servis changent : `css/style.css` (réécrite en entier —
+   jetons, composants, deux rayons, quatre tailles), `js/ui-kit.js` (les
+   composants du socle et l'espace fine des milliers), `js/ui-menu.js` et
+   `js/ui-contrat.js` (le code mort du §17.9 est retiré). Le cas à éviter
+   est immédiat : la feuille de style neuve servie avec l'ancien
+   `js/ui-kit.js` — des classes stylées que personne ne pose, et des
+   montants dont le séparateur change d'un écran à l'autre. */
+/* LOT 25 (L'ACCUEIL ET L'ESPACE ENFANT) — NOM DE CACHE CHANGÉ.
+
+   Deux fichiers servis changent : `js/ui-accueil.js` (deux blocs, une carte
+   par geste) et `js/ui-enfant.js` (encart unique et sa file, synthèse
+   chiffrée, replis, barre fixe, ⋯ de multi-sélection). Ils se RÉPONDENT :
+   la carte « heures à déclarer » de l'Accueil appelle
+   `UiEnfant.declarerFamiliarisation`, exportée par le second. Servir
+   l'accueil neuf avec l'ancien espace enfant ferait échouer le geste le plus
+   fréquent de la période d'adaptation, sans un mot pour l'expliquer. */
+/* LOT 26 (POSER UN CONGÉ EN UN ÉCRAN) — NOM DE CACHE CHANGÉ.
+
+   Trois fichiers servis changent : `js/ui-conges.js` (huit écrans deviennent
+   un), `js/ui-kit.js` (`champDate` gagne `poser`, dont l'écran de pose a
+   besoin pour que le « Au » suive le « Du ») et `css/style.css` (le décompte
+   vert pâle et le « reste à répartir » sont retirés). Ils se RÉPONDENT : le
+   nouvel écran de pose appelle `champDate().poser()`. Servi avec l'ancien
+   `js/ui-kit.js`, le choix des dates lèverait au premier changement de
+   date — c'est-à-dire au premier geste. */
+/* LOT 27 (LE MENU, LA FICHE, LES RÈGLES) — NOM DE CACHE CHANGÉ.
+
+   Cinq fichiers servis changent : `js/ui-menu.js` (le Menu en cartes, « Comment
+   l'application compte », « Ajouter un enfant » en trois étapes),
+   `js/ui-contrat.js` (la fiche en trois blocs, l'avenant en tête),
+   `js/ui-kit.js` (`champsConditions` rend ses deux paquets de champs),
+   `js/app.js` (la route de l'écran des règles) et `css/style.css`.
+   Ils se RÉPONDENT : le Menu route vers `regles`, qui n'existe que si
+   `js/app.js` la connaît ; et « Ajouter un enfant » répartit les onze
+   conditions entre ses étapes 2 et 3 en lisant `conditions.temps` et
+   `conditions.argent`, que seul le socle neuf expose. Servir l'un avec
+   l'ancien de l'autre, c'est une entrée de Menu qui ne mène nulle part, ou
+   deux étapes vides. Aucun fichier ajouté. */
+/* LOT 28 (« JOURNÉES À PART ») — NOM DE CACHE CHANGÉ.
+
+   Trois fichiers servis changent : `js/ui-kit.js` (les deux tables de
+   libellés d'un écart d'horaire, et `quantieme` exposé), `js/ui-enfant.js`
+   (le repli « Journées à part ») et `js/ui-document.js` (il lit désormais ces
+   libellés dans `js/ui-kit.js` au lieu de les redéfinir).
+
+   Ils se RÉPONDENT, et c'est le lot où l'ordre de service compte le plus :
+   `js/ui-document.js` lit `Kit.LIBELLE_EVENEMENT_ECART` À SON CHARGEMENT.
+   Servi avec un `js/ui-kit.js` d'avant ce lot, il obtiendrait `undefined` —
+   et le document remis à la famille perdrait la moitié de la phrase qui
+   explique une déduction sur une pièce opposable. C'est exactement le cas
+   que le changement de nom de cache empêche. Aucun fichier ajouté. */
+/* CORRECTIFS DE CALCUL, LOT 28 (« LES CALCULS ») — NOM DE CACHE CHANGÉ.
+
+   Onze fichiers servis changent : `js/engine.js` (acquisition des congés
+   payés, absence de l'enfant sans minute, congés payés jamais négatifs,
+   renoncement borné, congé horaire en période, planning vide refusé),
+   `js/chaine-mois.js` (cumul d'exercice, fenêtre des samedis, troncature,
+   part de familiarisation agrégée), `js/messages.js`, `js/ui-kit.js`,
+   `js/ui-enfant.js`, `js/ui-conges.js`, `js/ui-accueil.js`, `js/ui-periode.js`,
+   `js/ui-historique.js`, `js/ui-document.js`, `js/ui-contrat.js` et
+   `js/ui-menu.js`.
+
+   Ils se RÉPONDENT : un moteur neuf servi avec un écran ancien annoncerait un
+   disponible de congés payés que le moteur ne servira pas, et un écran neuf
+   avec le moteur ancien lirait `acquisitionCp` ou
+   `minutesCpRestantesApresConsommation` à `undefined`. Sur les chiffres que
+   ce lot existe pour rendre justes, une incohérence crédible est le pire
+   résultat possible. Aucun fichier ajouté. */
+/* CORRECTIFS DE CALCUL, LOT 29 (« LA JOURNÉE QUI SE CORRIGE VRAIMENT ») — NOM
+   DE CACHE CHANGÉ.
+
+   Deux fichiers servis changent : `js/ui-enfant.js` (déclarer un écart sur
+   une absence remet la journée en présence ; marquer une absence efface
+   l'écart et rend l'indemnité ; l'écran l'annonce avant ; « Annuler » rend
+   l'indemnité aussi) et `js/ui-conges.js` (aucun congé à l'heure sur une
+   absence de l'enfant). Ils se répondent avec le moteur du lot 28, qui
+   ignore déjà tout écart porté par une absence : un écran ancien laisserait
+   encore écrire des journées que le moteur n'entend plus. */
+/* CORRECTIFS DE CALCUL, LOT 30 (« LA SOUPLESSE DE LA SAISIE ») — NOM DE
+   CACHE CHANGÉ.
+
+   Huit fichiers servis changent : `js/ui-reouverture.js` (la feuille « rouvrir
+   et continuer », le bandeau du mois rouvert, le motif après coup),
+   `js/ui-kit.js` (`moisRouvert`, un mois rouvert est « à clôturer »,
+   `signales` du sélecteur de mois), `js/db.js` (`audit_note` lu, le motif
+   écrit), `js/ui-enfant.js`, `js/ui-document.js`, `js/ui-accueil.js`,
+   `js/ui-contrat.js` et `js/ui-familiarisation.js`.
+   Ils se RÉPONDENT : cinq écrans appellent
+   `UiReouverture.feuilleRouvrirEtContinuer`, qui n'existe que dans le
+   nouveau `js/ui-reouverture.js` ; servi avec l'ancien, toucher un jour d'un
+   mois clôturé lèverait — au lieu de proposer la réouverture qui est tout
+   l'objet du lot. Aucun fichier ajouté. */
+/* LA FAMILIARISATION EN ARRIVÉE PUIS DÉPART — NOM DE CACHE CHANGÉ.
+
+   Deux fichiers servis changent : `js/db.js` (deux colonnes de plus lues et
+   écrites sur `journee` — `fam_heure_arrivee`, `fam_heure_depart`, migration
+   019) et `js/ui-enfant.js` (la feuille du jour de familiarisation sans
+   raccourcis, l'enregistrement en deux temps, la case « en cours »). Ils se
+   RÉPONDENT : l'écran lit sur la ligne une arrivée que seul le nouveau
+   `js/db.js` demande. Servi avec l'ancien, l'arrivée enregistrée le matin ne
+   reviendrait jamais le soir — exactement le défaut que ce changement
+   corrige. Aucun fichier ajouté. */
+var CACHE = 'recap-champ-heure-depart-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
