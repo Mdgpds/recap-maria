@@ -51,11 +51,6 @@
      travaillé (RG-11), soit 25 dixièmes avant le lot 17. */
   var DIXIEMES_CP_PAR_MOIS = 25;
 
-  /* LOT 28 (§28.1) — le plafond de l'article L3141-3 : 30 jours ouvrables
-     par exercice de référence. Il n'existait nulle part. Le moteur ne voit
-     pas l'exercice : il reçoit le cumul déjà acquis et borne ce mois-ci. */
-  var PLAFOND_CP_JOURS_PAR_EXERCICE = 30;
-
   /* §17.6 — la même acquisition, exprimée dans la nouvelle unité. Un jour de
      congé vaut `minutes_par_jour_conge` minutes ; 2,5 jours en valent deux
      fois et demie autant. L'arrondi n'existe que si `minutes_par_jour_conge`
@@ -342,19 +337,8 @@
   /* Types de journée qui ne génèrent JAMAIS de minutes supplémentaires
      (RG-04). Une journée sans travail ne génère rien, y compris si des
      minutes exceptionnelles y ont été saisies par erreur. */
-  /* LOT 28 (§28.2) ET LOT 29 (§29.2) — L'ABSENCE DE L'ENFANT N'EN PRODUIT
-     PLUS AUCUNE. Décision d'Adrien du 25 août 2026, confirmée le 26 :
-     « si l'enfant est absent, pas de 30 min ni de frais d'entretien ».
-     L'entretien sautait déjà (RG-09) ; les minutes du contrat restaient dues
-     par défaut, et un écart d'horaire déclaré par erreur sur une absence
-     retirait de la récupération un temps que Maria n'avait pas à rendre.
-
-     Le réglage `sup_dues_si_enfant_absent` et la surcharge `sup_dues_override`
-     RESTENT en base (aucune migration) mais n'ont plus d'effet sur le calcul :
-     une journée sans enfant n'a pas d'horaire de référence, donc ni base, ni
-     minutes ajoutées, ni écart possible — exactement comme un jour férié. */
   var TYPES_SANS_MINUTES = ['ferie', 'conge_maria', 'sans_solde',
-                            'familiarisation', 'hors_planning', 'absence_enfant'];
+                            'familiarisation', 'hors_planning'];
 
   /* Lecture d'un nombre de minutes saisi sur une journée.
 
@@ -427,62 +411,35 @@
     /* 2. Ce que le contrat prévoit. */
     var base = conditions.minutes_sup_jour;
 
-    /* 3. LOT 28 — LA BRANCHE RG-09 A DISPARU D'ICI. `absence_enfant` est
-       entré dans `TYPES_SANS_MINUTES` : la journée est sortie au point 1, sans
-       base, sans écart, quel que soit le réglage du contrat ou la surcharge
-       de la journée. Voir le commentaire de la liste. */
+    /* 3. RG-09, surchargeable au jour le jour (V8-19). `sup_dues_override`
+       vaut null quand la journée dit « suivre le réglage du contrat » : null
+       et false sont DEUX valeurs différentes, d'où le test `!= null` et non
+       un test de vérité. Le réglage du contrat n'est jamais modifié.
+       NB : on ne neutralise la base que sur un `false` explicite, exactement
+       comme avant le lot 9 (`sup_dues_si_enfant_absent !== false`), pour
+       qu'un contrat dont le paramètre n'est pas renseigné continue de devoir
+       les minutes. */
+    if (type === 'absence_enfant') {
+      var dues = (journee.sup_dues_override != null)
+        ? journee.sup_dues_override
+        : conditions.sup_dues_si_enfant_absent;
+      if (dues === false) base = 0;
+    }
 
     /* 4. Minutes travaillées au-delà du contrat ce jour-là (V8-18). */
     var ajoutees = minutesSaisies(journee && journee.minutes_sup_exceptionnelles,
                                   'minutes_sup_exceptionnelles');
 
-    /* 5. LOT 28 (§28.6) — L'ÉCART D'ABORD, LE RENONCEMENT ENSUITE.
-
-       L'heure de référence contient déjà les minutes du contrat : un écart
-       négatif mesuré contre elle les a donc DÉJÀ retirées. Le renoncement était
-       borné à `base + ajoutées` sans regarder l'écart, et les retirait une
-       seconde fois : « −60 » seul donnait 600 min sur le mois, « −60 » plus un
-       renoncement de 30 en donnait 570. Le plancher devient ce qui reste
-       réellement dû APRÈS l'écart imputé à la récupération —
-       max(0, base + ajoutées + écart) — et le renoncement ne peut plus rendre
-       la journée négative deux fois. Un écart déduit des congés payés ou en
-       sans solde ne réduit pas les minutes du jour : il ne réduit donc pas non
-       plus ce à quoi Maria peut renoncer. */
-    var ecartAvant = lireEcart(journee);
-
-    /* 6. Renoncement explicite (V8-18), BORNÉ : on ne peut pas renoncer à
+    /* 5. Renoncement explicite (V8-18), BORNÉ : on ne peut pas renoncer à
        plus que ce qui est dû. Sans ce plancher, un renoncement ferait
        AUGMENTER le compteur — le Math.min n'est pas une élégance, c'est la
        garde. Le surplus est ignoré, jamais négatif. */
     var renoncees = Math.min(
       minutesSaisies(journee && journee.minutes_sup_renoncees, 'minutes_sup_renoncees'),
-      Math.max(0, base + ajoutees + ecartAvant.ecartSurRecuperation)
+      base + ajoutees
     );
 
-    var ecart = ecartAvant.ecart;
-    var destination = ecartAvant.destination;
-
-    return {
-      base: base, ajoutees: ajoutees, renoncees: renoncees,
-      ecart: ecart,
-      ecartImputeSur: ecart === 0 ? null : (ecart > 0 ? 'recuperation' : destination),
-      /* Ce que l'écart fait au compteur de récupération : tout le positif,
-         et le négatif seulement s'il lui est imputé. */
-      ecartSurRecuperation: ecartAvant.ecartSurRecuperation,
-      /* Minutes de congés payés consommées par l'écart, toujours positives.
-         LOT 28 (§28.3) — c'est ce que la journée DEMANDE ; `calculerMois`
-         borne au disponible du mois et bascule le surplus sur la
-         récupération. Une journée seule ne connaît pas le compteur. */
-      minutesSurCp: (ecart < 0 && destination === 'conges_payes') ? -ecart : 0,
-      /* Minutes retenues sans solde, toujours positives. */
-      minutesSansSolde: (ecart < 0 && destination === 'sans_solde') ? -ecart : 0
-    };
-  }
-
-  /* L'écart d'une journée et sa destination, lus une fois pour deux usages :
-     le plancher du renoncement (point 5) et le détail rendu (point 6). */
-  function lireEcart(journee) {
-    /* LOT 17 (§17.5) — l'écart d'horaire déclaré.
+    /* 6. LOT 17 (§17.5) — l'écart d'horaire déclaré.
 
          Minutes du jour = minutes supplémentaires du contrat
                            + (heure réelle − heure de référence)
@@ -511,10 +468,18 @@
       }
       destination = journee.ecart_impute_sur;
     }
+
     return {
+      base: base, ajoutees: ajoutees, renoncees: renoncees,
       ecart: ecart,
-      destination: destination,
-      ecartSurRecuperation: (ecart > 0 || destination === 'recuperation') ? ecart : 0
+      ecartImputeSur: ecart === 0 ? null : (ecart > 0 ? 'recuperation' : destination),
+      /* Ce que l'écart fait au compteur de récupération : tout le positif,
+         et le négatif seulement s'il lui est imputé. */
+      ecartSurRecuperation: (ecart > 0 || destination === 'recuperation') ? ecart : 0,
+      /* Minutes de congés payés consommées par l'écart, toujours positives. */
+      minutesSurCp: (ecart < 0 && destination === 'conges_payes') ? -ecart : 0,
+      /* Minutes retenues sans solde, toujours positives. */
+      minutesSansSolde: (ecart < 0 && destination === 'sans_solde') ? -ecart : 0
     };
   }
 
@@ -741,9 +706,15 @@
     return out;
   }
 
-  /* `contratCouvreLeMois` A DISPARU AU LOT 28 : l'acquisition des congés payés
-     ne dépend plus du tout-ou-rien de la couverture du mois, mais du prorata
-     de `partCouverteDuMois`, comme le salaire (§28.1). */
+  /* Le contrat couvre-t-il le mois entier ? (utile pour RG-11) */
+  function contratCouvreLeMois(contrat, annee, mois) {
+    var premier = annee + '-' + String(mois).padStart(2, '0') + '-01';
+    var dernier = annee + '-' + String(mois).padStart(2, '0') + '-' +
+      String(nbJoursDansMois(annee, mois)).padStart(2, '0');
+    if (contrat.date_debut && contrat.date_debut > premier) return false;
+    if (contrat.date_fin && contrat.date_fin < dernier) return false;
+    return true;
+  }
 
   /* ------------------------------------------------------------------ */
   /* Imputation imposée : répartition d'une période sur ses mois (lot 9)  */
@@ -962,15 +933,6 @@
     var journees = entrees.journees || [];
     var annee = entrees.annee;
     var mois = entrees.mois;
-    /* LOT 28 (§28.9) — UN PLANNING VIDE EST REFUSÉ. `[]` est vrai en
-       JavaScript : il passait le `||`, aucun jour n'était au planning, le
-       prorata lisait 0 jour sur 0 et payait un mois entier pour zéro jour de
-       garde. L'écran de saisie refuse déjà un planning vide ; un `[]` en base
-       est une donnée fausse, et une donnée fausse se refuse — elle ne se
-       remplace pas en silence par le lundi-vendredi. */
-    if (Array.isArray(conditions.jours_planning) && conditions.jours_planning.length === 0) {
-      throw erreurCode('PLANNING_VIDE');
-    }
     var planning = conditions.jours_planning || PLANNING_DEFAUT;
 
     var compteurEntree = entrees.compteurEntree || {};
@@ -1015,13 +977,6 @@
     var minutesEcartSurCp = 0;
     var minutesEcartSansSolde = 0;
     var ecartsDeclares = [];
-    /* LOT 28 (§28.3) — les minutes qu'un écart demande aux CONGÉS PAYÉS ne
-       sont pas retirées au fil des jours : elles sont rassemblées ici, dans
-       l'ordre des jours, et servies APRÈS les périodes de congé, chacune
-       bornée à ce qui reste. Voir plus bas, « les congés payés ne passent
-       jamais sous zéro ». */
-    var ecartsSurCpAImputer = [];
-    var nbJoursTraites = 0;
     var joursConge = [];             // jours 'conge_maria' posés dans le mois
     var joursSansSoldeSaisis = 0;    // lignes 'sans_solde' saisies explicitement
     var joursFamiliarisation = 0;    // lignes 'familiarisation' HORS période (legacy)
@@ -1107,9 +1062,6 @@
       if (estEnFamiliarisation(d, periodesFam) && !echappeALaPeriode(ligne)) {
         typeDuJourTraite[d] = 'familiarisation';
         famJoursDeLaPeriode++;
-        /* §28.1 — un jour de familiarisation est un jour travaillé pour
-           l'acquisition des congés payés (décision du lot 20, confirmée). */
-        nbJoursTraites++;
         if (ligne && ligne.type && ligne.type !== 'familiarisation') {
           famJoursIgnores.push(d);
         }
@@ -1150,39 +1102,6 @@
            la période. On saute donc `detailSupDuJour` entièrement : il n'y a
            ni base, ni écart possible sur une journée sans horaire de
            référence. */
-
-        /* LOT 28 (§28.5) — UN CONGÉ POSÉ À L'HEURE N'EST PLUS AVALÉ.
-
-           La période prime sur la ligne, et c'est toujours vrai pour la paie :
-           la journée reste payée aux heures déclarées, sans minutes du contrat
-           (décision d'Adrien du 26 août : « Maria doit pouvoir poser des
-           congés sur une familiarisation », « elle est payée en fonction du
-           nombre d'heures travaillées »). Mais le congé lui-même TOUCHE UN
-           COMPTEUR, comme un congé de journée entière : ses minutes sortent des
-           congés payés ou de la récupération. Elles étaient perdues — le congé
-           restait en base, s'affichait dans « Mes congés », et n'existait ni
-           pour le récapitulatif ni pour le document.
-
-           Le sans solde n'y produit aucune retenue : les heures non travaillées
-           ne sont simplement pas déclarées, donc pas payées. Une retenue en
-           plus les déduirait deux fois. */
-        if (ligne && ligne.ecart_evenement === 'conge_horaire') {
-          var congeFam = lireEcart(ligne);
-          if (congeFam.ecart < 0) {
-            if (congeFam.destination === 'conges_payes') {
-              ecartsSurCpAImputer.push({ jour: d, minutes: -congeFam.ecart });
-            } else if (congeFam.destination === 'recuperation') {
-              minutesEcartRecuperation += congeFam.ecart;
-            }
-            ecartsDeclares.push({
-              jour: d, minutes: congeFam.ecart, evenement: 'conge_horaire',
-              imputeSur: congeFam.destination, enFamiliarisation: true,
-              minutesSurCp: congeFam.destination === 'conges_payes' ? -congeFam.ecart : 0,
-              minutesSurRecuperation: congeFam.destination === 'recuperation' ? -congeFam.ecart : 0,
-              minutesSansSolde: 0
-            });
-          }
-        }
         continue;
       }
 
@@ -1191,7 +1110,6 @@
          travaille jamais un jour férié). Une ligne explicite prime. */
       var type = ligne ? ligne.type : (Feries.estJourFerie(d) ? 'ferie' : 'presence');
       typeDuJourTraite[d] = type;
-      nbJoursTraites++;
 
       switch (type) {
         case 'presence':
@@ -1274,10 +1192,8 @@
       minutesSupAjoutees += detailSup.ajoutees;
       minutesSupRenoncees += detailSup.renoncees;
       minutesEcartRecuperation += detailSup.ecartSurRecuperation;
+      minutesEcartSurCp += detailSup.minutesSurCp;
       minutesEcartSansSolde += detailSup.minutesSansSolde;
-      if (detailSup.minutesSurCp > 0) {
-        ecartsSurCpAImputer.push({ jour: d, minutes: detailSup.minutesSurCp });
-      }
       if (detailSup.ecart !== 0) {
         /* Le détail que le document doit annoncer (§17.5, A5) : le total des
            heures supplémentaires est NET, et la ligne qui l'explique nomme la
@@ -1296,17 +1212,17 @@
           jour: d,
           minutes: detailSup.ecart,
           evenement: (ligne && ligne.ecart_evenement) || null,
-          imputeSur: detailSup.ecartImputeSur,
-          /* LOT 28 (§28.3) — CE QUE L'ÉCART FAIT RÉELLEMENT À CHAQUE POCHE.
-             `minutesSurCp` est complété plus bas, une fois le disponible
-             connu ; `minutesSurRecuperation` reçoit alors le surplus. */
-          minutesSurCp: 0,
-          minutesSurRecuperation: detailSup.ecartSurRecuperation < 0
-            ? -detailSup.ecartSurRecuperation : 0,
-          minutesSansSolde: detailSup.minutesSansSolde
+          imputeSur: detailSup.ecartImputeSur
         });
       }
     }
+
+    /* Invariant testé (A9) : le net acquis est toujours la base, plus les
+       minutes exceptionnelles, moins les minutes auxquelles Maria a renoncé.
+       LOT 17 : plus l'écart d'horaire imputé à la récupération, qui est signé
+       — le total du mois peut donc être négatif, et l'écran le dit (§17.5). */
+    var minutesSupAcquises = minutesSupBase + minutesSupAjoutees
+                           - minutesSupRenoncees + minutesEcartRecuperation;
 
     /* RG-06 : décompte des congés en jours ouvrables, période par période.
        Lot 9 : si une imputation posée COUVRE la période, c'est SA part du
@@ -1452,54 +1368,6 @@
       return sortie;
     });
 
-    /* LOT 28 (§28.3) — LES CONGÉS PAYÉS NE PASSENT JAMAIS SOUS ZÉRO.
-
-       Un écart d'horaire imputé sur les congés payés ne passait par aucun
-       contrôle de couverture : compteur à 0, deux libérations de 5 h sur les
-       congés payés → solde à −600 minutes, sans erreur ni signal. Et le
-       disponible lu par l'écran était celui du compteur d'ENTRÉE : une même
-       réserve pouvait être dépensée deux fois dans le mois.
-
-       L'ordre de service est celui du calendrier tel que Maria le voit :
-       d'abord les PÉRIODES de congé (leur ventilation est la sienne, déjà
-       vérifiée contre les réserves ci-dessus), puis les écarts d'horaire dans
-       l'ordre des jours, chacun borné à ce qui reste. Le surplus bascule sur la
-       récupération — qui, elle, a le droit d'être négative (§17.5). Rien n'est
-       refusé, rien n'est perdu, et le détail par jour dit où chaque minute est
-       allée : c'est ce que l'écran annonce AVANT la validation (« il vous reste
-       X »), et ce que le document explique après. */
-    var cpRestant = Math.max(0,
-      entreeCpAcquis - entreeCpPris - imputation.minutesCpConsommees);
-    for (var ec = 0; ec < ecartsSurCpAImputer.length; ec++) {
-      var demande = ecartsSurCpAImputer[ec];
-      var surCp = Math.min(demande.minutes, cpRestant);
-      var surRecup = demande.minutes - surCp;
-      cpRestant -= surCp;
-      minutesEcartSurCp += surCp;
-      minutesEcartRecuperation -= surRecup;
-      for (var ed = 0; ed < ecartsDeclares.length; ed++) {
-        if (ecartsDeclares[ed].jour === demande.jour) {
-          ecartsDeclares[ed].minutesSurCp = surCp;
-          ecartsDeclares[ed].minutesSurRecuperation += surRecup;
-          /* Le document nomme la poche réellement touchée : une déduction
-             entièrement reportée sur la récupération n'est plus « sur les
-             congés payés ». Un partage garde le nom des congés payés et porte
-             son détail. */
-          if (surCp === 0) ecartsDeclares[ed].imputeSur = 'recuperation';
-          break;
-        }
-      }
-    }
-
-    /* Invariant testé (A9) : le net acquis est toujours la base, plus les
-       minutes exceptionnelles, moins les minutes auxquelles Maria a renoncé.
-       LOT 17 : plus l'écart d'horaire imputé à la récupération, qui est signé
-       — le total du mois peut donc être négatif, et l'écran le dit (§17.5).
-       LOT 28 : le surplus d'un écart que les congés payés ne couvrent pas
-       en fait partie — d'où le calcul ICI, après le service des congés payés. */
-    var minutesSupAcquises = minutesSupBase + minutesSupAjoutees
-                           - minutesSupRenoncees + minutesEcartRecuperation;
-
     /* RG-08 : retenue = minutes_par_jour_conge × taux horaire brut par jour
        sans solde. Un seul arrondi sur le total (§4.2).
        LOT 17 (§17.6) : les minutes d'un congé à l'heure passé en sans solde
@@ -1535,52 +1403,11 @@
        reste faux, et ce mois-là n'acquiert toujours rien, pour cette
        autre raison. Le critère A6 ne se vérifie donc que sur un contrat déjà
        ouvert le 1er du mois. */
-    /* LOT 28 (§28.1) — L'ACQUISITION DES CONGÉS PAYÉS, COMME POUR UNE SALARIÉE.
-
-       `moisEntierementTravaille` exigeait qu'AUCUN congé et AUCUN jour sans
-       solde n'ait été posé dans le mois : poser un jour par mois toute l'année
-       faisait acquérir zéro congé payé sur l'exercice. Décision d'Adrien du
-       25 août 2026 : 2,5 jours ouvrables par mois travaillé (L3141-3), et
-       comptent comme travaillés — L3141-5 — la présence, le congé payé, la
-       récupération, la familiarisation, l'absence de l'enfant et les fériés.
-       Seul le sans solde ne compte pas.
-
-       Trois règles, et trois seulement :
-         1. un mois INTÉGRALEMENT en sans solde n'acquiert rien ; un mois
-            partiellement en sans solde acquiert ses 2,5 jours entiers
-            (L3141-4 interdit de réduire plus que proportionnellement) ;
-         2. un mois que le contrat ne couvre pas en entier acquiert AU PRORATA
-            des jours du planning couverts — « comme tous les salariés »
-            (Adrien, 26 août) — avec le même quotient que le salaire (§17.7),
-            les jours de familiarisation comptés couverts puisque travaillés ;
-         3. le plafond annuel de 30 jours ouvrables (L3141-3) s'applique sur
-            l'exercice de référence : le moteur ne le connaît pas, la chaîne
-            lui passe le cumul déjà acquis (`minutesCpAcquisesExercice`), et
-            le solde non pris se cumule sans jamais être remis à zéro (RG-12).
-
-       Le partage entre mois du prorata reste ENTIER : un seul arrondi, ici. */
-    var joursSansSoldeParConge =
-      (joursConge.length > 0 && imputation.joursSurCp + imputation.joursSurSup === 0)
-        ? joursConge.length : 0;
-    var joursAssimilesTravail = nbJoursTraites - joursSansSoldeSaisis - joursSansSoldeParConge;
-    var toutLeMoisSansSolde = nbJoursTraites > 0 && joursAssimilesTravail <= 0;
-
-    var partCp = partCouverteDuMois(contrat, planning, annee, mois, periodesFam, parJour);
-    var joursCouvertsCp = partCp.joursCouverts + partCp.joursFamiliarisation;
-    var cpProrataApplique = partCp.joursDuMois > 0 && joursCouvertsCp < partCp.joursDuMois;
-    var minutesCpAcquises = 0;
-    if (nbJoursTraites > 0 && !toutLeMoisSansSolde) {
-      minutesCpAcquises = cpProrataApplique
-        ? Math.round(minutesCpParMois(conditions) * joursCouvertsCp / partCp.joursDuMois)
-        : minutesCpParMois(conditions);
-    }
-    var plafondExercice = PLAFOND_CP_JOURS_PAR_EXERCICE * conditions.minutes_par_jour_conge;
-    var dejaAcquisExercice = entrees.minutesCpAcquisesExercice || 0;
-    var cpPlafonne = false;
-    if (minutesCpAcquises > 0 && dejaAcquisExercice + minutesCpAcquises > plafondExercice) {
-      minutesCpAcquises = Math.max(0, plafondExercice - dejaAcquisExercice);
-      cpPlafonne = true;
-    }
+    var moisEntierementTravaille =
+      joursConge.length === 0 &&
+      joursSansSoldeTotal === 0 &&
+      contratCouvreLeMois(contrat, annee, mois);
+    var minutesCpAcquises = moisEntierementTravaille ? minutesCpParMois(conditions) : 0;
 
     /* RG-12 / RG-12bis : aucun compteur ne se remet à zéro — les compteurs
        de sortie sont de simples cumuls, sans aucune clôture au 31 août. */
@@ -1594,7 +1421,7 @@
 
     /* §17.7 — le prorata du premier et du dernier mois. UN SEUL arrondi, sur
        le montant final, et aucun arrondi du tout quand le mois est entier. */
-    var part = partCp;
+    var part = partCouverteDuMois(contrat, planning, annee, mois, periodesFam, parJour);
     var moisEntier = part.joursCouverts === part.joursDuMois;
 
     /* §20.3 — LA PART HORAIRE DU MOIS. Rémunération au taux du contrat :
@@ -1643,12 +1470,6 @@
       minutesEcartSurCp: minutesEcartSurCp,
       minutesEcartSansSolde: minutesEcartSansSolde,
       ecartsDeclares: ecartsDeclares,
-      /* LOT 28 (§28.3) — CE QU'IL RESTE DE CONGÉS PAYÉS UNE FOIS LE MOIS
-         SERVI : l'entrée, moins les périodes posées, moins les écarts — avant
-         l'acquisition du mois. C'est le disponible qu'un écran de pose doit
-         annoncer pour une NOUVELLE consommation dans ce mois ; lire le
-         compteur d'entrée permettait de dépenser deux fois la même réserve. */
-      minutesCpRestantesApresConsommation: cpRestant,
       joursCongesDecomptes: joursCongesDecomptes,
       imputation: imputation,
       /* Pour chaque période de congé du mois : la période retenue et
@@ -1662,16 +1483,6 @@
       imputationsAppliquees: imputationsAppliquees,
       retenueSansSoldeCentimes: retenueSansSoldeCentimes,
       minutesCpAcquis: minutesCpAcquises,
-      /* LOT 28 (§28.1) — POURQUOI CE MOIS ACQUIERT CE QU'IL ACQUIERT. L'écran
-         doit pouvoir écrire « 12 jours sur 22 » ou « aucun : mois entièrement
-         sans solde » sans refaire la règle. */
-      acquisitionCp: {
-        joursCouverts: joursCouvertsCp,
-        joursDuMois: partCp.joursDuMois,
-        prorata: cpProrataApplique,
-        toutLeMoisSansSolde: toutLeMoisSansSolde,
-        plafonne: cpPlafonne
-      },
       /* §17.6 — LE MARQUEUR D'UNITÉ. Un instantané de mois clôturé n'est
          JAMAIS réécrit : ceux d'avant le lot 17 portent des dixièmes de jour
          et continueront de les porter pour toujours. Ce champ est ce qui
@@ -1951,24 +1762,6 @@
      LOT 17 — cette fonction vivait dans `js/chaine-mois.js` depuis le lot 16
      (`feriesDecomptes`), faute de pouvoir rouvrir le moteur. Elle redit la
      règle RG-06 : sa place est ici, à côté de la boucle qu'elle imite. */
-  /* LOT 28 (§28.8) — LA VEILLE DE LA REPRISE, exposée.
-
-     Le décompte RG-06 court jusqu'à la veille de la reprise, et un samedi
-     compté peut donc tomber le mois SUIVANT celui de la période. La chaîne
-     doit charger les samedis jusque-là — pas jusqu'à la fin du mois affiché,
-     sinon l'écran mensuel et l'historique ne lisent pas les mêmes samedis et
-     divergent sur le même mois. La règle « quand reprend-on ? » vit ici, à
-     côté de la boucle qui l'applique ; l'écran ne la redit pas. */
-  function veilleDeLaReprise(finStr, joursPlanning) {
-    var planning = joursPlanning || PLANNING_DEFAUT;
-    var reprise = Feries.ajouterJours(finStr, 1);
-    for (var garde = 0; garde < 60 &&
-         (planning.indexOf(jourSemaine(reprise)) === -1 || Feries.estJourFerie(reprise)); garde++) {
-      reprise = Feries.ajouterJours(reprise, 1);
-    }
-    return Feries.ajouterJours(reprise, -1);
-  }
-
   function feriesDeLaPeriode(debutStr, finStr, joursPlanning) {
     var planning = joursPlanning || PLANNING_DEFAUT;
     if (finStr < debutStr) throw new Error('feriesDeLaPeriode : fin < debut');
@@ -2014,13 +1807,6 @@
        exposée ; `feriesDeLaPeriode` est le déménagement de `feriesDecomptes`. */
     joursOuvrablesParMois: joursOuvrablesParMois,
     feriesDeLaPeriode: feriesDeLaPeriode,
-    /* LOT 28 (§28.8) — jusqu'où une période compte ses samedis. */
-    veilleDeLaReprise: veilleDeLaReprise,
-    /* LOT 28 (§28.1) — le plafond annuel, pour que l'écran puisse le nommer. */
-    PLAFOND_CP_JOURS_PAR_EXERCICE: PLAFOND_CP_JOURS_PAR_EXERCICE,
-    /* LOT 29 (§29.2) — les types qui ne portent jamais de minute, écart
-       compris ; l'écran s'y réfère au lieu de tenir sa propre liste. */
-    TYPES_SANS_MINUTES: TYPES_SANS_MINUTES,
     /* §17.6 — la conversion entre l'unité de stockage (les minutes) et
        l'affichage (les jours) doit se faire au même facteur partout. */
     minutesCpParMois: minutesCpParMois,

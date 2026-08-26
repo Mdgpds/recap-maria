@@ -424,8 +424,12 @@ function entrerSelection() {
   var annonce = txt(corps.querySelector('.selbar .sb-ef'));
   assert(annonce.indexOf('25,00') !== -1,
     '§18.1 : l’effet chiffré est annoncé avant validation (obtenu « ' + annonce + ' »)');
-  assert(annonce.indexOf('restent dues') !== -1,
-    '§18.1 : et il dit ce que RG-09 fait des 30 minutes');
+  /* LOT 28 (§28.2) — EXIGENCE CHANGÉE : quand l'enfant est absent, aucune
+     minute n'est due (décision d'Adrien du 25 août 2026). L'annonce, rejouée
+     par le moteur, dit désormais que les 5 × 30 minutes ne sont pas dues. */
+  assert(annonce.indexOf('non dues') !== -1 && annonce.indexOf('2h30') !== -1,
+    '§28.2 : et il dit que les 30 minutes de chaque jour ne sont pas dues (obtenu « ' +
+    annonce + ' »)');
 
   /* La comparaison qui compte : ce que le moteur donne pour ce mois avec ces
      cinq absences. L'écran ne doit pas annoncer autre chose. */

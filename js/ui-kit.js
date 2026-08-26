@@ -925,11 +925,15 @@
       { inputmode: 'decimal', placeholder: '5,00' });
     argent.appendChild(entretien.bloc);
 
-    var supSiAbsent = champSelect(
-      'Minutes supplémentaires dues quand l’enfant est absent',
-      [['oui', 'Oui, elles restent dues'], ['non', 'Non']],
-      v.sup_dues_si_enfant_absent === false ? 'non' : 'oui');
-    temps.appendChild(supSiAbsent.bloc);
+    /* LOT 28 (§28.2) — LE CHOIX « MINUTES DUES QUAND L'ENFANT EST ABSENT »
+       A DISPARU DU FORMULAIRE. Règle d'Adrien du 25 août 2026, confirmée le
+       26 : quand l'enfant est absent, ni indemnité d'entretien, ni minute
+       supplémentaire — pour tous les contrats. Le moteur ne lit plus ce
+       réglage ; la colonne reste en base (aucune migration) et un avenant
+       écrit désormais `false`. Le libellé, lui, dit la règle. */
+    temps.appendChild(ce('p', 'sb q',
+      'Quand l’enfant est absent, aucune minute supplémentaire n’est due, ni ' +
+      'indemnité d’entretien : c’est la règle, pour tous les contrats.'));
 
     var ordre = champSelect('Vos congés se prennent d’abord sur',
       [['cp_puis_sup', 'Mes congés payés'], ['sup_puis_cp', 'Ma récupération']],
@@ -957,7 +961,7 @@
         minutes_sup_jour: supJour.valeur(),
         minutes_par_jour_conge: parJourConge.valeur(),
         entretien_centimes_jour: parseEuros(entretien.input.value),
-        sup_dues_si_enfant_absent: supSiAbsent.select.value === 'oui',
+        sup_dues_si_enfant_absent: false,   // §28.2 — la règle, pas un choix
         ordre_imputation: ordre.select.value,
         brut_mensuel_centimes: brut.input.value.trim() ? parseEuros(brut.input.value) : null,
         net_mensuel_centimes: net.input.value.trim() ? parseEuros(net.input.value) : null

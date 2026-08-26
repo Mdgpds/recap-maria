@@ -186,7 +186,19 @@
           m.annee + '-' + String(m.mois).padStart(2, '0') + '-15');
         return global.DB.compterSamedisAnnee(contrat.id, ref.debut, ref.fin)
           .catch(function () { return null; });
-      })()
+      })(),
+      /* LOT 28 (§28.8) — LES SAMEDIS COCHÉS DU CONTRAT, POUR LE REJEU. Le
+         rejeu « voilà ce que ce geste change » doit voir EXACTEMENT ce que
+         voit la chaîne (correctifs B1 de la PR9, B3 du lot 20) — et il ne
+         recevait pas les samedis cochés : sur un mois portant une semaine à
+         six jours, l'aperçu la comptait à cinq. La fenêtre déborde d'un mois
+         de chaque côté, comme sur le document : un samedi qui prolonge une
+         semaine de fin de mois appartient au mois suivant. Une erreur ici est
+         une erreur : sans les samedis le rejeu est faux, pas incomplet. */
+      (typeof global.DB.listSamedisConge === 'function'
+        ? global.DB.listSamedisConge(contrat.id,
+            fenetreSamedisDuMois(m).debut, fenetreSamedisDuMois(m).fin)
+        : Promise.resolve([]))
     ]).then(function (r) {
       /* L'ordre des résultats suit celui du tableau ci-dessus. Une insertion au
          milieu décalerait tout : les index sont donc nommés une fois, ici. */
@@ -238,11 +250,23 @@
            jamais par zéro (§8) — un quota faux et crédible sur le chiffre
            que les familles contestent est le pire résultat possible. */
         samedis: r[7],
+        /* §28.8 — les samedis cochés, dates ISO, pour le rejeu. */
+        samedisComptes: (r[8] || []).map(function (x) {
+          return typeof x === 'string' ? x : x.date_samedi;
+        }).filter(Boolean),
         corps: corps || null
       };
       vue.lectureSeule = vue.range || vue.clos;
       return vue;
     });
+  }
+
+  /* §28.8 — le mois, débordé d'un mois de chaque côté (même fenêtre que le
+     document et que « Mes congés »). */
+  function fenetreSamedisDuMois(m) {
+    var d = new Date(Date.UTC(m.annee, m.mois - 2, 1));
+    var f = new Date(Date.UTC(m.annee, m.mois + 1, 0));
+    return { debut: d.toISOString().slice(0, 10), fin: f.toISOString().slice(0, 10) };
   }
 
   /* Le détail jour par jour de la familiarisation du mois, indexé par date.
@@ -818,6 +842,21 @@
     });
 
     Kit.ligneLn(l, libelleEntretien(r), Kit.eur(r.entretienCentimes));
+
+    /* LOT 28 (§28.4) — LA PART DE FAMILIARISATION, EN DEUX LIGNES, comme sur
+       le document. Le net et l'entretien ci-dessus sont ceux de la garde
+       mensualisée ; le total du repli ajoute la familiarisation. Un total est
+       toujours la somme des lignes affichées au-dessus. */
+    var fam = Chaine.partFamiliarisation(r);
+    if (fam.actif) {
+      Kit.ligneLn(l, 'Familiarisation — heures déclarées', Kit.eur(fam.netCentimes), {
+        sous: Kit.heures(r.familiarisation.minutesDeclarees || 0) + ' déclarées, au taux du contrat'
+      });
+      Kit.ligneLn(l, 'Familiarisation — entretien', Kit.eur(fam.entretienCentimes), {
+        sous: (r.familiarisation.joursAvecEntretien || 0) + ' jour' +
+          ((r.familiarisation.joursAvecEntretien || 0) > 1 ? 's' : '') + ' avec indemnité'
+      });
+    }
 
     if (r.joursCongesDecomptes > 0) {
       var imp = r.imputation || {};
@@ -1496,6 +1535,13 @@
     var minutesJour = reg('minutes_sup_jour', 0);
     if (dSup === 0 && minutesJour > 0) {
       phrase += 'Vos ' + Kit.duree(minutesJour) + ' par jour restent dues.';
+    } else if (dSup < 0 && marque === 'absence_enfant') {
+      /* §28.2 — quand l'enfant est absent, les minutes ne sont pas dues. Les
+         minutes ajoutées à la main y passent aussi (lot 18, B1) : on le dit,
+         par différence de deux résultats du moteur. */
+      var dAjoutees = (apres.minutesSupAjoutees || 0) - (avant.minutesSupAjoutees || 0);
+      phrase += Kit.duree(-dSup) + ' non dues : aucune minute quand l’enfant est absent' +
+        (dAjoutees < 0 ? ', dont ' + Kit.duree(-dAjoutees) + ' ajoutées à la main' : '') + '.';
     } else if (dSup < 0) {
       phrase += Kit.duree(-dSup) + ' de récupération en moins.';
     } else if (dSup > 0) {
@@ -2103,19 +2149,58 @@
               Kit.duree(conditions.minutes_sup_jour) + '.'));
 
             if (detailSup.minutesSurCp > 0) {
-              effet.appendChild(Kit.ce('div', 'sb',
-                Kit.duree(detailSup.minutesSurCp) + ' seront retirées de vos congés payés.'));
-              /* CORRECTION C5 DE LA RELECTURE DU LOT 17 — CE QUI EST RETIRÉ
-                 PEUT NE PAS EXISTER. L'application ne décide pas à la place de
-                 Maria, mais elle ne se tait pas non plus : elle DIT ce qui va
-                 se passer, avant qu'elle n'appuie. */
-              var dispoCp = Kit.cpSolde(vue.entree.resultat.compteurSortie);
-              if (detailSup.minutesSurCp > dispoCp) {
-                effet.appendChild(Kit.warnbox('Vos congés payés ne couvrent pas ces minutes',
-                  ' Il vous en reste ' + Kit.duree(Math.max(0, dispoCp)) + ' sur ce contrat, ' +
-                  'et ' + Kit.duree(detailSup.minutesSurCp) + ' seraient retirées. Le solde ' +
-                  'passerait en négatif. Choisissez plutôt votre récupération ou le sans ' +
-                  'solde si ce n’est pas ce que vous voulez.'));
+              /* LOT 28 (§28.3) — CE QUE LE MOTEUR FERA VRAIMENT DE CES MINUTES.
+                 Les congés payés ne passent plus sous zéro : la consommation
+                 est bornée au disponible du mois — après les congés posés et
+                 les autres écarts du même mois — et le surplus bascule sur la
+                 récupération. L'écran le dit AVANT validation, en rejouant le
+                 mois avec la journée telle qu'elle sera écrite, et lit où
+                 chaque minute est allée (« il vous reste X », lot 21). Rien
+                 n'est soustrait ici : c'est `ecartsDeclares` du moteur. */
+              var rejoue = null;
+              try {
+                rejoue = simulerAvecLigne(d, {
+                  contrat_id: c.id, jour: d, type: type,
+                  minutes_reelles: ligne.minutes_reelles == null ? null : ligne.minutes_reelles,
+                  entretien_centimes: ligne.entretien_centimes == null ? null : ligne.entretien_centimes,
+                  entretien_du: etat.entretien !== false,
+                  minutes_sup_exceptionnelles: ligne.minutes_sup_exceptionnelles || 0,
+                  minutes_sup_renoncees: ligne.minutes_sup_renoncees || 0,
+                  sup_dues_override: null,
+                  ecart_minutes: minutes, ecart_evenement: evt,
+                  ecart_heure_reelle: heure, ecart_impute_sur: etat.destination
+                });
+              } catch (e) { rejoue = null; }
+              var part = null;
+              ((rejoue && rejoue.ecartsDeclares) || []).forEach(function (x) {
+                if (x.jour === d) part = x;
+              });
+              if (!part) {
+                effet.appendChild(Kit.warnbox('Impossible de vérifier vos congés payés',
+                  ' Le mois n’a pas pu être rejoué avec cette journée. Choisissez votre ' +
+                  'récupération ou le sans solde, ou réessayez.'));
+                etat.pret = false;
+                majBouton();
+                return;
+              }
+              /* Ce qu'il reste POUR CE MOIS : l'entrée moins tout ce que le mois
+                 consomme, telle que le moteur le rend. Les 2,5 jours du mois
+                 s'acquièrent à sa fin et n'entrent pas dans ce reste. */
+              var reste = rejoue.minutesCpRestantesApresConsommation || 0;
+              var phraseReste = reste > 0
+                ? 'Il vous reste ' + Kit.duree(reste) + ' de congés payés pour ce mois.'
+                : 'Il ne vous en reste plus pour ce mois.';
+              if (part.minutesSurRecuperation > 0) {
+                effet.appendChild(Kit.warnbox(
+                  'Vos congés payés ne couvrent que ' + Kit.duree(part.minutesSurCp),
+                  ' ' + Kit.duree(part.minutesSurCp) + ' seront retirées de vos congés payés et ' +
+                  Kit.duree(part.minutesSurRecuperation) + ' de votre récupération, qui peut ' +
+                  'passer sous zéro. ' + phraseReste + ' Choisissez plutôt votre ' +
+                  'récupération ou le sans solde si ce n’est pas ce que vous voulez.'));
+              } else {
+                effet.appendChild(Kit.ce('div', 'sb',
+                  Kit.duree(part.minutesSurCp) + ' seront retirées de vos congés payés. ' +
+                  phraseReste));
               }
             }
             if (detailSup.minutesSansSolde > 0) {
@@ -2324,40 +2409,82 @@
      dira, et une constante serait fausse ce jour-là sans que rien ne le
      signale. */
   var PAS_MINUTES = 15;
+  /* « Je renonce à mes minutes » = à tout ce qui reste dû ce jour-là. On
+     demande au moteur de borner une journée entière (24 h) : c'est lui qui
+     connaît le dû, écart compris (§28.6) — l'écran ne l'additionne pas. */
+  var RENONCER_A_TOUT = 24 * 60;
 
   function blocAjusterHeures(d) {
     var c = vue.contrat;
     var ligne = (vue.journees || {})[d] || {};
     var type = Kit.typeDuJour(vue.journees, d);
+    var conditions = cond();
 
     var etat = {
       ajoutees: ligne.minutes_sup_exceptionnelles || 0,
-      renonce: (ligne.minutes_sup_renoncees || 0) > 0,
-      override: ligne.sup_dues_override === undefined ? null : ligne.sup_dues_override
+      renonce: (ligne.minutes_sup_renoncees || 0) > 0
     };
 
     var det = Kit.ce('details', 'ajuster');
     var som = Kit.ce('summary', null, 'Ajuster mes heures ce jour-là');
     det.appendChild(som);
-    if (etat.ajoutees > 0 || etat.renonce || etat.override !== null) det.open = true;
+    if (etat.ajoutees > 0 || etat.renonce) det.open = true;
 
     var corps = Kit.ce('div', 'ajuster-corps');
     det.appendChild(corps);
 
+    /* LOT 28 (§28.7) — SANS CONDITIONS, LE PANNEAU REFUSE AU LIEU D'AFFICHER
+       `NaN`. Un mois sans avenant applicable n'a pas d'heures de référence :
+       il n'y a rien à ajuster, et le dire vaut mieux qu'un nombre illisible. */
+    if (!conditions) {
+      corps.appendChild(Kit.warnbox('Aucune condition connue pour ce mois',
+        'Les heures de ce jour ne peuvent pas être ajustées tant que la fiche du ' +
+        'contrat n’a pas d’avenant en vigueur pour ce mois.'));
+      return det;
+    }
+    /* §28.2 / §29.2 — une journée qui ne porte aucune minute (absence de
+       l'enfant, congé, férié…) n'a rien à ajuster non plus : le dire, plutôt
+       que d'offrir un compteur sans effet. */
+    if (Engine.TYPES_SANS_MINUTES.indexOf(type) !== -1) {
+      corps.appendChild(Kit.ce('p', 'sb q',
+        type === 'absence_enfant'
+          ? 'Quand ' + c.prenom_enfant + ' est ' + Kit.accordDe(c, 'absent') +
+            ', aucune minute n’est due ce jour-là, ni indemnité d’entretien : il n’y a ' +
+            'rien à ajuster.'
+          : 'Cette journée ne porte aucune minute : il n’y a rien à ajuster.'));
+      return det;
+    }
+
     var effet = Kit.ce('div', 'effet-heures');
 
-    /* Ce que le contrat prévoit ce jour-là, AVANT ajustement. On le demande au
-       moteur plutôt que de le recalculer : c'est lui qui connaît RG-04 (une
-       journée de congé ne porte aucune minute) et RG-09. */
-    function base() {
-      var simule = { type: type, sup_dues_override: etat.override };
-      return Engine.detailSupDuJour(simule, cond() || {}).base;
+    /* LOT 28 (§28.7) — LE PANNEAU DIT LA VÉRITÉ : il demande au moteur les
+       minutes de la journée COMPLÈTE, écart d'horaire compris, exactement
+       comme l'écran de déclaration. Il affichait `base + ajoutées − renoncées`
+       et ignorait l'écart déclaré : sur un retard de 20 minutes, « Ce jour :
+       30 min — comme prévu au contrat », là où le moteur et le document
+       comptaient 50. Rien n'est additionné ici (B.0-5). */
+    function ligneSimulee() {
+      var simule = {
+        type: type,
+        minutes_sup_exceptionnelles: etat.ajoutees,
+        /* Le renoncement est écrit BORNÉ (A7) : ce à quoi Maria renonce,
+           c'est tout ce qui reste dû — le moteur le calcule, lui seul. */
+        minutes_sup_renoncees: 0,
+        ecart_minutes: ligne.ecart_minutes == null ? null : ligne.ecart_minutes,
+        ecart_evenement: ligne.ecart_evenement == null ? null : ligne.ecart_evenement,
+        ecart_impute_sur: ligne.ecart_impute_sur == null ? null : ligne.ecart_impute_sur
+      };
+      if (etat.renonce) {
+        /* « Tout ce qui reste dû » : on demande une journée entière et le
+           moteur borne lui-même à ce qui est dû (§28.6). Aucune addition ici. */
+        simule.minutes_sup_renoncees = RENONCER_A_TOUT;
+        simule.minutes_sup_renoncees = Engine.detailSupDuJour(simule, conditions).renoncees;
+      }
+      return simule;
     }
 
     function majEffet() {
-      var b = base();
-      var renoncees = etat.renonce ? b + etat.ajoutees : 0;
-      var total = b + etat.ajoutees - renoncees;
+      var total = Engine.minutesSupDuJour(ligneSimulee(), conditions);
       Kit.vider(effet);
       effet.appendChild(Kit.ce('b', null, 'Ce jour : ' + Kit.duree(total)));
       if (total !== reg('minutes_sup_jour', 0)) {
@@ -2365,6 +2492,11 @@
           ' au lieu de ' + Kit.duree(reg('minutes_sup_jour', 0)) + '.'));
       } else {
         effet.appendChild(document.createTextNode(' — comme prévu au contrat.'));
+      }
+      if (ligne.ecart_evenement && ligne.ecart_minutes) {
+        effet.appendChild(Kit.ce('div', 'sb q',
+          'Écart déclaré ce jour-là compris : ' +
+          (ligne.ecart_minutes > 0 ? '+ ' : '− ') + Kit.duree(Math.abs(ligne.ecart_minutes)) + '.'));
       }
     }
 
@@ -2386,23 +2518,10 @@
     caseRenonce.appendChild(txR);
     corps.appendChild(caseRenonce);
 
-    /* A8 — la surcharge de RG-09 au jour, qui ne touche PAS le contrat. */
-    if (type === 'absence_enfant') {
-      var sel = Kit.champSelect('Quand ' + c.prenom_enfant + ' est ' + Kit.accordDe(c, 'absent') +
-        ', ce jour-là', [
-        ['', 'suivre le réglage du contrat'],
-        ['true', 'mes minutes restent dues'],
-        ['false', 'je ne les compte pas']
-      ], etat.override === null ? '' : String(etat.override));
-      sel.select.addEventListener('change', function () {
-        etat.override = sel.select.value === '' ? null : (sel.select.value === 'true');
-        majEffet();
-      });
-      corps.appendChild(sel.bloc);
-      corps.appendChild(Kit.ce('p', 'sb q',
-        'Ce choix ne vaut que pour cette journée : le réglage de la fiche contrat ' +
-        'ne change pas.'));
-    }
+    /* A8 — LA SURCHARGE DE RG-09 AU JOUR A DISPARU (§28.2) : une absence de
+       l'enfant ne porte plus aucune minute, quel que soit le réglage. La
+       colonne `sup_dues_override` reste en base, sans effet, et n'est plus
+       écrite. */
 
     corps.appendChild(effet);
 
@@ -2452,14 +2571,28 @@
     var c = vue.contrat;
     var ligne = (vue.journees || {})[d] || {};
     var type = Kit.typeDuJour(vue.journees, d);
+    var conditions = cond();
+    if (!conditions) {
+      Kit.toast('Aucune condition connue pour ce mois : rien n’a été modifié.', true);
+      return;
+    }
 
     /* A7 — on n'écrit JAMAIS un renoncement supérieur au dû. Le moteur borne
        déjà (Math.min), mais laisser passer une valeur incohérente en base,
-       c'est laisser un chiffre faux visible dans les données. */
-    var simule = { type: type, sup_dues_override: etat.override,
-                   minutes_sup_exceptionnelles: etat.ajoutees };
-    var det = Engine.detailSupDuJour(simule, cond() || {});
-    var renoncees = etat.renonce ? det.base + det.ajoutees : 0;
+       c'est laisser un chiffre faux visible dans les données.
+       §28.6 — le dû se mesure APRÈS l'écart déclaré : la ligne simulée le
+       porte, comme celle du panneau. */
+    var simule = {
+      type: type, minutes_sup_exceptionnelles: etat.ajoutees,
+      ecart_minutes: ligne.ecart_minutes == null ? null : ligne.ecart_minutes,
+      ecart_evenement: ligne.ecart_evenement == null ? null : ligne.ecart_evenement,
+      ecart_impute_sur: ligne.ecart_impute_sur == null ? null : ligne.ecart_impute_sur
+    };
+    var renoncees = 0;
+    if (etat.renonce) {
+      simule.minutes_sup_renoncees = RENONCER_A_TOUT;
+      renoncees = Engine.detailSupDuJour(simule, conditions).renoncees;
+    }
 
     ecrire(global.DB.enregistrerJournee({
       contrat_id: c.id, jour: d,
@@ -2469,7 +2602,9 @@
       commentaire: ligne.commentaire == null ? null : ligne.commentaire,
       minutes_sup_exceptionnelles: etat.ajoutees,
       minutes_sup_renoncees: renoncees,
-      sup_dues_override: etat.override
+      /* §28.2 — la surcharge n'a plus d'effet ; on la remet à « suivre le
+         contrat » pour ne pas laisser une valeur morte derrière soi. */
+      sup_dues_override: null
     }), bouton, 'Heures ajustées pour cette journée',
       { contrats: [c.id], jours: [d] });
   }
@@ -2724,7 +2859,13 @@
     }));
   }
 
-  /* `forcees` = [{ jour, type|null, extra }]. Fonction pure. */
+  /* §28.3 — le mois rejoué avec, ce jour-là, exactement la ligne que la
+     feuille s'apprête à écrire. */
+  function simulerAvecLigne(d, ligne) {
+    return simulerLignes([{ jour: d, ligne: ligne }]);
+  }
+
+  /* `forcees` = [{ jour, type|null, extra }] ou [{ jour, ligne }]. Fonction pure. */
   function simulerLignes(forcees) {
     var vises = {};
     forcees.forEach(function (f) { vises[f.jour] = f; });
@@ -2738,6 +2879,10 @@
        résultat identiques par construction (§18.1 A2). Le commentaire n'entre
        dans aucun calcul : son sort ne change rien ici. */
     forcees.forEach(function (f) {
+      /* LOT 28 (§28.3) — une ligne COMPLÈTE peut être imposée telle quelle :
+         c'est ce que fait l'aperçu d'une déclaration d'horaire pour savoir où
+         le moteur mettra chaque minute. */
+      if (f.ligne) { lignes.push(f.ligne); return; }
       if (f.type == null) return;            // présence : aucune ligne
       lignes.push({
         contrat_id: vue.contrat.id, jour: f.jour, type: f.type,
@@ -2791,7 +2936,13 @@
          pour la même raison que les imputations juste au-dessus. Sans elles, le
          rejeu voit un mois entièrement mensualisé et l'écart annoncé n'est pas
          celui du geste, mais celui de l'oubli. */
-      periodesFamiliarisation: vue.periodesFamiliarisation || []
+      periodesFamiliarisation: vue.periodesFamiliarisation || [],
+      /* LOT 28 — les deux entrées que la chaîne passe aussi : les samedis
+         cochés (§28.8) et le cumul de l'exercice pour le plafond des congés
+         payés (§28.1). Le cumul est celui que la chaîne a posé sur le maillon
+         du mois — jamais recalculé ici. */
+      samedisComptes: vue.samedisComptes || [],
+      minutesCpAcquisesExercice: (vue.entree && vue.entree.minutesCpAcquisesExercice) || 0
     };
     /* C'EST LA TROISIÈME FOIS QUE CET APPEL OUBLIE UN ARGUMENT — les
        imputations au lot 10, les conditions au lot 17, les périodes au lot 20.
@@ -2807,7 +2958,8 @@
      écrites ici, en dur, plutôt que déduites : une liste déduite du même code
      que celui qu'elle contrôle ne contrôle rien. */
   var ENTREES_DU_REJEU = ['contrat', 'conditions', 'journees', 'compteurEntree',
-                          'annee', 'mois', 'imputations', 'periodesFamiliarisation'];
+                          'annee', 'mois', 'imputations', 'periodesFamiliarisation',
+                          'samedisComptes', 'minutesCpAcquisesExercice'];
 
   function verifierMemesEntreesQueLaChaine(params) {
     var manquantes = ENTREES_DU_REJEU.filter(function (k) {
@@ -2844,14 +2996,16 @@
       ? 'entretien − ' + Kit.eur(-deltaEntretien)
       : 'entretien inchangé');
     if (deltaSup === 0) {
-      /* RG-09 — la maquette tranche le libellé de la feuille du JOUR :
-         « vos 30 min restent dues ». C'est la formulation déjà en production
-         depuis le lot 6 ; elle est reprise mot pour mot. La multi-sélection,
-         elle, dit « N min par jour toujours dues » — le « par jour » n'a de
-         sens que lorsqu'on marque plusieurs journées d'un coup. */
+      /* RG-09 — la formulation de la feuille du jour, en production depuis
+         le lot 6. Depuis le lot 28 (§28.2) elle ne s'affiche plus que lorsque
+         les minutes sont déjà nulles (contrat à 0 minute, journée déjà
+         absente) : quand l'enfant est absent, rien n'est dû. */
       bouts.push('vos ' + Kit.duree(reg('minutes_sup_jour', 0)) + ' restent dues');
     } else if (deltaSup < 0) {
-      bouts.push(Kit.duree(deltaSup) + ' non dues sur ce contrat');
+      /* LOT 28 (§28.2) — décision d'Adrien du 25 août : quand l'enfant est
+         absent, ni indemnité d'entretien, ni minute supplémentaire. Le chiffre
+         vient du rejeu par le moteur, jamais d'ici. */
+      bouts.push('vos ' + Kit.duree(-deltaSup) + ' ne sont pas dues');
     } else {
       bouts.push('+ ' + Kit.duree(deltaSup) + ' de récupération');
     }

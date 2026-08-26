@@ -584,8 +584,12 @@ function celluleDu(numero) {
   celluleDu(22).click();
   await pause(250);
   window.ChaineMois.calculerMoisAvecRepli = ancien;
+  /* LOT 28 — deux entrées de plus, que la chaîne passe aussi : les samedis
+     cochés (§28.8, ils manquaient au rejeu depuis la règle des cinq samedis)
+     et le cumul de l'exercice pour le plafond des congés payés (§28.1). */
   egal((vues || []).join(','),
-    'annee,compteurEntree,conditions,contrat,imputations,journees,mois,periodesFamiliarisation',
+    'annee,compteurEntree,conditions,contrat,imputations,journees,minutesCpAcquisesExercice,' +
+    'mois,periodesFamiliarisation,samedisComptes',
     'B3 : le rejeu passe exactement les mêmes entrées que la chaîne');
   window.Kit.fermerFeuille();
   await pause(120);

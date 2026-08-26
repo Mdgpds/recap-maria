@@ -473,10 +473,18 @@ function moisDe(s, annee, mois) {
   console.log('\n--- §16.1 d) : les bornes viennent du compteur d’ENTRÉE ---');
 
   var sourceConges = lire('js/ui-conges.js');
-  assert(/function cpDe\(fiche\) \{\s*return Kit\.cpDisponible\(fiche\.entree && fiche\.entree\.compteurEntree\);/
+  /* LOT 28 (§28.3) — EXIGENCE CHANGÉE. Le compteur d'entrée laissait dépenser
+     deux fois la même réserve dans un mois. Les congés payés disponibles se
+     lisent désormais sur ce que le MOTEUR laisse après avoir servi le mois
+     (`minutesCpRestantesApresConsommation`), par `compteurPourPose` — et
+     c'est encore lui qui contrôle. La récupération, elle, reste lue à
+     l'entrée : elle a le droit de passer sous zéro. */
+  assert(/function cpDe\(fiche, brut\) \{\s*return Kit\.cpDisponible\(compteurPourPose\(fiche\.entree, brut\)\);/
     .test(sourceConges),
-    'A7 : les congés payés disponibles se lisent sur le compteur d’ENTRÉE du ' +
-    'mois, celui-là même que le moteur contrôle');
+    '§28.3 : les congés payés disponibles se lisent sur ce qu’il reste après ' +
+    'ce que le mois a déjà consommé, tel que le moteur le rend');
+  assert(sourceConges.indexOf('minutesCpRestantesApresConsommation') !== -1,
+    '§28.3 : et ce reste vient du moteur, jamais d’une soustraction à l’écran');
   assert(/function supDe\(fiche\) \{\s*return Kit\.supDisponible\(fiche\.entree && fiche\.entree\.compteurEntree\);/
     .test(sourceConges),
     'A7 : la récupération aussi');
@@ -606,8 +614,12 @@ function moisDe(s, annee, mois) {
 
   egal(JSON.stringify(reglages.jours_planning), JSON.stringify([1, 2, 3, 4, 5]),
     'remarque 4 : les jours de garde par défaut sont ceux du schéma');
-  egal(reglages.sup_dues_si_enfant_absent, true,
-    'remarque 4 : et RG-09 par défaut aussi');
+  /* LOT 28 (§28.2) — EXIGENCE CHANGÉE : le défaut passe à `false` — quand
+     l'enfant est absent, aucune minute n'est due. Le schéma dit encore `true`
+     par défaut (aucune migration dans ce lot) ; c'est l'écran qui écrit la
+     règle, explicitement, sur chaque avenant. */
+  egal(reglages.sup_dues_si_enfant_absent, false,
+    '§28.2 : RG-09 par défaut — aucune minute quand l’enfant est absent');
 
   /* ==================================================================== */
   /* §16.7 — L'EXPORT ANNONCE « TOUT »                                    */

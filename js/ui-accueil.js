@@ -595,6 +595,18 @@
       Kit.ligne(lignes, 'Mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
         partiel.joursDuMois + ' au contrat', '', { discret: true });
     }
+    /* LOT 28 (§28.4) — LA PART DE FAMILIARISATION, SUR L'ÉCRAN QUI PRÉCÈDE
+       LA CLÔTURE. Le net et l'entretien ci-dessus sont ceux de la garde
+       mensualisée ; le total ajoute la familiarisation. Sans ces deux lignes,
+       les lignes ne reconstituaient pas le total — 164,70 € invisibles. */
+    var fam = Chaine.partFamiliarisation(r);
+    if (fam.actif) {
+      Kit.ligne(lignes, 'Familiarisation — heures déclarées', Kit.eur(fam.netCentimes));
+      Kit.ligne(lignes, 'Familiarisation — indemnité d’entretien', Kit.eur(fam.entretienCentimes));
+    }
+    if (r.retenueSansSoldeCentimes > 0) {
+      Kit.ligne(lignes, 'Retenue pour jour(s) sans solde', '− ' + Kit.eur(r.retenueSansSoldeCentimes));
+    }
     Kit.ligne(lignes, 'Heures supplémentaires du mois', Kit.heures(r.minutesSupAcquises));
     Kit.ligne(lignes, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
     ctx.corps.appendChild(p);

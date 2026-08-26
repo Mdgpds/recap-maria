@@ -175,11 +175,18 @@ function entrees(o) {
 /* Calcule, puis retraduit les congés payés en dixièmes pour la comparaison. */
 function calculer(o) {
   var r = Engine.calculerMois(entrees(o));
-  r.dixiemesCpAcquis = enDixiemes(r.minutesCpAcquis, 'CP acquis du mois');
+  /* LOT 28 (§28.1) — l'acquisition d'un mois incomplet est PRORATISÉE, comme
+     le salaire : 12 jours sur 22 donnent 736 minutes, qui ne font pas un
+     nombre entier de dixièmes. Ce n'est pas un arrondi du moteur sur un
+     cumul, c'est le seul arrondi du prorata, fait une fois. Les cas qui
+     lisent `dixiemesCpAcquis` sont tous des mois entiers ; un mois partiel
+     se lit en minutes (`minutesCpAcquis`), et `dixiemesCpAcquis` vaut null. */
+  r.dixiemesCpAcquis = r.acquisitionCp && r.acquisitionCp.prorata
+    ? null : enDixiemes(r.minutesCpAcquis, 'CP acquis du mois');
   r.imputation.dixiemesCpConsommes =
     enDixiemes(r.imputation.minutesCpConsommees, 'CP consommés');
-  r.compteurSortie.dixiemesCpAcquis =
-    enDixiemes(r.compteurSortie.minutesCpAcquis, 'compteur de sortie, CP acquis');
+  r.compteurSortie.dixiemesCpAcquis = r.acquisitionCp && r.acquisitionCp.prorata
+    ? null : enDixiemes(r.compteurSortie.minutesCpAcquis, 'compteur de sortie, CP acquis');
   r.compteurSortie.dixiemesCpPris =
     enDixiemes(r.compteurSortie.minutesCpPris, 'compteur de sortie, CP pris');
   return r;
@@ -257,10 +264,16 @@ definir('T2 — Absences de l\'enfant (septembre 2025)', function () {
     compteurEntree: { minutesSup: 0, dixiemesCpAcquis: 0, dixiemesCpPris: 0 },
     annee: 2025, mois: 9
   });
+  /* LOT 28 (§28.2) — L'ASSERTION CHANGE PARCE QUE LA RÈGLE CHANGE. Ce cas
+     figeait « 660 : inchangé, RG-09 » — les 30 minutes restaient dues quand
+     l'enfant était absent. Décision d'Adrien du 25 août 2026 : quand l'enfant
+     est absent, ni indemnité d'entretien, ni minute supplémentaire. Trois
+     absences retirent donc 3 × 30 minutes : 22 journées à 30 min moins trois,
+     19 × 30 = 570. L'entretien, lui, sautait déjà (RG-09). */
   egalObjet(r, {
     joursPresence: 19,
     entretienCentimes: 9500,
-    minutesSupAcquises: 660   // inchangé, RG-09
+    minutesSupAcquises: 570   // 19 présences × 30 min ; les 3 absences : 0 (§28.2)
   }, 'T2');
 });
 
@@ -284,8 +297,10 @@ definir('T4 — Semaine de congé avec reliquat (avril 2025)', function () {
     compteurEntree: { minutesSup: 2400, dixiemesCpAcquis: 20, dixiemesCpPris: 0 },
     annee: 2025, mois: 4
   });
+  /* LOT 28 (§28.2) — 480 → 450 : l'absence de l'enfant du 3 avril ne porte
+     plus ses 30 minutes. 15 présences × 30 = 450. */
   egalObjet(r, {
-    minutesSupAcquises: 480,    // 16 jours travaillés (15 présences + 1 absence enfant)
+    minutesSupAcquises: 450,    // 15 présences ; l'absence enfant du 3 avril : 0 (§28.2)
     joursPresence: 15,
     entretienCentimes: 7500,
     joursCongesDecomptes: 6     // RG-06 : samedi inclus
@@ -297,7 +312,7 @@ definir('T4 — Semaine de congé avec reliquat (avril 2025)', function () {
   }, 'T4.imputation');
   /* Règle du reliquat : 2400 minutes couvrent 4 jours entiers, les 240
      restantes ne couvrent pas un cinquième et restent au compteur. */
-  egal(r.compteurSortie.minutesSup, 720, 'T4.compteurSortie.minutesSup'); // 2400 − 2160 + 480
+  egal(r.compteurSortie.minutesSup, 690, 'T4.compteurSortie.minutesSup'); // 2400 − 2160 + 450 (§28.2)
 });
 
 definir('T5 — Contrat en déficit (avril 2025)', function () {
@@ -409,9 +424,16 @@ definir('A1 — Bornes du contrat (correction relecture lot 1)', function () {
   egalObjet(demarrage, {
     joursPresence: 12,
     entretienCentimes: 6000,
-    minutesSupAcquises: 360,
-    dixiemesCpAcquis: 0        // RG-11 : mois non couvert en entier
+    minutesSupAcquises: 360
   }, 'A1.debut');
+  /* LOT 28 (§28.1) — L'ASSERTION CHANGE PARCE QUE LA RÈGLE CHANGE. Ce cas
+     figeait « dixiemesCpAcquis: 0 — RG-11 : mois non couvert en entier ».
+     Décision d'Adrien du 26 août 2026 : « comme tous les salariés, si elle
+     commence le 16 mars c'est proratisé ». 12 jours du planning sur 22 :
+     1350 × 12 / 22 = 736,36 → 736 minutes, un seul arrondi. */
+  egal(demarrage.minutesCpAcquis, 736, 'A1.debut.minutesCpAcquis (prorata 12/22, §28.1)');
+  egal(demarrage.acquisitionCp.prorata, true, 'A1.debut.acquisitionCp.prorata');
+  egal(demarrage.acquisitionCp.joursCouverts, 12, 'A1.debut.acquisitionCp.joursCouverts');
 
   /* Contrat finissant le vendredi 12/09/2025 : 10 jours (1er -> 12), et le
      compteur de sortie — base du solde majoré RG-13 — vaut bien 300. */
@@ -520,7 +542,9 @@ definir('T11 — Imputation imposée appliquée telle quelle', function () {
     joursSansSolde: 1
   }, 'T11.mois.imputation');
   egal(r.compteurSortie.dixiemesCpPris, 20, 'T11.compteurSortie.dixiemesCpPris');
-  egal(r.compteurSortie.minutesSup, 5400 - 1620 + 480, 'T11.compteurSortie.minutesSup');
+  /* §28.2 — 450 et non plus 480 : l'absence enfant du 3 avril ne porte plus
+     ses 30 minutes. */
+  egal(r.compteurSortie.minutesSup, 5400 - 1620 + 450, 'T11.compteurSortie.minutesSup');
   egal(r.imputationsAppliquees.length, 1, 'T11.imputationsAppliquees.length');
   egal(r.imputationsAppliquees[0].source, 'imposee', 'T11.imputationsAppliquees.source');
 });
@@ -605,17 +629,28 @@ definir('T16 — Renoncement borné : jamais de minutes négatives', function ()
   egal(r.compteurSortie.minutesSup >= 0, true, 'T16.compteur jamais négatif');
 });
 
-definir('T17 — RG-09 surchargé pour une seule journée (V8-19)', function () {
-  var c = contrat();   // sup_dues_si_enfant_absent = true
+definir('T17 — RG-09 : l’absence de l’enfant ne porte plus aucune minute (§28.2, §29.2)', function () {
+  /* LOT 28 — CE CAS FIGEAIT LA SURCHARGE V8-19 : `sup_dues_override` et
+     `sup_dues_si_enfant_absent` décidaient si les 30 minutes restaient dues
+     quand l'enfant était absent. Décision d'Adrien du 25 août 2026, confirmée
+     le 26 : « si l'enfant est absent, pas de 30 min ni de frais d'entretien ».
+     Le réglage et la surcharge restent en base mais ne produisent plus rien :
+     quelle que soit leur valeur, une absence vaut zéro minute — écart
+     compris (§29.2, A4). */
+  var c = contrat();   // sup_dues_si_enfant_absent = true — sans effet désormais
   egal(Engine.minutesSupDuJour(
     { type: 'absence_enfant', sup_dues_override: false }, c), 0, 'T17.journée surchargée');
   egal(Engine.minutesSupDuJour(
-    { type: 'absence_enfant', sup_dues_override: null }, c), 30, 'T17.null suit le contrat');
+    { type: 'absence_enfant', sup_dues_override: null }, c), 0, 'T17.null : zéro aussi');
   egal(Engine.minutesSupDuJour(
-    { type: 'absence_enfant' }, c), 30, 'T17.absent suit le contrat');
+    { type: 'absence_enfant' }, c), 0, 'T17.absent : zéro');
   egal(Engine.minutesSupDuJour(
     { type: 'absence_enfant', sup_dues_override: true },
-    contrat({ sup_dues_si_enfant_absent: false })), 30, 'T17.override true prime');
+    contrat({ sup_dues_si_enfant_absent: false })), 0, 'T17.override true : zéro aussi');
+  egal(Engine.minutesSupDuJour(
+    { type: 'absence_enfant', sup_dues_override: true, minutes_sup_exceptionnelles: 45,
+      ecart_minutes: -60, ecart_evenement: 'liberation_anticipee' }, c), 0,
+    'T17.ni ajoutées ni écart sur une absence (§29.2, A4)');
 
   var r = calculer({
     contrat: c, salaire: SALAIRE_REF,
@@ -628,8 +663,8 @@ definir('T17 — RG-09 surchargé pour une seule journée (V8-19)', function () 
     annee: 2025, mois: 9
   });
   egal(r.joursPresence, 19, 'T17.joursPresence');
-  /* 19 présences + 2 absences encore dues = 21 journées à 30 minutes. */
-  egal(r.minutesSupAcquises, 630, 'T17.minutesSupAcquises');
+  /* 19 présences à 30 minutes ; les 3 absences ne portent plus rien (§28.2). */
+  egal(r.minutesSupAcquises, 570, 'T17.minutesSupAcquises');
   /* Le réglage du contrat n'a pas été modifié au passage. */
   egal(c.sup_dues_si_enfant_absent, true, 'T17.contrat inchangé');
 });
@@ -794,13 +829,18 @@ definir('T20 — Non-régression : mois sans imputation ni flexibilité', functi
     compteurEntree: { minutesSup: 2400, dixiemesCpAcquis: 20, dixiemesCpPris: 0 },
     annee: 2025, mois: 4
   });
+  /* LOT 28 — DEUX VALEURS DE CE CAS DE NON-RÉGRESSION CHANGENT, et chacune
+     pour une règle nommée : 480 → 450 (§28.2, l'absence enfant du 3 avril ne
+     porte plus ses 30 minutes) ; dixiemesCpAcquis 0 → 25 (§28.1, une semaine
+     de congé ne prive plus le mois de ses 2,5 jours — c'était « le plus
+     grave »). Tout le reste du cas est inchangé, au centime près. */
   egalObjet(r, {
     joursPresence: 15,
     entretienCentimes: 7500,
-    minutesSupAcquises: 480,
+    minutesSupAcquises: 450,
     joursCongesDecomptes: 6,
     retenueSansSoldeCentimes: 0,
-    dixiemesCpAcquis: 0,
+    dixiemesCpAcquis: 25,
     salaireBrutCentimes: 137289,
     salaireNetCentimes: 107200,
     totalAVerserCentimes: 114700
@@ -810,13 +850,14 @@ definir('T20 — Non-régression : mois sans imputation ni flexibilité', functi
     joursSurCp: 2, dixiemesCpConsommes: 20,
     joursSansSolde: 0
   }, 'T20.avant-lot.imputation');
+  /* §28.2 : 2400 − 2160 + 450 ; §28.1 : 20 dixièmes en entrée + 25 acquis. */
   egalObjet(r.compteurSortie, {
-    minutesSup: 720, dixiemesCpAcquis: 20, dixiemesCpPris: 20
+    minutesSup: 690, dixiemesCpAcquis: 45, dixiemesCpPris: 20
   }, 'T20.avant-lot.compteurSortie');
 
   /* Les sorties ajoutées par le lot 9 sont neutres sur ce mois. */
   egalObjet(r, {
-    minutesSupBase: 480, minutesSupAjoutees: 0, minutesSupRenoncees: 0
+    minutesSupBase: 450, minutesSupAjoutees: 0, minutesSupRenoncees: 0
   }, 'T20.détail neutre');
   egal(r.imputationsAppliquees.length, 1, 'T20.une période');
   egal(r.imputationsAppliquees[0].source, 'defaut', 'T20.source par défaut');

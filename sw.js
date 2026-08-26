@@ -163,7 +163,24 @@
    et le document remis à la famille perdrait la moitié de la phrase qui
    explique une déduction sur une pièce opposable. C'est exactement le cas
    que le changement de nom de cache empêche. Aucun fichier ajouté. */
-var CACHE = 'recap-journees-a-part-v1';
+/* CORRECTIFS DE CALCUL, LOT 28 (« LES CALCULS ») — NOM DE CACHE CHANGÉ.
+
+   Onze fichiers servis changent : `js/engine.js` (acquisition des congés
+   payés, absence de l'enfant sans minute, congés payés jamais négatifs,
+   renoncement borné, congé horaire en période, planning vide refusé),
+   `js/chaine-mois.js` (cumul d'exercice, fenêtre des samedis, troncature,
+   part de familiarisation agrégée), `js/messages.js`, `js/ui-kit.js`,
+   `js/ui-enfant.js`, `js/ui-conges.js`, `js/ui-accueil.js`, `js/ui-periode.js`,
+   `js/ui-historique.js`, `js/ui-document.js`, `js/ui-contrat.js` et
+   `js/ui-menu.js`.
+
+   Ils se RÉPONDENT : un moteur neuf servi avec un écran ancien annoncerait un
+   disponible de congés payés que le moteur ne servira pas, et un écran neuf
+   avec le moteur ancien lirait `acquisitionCp` ou
+   `minutesCpRestantesApresConsommation` à `undefined`. Sur les chiffres que
+   ce lot existe pour rendre justes, une incohérence crédible est le pire
+   résultat possible. Aucun fichier ajouté. */
+var CACHE = 'recap-calculs-justes-lot28-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

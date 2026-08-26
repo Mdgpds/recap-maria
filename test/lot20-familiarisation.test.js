@@ -241,12 +241,16 @@ test('A6 bis — un mois ENTIÈREMENT en familiarisation acquiert aussi', functi
   egal(r.minutesCpAcquis, 1350, 'CP acquis');
 });
 
-test('A6 ter — mais un congé, lui, prive toujours de l’acquisition', function () {
+test('A6 ter — un congé ne prive plus de l’acquisition (§28.1, exigence changée)', function () {
+  /* LOT 28 (§28.1) — L'ASSERTION CHANGE PARCE QUE LA RÈGLE CHANGE. Ce cas
+     figeait « un congé, lui, prive toujours de l'acquisition » : 0 minute.
+     Décision d'Adrien du 25 août 2026 : 2,5 jours par mois travaillé, et un
+     congé payé compte comme travaillé (L3141-5). Le mois acquiert. */
   var r = calculer({
     periodes: [{ date_debut: '2026-09-01', date_fin: '2026-09-11' }],
     journees: [{ jour: '2026-09-21', type: 'conge_maria' }]
   });
-  egal(r.minutesCpAcquis, 0, 'CP acquis : le terme retiré est le SEUL retiré');
+  egal(r.minutesCpAcquis, 1350, 'CP acquis : un jour de congé n’empêche plus rien (§28.1)');
 });
 
 test('A6 quater — et un contrat ouvert en cours de mois n’acquiert toujours pas', function () {
@@ -267,8 +271,14 @@ test('A6 quater — et un contrat ouvert en cours de mois n’acquiert toujours 
     annee: 2026, mois: 9,
     periodesFamiliarisation: [{ date_debut: '2026-09-07', date_fin: '2026-09-18' }]
   });
-  egal(tard.minutesCpAcquis, 0,
-    'ouvert le 7 : rien, et pour une autre raison que la familiarisation');
+  /* LOT 28 (§28.1) — L'ASSERTION CHANGE PARCE QUE LA RÈGLE CHANGE. Ce cas
+     figeait « ouvert le 7 : rien ». Un mois incomplet acquiert désormais au
+     prorata des jours du planning couverts, familiarisation comprise : 18
+     jours sur 22 → 1350 × 18 / 22 = 1104,5 → 1105 (Adrien, 26 août : « comme
+     tous les salariés »). */
+  egal(tard.minutesCpAcquis, 1105,
+    'ouvert le 7 : au prorata, 18 jours sur 22, familiarisation comprise (§28.1)');
+  egal(tard.acquisitionCp.joursCouverts, 18, 'les 18 jours couverts, familiarisation comprise');
 });
 
 /* ------------------------------------------------------------------ */
@@ -352,7 +362,8 @@ test('B1 — un congé de Maria dans la période est décompté et imputé', fun
   egal(r.joursCongesDecomptes, 6, 'jours ouvrables décomptés');
   egal(r.imputation.minutesCpConsommees, 3240, 'minutes de congés payés consommées');
   egal(r.imputation.joursSurCp, 6, 'jours imputés sur les congés payés');
-  egal(r.minutesCpAcquis, 0, 'le mois n’acquiert plus ses 2,5 jours');
+  /* §28.1 — exigence changée : un congé payé compte comme travaillé. */
+  egal(r.minutesCpAcquis, 1350, 'le mois acquiert quand même ses 2,5 jours (§28.1)');
   /* Aucun double décompte : les cinq jours ouvrés du congé reviennent dans la
      part mensualisée, puisque c'est le compteur de congés qui les paie. */
   egal(r.prorata.joursFamiliarisation, 9, 'les jours de congé sortent de la familiarisation');
@@ -367,7 +378,10 @@ test('B1 — un jour sans solde dans la période porte bien sa retenue', functio
   });
   egal(r.retenueSansSoldeCentimes, Engine.montantCentimes(BRUT, 540), 'retenue RG-08');
   egal(r.retenueSansSoldeCentimes, 6480, 'retenue en centimes (540 min au taux du contrat)');
-  egal(r.minutesCpAcquis, 0, 'le mois n’acquiert plus ses 2,5 jours');
+  /* §28.1 — exigence changée : un mois PARTIELLEMENT en sans solde acquiert
+     ses 2,5 jours entiers (L3141-4). Seul un mois entièrement en sans solde
+     n'acquiert rien. */
+  egal(r.minutesCpAcquis, 1350, 'un seul jour sans solde ne prive plus de rien (§28.1)');
   /* LA JOURNÉE N'EST PAS DÉDUITE DEUX FOIS. La retenue RG-08 existe pour
      annuler la part mensualisée du jour ; la retrancher AUSSI du prorata
      ferait payer Maria deux fois pour la même journée. */

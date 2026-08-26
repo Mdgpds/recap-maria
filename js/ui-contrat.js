@@ -926,8 +926,10 @@
     ['minutes_sup_jour', 'Minutes supplémentaires par jour', function (v) { return Kit.duree(v); }, 'temps'],
     ['minutes_par_jour_conge', 'Un jour de congé vaut', function (v) { return Kit.duree(v); }, 'conges'],
     ['entretien_centimes_jour', 'Entretien par jour de présence', function (v) { return Kit.eur(v); }, 'argent'],
-    ['sup_dues_si_enfant_absent', 'Minutes dues si l’enfant est absent',
-      function (v) { return v === false ? 'non' : 'oui'; }, 'temps'],
+    /* §28.2 — la ligne dit la règle, quelle que soit la valeur en base : le
+       moteur ne la lit plus. */
+    ['sup_dues_si_enfant_absent', 'Si l’enfant est absent',
+      function () { return 'ni minutes, ni indemnité d’entretien'; }, 'temps'],
     ['ordre_imputation', 'Congés déduits d’abord',
       function (v) { return v === 'sup_puis_cp' ? 'sur la récupération' : 'sur les congés payés'; }, 'conges'],
     ['brut_mensuel_centimes', 'Salaire brut',

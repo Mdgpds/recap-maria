@@ -581,8 +581,11 @@ var sheet = document.getElementById('sheet');
   var apercu = sansInsecable(txt(sheet));
   assert(apercu.indexOf('5,00') !== -1,
     'effet de l’absence calculé par le moteur : −5,00 € (obtenu « ' + apercu + ' »)');
-  assert(apercu.indexOf('30 min') !== -1 && apercu.indexOf('restent dues') !== -1,
-    'RG-09 : « vos 30 min restent dues »');
+  /* LOT 28 (§28.2) — EXIGENCE CHANGÉE : quand l'enfant est absent, aucune
+     minute n'est due (décision d'Adrien du 25 août 2026). L'aperçu, rejoué
+     par le moteur, dit désormais « vos 30 min ne sont pas dues ». */
+  assert(apercu.indexOf('30 min') !== -1 && apercu.indexOf('ne sont pas dues') !== -1,
+    '§28.2 : « vos 30 min ne sont pas dues » (obtenu « ' + apercu + ' »)');
 
   var boutonApres = boutonExact(sheet, 'Enregistrer');
   assert(!!boutonApres && boutonApres.disabled === false,

@@ -361,6 +361,14 @@
         (evenement ? ' — ' + evenement : '');
     }
     var destination = LIBELLE_DESTINATION_ECART[e.imputeSur] || '';
+    /* LOT 28 (§28.3) — QUAND LES CONGÉS PAYÉS N'ONT COUVERT QU'UNE PARTIE, le
+       document le dit : « 2 h 00 déduites de mes congés payés, 3 h 00 de ma
+       récupération ». Le moteur a borné, le document explique — un total
+       amputé sans son détail est incontestable et inexplicable à la fois. */
+    if (e.imputeSur === 'conges_payes' && e.minutesSurRecuperation > 0 && e.minutesSurCp > 0) {
+      destination = Kit.heures(e.minutesSurCp) + ' déduites de mes congés payés, ' +
+        Kit.heures(e.minutesSurRecuperation) + ' de ma récupération';
+    }
     return 'Dont ' + Kit.heures(-e.minutes) + ' que je n’ai pas gardée' + quand +
       (evenement ? ' — ' + evenement : '') +
       (destination ? ', ' + destination : '');
