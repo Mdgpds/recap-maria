@@ -52,6 +52,30 @@ function norm(t) { return t == null ? t : String(t).replace(/\u00A0/g, ' '); }
 /* LOT 26 — poser une date sur un champ `Kit.champDate` : trois `select`
    (jour, mois, année) dans l'ordre. On change l'ANNÉE et le MOIS d'abord —
    le champ recompose sa liste de jours à chaque fois — puis le jour. */
+/* CORRECTIF 28 AOÛT — LES CASES « POUR QUI ».
+
+   Le chemin « Des journées » porte désormais une case par enfant, comme les
+   chemins « ½ journée » et « Durée libre ». Un enfant qui porte déjà un congé
+   sur la période arrive DÉCOCHÉ : les décors qui en posent un doivent le
+   recocher explicitement pour retrouver le parcours d'avant.
+
+   Chaque appui REDESSINE la zone : on re-interroge le DOM à chaque tour, et
+   on ne garde jamais une référence d'un tour sur l'autre. */
+function casesEnfants() {
+  return Array.prototype.slice.call(sheet.querySelectorAll('button.choice.c1'));
+}
+async function cocherTousLesEnfants() {
+  for (var garde = 0; garde < 12; garde++) {
+    var b = casesEnfants().filter(function (x) {
+      return x.getAttribute('aria-checked') !== 'true' &&
+             x.className.indexOf('off') === -1;
+    })[0];
+    if (!b) return;
+    b.click();
+    await pause(60);
+  }
+}
+
 function poserDate(fld, annee, mois, jour) {
   var sels = fld.querySelectorAll('select');
   sels[2].value = String(annee);
@@ -488,6 +512,13 @@ var toast = document.getElementById('toast');
   poserDate(parTexte(sheet, '.fld', 'Du'), 2026, 5, 18);
   poserDate(parTexte(sheet, '.fld', 'Au'), 2026, 5, 22);
   await pause(500);
+
+  /* CORRECTIF 28 AOÛT — le décor a DÉJÀ un congé le lundi 18 mai sur les trois
+     contrats (c'est tout l'objet de ce fichier). Les trois enfants arrivent
+     donc décochés, et le décompte n'a personne à qui s'appliquer. On les
+     recoche : le reste du parcours est celui d'avant, à l'identique. */
+  await cocherTousLesEnfants();
+  await pause(120);
 
   assert(txt(sheet).indexOf('ouvrables') !== -1,
     'LOT 10 : le décompte s’affiche sous les dates');

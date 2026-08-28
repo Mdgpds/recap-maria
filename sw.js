@@ -214,7 +214,7 @@
    `js/db.js` demande. Servi avec l'ancien, l'arrivée enregistrée le matin ne
    reviendrait jamais le soir — exactement le défaut que ce changement
    corrige. Aucun fichier ajouté. */
-var CACHE = 'recap-pose-conge-contrat-futur-v1';
+var CACHE = 'recap-conge-par-enfant-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

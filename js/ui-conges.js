@@ -48,6 +48,15 @@
      jamais disparaître. */
   var TYPES_ABSENCE_MARIA = ['conge_maria', 'sans_solde', 'hors_planning'];
 
+  /* CORRECTIF 28 AOÛT — CE QU'EST « UN CONGÉ DÉJÀ POSÉ », et rien d'autre.
+
+     `TYPES_ABSENCE_MARIA` est plus large : elle range aussi `hors_planning`,
+     qui n'est pas un congé mais une journée que Maria ne travaillait pas. La
+     paire retenue ici est celle du moteur (`TYPES_QUI_ECHAPPENT_A_LA_PERIODE`,
+     engine.js) : ce sont les deux types qu'une pose de congé écrit, et donc
+     les deux qu'une nouvelle pose écraserait. */
+  var TYPES_CONGE_MARIA = ['conge_maria', 'sans_solde'];
+
   var vue = null;        // état de l'onglet
   var parcours = null;   // état du parcours de pose, quand il est ouvert
 
@@ -1120,6 +1129,12 @@
       /* --- chemin « à l'heure » --- */
       jour: auj,
       minutes: format === 'demi' ? demiJournee().minutes : 90,
+      /* `qui` et `exclu` servent LES DEUX chemins depuis le correctif du
+         28 août : « Des journées » a maintenant sa case par enfant, et c'est
+         la même réserve qui porte le choix. `qui[id]` est le choix EXPLICITE
+         de Maria (indéfini tant qu'elle n'a rien touché) ; `exclu[id]` est
+         l'état retenu, réécrit à chaque redessin, et c'est lui que
+         l'écriture consulte. */
       qui: {}, exclu: {}, cpt: {}, cptExplicite: {}
     };
   }
@@ -1292,6 +1307,62 @@
       .then(function (fiches) { construirePlans(fiches, plage); });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* CORRECTIF 28 AOÛT — POSER CHEZ UNE PARTIE DES ENFANTS SEULEMENT.    */
+  /*                                                                     */
+  /* « Je ne peux pas poser un congé seulement avec un enfant » (Adrien,  */
+  /* 28 août 2026). Les chemins « ½ journée » et « Durée libre » offrent  */
+  /* une case par enfant depuis le lot 21 ; « Des journées » n'en offrait */
+  /* aucune, et la phrase « Un congé vaut pour vos 3 contrats » énonçait  */
+  /* la contrainte sans donner le moyen d'y échapper.                     */
+  /*                                                                     */
+  /* LE MODÈLE EST CELUI DU CHEMIN « À L'HEURE », À L'IDENTIQUE : même    */
+  /* composant (`Kit.choix`), même réserve (`parcours.exclu`), mêmes      */
+  /* libellés. Rien d'autre ne bouge — ni la ventilation, qui reste par   */
+  /* enfant, ni les samedis, qui restent par enfant (A5 du lot 23), ni    */
+  /* les bornes, qui restent celles de chaque contrat (A6 de la PR9).     */
+  /* ------------------------------------------------------------------ */
+
+  /* Cet enfant part-il dans la pose ? Trois cas, dans cet ordre :
+       · son contexte est illisible  -> non, et la case refuse (§8) ;
+       · Maria a tranché             -> son choix, quel qu'il soit ;
+       · elle n'a rien touché        -> oui, sauf congé déjà posé. */
+  function estRetenu(p) {
+    if (!parcours || p.contexteIllisible) return false;
+    var choix = parcours.qui[p.contrat.id];
+    if (choix === undefined) return !(p.dejaConge && p.dejaConge.length);
+    return choix !== false;
+  }
+
+  /* `parcours.exclu` EST L'ÉTAT, pas une copie d'affichage : c'est lui que
+     l'écriture consulte, exactement comme dans le chemin « à l'heure ». Il est
+     réécrit à chaque fois qu'on demande les retenus, pour qu'un changement de
+     dates — qui reconstruit les plans — ne laisse jamais traîner l'exclusion
+     d'un enfant que la nouvelle période ne concerne plus. */
+  function majRetenus() {
+    if (!parcours) return;
+    (parcours.plans || []).forEach(function (p) {
+      if (estRetenu(p)) delete parcours.exclu[p.contrat.id];
+      else parcours.exclu[p.contrat.id] = true;
+    });
+  }
+
+  function plansRetenus() {
+    if (!parcours) return [];
+    majRetenus();
+    return (parcours.plans || []).filter(function (p) {
+      return !parcours.exclu[p.contrat.id];
+    });
+  }
+
+  /* « sur 1 contrat », « sur 2 contrats » — le NOMBRE D'ENFANTS RETENUS, pas
+     le nombre de contrats de Maria. `libelleContrats` dit « votre contrat » /
+     « vos 3 contrats » : sur une pose qui n'en concerne qu'un des trois, ce
+     serait faux. C'est le libellé déjà employé par le chemin « à l'heure ». */
+  function libelleNbContrats(nb) {
+    return nb + (nb <= 1 ? ' contrat' : ' contrats');
+  }
+
   /* LE BLOC VERT : le décompte rejoué par le moteur, la période en toutes
      lettres, et les samedis éligibles DEDANS (§26.1 point 3). */
   function dessinerDecompte(zone, bouton) {
@@ -1324,8 +1395,12 @@
     var zoneTotal = Kit.ce('div');
     zone.appendChild(zoneTotal);
 
+    /* CORRECTIF 28 AOÛT — LA PHRASE DIT CE QUI EST VRAI, ET CE QU'ON PEUT
+       FAIRE. « Un congé vaut pour vos 3 contrats » décrivait une contrainte
+       qui n'existe plus ; la remplacer par le geste qui la lève est le seul
+       moyen que Maria le découvre sans qu'on le lui dise ailleurs. */
     zone.appendChild(Kit.ce('p', 'sb q',
-      'Un congé vaut pour ' + libelleContrats(vue.fiches.length) + '.'));
+      'Décochez un enfant pour ne pas poser chez lui.'));
 
     /* LE CHOIX DES SAMEDIS EST PAR ENFANT — décision d'Adrien du 24 août 2026,
        reconfirmée pour le redesign : « choix par enfant ».
@@ -1343,11 +1418,16 @@
     function samedisAChoisir() {
       var out = [];
       var dates = {};
-      plans.forEach(function (p) {
+      /* CORRECTIF 28 AOÛT — UN ENFANT DÉCOCHÉ NE PROPOSE PLUS SES SAMEDIS,
+         et n'en consomme donc aucun sur son quota. Le critère A5 du lot 23
+         (les samedis sont par enfant) est ce qui rend ce filtre suffisant :
+         chaque ligne appartient déjà à UN plan. */
+      var gardes = plansRetenus();
+      gardes.forEach(function (p) {
         p.samedisEligibles.forEach(function (d) { dates[d] = true; });
       });
       Object.keys(dates).sort().forEach(function (d) {
-        var concernes = plans.filter(function (p) {
+        var concernes = gardes.filter(function (p) {
           return p.samedisEligibles.indexOf(d) !== -1;
         });
         concernes.forEach(function (p) {
@@ -1372,7 +1452,28 @@
     }
 
     function majDecompte() {
-      var nombres = plans.map(function (p) { return p.jours; });
+      var gardes = plansRetenus();
+      /* AU MOINS UN ENFANT COCHÉ : sinon le bouton est inactif et son libellé
+         redevient « Poser », sans chiffre. Un décompte affiché sans personne
+         à qui l'imputer serait un chiffre qui ne veut rien dire. */
+      if (!gardes.length) {
+        /* Deux causes, deux phrases. Dire « cochez au moins un enfant » quand
+           toutes les cases refusent serait une instruction impossible à
+           suivre. */
+        var toutIllisible = plans.every(function (p) { return p.contexteIllisible; });
+        gros.textContent = 'Aucun enfant';
+        sub.textContent = libellePlage(parcours.debut, parcours.fin)
+          .replace(/^./, function (c) { return c.toUpperCase(); }) + '. ' +
+          (toutIllisible
+            ? 'Les journées déjà saisies sur cette période n’ont pas pu être lues : ' +
+              'rien ne peut être posé tant qu’on ne sait pas ce qu’il y a. ' +
+              'Réessayez, ou changez les dates.'
+            : 'Cochez au moins un enfant pour poser.');
+        bouton.disabled = true;
+        bouton.textContent = 'Poser';
+        return;
+      }
+      var nombres = gardes.map(function (p) { return p.jours; });
       var mini = Math.min.apply(null, nombres);
       var maxi = Math.max.apply(null, nombres);
       gros.textContent = mini === maxi
@@ -1387,7 +1488,7 @@
       bouton.disabled = maxi === 0;
       bouton.textContent = maxi === 0
         ? 'Poser'
-        : 'Poser ' + Kit.jours(maxi) + ' sur ' + libelleContrats(plans.length);
+        : 'Poser ' + Kit.jours(maxi) + ' sur ' + libelleNbContrats(gardes.length);
     }
 
     function majSamedis() {
@@ -1425,7 +1526,7 @@
       /* §5.2 — un samedi FÉRIÉ n'est pas un choix, et une phrase le dit
          plutôt que de le laisser inexpliqué. La liste vient du moteur. */
       var feriesSam = {};
-      plans.forEach(function (p) {
+      plansRetenus().forEach(function (p) {
         if (!p.bornes) return;
         Engine.feriesDeLaPeriode(p.bornes.debut, p.bornes.fin, p.planning)
           .forEach(function (d) {
@@ -1445,7 +1546,7 @@
        Maria, elle s'assure qu'elle sait. */
     function alerteQuota() {
       var messages = [];
-      plans.forEach(function (p) {
+      plansRetenus().forEach(function (p) {
         if (!p.quota) return;
         var parAnnee = {};
         Object.keys(p.samedisChoisis).forEach(function (d) {
@@ -1465,9 +1566,52 @@
       return messages;
     }
 
+    /* CORRECTIF 28 AOÛT — UNE CASE PAR ENFANT, PUIS SA VENTILATION.
+
+       La case est celle du chemin « à l'heure » : `Kit.choix`, classe `c1`,
+       `●` / `○`, `role="checkbox"`. Décocher ne masque pas la carte, il RETIRE
+       l'enfant de la pose — aucune journée écrite, aucune imputation créée,
+       aucun samedi consommé, et il sort du total du bas. */
     function majQui() {
       Kit.vider(zoneQui);
-      plans.forEach(function (p) { zoneQui.appendChild(carteEnfant(p, majTout)); });
+      majRetenus();
+      plans.forEach(function (p) {
+        var id = p.contrat.id;
+        var coche = estRetenu(p);
+        var effet = null;
+        if (p.contexteIllisible) {
+          effet = 'Impossible : les journées déjà saisies pour cette période ' +
+            'n’ont pas pu être lues.';
+        } else if (p.dejaConge.length) {
+          effet = 'congé déjà posé sur cette période';
+        }
+
+        var b = Kit.choix(zoneQui, 'c1', coche ? '●' : '○',
+          p.contrat.prenom_enfant, effet, function () {
+            if (p.contexteIllisible) return;
+            parcours.qui[id] = !coche;
+            /* Un enfant qu'on retire ne garde pas son repli ouvert : la carte
+               disparaît, et `ouvert` la rouvrirait toute seule au retour. */
+            if (coche && parcours.ouvert === id) parcours.ouvert = null;
+            majTout();
+          });
+        if (coche) b.className += ' on';
+        if (p.contexteIllisible) b.className += ' off';
+        b.setAttribute('role', 'checkbox');
+        b.setAttribute('aria-checked', coche ? 'true' : 'false');
+
+        /* LA VENTILATION RESTE PAR ENFANT, inchangée — trois issues, plafonds
+           calculés sur SES compteurs. Elle ne s'affiche que pour un enfant
+           retenu : arbitrer la répartition de quelqu'un qu'on ne pose pas
+           n'aurait aucun sens. */
+        if (!coche) {
+          /* Sa carte n'est pas là : `ouvert` la rouvrirait toute seule au
+             retour, sur un enfant qu'on ne pose pas. */
+          if (parcours.ouvert === id) parcours.ouvert = null;
+          return;
+        }
+        zoneQui.appendChild(carteEnfant(p, majTout));
+      });
     }
 
     /* Le total du sans solde et sa retenue — ce que portait le récapitulatif
@@ -1480,7 +1624,7 @@
       });
 
       var joursSs = 0, retenue = 0, chiffrable = true;
-      plans.forEach(function (p) {
+      plansRetenus().forEach(function (p) {
         if (!p.choix.joursSansSolde) return;
         joursSs += p.choix.joursSansSolde;
         var brut = brutDe(p.fiche);
@@ -2113,6 +2257,11 @@
   /* ------------------------------------------------------------------ */
 
   function verifierPuisPoser(bouton) {
+    /* CORRECTIF 28 AOÛT — ON NE ROUVRE PAS LE MOIS D'UN ENFANT QU'ON NE POSE
+       PAS. Une réouverture laisse une trace définitive dans l'historique du
+       mois : la déclencher pour un enfant décoché serait un dégât gratuit. */
+    if (!plansRetenus().length) return;
+
     bouton.disabled = true;
     var plage = { debut: parcours.debut, fin: parcours.fin };
     var moisConcernes = moisDePeriode(plage);
@@ -2122,10 +2271,18 @@
         return { annee: mm.annee, mois: mm.mois, cle: Chaine.cleMois(mm.annee, mm.mois), recaps: r };
       });
     })).then(function (liste) {
+      /* L'ATTENTE A PU DURER : la liste des enfants retenus est relue ICI, au
+         moment où l'on conclut, et non avant l'aller-retour. Les cases restent
+         cliquables pendant que les récapitulatifs se lisent ; un instantané
+         pris avant ferait porter le contrôle de clôture sur une liste et
+         l'écriture sur une autre. */
+      var idsRetenus = {};
+      plansRetenus().forEach(function (p) { idsRetenus[p.contrat.id] = true; });
+
       var clos = [];
       liste.forEach(function (x) {
         var contrats = vue.fiches.filter(function (f) {
-          return joursDuContrat(f, plage).some(function (d) {
+          return idsRetenus[f.contrat.id] && joursDuContrat(f, plage).some(function (d) {
             return d.slice(0, 7) === x.cle;
           }) && global.App.estClos(x.recaps, f.contrat.id);
         });
@@ -2154,7 +2311,10 @@
      seule donnée de l'application que personne ne peut recalculer. */
   function confirmerEcrasementsPuisPoser(bouton) {
     var avertissements = [];
-    parcours.plans.forEach(function (p) {
+    /* CORRECTIF 28 AOÛT — seuls les enfants RETENUS sont examinés : annoncer
+       l'écrasement d'une journée qu'on ne va pas écrire ferait renoncer Maria
+       à une pose parfaitement sûre. */
+    plansRetenus().forEach(function (p) {
       if (p.fiche && p.fiche.journeesPeriodeIncomplete) {
         avertissements.push(Kit.warnbox(
           'Impossible de vérifier les journées déjà saisies pour ' + p.contrat.prenom_enfant,
@@ -2163,6 +2323,23 @@
           'vous le signaler.'));
         return;
       }
+      /* CORRECTIF 28 AOÛT — L'ENFANT RECOCHÉ ALORS QU'IL PORTE DÉJÀ UN CONGÉ.
+
+         Il arrive décoché, avec sa mention. S'il est recoché, la pose passera
+         par-dessus ce qui est enregistré : c'est un choix légitime — c'est
+         même le rattrapage que Maria voulait faire — mais il ne se fait pas
+         sans être dit, comme pour une saisie manuelle. */
+      if (p.dejaConge && p.dejaConge.length) {
+        avertissements.push(Kit.warnbox(
+          'Un congé est déjà posé chez ' + p.contrat.prenom_enfant,
+          ' ' + p.dejaConge.map(function (d) { return Kit.jourLong(d).toLowerCase(); }).join(', ') +
+          ' : ces journées portent déjà un congé. Si une période de congé y est ' +
+          'enregistrée, la base refusera d’en poser une seconde sur les mêmes ' +
+          'dates, et RIEN ne sera posé — pour personne. Retirez-la d’abord ' +
+          '(« Retirer des congés »), ou décochez ' + p.contrat.prenom_enfant +
+          ' pour ne pas y toucher.'));
+      }
+
       var manuelles = journeesManuelles(p);
       if (!manuelles.length) return;
       avertissements.push(Kit.warnbox(
@@ -2243,6 +2420,14 @@
 
   function rouvrirPuisPoser(clos, bouton) {
     bouton.disabled = true;
+    /* CORRECTIF 28 AOÛT — CE QUI ÉTAIT RETENU AVANT LA RÉOUVERTURE.
+
+       La réouverture refait les plans, et cette relecture peut échouer : un
+       enfant dont les journées ne se relisent pas devient « contexte
+       illisible », donc décoché. Sans ce contrôle, son récapitulatif serait
+       rouvert — geste irréversible — et son congé ne serait pas posé, sans
+       qu'un seul écran le dise. On échoue fermé, et on le dit. */
+    var avant = plansRetenus().map(function (p) { return p.contrat.id; });
     var gestes = [];
     clos.forEach(function (x) {
       x.fiches.forEach(function (f) {
@@ -2259,6 +2444,20 @@
          d'écrire, sinon la ventilation partirait sur des compteurs lus quand
          le mois était encore clôturé. */
       return preparerPlans().then(function () {
+        var apres = {};
+        plansRetenus().forEach(function (p) { apres[p.contrat.id] = true; });
+        var perdus = avant.filter(function (id) { return !apres[id]; });
+        if (perdus.length) {
+          bouton.disabled = false;
+          var noms = parcours.plans.filter(function (p) {
+            return perdus.indexOf(p.contrat.id) !== -1;
+          }).map(function (p) { return p.contrat.prenom_enfant; });
+          Kit.toast('Les récapitulatifs ont été rouverts, mais la situation de ' +
+            liste(noms.length ? noms : ['un contrat']) + ' n’a pas pu être relue. ' +
+            'Aucun congé n’a été posé — rouvrez l’écran de pose et réessayez.', true);
+          Kit.fermerFeuille();
+          return global.App.rafraichir();
+        }
         return confirmerEcrasementsPuisPoser(bouton);
       });
     }).catch(function (e) {
@@ -2357,6 +2556,26 @@
     }).map(function (f) {
       var c = f.contrat;
       var joursPoses = joursDuContrat(f, plage);
+      /* CORRECTIF 28 AOÛT — CE QUI EST DÉJÀ POSÉ CHEZ CET ENFANT.
+
+         Les journées de la période sont déjà en mémoire : `preparerPlans` les
+         a chargées (`avecJourneesDeLaPeriode`) pour l'avertissement
+         d'écrasement. On s'en sert une seconde fois, sans aller-retour de
+         plus.
+
+         Un enfant qui porte déjà un congé sur ces dates arrivera DÉCOCHÉ.
+         C'est le cas qui a bloqué Maria : reposer la période entière butait
+         sur la contrainte d'exclusion des imputations, et le refus portait sur
+         la période entière — les autres enfants n'étaient pas posés non plus.
+
+         ÉCHEC FERMÉ (§8) : si les journées n'ont pas pu être lues, on ne sait
+         pas ce qu'il y a. L'enfant reste décoché, sa case refuse, et la raison
+         est dite — jamais coché « au cas où ». */
+      var journeesPeriode = f.journeesPeriode || {};
+      var dejaConge = joursPoses.filter(function (d) {
+        var l = journeesPeriode[d];
+        return !!l && TYPES_CONGE_MARIA.indexOf(l.type) !== -1;
+      });
       var cp = cpDe(f);
       var sup = supDe(f);
       var plafonds = plafondsDe(f);
@@ -2414,6 +2633,10 @@
       return {
         fiche: f, contrat: c, cond: cond, joursPoses: joursPoses, jours: n,
         planning: planning,
+        /* Les journées de cette période qui portent DÉJÀ un congé, et le fait
+           qu'on n'ait pas pu les lire. Les deux décident de la case (§3). */
+        dejaConge: dejaConge,
+        contexteIllisible: !!f.journeesPeriodeIncomplete,
         samedisEligibles: eligibles,
         samedisChoisis: choisis,
         /* Le reste du quota, lu en base à l'étape des samedis. `null` tant
@@ -2577,8 +2800,19 @@
      Et le lot d'imputations lui-même est repris : sans cela, un refus sur le
      deuxième contrat laissait le premier ventilé et les autres non. */
   function poser(bouton) {
+    /* CORRECTIF 28 AOÛT — SEULS LES ENFANTS COCHÉS SONT POSÉS.
+
+       C'est ICI que le décochage compte. Une imputation écrite pour un enfant
+       que Maria a retiré consommerait ses congés payés sans qu'aucune journée
+       ne l'explique, et personne ne pourrait la retrouver : le garde-fou de
+       l'écran ne vaut que parce que l'écriture le respecte. */
+    var plans = plansRetenus();
+    if (!plans.length) {
+      Kit.toast('Cochez au moins un enfant : rien n’a été posé.', true);
+      return;
+    }
+    var tousRetenus = plans.length === (parcours.plans || []).length;
     bouton.disabled = true;
-    var plans = parcours.plans;
     var affectations = plans.map(function (p) {
       return { contratId: p.contrat.id, jours: p.joursPoses };
     });
@@ -2646,7 +2880,8 @@
            quatre contrats, leurs journées ET leurs compteurs : c'est
            exactement le genre de geste qu'on ne veut pas défaire à la main. */
         Kit.toast('Congés posés ' + libellePlage(parcours.debut, parcours.fin) +
-          ' sur ' + libelleContrats(plans.length) + '.', false, {
+          ' sur ' + (tousRetenus ? libelleContrats(plans.length)
+                                 : libelleNbContrats(plans.length)) + '.', false, {
             libelle: 'Annuler',
             delai: 5000,
             onclick: function () { annulerPose(plans, imputations); }
