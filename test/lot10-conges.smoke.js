@@ -323,6 +323,32 @@ function champsDates() {
   return { du: blocs[0], au: blocs[1] };
 }
 function boutonPoser() { return sheet.querySelector('.stick button'); }
+
+/* CORRECTIF 28 AOÛT — LES CASES « POUR QUI ». Le chemin « Des journées » porte
+   désormais une case par enfant. Un enfant qui porte déjà un congé sur la
+   période arrive DÉCOCHÉ ; les scénarios qui reposent sur une période déjà
+   posée doivent le recocher pour retrouver le parcours d'avant.
+
+   Chaque appui REDESSINE la zone : on re-interroge le DOM à chaque tour. */
+function casesEnfants() {
+  return Array.prototype.slice.call(sheet.querySelectorAll('button.choice.c1'));
+}
+function caseDe(prenom) {
+  return casesEnfants().filter(function (b) {
+    return txt(b.querySelector('.tx')).indexOf(prenom) === 0;
+  })[0] || null;
+}
+async function cocherTousLesEnfants() {
+  for (var garde = 0; garde < 12; garde++) {
+    var b = casesEnfants().filter(function (x) {
+      return x.getAttribute('aria-checked') !== 'true' &&
+             x.className.indexOf('off') === -1;
+    })[0];
+    if (!b) return;
+    b.click();
+    await pause(60);
+  }
+}
 function carteDe(prenom) {
   return Array.prototype.filter.call(sheet.querySelectorAll('.kid'), function (k) {
     return txt(k.querySelector('.nm')) === prenom;
@@ -822,6 +848,11 @@ function grosDecompte() {
     statut: 'fige', donnees: {}, fige_le: '2026-07-31T18:00:00Z', transmis_le: null };
   await ouvrirConges();
   await ouvrirPose('2026-07-20', '2026-07-24');
+  /* CORRECTIF 28 AOÛT — P4 vient de poser ces mêmes dates : les deux enfants
+     arrivent décochés, « congé déjà posé sur cette période ». On les recoche
+     pour rejouer le refus de réouverture tel qu'il était. */
+  await cocherTousLesEnfants();
+  await pause(120);
   var avantRouvrir = appels.rouvrir.length;
   var avantImput5 = appels.imputations.length;
   boutonPoser().click();
