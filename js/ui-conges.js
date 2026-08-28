@@ -974,7 +974,24 @@
      jours disponibles au lieu de 10. Deux divisions par 10 dans un écran sont
      exactement ce qu'on oublie. */
   function plafondsDe(fiche, brut) {
-    var r = Chaine.reservesEnJours(condDe(fiche), compteurPourPose(fiche.entree, brut));
+    /* CORRECTIF 26 août — UN CONTRAT QUI N'EXISTE PAS ENCORE N'A PAS DE
+       CONDITIONS, et `imputerConges` déréférence `conditions` sans garde.
+
+       Depuis qu'un troisième contrat a été créé avec une date d'effet au
+       1er août 2026, TOUTE pose de congé à une date antérieure plantait —
+       pour tous les enfants, pas seulement le nouveau. La chaîne construit
+       bien un maillon sans conditions pour un mois antérieur au contrat
+       (branche « aucune condition applicable »), mais l'écran passait ce
+       `null` au moteur, qui levait une TypeError. La période entière
+       échouait sur « Impossible de préparer cette période », sans que rien
+       ne nomme le contrat en cause.
+
+       On ÉCHOUE FERMÉ : pas de conditions, pas de réserve mobilisable. Ce
+       contrat n'a de toute façon aucune journée à poser sur cette période —
+       il est écarté du parcours juste en dessous. */
+    var cond = condDe(fiche);
+    if (!cond) return { maxCp: 0, maxSup: 0 };
+    var r = Chaine.reservesEnJours(cond, compteurPourPose(fiche.entree, brut));
     return { maxCp: r.joursCp, maxSup: r.joursSup };
   }
 
@@ -2326,7 +2343,18 @@
   }
 
   function construirePlans(fiches, plage) {
-    parcours.plans = fiches.filter(function (f) { return !f.erreur; }).map(function (f) {
+    parcours.plans = fiches.filter(function (f) {
+      if (f.erreur) return false;
+      /* CORRECTIF 26 août — LE CONTRAT QUE LA PÉRIODE NE CONCERNE PAS SORT
+         DU PARCOURS. Un contrat qui commence après la période n'a ni
+         journée à écrire, ni conditions, ni réserve : le faire figurer dans
+         « Pour qui » avec zéro jour n'apporte rien et l'expose à chaque
+         calcul qui suppose des conditions. Un contrat DÉJÀ ouvert dont la
+         période ne pose aucune journée (période entièrement fériée, par
+         exemple) reste affiché : il a des conditions, et son zéro est une
+         information. */
+      return !!condDe(f) || joursDuContrat(f, plage).length > 0;
+    }).map(function (f) {
       var c = f.contrat;
       var joursPoses = joursDuContrat(f, plage);
       var cp = cpDe(f);
