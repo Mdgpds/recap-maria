@@ -433,8 +433,17 @@ test('différentiel exhaustif — chaque écart est reconstruit par une règle n
     var attendu = rec.attendu;
     var r4 = appliquerRegleAcquisition(attendu, av, v, journees, entrees.compteurEntree);
 
-    var jsonAttendu = JSON.stringify(memeOrdre(attendu, ap));
-    var jsonApres = JSON.stringify(ap);
+    /* LOT 31 — `imputationsOrphelines` est une information ajoutée par un lot
+       POSTÉRIEUR : le moteur figé d'avant le lot 28 ne la porte pas, et elle
+       ne change aucun montant (le différentiel du lot 31,
+       `test/lot31-differentiel.test.js`, le prouve poste à poste de son
+       côté). Elle sort donc de la comparaison du lot 28, exactement comme les
+       deux champs que le lot 28 ajoutait sortent de la sienne. */
+    var apComparable = copie(ap);
+    delete apComparable.imputationsOrphelines;
+
+    var jsonAttendu = JSON.stringify(memeOrdre(attendu, apComparable));
+    var jsonApres = JSON.stringify(apComparable);
     assert(jsonAttendu === jsonApres,
       etiquette + ' — le moteur d’après ne se déduit pas de celui d’avant par les règles du lot :' +
       '\n  attendu ' + jsonAttendu + '\n  obtenu  ' + jsonApres);
@@ -443,7 +452,7 @@ test('différentiel exhaustif — chaque écart est reconstruit par une règle n
     if (rec.mord.R2) mordu.R2++;
     if (rec.mord.R3) mordu.R3++;
     if (r4) mordu.R4++;
-    if (JSON.stringify(av) === JSON.stringify(ap)) identiques++;
+    if (JSON.stringify(av) === JSON.stringify(apComparable)) identiques++;
     compares++;
   }
 
@@ -461,7 +470,7 @@ test('différentiel exhaustif — chaque écart est reconstruit par une règle n
     'l’ancien objet ne porte pas `acquisitionCp` : aucune égalité stricte n’est possible');
 });
 
-test('sur un mois que le lot ne concerne pas, seuls les deux champs ajoutés diffèrent', function () {
+test('sur un mois que le lot ne concerne pas, seuls les champs ajoutés diffèrent', function () {
   var v = {
     annee: 2026, mois: 3, planning: [1, 2, 3, 4, 5], mpjc: 540, minutesSupJour: 30,
     ordre: 'cp_puis_sup', entretien: 550, supDuesSiAbsent: true,
@@ -478,6 +487,8 @@ test('sur un mois que le lot ne concerne pas, seuls les deux champs ajoutés dif
   var sansAjout = copie(ap);
   delete sansAjout.acquisitionCp;
   delete sansAjout.minutesCpRestantesApresConsommation;
+  /* LOT 31 — champ d'un lot postérieur, absent du moteur figé (voir ci-dessus). */
+  delete sansAjout.imputationsOrphelines;
   assert(JSON.stringify(sansAjout) === JSON.stringify(av),
     'un mois ordinaire est identique au champ ajouté près :\n  avant ' +
     JSON.stringify(av) + '\n  après ' + JSON.stringify(sansAjout));

@@ -1452,78 +1452,6 @@
       return sortie;
     });
 
-    /* LOT 31 (§3.1) — L'IMPUTATION QUI NE RECOUVRE RIEN EST NOMMÉE.
-
-       Le moteur regroupe les périodes de congé À PARTIR des journées
-       `conge_maria`. Une imputation qui ne recoupe AUCUNE de ces périodes
-       n'est donc confrontée à rien : elle n'est ni appliquée, ni écartée —
-       elle est ignorée, sans un mot. La ventilation choisie par Maria
-       disparaît et les jours concernés sont recomptés comme travaillés.
-
-       `IMPUTATION_INCOMPLETE` protège le cas où l'imputation RECOUVRE une
-       période avec un décompte faux ; il ne protège pas celui-ci. Deux
-       chemins y mènent : une écriture directe en base qui ne respecte pas la
-       forme de l'application, et la pose elle-même, qui écrit l'imputation
-       avant les journées et n'a pas de transaction — si la compensation
-       échoue, l'imputation reste seule.
-
-       Le moteur NE LÈVE PAS : une exception ferait tomber le mois entier, et
-       un mois qu'on ne peut plus lire est pire qu'un mois qui signale un
-       défaut. Il constate, il nomme, et les écrans décident (§3.2).
-
-       Aucun montant ne change : une orpheline n'a jamais rien appliqué —
-       elle n'entre dans aucun `plan`, dans aucun décompte, dans aucune
-       imputation de compteur. La nommer est une information de plus, pas une
-       décision de plus. C'est ce que le différentiel poste à poste prouve.
-
-       Deux gardes pour n'accuser personne à tort :
-       - une imputation qui RECOUPE une période, même sans la couvrir, n'est
-         pas orpheline : ce cas-là est déjà dit (`choixEcarte`, source
-         `defaut_choix_ecarte`) ou refusé (`IMPUTATION_INCOMPLETE`) ;
-       - une imputation à cheval sur deux mois dont la part de CE mois ne
-         porte aucun jour ouvrable ne concerne pas ce mois : elle sera
-         examinée — et signalée — au mois qui la porte réellement. Sans cette
-         garde, une période du 31 mai au 5 juin serait déclarée orpheline en
-         mai, où elle n'a rien à faire.
-
-       Le décompte se lit ici avec `joursOuvrablesParMois`, jamais avec
-       `repartirImputationParMois` : cette dernière LÈVE `IMPUTATION_INCOMPLETE`
-       quand la ventilation ne couvre pas le décompte, et une orpheline au
-       décompte faux ferait alors tomber le mois — exactement ce que le §3.1
-       interdit. */
-    var imputationsOrphelines = [];
-    for (var o = 0; o < imputations.length; o++) {
-      var impO = imputations[o];
-      if (!impO || !impO.date_debut || !impO.date_fin) continue;
-      if (impO.date_fin < impO.date_debut) continue;
-      var recoupe = false;
-      for (var po = 0; po < periodes.length; po++) {
-        if (impO.date_debut <= periodes[po].fin && impO.date_fin >= periodes[po].debut) {
-          recoupe = true;
-          break;
-        }
-      }
-      if (recoupe) continue;
-      var tranchesO = joursOuvrablesParMois(impO.date_debut, impO.date_fin,
-        planning, samedisComptes);
-      var joursDeCeMois = 0;
-      for (var to = 0; to < tranchesO.length; to++) {
-        if (tranchesO[to].cle === cleMois) joursDeCeMois = tranchesO[to].jours;
-      }
-      if (joursDeCeMois === 0) continue;
-      imputationsOrphelines.push({
-        date_debut: impO.date_debut,
-        date_fin: impO.date_fin,
-        joursOuvrables: joursDeCeMois,
-        /* La ventilation qu'elle demandait — celle qui a été perdue. Elle est
-           reprise telle qu'elle est POSÉE (période entière), pas redécoupée :
-           c'est le choix de Maria qu'on restitue, pas une part calculée. */
-        joursSurCp: impO.jours_sur_cp || 0,
-        joursSurSup: impO.jours_sur_sup || 0,
-        joursSansSolde: impO.jours_sans_solde || 0
-      });
-    }
-
     /* LOT 28 (§28.3) — LES CONGÉS PAYÉS NE PASSENT JAMAIS SOUS ZÉRO.
 
        Un écart d'horaire imputé sur les congés payés ne passait par aucun
@@ -1732,11 +1660,6 @@
                                    `choixEcarte` porte la période concernée.
                                    À signaler à l'écran (lot 10). */
       imputationsAppliquees: imputationsAppliquees,
-      /* LOT 31 (§3.1) — les imputations reçues pour ce mois qui ne recouvrent
-         aucune période de congé regroupée. Vide dans l'immense majorité des
-         cas : c'est la forme attendue. Le mois reste calculé, au centime
-         près ; la chaîne la transporte et les écrans la disent (§3.2). */
-      imputationsOrphelines: imputationsOrphelines,
       retenueSansSoldeCentimes: retenueSansSoldeCentimes,
       minutesCpAcquis: minutesCpAcquises,
       /* LOT 28 (§28.1) — POURQUOI CE MOIS ACQUIERT CE QU'IL ACQUIERT. L'écran

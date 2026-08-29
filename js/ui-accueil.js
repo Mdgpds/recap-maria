@@ -153,12 +153,18 @@
            croise son détail jour par jour avec l'horloge, lue une fois par
            `App.aujourdhui()`. */
         famDuJour: famDuJour(entree, m, auj),
+        /* LOT 31 (§3.2) — LES MOIS OÙ UNE PÉRIODE DE CONGÉ A DISPARU.
+           Même portée que les retards : toute la chaîne rejouée, pas
+           seulement le mois affiché. Une décision perdue en mai ne doit pas
+           attendre que Maria rouvre mai pour se voir. */
+        orphelines: moisAvecOrphelines(chaine),
         erreur: null
       };
     }).catch(function (e) {
       return {
         contrat: contrat, entree: null, journees: {}, travailles: [],
-        etat: null, restants: 0, retards: [], famDuJour: null, erreur: e
+        etat: null, restants: 0, retards: [], famDuJour: null, orphelines: [],
+        erreur: e
       };
     });
   }
@@ -200,6 +206,17 @@
       if (e.annee * 12 + e.mois >= rangCourant) return false;
       if (e.avantInitialisation) return false;
       return Kit.etatDuMois(e.annee, e.mois, e.recap, auj) !== 'cloture';
+    }).sort(function (a, b) {
+      return (a.annee * 12 + a.mois) - (b.annee * 12 + b.mois);
+    });
+  }
+
+  /* LOT 31 (§3.2) — les mois de la chaîne qui portent au moins une
+     imputation ne recouvrant aucune journée de congé, du plus ancien au plus
+     récent. Vide dans l'immense majorité des cas. */
+  function moisAvecOrphelines(chaine) {
+    return (chaine.mois || []).filter(function (e) {
+      return (e.imputationsOrphelines || []).length > 0;
     }).sort(function (a, b) {
       return (a.annee * 12 + a.mois) - (b.annee * 12 + b.mois);
     });
@@ -288,6 +305,32 @@
           'Son récapitulatif est incomplet tant qu’il manque.',
           function () { ouvrirFiche(c); }));
       }
+    });
+
+    /* --- 2 bis. LES PÉRIODES DE CONGÉ SANS AUCUNE JOURNÉE -------------
+       LOT 31 (§3.2). Une entrée PAR MOIS concerné, qui mène au
+       récapitulatif — là où la période est nommée et où le retrait se fait.
+
+       Elle passe avant les mois à clôturer, et pour la même raison que les
+       empêchements : le mois concerné ne peut pas être clôturé, et proposer
+       de le figer avant de dire pourquoi il refuse serait une impasse. */
+    fiches.forEach(function (f) {
+      if (f.erreur) return;
+      (f.orphelines || []).forEach(function (e) {
+        nb++;
+        var n = (e.imputationsOrphelines || []).length;
+        corps.appendChild(carteAujourdhui('!',
+          Kit.moisCapitale(e.annee, e.mois).split(' ')[0] + ' — ' +
+            (n > 1 ? n + ' périodes de congé n’ont' : 'une période de congé n’a') +
+            ' plus aucune journée',
+          'Chez ' + f.contrat.prenom_enfant + ' : la répartition existe, les ' +
+          'journées non. À retirer ou à reposer avant de clôturer.',
+          function () {
+            global.App.aller('document', {
+              contratId: f.contrat.id, annee: e.annee, mois: e.mois
+            });
+          }));
+      });
     });
 
     /* --- 3. LES MOIS À CLÔTURER --------------------------------------
@@ -649,8 +692,31 @@
        « Passer pour l'instant », et le chemin pour corriger. Sans ce garde, le
        parcours guidé restait la porte par laquelle un document que Maria n'a
        pas choisi pouvait être figé — et un mois figé ne se recalcule jamais. */
-    var bloque = !!(entree && (entree.imputationsEcartees || []).length);
-    if (bloque) {
+    /* LOT 31 (§3.2) — UNE ORPHELINE BLOQUE AUSSI LE PARCOURS GUIDÉ. Le
+       verrou du §16.1 c) est repris tel quel : le parcours guidé est l'autre
+       porte par laquelle un mois se fige, et un mois ne se fige pas sur une
+       décision perdue. Le geste, lui, vit sur le récapitulatif (§3.3) : c'est
+       là que la période est nommée et retirée. */
+    var orphelines = (entree && entree.imputationsOrphelines) || [];
+    if (orphelines.length) {
+      var o0 = orphelines[0];
+      ctx.corps.appendChild(Kit.warnbox(
+        'Une période de congé de ' + cible.contrat.prenom_enfant +
+          ' n’a plus aucune journée',
+        ' Du ' + Kit.dateLongue(o0.date_debut) + ' au ' + Kit.dateLongue(o0.date_fin) +
+        ', une répartition existe mais aucune journée de congé n’est posée sur ' +
+        'ces dates. Ce mois ne peut pas être clôturé tant qu’elle subsiste.'));
+      actions.appendChild(boutonTexte('btn', 'Voir le récapitulatif', function () {
+        parcours = null;
+        global.App.aller('document', {
+          contratId: cible.contrat.id, annee: cible.annee, mois: cible.mois
+        });
+      }));
+    }
+
+    var bloque = !!(entree && ((entree.imputationsEcartees || []).length ||
+                               orphelines.length));
+    if (bloque && (entree.imputationsEcartees || []).length) {
       var e0 = entree.imputationsEcartees[0];
       ctx.corps.appendChild(Kit.warnbox(
         'Corrigez d’abord la répartition du congé de ' + cible.contrat.prenom_enfant,
