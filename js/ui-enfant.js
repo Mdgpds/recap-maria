@@ -2523,6 +2523,17 @@
       if (manques.length) return plage + manques.join(' Et ');
       return plage + 'votre répartition dépasse ce que vos réserves couvrent.';
     }
+    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR (§4.3) — LE REFUS QUI N'EN
+       EST PAS UN. La réserve n'est pas insuffisante : elle n'est PAS ENCORE
+       GAGNÉE. Maria n'a rien à corriger, elle a à attendre — ou à déplacer.
+       Servir ici la phrase des réserves l'enverrait chercher une erreur qui
+       n'existe pas. */
+    if (e.code === 'RESERVES_PAS_ENCORE_ACQUISES') {
+      return plage + 'vous aviez choisi ' + Kit.jours(e.choisi.joursSurSup) +
+        ' de récupération, financés par des journées que vous n’avez pas ' +
+        'encore travaillées. Ces heures ne sont pas encore acquises : ' +
+        'refaites cette répartition une fois ces journées faites.';
+    }
     if (e.code === 'IMPUTATION_INCOMPLETE') {
       /* CORRECTION RELECTURE LOT 16 (B1) — LA PHRASE DISAIT QUE 5 NE COUVRE
          PAS 5. Elle affichait la SOMME de ce que Maria avait réparti, et le
@@ -3100,7 +3111,14 @@
          payés (§28.1). Le cumul est celui que la chaîne a posé sur le maillon
          du mois — jamais recalculé ici. */
       samedisComptes: vue.samedisComptes || [],
-      minutesCpAcquisesExercice: (vue.entree && vue.entree.minutesCpAcquisesExercice) || 0
+      minutesCpAcquisesExercice: (vue.entree && vue.entree.minutesCpAcquisesExercice) || 0,
+      /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — la date du jour, que la
+         chaîne passe aussi. Sans elle, l'aperçu « voilà ce que ce geste
+         change » évaluerait les réserves au 1er du mois là où le mois
+         enregistré les évalue à la date : l'écart affiché ne serait pas celui
+         du geste, mais celui de l'oubli. Quatrième occurrence du même défaut,
+         et le garde-fou juste en dessous la refuse. */
+      aujourdhui: vue.aujourdhui || global.App.aujourdhui()
     };
     /* C'EST LA TROISIÈME FOIS QUE CET APPEL OUBLIE UN ARGUMENT — les
        imputations au lot 10, les conditions au lot 17, les périodes au lot 20.
@@ -3117,7 +3135,8 @@
      que celui qu'elle contrôle ne contrôle rien. */
   var ENTREES_DU_REJEU = ['contrat', 'conditions', 'journees', 'compteurEntree',
                           'annee', 'mois', 'imputations', 'periodesFamiliarisation',
-                          'samedisComptes', 'minutesCpAcquisesExercice'];
+                          'samedisComptes', 'minutesCpAcquisesExercice',
+                          'aujourdhui'];
 
   function verifierMemesEntreesQueLaChaine(params) {
     var manquantes = ENTREES_DU_REJEU.filter(function (k) {

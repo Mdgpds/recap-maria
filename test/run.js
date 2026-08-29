@@ -44,7 +44,12 @@ var suites = [
      d'abord, comme pour tous les lots qui rouvrent le moteur : si l'égalité
      tombe, tout ce qui suit est suspect. */
   { titre: 'Différentiel moteur avant/après le lot 31 (§4) — aucun montant ne bouge', suite: require('./lot31-differentiel.test.js') },
-  { titre: 'Les imputations orphelines nommées (lot 31, §3.1)', suite: require('./lot31-orphelines.test.js') }
+  { titre: 'Les imputations orphelines nommées (lot 31, §3.1)', suite: require('./lot31-orphelines.test.js') },
+  /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — le différentiel d'abord,
+     comme pour tous les lots qui rouvrent le moteur : si l'égalité tombe,
+     tout ce qui suit est suspect. */
+  { titre: 'Différentiel — la réserve à la date ne déplace aucun montant', suite: require('./recuperation-differentiel.test.js') },
+  { titre: 'La récupération se gagne jour après jour (brief du 28 août 2026)', suite: require('./recuperation-au-fil-du-mois.test.js') }
 ];
 
 var reussis = 0;

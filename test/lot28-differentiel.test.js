@@ -441,6 +441,13 @@ test('différentiel exhaustif — chaque écart est reconstruit par une règle n
        deux champs que le lot 28 ajoutait sortent de la sienne. */
     var apComparable = copie(ap);
     delete apComparable.imputationsOrphelines;
+    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — mêmes raisons, lot encore
+       postérieur : ces deux relevés sont une information de plus (ce que
+       chaque jour rapporte, ce que chaque période consomme), et ils ne
+       changent aucun montant tant qu'`aujourdhui` n'est pas fourni — ce que
+       ce différentiel ne fait jamais. */
+    delete apComparable.minutesSupParJour;
+    delete apComparable.recuperationConsommeeParPeriode;
 
     var jsonAttendu = JSON.stringify(memeOrdre(attendu, apComparable));
     var jsonApres = JSON.stringify(apComparable);
@@ -489,6 +496,10 @@ test('sur un mois que le lot ne concerne pas, seuls les champs ajoutés diffère
   delete sansAjout.minutesCpRestantesApresConsommation;
   /* LOT 31 — champ d'un lot postérieur, absent du moteur figé (voir ci-dessus). */
   delete sansAjout.imputationsOrphelines;
+  /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — les deux relevés du lot
+     suivant, pour la même raison. */
+  delete sansAjout.minutesSupParJour;
+  delete sansAjout.recuperationConsommeeParPeriode;
   assert(JSON.stringify(sansAjout) === JSON.stringify(av),
     'un mois ordinaire est identique au champ ajouté près :\n  avant ' +
     JSON.stringify(av) + '\n  après ' + JSON.stringify(sansAjout));

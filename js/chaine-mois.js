@@ -247,7 +247,13 @@
   var CODES_IMPUTATION = {
     IMPUTATION_DEPASSE_RESERVES: true,
     IMPUTATION_INCOMPLETE: true,
-    IMPUTATION_NEGATIVE: true
+    IMPUTATION_NEGATIVE: true,
+    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR (§4.3) — le refus d'une
+       ventilation financée par des heures PAS ENCORE FAITES. C'est le même
+       refus que `IMPUTATION_DEPASSE_RESERVES`, mieux nommé : il a donc
+       exactement les mêmes conséquences, repli compris. L'oublier ici ferait
+       tomber l'écran entier — le défaut même que le §16.1 a corrigé. */
+    RESERVES_PAS_ENCORE_ACQUISES: true
   };
 
   function estErreurImputation(e) {
@@ -282,18 +288,27 @@
       /* LOT 28 (§28.1) — le cumul de l'exercice suit le repli, comme tout ce
          qui n'est pas une imputation : sans lui, le mois de repli ignorerait
          le plafond des 30 jours. */
-      minutesCpAcquisesExercice: params.minutesCpAcquisesExercice
+      minutesCpAcquisesExercice: params.minutesCpAcquisesExercice,
+      /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — la date du jour suit le
+         repli, comme tout ce qui n'est pas une imputation. L'oublier ici
+         rejouerait le mois de repli sur la réserve du 1er, et la réserve
+         annoncée après un repli n'aurait plus rien à voir avec la vraie. */
+      aujourdhui: params.aujourdhui
     };
   }
 
   /* Ce que les réserves du mois couvrent réellement, en jours, demandé au
      moteur. Sert à l'encart : « vous aviez choisi 6 jours de récupération,
      vous n'en avez que 5 ». */
-  function reservesEnJours(Engine, conditions, compteurEntree) {
+  /* `minutesSupEnPlus` (optionnel) : ce que le mois a rapporté à la
+     récupération avant la date visée, calculé par le moteur
+     (`Engine.recuperationALaDate`). Absent ou nul, la réponse est
+     exactement celle d'avant ce lot. */
+  function reservesEnJours(Engine, conditions, compteurEntree, minutesSupEnPlus) {
     var c = compteurEntree || {};
     var r = Engine.imputerConges(SONDE_JOURS, {
       minutesCp: (c.minutesCpAcquis || 0) - (c.minutesCpPris || 0),
-      minutesSup: c.minutesSup || 0
+      minutesSup: (c.minutesSup || 0) + (minutesSupEnPlus || 0)
     }, conditions);
     return { joursCp: r.joursSurCp, joursSup: r.joursSurSup };
   }
@@ -437,9 +452,20 @@
     var resultat = Engine.calculerMois(memeParams(params, retenues));
     marquerEcartees(resultat, ecartees);
 
-    var dispo = reservesEnJours(Engine, params.conditions, params.compteurEntree);
     var detail = ecartees.map(function (x) {
       var imp = x.imputation;
+      /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — L'ENCART DIT LE VRAI
+         DISPONIBLE, celui de la DATE où la période commence, pas celui du 1er.
+         « Vous n'en avez que 5 » sur un mois qui en a financé 6 depuis le 1er
+         enverrait Maria corriger une répartition qui, à sa date, tient —
+         exactement le contresens que ce lot supprime. La réserve est lue sur
+         le mois REJOUÉ (l'imputation en cause en est retirée) : sa propre
+         consommation ne se déduit donc pas d'elle-même. */
+      var enPlus = (typeof Engine.recuperationALaDate === 'function')
+        ? Engine.recuperationALaDate(resultat, 0, imp.date_debut, params.aujourdhui)
+        : 0;
+      var dispo = reservesEnJours(Engine, params.conditions, params.compteurEntree,
+        enPlus);
       return {
         /* L'identifiant, pour que le bouton « Corriger la répartition » ouvre
            LA période concernée et pas le parcours de pose. */
@@ -908,7 +934,14 @@
                        supposerait de redire RG-06 une deuxième fois. */
                     samedisComptes: samedisComptes,
                     /* §28.1 — le cumul de l'exercice, pour le plafond. */
-                    minutesCpAcquisesExercice: cumulExercice
+                    minutesCpAcquisesExercice: cumulExercice,
+                    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — LA DATE DU
+                       JOUR ENTRE ICI, ET ICI SEUL. Le moteur n'a pas
+                       d'horloge (§3 du brief) : c'est la chaîne qui la lui
+                       passe, et c'est l'appelant qui la donne à la chaîne
+                       (`App.serie`). Absente, le moteur retrouve exactement
+                       son comportement d'avant ce lot. */
+                    aujourdhui: opts.aujourdhui || null
                   });
                   var r = rep.resultat;
                   compteur = r.compteurSortie;
@@ -1381,8 +1414,9 @@
        (`Math.floor(cp / 10)`), c'est-à-dire RG-05 réécrite dans l'interface —
        et le lot 17, qui fait passer les congés payés en minutes, l'aurait
        rendue fausse sans lever la moindre erreur. */
-    reservesEnJours: function (conditions, compteurEntree) {
-      return reservesEnJours(resoudreEngine(), conditions, compteurEntree);
+    reservesEnJours: function (conditions, compteurEntree, minutesSupEnPlus) {
+      return reservesEnJours(resoudreEngine(), conditions, compteurEntree,
+        minutesSupEnPlus);
     },
     /* LOT 16 §16.8 — la part d'un mois dans une période à cheval. Depuis le
        lot 17 ce n'est plus qu'une LECTURE de `Engine.joursOuvrablesParMois` ;

@@ -71,6 +71,12 @@ function entrees(v) {
 function sansLeChampAjoute(r) {
   var c = copie(r);
   delete c.imputationsOrphelines;
+  /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — les deux relevés ajoutés par
+     le lot suivant sortent de la comparaison du lot 31, exactement comme
+     `imputationsOrphelines` sort de celle du lot 28. Leur propre différentiel
+     est dans `test/recuperation-differentiel.test.js`. */
+  delete c.minutesSupParJour;
+  delete c.recuperationConsommeeParPeriode;
   return c;
 }
 

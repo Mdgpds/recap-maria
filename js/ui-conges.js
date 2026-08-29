@@ -234,8 +234,12 @@
        consommation de cette période ne doit pas lui être retirée. Le moteur,
        lui, confronte toujours la ventilation aux réserves à l'écriture. */
     var cp = cpDe(fiche, true);
-    var sup = supDe(fiche);
-    var plafonds = plafondsDe(fiche, true);
+    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — la réserve à la date où
+       CETTE période commence, pas celle du 1er. Corriger la répartition d'une
+       période du 28 mai sur le plafond du 1er mai reproduirait exactement le
+       refus qu'on est en train de corriger. */
+    var sup = supDeALaDate(fiche, imputation.date_debut);
+    var plafonds = plafondsDe(fiche, true, imputation.date_debut);
     var maxCp = plafonds.maxCp;
     var maxSup = plafonds.maxSup;
 
@@ -251,7 +255,8 @@
 
     var p = {
       fiche: fiche, contrat: c, cond: cond, jours: jours, cp: cp, sup: sup,
-      maxCp: maxCp, maxSup: maxSup, choix: choix
+      maxCp: maxCp, maxSup: maxSup, supGagnes: plafonds.joursSupGagnes || 0,
+      choix: choix
     };
 
     Kit.ouvrirFeuille(c.prenom_enfant + ' — ' + Kit.jours(jours) + ' à répartir',
@@ -342,8 +347,15 @@
       'reste ' + Kit.joursCp(p.cp, mpjc(cond)) + ' au compteur',
       p.choix.joursSurCp, Math.min(p.maxCp, p.jours),
       function (v) { onchange('joursSurCp', v); });
+    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — LA PHRASE DIT POURQUOI LE
+       PLAFOND A MONTÉ. « Maria doit comprendre pourquoi elle peut aujourd'hui
+       ce qu'elle ne pouvait pas hier » (§4.2). La mention n'apparaît QUE
+       lorsque le mois en cours a réellement ajouté au moins un jour : une
+       phrase qui s'affiche toujours n'explique plus rien. */
     ligneStepper(parent, 'Récupération',
-      'reste ' + joursDeRecup(cond, p.sup) + ' convertibles',
+      'reste ' + joursDeRecup(cond, p.sup) + ' convertibles' +
+        (p.supGagnes > 0 ? ', dont ' + p.supGagnes + ' gagné' +
+          (p.supGagnes > 1 ? 's' : '') + ' depuis le 1er' : ''),
       p.choix.joursSurSup, Math.min(p.maxSup, p.jours),
       function (v) { onchange('joursSurSup', v); });
 
@@ -968,6 +980,46 @@
     return Kit.supDisponible(fiche.entree && fiche.entree.compteurEntree);
   }
 
+  /* ------------------------------------------------------------------ */
+  /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR (brief du 28 août 2026)    */
+  /*                                                                     */
+  /* La réserve de récupération n'est plus celle du 1er : elle monte au  */
+  /* fil du mois, journée travaillée après journée travaillée. L'écran   */
+  /* doit donc annoncer ce qui est disponible À LA DATE de la période —  */
+  /* sinon il refuse un jour que le moteur accepte, et Maria ne peut     */
+  /* même pas essayer (§2 du brief).                                     */
+  /*                                                                     */
+  /* LA RÈGLE N'EST PAS RÉÉCRITE ICI. `Engine.recuperationALaDate` porte */
+  /* la formule du §1 ; cet écran la lui demande, comme il demande déjà  */
+  /* à `Chaine.reservesEnJours` combien de jours une réserve couvre.     */
+  /* ------------------------------------------------------------------ */
+
+  /* Ce que le MOIS a rapporté à la récupération avant `jour` — le
+     supplément, pas la réserve entière. Peut être négatif : un écart
+     d'horaire déduit de la récupération est une consommation datée, et le
+     moteur la compte de la même façon.
+
+     Un mois FIGÉ ne porte pas ces relevés (son instantané est d'avant ce
+     lot) : le supplément vaut alors zéro, et l'écran retrouve exactement son
+     comportement d'avant. On ne pose de toute façon rien sur un mois clos. */
+  function recupGagneeAvant(entree, jour) {
+    var r = entree && entree.resultat;
+    if (!r || !jour || entree.fige) return 0;
+    if (typeof Engine.recuperationALaDate !== 'function') return 0;
+    return Engine.recuperationALaDate(r, 0, jour, global.App.aujourdhui());
+  }
+
+  /* Le solde de récupération MOBILISABLE à une date : le compteur d'entrée
+     signé plus ce que le mois a rapporté avant cette date, borné à zéro —
+     exactement ce que le moteur confronte à la ventilation. On ne borne pas
+     le compteur d'entrée AVANT d'ajouter le mois : une dette de récupération
+     doit d'abord être remboursée par les journées du mois, sinon l'écran
+     proposerait ce que le moteur refuse. */
+  function supDeALaDate(fiche, jour) {
+    var ce = fiche.entree && fiche.entree.compteurEntree;
+    return Math.max(0, Kit.supSolde(ce) + recupGagneeAvant(fiche.entree, jour));
+  }
+
   /* CORRECTION RELECTURE LOT 16 (C3) — CE QUE LES RÉSERVES COUVRENT, EN JOURS,
      VIENT DU MOTEUR.
 
@@ -982,7 +1034,6 @@
      `Math.floor(cp / 10)` ne lève aucune erreur — il annonce simplement 54
      jours disponibles au lieu de 10. Deux divisions par 10 dans un écran sont
      exactement ce qu'on oublie. */
-  function plafondsDe(fiche, brut) {
     /* CORRECTIF 26 août — UN CONTRAT QUI N'EXISTE PAS ENCORE N'A PAS DE
        CONDITIONS, et `imputerConges` déréférence `conditions` sans garde.
 
@@ -998,10 +1049,31 @@
        On ÉCHOUE FERMÉ : pas de conditions, pas de réserve mobilisable. Ce
        contrat n'a de toute façon aucune journée à poser sur cette période —
        il est écarté du parcours juste en dessous. */
+  /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — `jour` (optionnel) : LE
+     PREMIER JOUR DE LA PÉRIODE. C'est à cette date que le moteur confronte la
+     ventilation aux réserves, donc c'est à cette date que l'écran doit
+     annoncer son plafond. Sans lui, on retrouve le plafond du 1er du mois,
+     c'est-à-dire le comportement d'avant ce lot.
+
+     Le garde-fou B1 de la relecture des lots 20-22 reste entier :
+     `fiche.entree` est le maillon du mois où la période COMMENCE
+     (`preparerPlans` le reconstruit pour ce mois-là), jamais celui du mois
+     affiché à l'écran. */
+  function plafondsDe(fiche, brut, jour) {
     var cond = condDe(fiche);
-    if (!cond) return { maxCp: 0, maxSup: 0 };
-    var r = Chaine.reservesEnJours(cond, compteurPourPose(fiche.entree, brut));
-    return { maxCp: r.joursCp, maxSup: r.joursSup };
+    if (!cond) return { maxCp: 0, maxSup: 0, joursSupGagnes: 0 };
+    var compteur = compteurPourPose(fiche.entree, brut);
+    var enPlus = recupGagneeAvant(fiche.entree, jour);
+    var r = Chaine.reservesEnJours(cond, compteur, enPlus);
+    /* « dont N gagnés depuis le 1er » : la DIFFÉRENCE entre ce que la réserve
+       couvre aujourd'hui et ce qu'elle couvrait au 1er. On la demande deux
+       fois au moteur plutôt que de diviser des minutes ici — c'est RG-05, et
+       elle ne se réécrit pas dans un écran. */
+    var au1er = enPlus ? Chaine.reservesEnJours(cond, compteur) : r;
+    return {
+      maxCp: r.joursCp, maxSup: r.joursSup,
+      joursSupGagnes: Math.max(0, r.joursSup - au1er.joursSup)
+    };
   }
 
   /* ------------------------------------------------------------------ */
@@ -2577,8 +2649,6 @@
         return !!l && TYPES_CONGE_MARIA.indexOf(l.type) !== -1;
       });
       var cp = cpDe(f);
-      var sup = supDe(f);
-      var plafonds = plafondsDe(f);
 
       /* CORRECTIFS B2 ET A6 DE LA RELECTURE PR9 — deux erreurs au même
          endroit, sur la même ligne.
@@ -2600,6 +2670,17 @@
       var bornes = joursPoses.length
         ? { debut: joursPoses[0], fin: joursPoses[joursPoses.length - 1] }
         : null;
+
+      /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — LES RÉSERVES SE LISENT
+         APRÈS LES BORNES, parce qu'elles en dépendent maintenant. C'est à la
+         date du PREMIER JOUR RÉELLEMENT POSÉ pour ce contrat que le moteur
+         évaluera la réserve : c'est donc celle-là que l'écran annonce, et
+         c'est elle qui borne le stepper. Sans ça, poser une récupération le
+         28 mai resterait impossible alors que le mois l'a financée. */
+      var jourReserve = bornes ? bornes.debut : null;
+      var sup = supDeALaDate(f, jourReserve);
+      var plafonds = plafondsDe(f, false, jourReserve);
+
       /* LOT 17 — les conditions du mois où la période COMMENCE. C'est celui
          que le moteur confronte aux réserves (`imposeeTotale`), et c'est donc
          le seul qui puisse servir de référence à la ventilation entière. */
@@ -2649,6 +2730,9 @@
         cp: cp, sup: sup,
         maxCp: plafonds.maxCp,
         maxSup: plafonds.maxSup,
+        /* Le nombre de jours que le MOIS EN COURS a ajoutés au plafond : la
+           phrase « dont N gagnés depuis le 1er » ne dit rien d'autre. */
+        supGagnes: plafonds.joursSupGagnes || 0,
         choix: propose
       };
     }).filter(function (p) { return p.jours > 0 && p.joursPoses.length > 0; });

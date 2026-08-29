@@ -784,9 +784,14 @@ function celluleDu(numero) {
   /* LOT 28 — deux entrées de plus, que la chaîne passe aussi : les samedis
      cochés (§28.8, ils manquaient au rejeu depuis la règle des cinq samedis)
      et le cumul de l'exercice pour le plafond des congés payés (§28.1). */
+  /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — une entrée de plus, `aujourdhui`,
+     que la chaîne passe au moteur et que le rejeu doit passer aussi : sans
+     elle, l'aperçu « voilà ce que ce geste change » évaluerait les réserves au
+     1er du mois là où le mois enregistré les évalue à la date. Quatrième
+     occurrence du défaut que ce garde-fou existe pour attraper. */
   egal((vues || []).join(','),
-    'annee,compteurEntree,conditions,contrat,imputations,journees,minutesCpAcquisesExercice,' +
-    'mois,periodesFamiliarisation,samedisComptes',
+    'annee,aujourdhui,compteurEntree,conditions,contrat,imputations,journees,' +
+    'minutesCpAcquisesExercice,mois,periodesFamiliarisation,samedisComptes',
     'B3 : le rejeu passe exactement les mêmes entrées que la chaîne');
   window.Kit.fermerFeuille();
   await pause(120);
