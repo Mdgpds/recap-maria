@@ -581,7 +581,23 @@
     var cle = cleSerie(contrat, cible);
     if (!etat.series[cle]) {
       var depuis = Chaine.moisDeDate(contrat.date_debut);
-      etat.series[cle] = Chaine.serie(contrat, cible, { depuis: depuis }).catch(function (e) {
+      /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — LA DATE DU JOUR PART D'ICI.
+         L'horloge est de l'interface : le moteur et la chaîne ne la lisent
+         jamais, on la leur passe. C'est le même principe que `moisCourant`
+         juste au-dessus. Le cache des séries est vidé par `invalider()` à
+         chaque geste ; une application laissée ouverte d'un jour sur l'autre
+         garde donc au pire la date de la veille jusqu'au prochain geste, et
+         la réserve annoncée est alors la plus PRUDENTE des deux. */
+      etat.series[cle] = Chaine.serie(contrat, cible, {
+        /* `global.App.aujourdhui` et non `aujourdhui` : c'est la MÊME date
+           que celle que lisent les écrans (`ui-conges.js`), y compris quand
+           un test la fige. Deux horloges dans la même application, c'est un
+           écran qui annonce une réserve et un moteur qui en accepte une
+           autre — précisément ce que ce lot supprime. */
+        depuis: depuis,
+        aujourdhui: (global.App && global.App.aujourdhui)
+          ? global.App.aujourdhui() : aujourdhui()
+      }).catch(function (e) {
         delete etat.series[cle];
         throw e;
       });

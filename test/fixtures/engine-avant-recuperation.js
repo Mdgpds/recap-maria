@@ -235,98 +235,6 @@
     return out;
   }
 
-  /* ------------------------------------------------------------------ */
-  /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR                            */
-  /* (brief du 28 août 2026 — règle et trois arbitrages d'Adrien)        */
-  /*                                                                      */
-  /* La réserve de récupération n'est plus figée au 1er du mois : chaque  */
-  /* journée travaillée l'alimente, et un jour de récupération impossible */
-  /* le 5 mai devient possible le 28 parce qu'entre-temps Maria a         */
-  /* travaillé. Trois arbitrages fermes :                                 */
-  /*   1. seules les journées DÉJÀ PASSÉES comptent — jamais une journée  */
-  /*      à venir, même prévue au planning ;                              */
-  /*   2. les congés payés ne changent pas : réserve d'ENTRÉE du mois ;   */
-  /*   3. le jour posé ne se finance pas lui-même — il n'est pas          */
-  /*      travaillé, il ne rapporte aucune minute.                        */
-  /*                                                                      */
-  /* LE MOTEUR RESTE PUR : « aujourd'hui » n'est pas lu à l'horloge, il   */
-  /* ENTRE PAR LES PARAMÈTRES (`entrees.aujourdhui`), comme les journées  */
-  /* et les imputations. Absent, tout ce mécanisme est neutre et le       */
-  /* moteur se comporte exactement comme avant ce lot.                    */
-  /* ------------------------------------------------------------------ */
-
-  /* Ajoute `minutes` au crédit de récupération du jour `jour`. Les jours
-     sont crédités dans l'ordre du calendrier : la liste sort triée sans
-     qu'on ait à la trier. */
-  function crediterJour(liste, jour, minutes) {
-    if (!minutes) return;
-    for (var i = 0; i < liste.length; i++) {
-      if (liste[i].jour === jour) { liste[i].minutes += minutes; return; }
-    }
-    liste.push({ jour: jour, minutes: minutes });
-  }
-
-  /* Même chose pour la consommation d'une période, rattachée à sa date de
-     début. Deux périodes ne peuvent pas commencer le même jour (contrainte
-     d'exclusion), mais on additionne plutôt que d'écraser : perdre une
-     consommation en silence serait une réserve annoncée trop grande. */
-  function crediterConsommation(liste, dateDebut, minutes) {
-    if (!minutes) return;
-    for (var i = 0; i < liste.length; i++) {
-      if (liste[i].date_debut === dateDebut) { liste[i].minutes += minutes; return; }
-    }
-    liste.push({ date_debut: dateDebut, minutes: minutes });
-  }
-
-  /* Minutes de récupération ACQUISES dans le mois avant `jour`, en ne
-     comptant que les journées déjà passées au regard d'`aujourdhui`.
-     `aujourdhui` nul = aucun filtre de date du jour : c'est ce qui sert à
-     distinguer « pas encore acquis » de « jamais finançable » (§4.3). */
-  function recuperationAcquiseAvant(minutesSupParJour, jour, aujourdhui) {
-    var liste = minutesSupParJour || [];
-    var total = 0;
-    for (var i = 0; i < liste.length; i++) {
-      var d = liste[i].jour;
-      if (jour && d >= jour) continue;              // arbitrage 3 : le jour posé ne se finance pas
-      if (aujourdhui && d >= aujourdhui) continue;  // arbitrage 1 : jamais une journée à venir
-      total += liste[i].minutes;
-    }
-    return total;
-  }
-
-  /* Minutes de récupération DÉJÀ CONSOMMÉES dans le mois avant `jour` :
-     les périodes de congé ventilées sur la récupération plus tôt dans le
-     mois. Les écarts d'horaire imputés sur la récupération, eux, sont déjà
-     dans `minutesSupParJour` — ils y entrent en négatif, jour par jour. */
-  function recuperationConsommeeAvant(consommeeParPeriode, jour) {
-    var liste = consommeeParPeriode || [];
-    var total = 0;
-    for (var i = 0; i < liste.length; i++) {
-      if (jour && liste[i].date_debut >= jour) continue;
-      total += liste[i].minutes;
-    }
-    return total;
-  }
-
-  /* La formule du §1 du brief, énoncée une fois et lue partout — moteur
-     comme écrans :
-
-       récupération disponible en J
-         = minutesSup du compteur d'ENTRÉE du mois
-         + 30 min × journées travaillées du 1er à la VEILLE de J, déjà passées
-         − minutes de récupération déjà consommées dans le mois avant J
-
-     `aujourdhui` absent : on rend le compteur d'entrée, c'est-à-dire le
-     comportement d'avant ce lot. Aucun appelant sans horloge ne change de
-     réponse. */
-  function recuperationALaDate(resultat, minutesSupEntree, jour, aujourdhui) {
-    var base = minutesSupEntree || 0;
-    if (!resultat || !aujourdhui || !jour) return base;
-    return base
-      + recuperationAcquiseAvant(resultat.minutesSupParJour, jour, aujourdhui)
-      - recuperationConsommeeAvant(resultat.recuperationConsommeeParPeriode, jour);
-  }
-
   /* Erreur porteuse d'un CODE, jamais d'une phrase : la traduction en
      français appartient à js/messages.js. Le moteur ne produit jamais de
      texte destiné à l'écran (§5.2 de la spec du lot 9). */
@@ -1094,13 +1002,6 @@
        peut pas être ambigu. */
     var samedisComptes = entrees.samedisComptes || [];
 
-    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — LA DATE DU JOUR, EN DONNÉE.
-       Le moteur n'a pas d'horloge et n'en aura pas : c'est la chaîne qui lui
-       passe `aujourdhui` (`YYYY-MM-DD`). ABSENTE, le moteur se comporte
-       exactement comme avant ce lot — aucun appelant n'est cassé, et les
-       tests écrits sans elle ne changent pas de sens. */
-    var aujourdhui = entrees.aujourdhui || null;
-
     var joursPresence = 0;
     var entretienCentimes = 0;
     /* RG-03 / RG-04, détaillé depuis le lot 9 : base contractuelle, minutes
@@ -1165,16 +1066,6 @@
        B1 plus bas : une imputation doit correspondre aux journées RÉELLEMENT
        posées, pas seulement les encadrer. */
     var typeDuJourTraite = {};
-    /* Ce que CHAQUE jour du mois apporte à la récupération, dans l'ordre du
-       calendrier. C'est le relevé sur lequel se lit la réserve à une date —
-       et il n'ajoute aucune règle : ce sont les minutes que le moteur crédite
-       déjà, journée par journée, selon les règles en vigueur (ni congé payé,
-       ni récupération, ni sans solde, ni familiarisation, et l'absence de
-       l'enfant seulement si l'avenant le dit). */
-    var minutesSupParJour = [];
-    /* Ce que chaque période de congé du mois CONSOMME sur la récupération,
-       rattaché à sa date de début. L'autre moitié de la formule du §1. */
-    var recuperationConsommeeParPeriode = [];
 
     var jours = joursDuMois(annee, mois);
     for (var j = 0; j < jours.length; j++) {
@@ -1282,10 +1173,6 @@
               ecartsSurCpAImputer.push({ jour: d, minutes: -congeFam.ecart });
             } else if (congeFam.destination === 'recuperation') {
               minutesEcartRecuperation += congeFam.ecart;
-              /* Un congé posé à l'heure sur la récupération est une
-                 consommation datée : elle entre au relevé du jour, en
-                 négatif, comme n'importe quel écart imputé à la récupération. */
-              crediterJour(minutesSupParJour, d, congeFam.ecart);
             }
             ecartsDeclares.push({
               jour: d, minutes: congeFam.ecart, evenement: 'conge_horaire',
@@ -1388,19 +1275,6 @@
       minutesSupRenoncees += detailSup.renoncees;
       minutesEcartRecuperation += detailSup.ecartSurRecuperation;
       minutesEcartSansSolde += detailSup.minutesSansSolde;
-      /* LE RELEVÉ DU JOUR — exactement les minutes nettes que ce jour apporte
-         au compteur de récupération (`minutesSupDuJour`), pas une seconde
-         règle écrite à côté. Un jour de congé, de récupération, de sans
-         solde ou de familiarisation passe par `detailSupDuJour` et n'apporte
-         rien : il n'a rien à faire de plus ici.
-         Ce qu'on ne compte PAS ici : le surplus d'un écart que les congés
-         payés ne couvrent pas et qui bascule sur la récupération (§28.3). Il
-         est servi APRÈS les périodes de congé, délibérément — les périodes
-         ont priorité sur les écarts, et la réserve à la date suit le même
-         ordre de service que le moteur. */
-      crediterJour(minutesSupParJour, d,
-        detailSup.base + detailSup.ajoutees - detailSup.renoncees
-          + detailSup.ecartSurRecuperation);
       if (detailSup.minutesSurCp > 0) {
         ecartsSurCpAImputer.push({ jour: d, minutes: detailSup.minutesSurCp });
       }
@@ -1537,26 +1411,6 @@
         minutesSup: entreeMinutesSup,
         minutesCp: entreeCpAcquis - entreeCpPris
       }, conditions);
-      /* AUCUNE PROGRESSION SUR CE CHEMIN, ET C'EST VOULU. Sans ventilation
-         choisie, `imputerConges` prend TOUT ce que la réserve couvre : lui
-         donner une réserve plus grande déplacerait des jours du sans solde
-         vers la récupération et changerait la retenue, le compteur de sortie
-         et le total versé. Or « le compteur de sortie du mois ne change pas
-         d'un centime » (§4.1) — seul l'ordre d'ÉVALUATION change. Une
-         ventilation imposée, elle, dicte ses montants : y confronter une
-         réserve à la date ne change que le OUI ou le NON, jamais un chiffre.
-         C'est la seule lecture qui tienne les deux promesses du brief à la
-         fois ; elle est signalée à Adrien dans la restitution. */
-      if (plan.length) {
-        recuperationConsommeeParPeriode.push({
-          /* Toute la consommation est rattachée à la période la PLUS TÔT du
-             mois : le moteur n'a fait qu'un appel, il ne sait pas la
-             répartir. Rattacher au plus tôt est le choix prudent — une pose
-             ultérieure dans le mois voit cette consommation déduite. */
-          date_debut: plan[0].date_debut,
-          minutes: imputation.minutesSupConsommees
-        });
-      }
     } else {
       /* Au moins une période imposée : on impute période par période, dans
          l'ordre chronologique, en décrémentant le disponible au fur et à
@@ -1569,68 +1423,19 @@
         joursSurCp: 0, minutesCpConsommees: 0,
         joursSansSolde: 0
       };
-      var mpj = conditions.minutes_par_jour_conge;
       for (var v = 0; v < plan.length; v++) {
         joursCongesDecomptes += plan[v].nbJours;
-
-        /* LA RÉSERVE À LA DATE DE LA PÉRIODE (§4.1 du brief du 28 août).
-
-           `dispoSup` porte le compteur d'entrée diminué de ce que les
-           périodes précédentes ont consommé — les périodes sont parcourues
-           dans l'ordre chronologique. On y ajoute ce que le mois a RÉELLEMENT
-           rapporté avant le premier jour de cette période, journées déjà
-           passées seulement. C'est la formule du §1, sans un terme de plus.
-
-           `supFinDeMois` est la même somme SANS le filtre « déjà passées » :
-           elle ne sert qu'à nommer le refus (§4.3). Une période que le mois
-           financerait mais dont les heures ne sont pas encore faites n'est
-           pas « hors réserves » : elle est « pas encore acquise », et Maria
-           doit lire la différence.
-
-           Rien de tout cela ne touche les congés payés : `dispoCp` reste la
-           réserve d'ENTRÉE du mois, arbitrage n° 2. */
-        var supEnPlus = 0;
-        var supFinDeMois = 0;
-        if (aujourdhui && plan[v].imposee) {
-          supEnPlus = recuperationAcquiseAvant(minutesSupParJour, plan[v].date_debut, aujourdhui);
-          supFinDeMois = recuperationAcquiseAvant(minutesSupParJour, plan[v].date_debut, null);
-        }
-        var dispoSupDate = dispoSup + supEnPlus;
-        var dispoSupFinDeMois = dispoSup + supFinDeMois;
-
         /* C1 — au mois où la période COMMENCE, la ventilation est confrontée
            aux réserves pour la période ENTIÈRE, pas seulement pour la part du
            mois. Un mois clôturable sur une ventilation impossible à honorer
            est pire qu'un refus franc. */
         var tot = plan[v].imposeeTotale;
-        if (tot && tot.joursSurCp * mpj > dispoCp) {
+        if (tot && (tot.joursSurCp * conditions.minutes_par_jour_conge > dispoCp ||
+                    tot.joursSurSup * conditions.minutes_par_jour_conge > dispoSup)) {
           throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
         }
-        if (tot && tot.joursSurSup * mpj > dispoSupDate) {
-          throw erreurCode(tot.joursSurSup * mpj <= dispoSupFinDeMois
-            ? 'RESERVES_PAS_ENCORE_ACQUISES'
-            : 'IMPUTATION_DEPASSE_RESERVES');
-        }
-        var r;
-        try {
-          r = imputerConges(plan[v].nbJours,
-            { minutesSup: dispoSupDate, minutesCp: dispoCp }, conditions, plan[v].imposee);
-        } catch (eImp) {
-          /* Le même refus, mieux nommé — et seulement quand c'est bien la
-             récupération pas encore acquise qui le provoque. Les contrôles
-             d'`imputerConges` gardent leur ordre : une ventilation incomplète
-             ou négative est refusée pour ce qu'elle est, avant tout calcul de
-             réserve. */
-          if (eImp && eImp.code === 'IMPUTATION_DEPASSE_RESERVES' &&
-              plan[v].imposee &&
-              (plan[v].imposee.joursSurSup || 0) * mpj > dispoSupDate &&
-              (plan[v].imposee.joursSurSup || 0) * mpj <= dispoSupFinDeMois) {
-            throw erreurCode('RESERVES_PAS_ENCORE_ACQUISES');
-          }
-          throw eImp;
-        }
-        crediterConsommation(recuperationConsommeeParPeriode,
-          plan[v].date_debut, r.minutesSupConsommees);
+        var r = imputerConges(plan[v].nbJours,
+          { minutesSup: dispoSup, minutesCp: dispoCp }, conditions, plan[v].imposee);
         imputation.joursSurSup += r.joursSurSup;
         imputation.minutesSupConsommees += r.minutesSupConsommees;
         imputation.joursSurCp += r.joursSurCp;
@@ -1932,12 +1737,6 @@
          cas : c'est la forme attendue. Le mois reste calculé, au centime
          près ; la chaîne la transporte et les écrans la disent (§3.2). */
       imputationsOrphelines: imputationsOrphelines,
-      /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — LE RELEVÉ, EXPOSÉ.
-         L'écran de pose doit annoncer la réserve À LA DATE choisie, et il ne
-         doit pas la recalculer : il lit ces deux relevés et appelle
-         `Engine.recuperationALaDate`. Une règle, un seul endroit. */
-      minutesSupParJour: minutesSupParJour,
-      recuperationConsommeeParPeriode: recuperationConsommeeParPeriode,
       retenueSansSoldeCentimes: retenueSansSoldeCentimes,
       minutesCpAcquis: minutesCpAcquises,
       /* LOT 28 (§28.1) — POURQUOI CE MOIS ACQUIERT CE QU'IL ACQUIERT. L'écran
@@ -2276,11 +2075,6 @@
     samedisEligibles: samedisEligibles,
     imputerConges: imputerConges,
     minutesSupDuJour: minutesSupDuJour,
-    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — la formule du §1, lue par
-       les écrans comme par le moteur. */
-    recuperationALaDate: recuperationALaDate,
-    recuperationAcquiseAvant: recuperationAcquiseAvant,
-    recuperationConsommeeAvant: recuperationConsommeeAvant,
     montantCentimes: montantCentimes,
     /* LOT 17 — `salaireApplicable` s'appelle désormais `conditionsApplicables`
        et retourne l'avenant entier (§17.3). Aucun alias n'est laissé derrière :

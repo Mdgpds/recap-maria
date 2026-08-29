@@ -227,7 +227,24 @@
    s'afficherait JAMAIS — c'est-à-dire que le silence que ce lot supprime
    reviendrait intact, et que la clôture resterait ouverte sur une décision
    perdue. Aucun fichier ajouté. */
-var CACHE = 'recap-imputations-orphelines-v1';
+/* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — NOM DE CACHE CHANGÉ.
+
+   Cinq fichiers servis changent : `js/engine.js` (la réserve de récupération
+   s'évalue à la DATE de chaque période, plus au 1er du mois ; deux relevés de
+   plus dans le résultat), `js/chaine-mois.js` (elle passe `aujourdhui` au
+   moteur, transporte le nouveau code de refus et lit le disponible à la date),
+   `js/app.js` (l'horloge, qui n'est ni au moteur ni à la chaîne, part d'ici),
+   `js/ui-conges.js` (le plafond du stepper et la phrase « dont N gagnés depuis
+   le 1er ») et `js/messages.js` (« ces heures ne sont pas encore acquises »).
+   `js/ui-enfant.js` change aussi, pour que le rejeu voie ce que voit la chaîne.
+
+   Ils se RÉPONDENT, et dans les deux sens : un écran neuf servi avec un moteur
+   ancien lirait `Engine.recuperationALaDate` à `undefined` et annoncerait un
+   plafond du 1er — le défaut que ce lot corrige, revenu intact ; un moteur
+   neuf servi avec une chaîne ancienne ne recevrait jamais `aujourdhui` et
+   refuserait encore le 28 mai ce que le mois a financé. Aucun fichier
+   ajouté. */
+var CACHE = 'recap-recuperation-au-fil-du-mois-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
