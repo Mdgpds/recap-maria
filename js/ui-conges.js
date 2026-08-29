@@ -239,6 +239,7 @@
        période du 28 mai sur le plafond du 1er mai reproduirait exactement le
        refus qu'on est en train de corriger. */
     var sup = supDeALaDate(fiche, imputation.date_debut);
+    var supSolde = supSoldeALaDate(fiche, imputation.date_debut);
     var plafonds = plafondsDe(fiche, true, imputation.date_debut);
     var maxCp = plafonds.maxCp;
     var maxSup = plafonds.maxSup;
@@ -256,6 +257,9 @@
     var p = {
       fiche: fiche, contrat: c, cond: cond, jours: jours, cp: cp, sup: sup,
       maxCp: maxCp, maxSup: maxSup, supGagnes: plafonds.joursSupGagnes || 0,
+      /* Le solde SIGNÉ à la date de la période : c'est lui qui chiffre la
+         dette annoncée quand la ventilation dépasse (arbitrage 4, §4.3). */
+      supSolde: supSolde,
       choix: choix
     };
 
@@ -309,6 +313,16 @@
           /* « Vos réserves ne couvrent pas toute la période » — le
              basculement en sans solde, annoncé AVANT validation, avec son
              montant. Le montant vient du moteur (A4). */
+          /* ARBITRAGE 4 (§4.3) — la même dette annoncée, sur la feuille qui
+             CORRIGE une répartition. Elle mène au même geste et doit dire la
+             même chose. */
+          var apresRecup = p.supSolde - p.choix.joursSurSup * mpjc(cond);
+          if (apresRecup < 0) {
+            effet.appendChild(Kit.warnbox(
+              'Vous devrez ' + Kit.heures(-apresRecup) + ' à cette famille',
+              ' Votre récupération passera en négatif sur ce contrat. C’est ' +
+              'possible, et c’est du temps que vous rendrez.'));
+          }
           if (p.choix.joursSansSolde > 0) {
             var brut = brutDe(fiche);
             var minutes = p.choix.joursSansSolde * mpjc(cond);
@@ -352,11 +366,22 @@
        ce qu'elle ne pouvait pas hier » (§4.2). La mention n'apparaît QUE
        lorsque le mois en cours a réellement ajouté au moins un jour : une
        phrase qui s'affiche toujours n'explique plus rien. */
+    /* ARBITRAGE 4 (§4.3) — L'AVERTISSEMENT REMPLACE LE MUR.
+
+       Le stepper monte jusqu'au décompte de la période, pas jusqu'à la
+       réserve : Maria peut poser une récupération que son solde ne couvre
+       pas, parce que c'est arrivé et que le passé doit pouvoir s'écrire. La
+       ligne dit alors ce que ça fait — « votre récupération passera à
+       − 4 h 30 » — au lieu d'éteindre le bouton sans un mot. */
+    var depasse = Math.max(0, p.choix.joursSurSup - p.maxSup);
+    var apresRecup = p.supSolde - p.choix.joursSurSup * mpjc(cond);
     ligneStepper(parent, 'Récupération',
-      'reste ' + joursDeRecup(cond, p.sup) + ' convertibles' +
-        (p.supGagnes > 0 ? ', dont ' + p.supGagnes + ' gagné' +
-          (p.supGagnes > 1 ? 's' : '') + ' depuis le 1er' : ''),
-      p.choix.joursSurSup, Math.min(p.maxSup, p.jours),
+      depasse > 0
+        ? 'votre récupération passera à − ' + Kit.heures(-apresRecup)
+        : 'reste ' + joursDeRecup(cond, p.sup) + ' convertibles' +
+            (p.supGagnes > 0 ? ', dont ' + p.supGagnes + ' gagné' +
+              (p.supGagnes > 1 ? 's' : '') + ' depuis le 1er' : ''),
+      p.choix.joursSurSup, p.jours,
       function (v) { onchange('joursSurSup', v); });
 
     /* LOT 18 §18.6 — LE PRIX D'UN JOUR, SOUS SON PROPRE COMPTEUR. C'est lui
@@ -368,13 +393,18 @@
     /* A3 — le sans solde n'a pas de plafond de réserve : c'est le seul moyen
        de poser un congé quand elles sont épuisées. Sa borne BASSE est ce que
        les réserves ne couvrent pas. */
+    /* A3 — le sans solde n'a pas de plafond de réserve : c'est le seul moyen
+       de poser un congé quand elles sont épuisées. SA BORNE BASSE TOMBE À
+       ZÉRO (arbitrage 4) : ce que les congés payés ne couvrent pas, la
+       récupération peut désormais le prendre, quitte à passer en négatif.
+       Garder l'ancienne borne forcerait une retenue sur salaire que Maria n'a
+       pas choisie — exactement ce que « aucun écrêtage » interdit. */
     ligneStepper(parent, 'Sans solde',
       prixJour != null
         ? '− ' + Kit.eur(prixJour) + ' par jour'
         : 'retenue non chiffrable, le barème de ce contrat n’est pas renseigné',
       p.choix.joursSansSolde, p.jours,
-      function (v) { onchange('joursSansSolde', v); },
-      Math.max(0, p.jours - p.maxCp - p.maxSup));
+      function (v) { onchange('joursSansSolde', v); }, 0);
   }
 
   function validerCorrection(bouton, imputation, p) {
@@ -840,11 +870,26 @@
         return;
       }
       var cp = cpDe(f);
-      var sup = supDe(f);
       var cond = condDe(f);
+      /* ARBITRAGE 4 (§4.3) — LE SOLDE AFFICHÉ EST LE SOLDE SIGNÉ.
+
+         Cette ligne lisait `supDisponible`, qui borne à zéro : elle annonçait
+         « 0 j (0h00) » sur un compteur à − 4 h 30. Un compteur qu'on affiche à
+         zéro alors qu'il vaut − 4 h 30 est un chiffre faux — et depuis que la
+         pose peut le faire descendre, ce n'est plus un cas de reprise
+         manuelle erronée, c'est un état ordinaire. `supDisponible` reste ce
+         qu'une ventilation peut consommer sans dette ; `supSolde` est ce
+         qu'on montre (correction B5 du lot 17, portée ici). */
+      var solde = Kit.supSolde(f.entree && f.entree.compteurEntree);
+      var sup = Math.max(0, solde);
       Kit.ligneLn(l, f.contrat.prenom_enfant,
-        Kit.joursCp(cp, mpjc(cond)) + ' · ' + joursDeRecup(cond, sup),
-        { sous: phraseQuotaSamedis(f), alerte: Kit.cpEstBas(cp, cond) });
+        Kit.joursCp(cp, mpjc(cond)) + ' · ' +
+          (solde < 0 ? '− ' + Kit.heures(-solde) : joursDeRecup(cond, sup)),
+        { sous: solde < 0
+            ? 'Récupération négative : vous devez ce temps, il se rattrapera ' +
+              'sur vos prochaines heures supplémentaires. ' + phraseQuotaSamedis(f)
+            : phraseQuotaSamedis(f),
+          alerte: solde < 0 || Kit.cpEstBas(cp, cond) });
     });
     return p;
   }
@@ -1016,8 +1061,17 @@
      doit d'abord être remboursée par les journées du mois, sinon l'écran
      proposerait ce que le moteur refuse. */
   function supDeALaDate(fiche, jour) {
+    return Math.max(0, supSoldeALaDate(fiche, jour));
+  }
+
+  /* Le même solde, SIGNÉ. `supDeALaDate` borne à zéro parce que c'est ce
+     qu'une ventilation peut CONSOMMER sans dette ; l'affichage, lui, doit dire
+     la vérité (correction B5 du lot 17). Sur un compteur déjà à − 3 h, annoncer
+     « vous devrez 1 h 30 » au lieu de 4 h 30 serait faux de toute la dette
+     déjà accumulée. */
+  function supSoldeALaDate(fiche, jour) {
     var ce = fiche.entree && fiche.entree.compteurEntree;
-    return Math.max(0, Kit.supSolde(ce) + recupGagneeAvant(fiche.entree, jour));
+    return Kit.supSolde(ce) + recupGagneeAvant(fiche.entree, jour);
   }
 
   /* CORRECTION RELECTURE LOT 16 (C3) — CE QUE LES RÉSERVES COUVRENT, EN JOURS,
@@ -1695,6 +1749,24 @@
         zoneTotal.appendChild(Kit.warnbox('Au-delà des ' + Kit.QUOTA_SAMEDIS + ' samedis', ' ' + m));
       });
 
+      /* ARBITRAGE 4 (§4.3) — LA DETTE DE RÉCUPÉRATION, ANNONCÉE AVANT LE
+         GESTE, au même endroit et sous la même forme que le sans solde.
+
+         Le bouton reste ACTIF : ce n'est pas un refus, c'est un
+         avertissement. Le mécanisme est celui du §21.2 (congé posé à
+         l'heure), repris tel quel — « vous devrez X à cette famille », suivi
+         de « c'est possible, et c'est du temps que vous rendrez ». Deux
+         formulations pour la même chose finiraient par diverger. */
+      plansRetenus().forEach(function (p) {
+        var apres = p.supSolde - p.choix.joursSurSup * mpjc(p.cond);
+        if (apres >= 0) return;
+        zoneTotal.appendChild(Kit.warnbox(
+          p.contrat.prenom_enfant + ' : vous devrez ' + Kit.heures(-apres) +
+          ' à cette famille',
+          ' Votre récupération passera en négatif sur ce contrat. C’est ' +
+          'possible, et c’est du temps que vous rendrez.'));
+      });
+
       var joursSs = 0, retenue = 0, chiffrable = true;
       plansRetenus().forEach(function (p) {
         if (!p.choix.joursSansSolde) return;
@@ -1791,9 +1863,18 @@
      manque va au sans solde, seule ligne sans plafond de réserve. */
   function rééquilibrer(p, saufChamp) {
     var champs = ['joursSansSolde', 'joursSurSup', 'joursSurCp'];
+    /* ARBITRAGE 4 DU 28 AOÛT — LA RÉCUPÉRATION N'A PLUS DE PLAFOND DE
+       RÉSERVE. Elle peut passer en négatif, et la pose n'est jamais refusée :
+       son seul plafond est le DÉCOMPTE de la période, comme le sans solde.
+       `p.maxSup` reste calculé et reste lu — mais pour AVERTIR (§4.3), plus
+       pour interdire.
+
+       Les congés payés, eux, gardent le leur : ils ne descendent jamais sous
+       zéro (§28.3), et un stepper qui les offrirait au-delà proposerait ce que
+       le moteur refuse — le défaut du lot 16, à l'envers. */
     var plafonds = {
       joursSurCp: Math.min(p.maxCp, p.jours),
-      joursSurSup: Math.min(p.maxSup, p.jours),
+      joursSurSup: p.jours,
       joursSansSolde: p.jours
     };
     champs.forEach(function (k) {
@@ -2679,6 +2760,7 @@
          28 mai resterait impossible alors que le mois l'a financée. */
       var jourReserve = bornes ? bornes.debut : null;
       var sup = supDeALaDate(f, jourReserve);
+      var supSolde = supSoldeALaDate(f, jourReserve);
       var plafonds = plafondsDe(f, false, jourReserve);
 
       /* LOT 17 — les conditions du mois où la période COMMENCE. C'est celui
@@ -2733,6 +2815,9 @@
         /* Le nombre de jours que le MOIS EN COURS a ajoutés au plafond : la
            phrase « dont N gagnés depuis le 1er » ne dit rien d'autre. */
         supGagnes: plafonds.joursSupGagnes || 0,
+        /* Le solde SIGNÉ à la date : il chiffre « votre récupération passera à
+           − 4 h 30 » quand Maria dépasse (arbitrage 4, §4.3). */
+        supSolde: supSolde,
         choix: propose
       };
     }).filter(function (p) { return p.jours > 0 && p.joursPoses.length > 0; });

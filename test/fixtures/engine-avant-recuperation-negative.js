@@ -270,17 +270,12 @@
      début. Deux périodes ne peuvent pas commencer le même jour (contrainte
      d'exclusion), mais on additionne plutôt que d'écraser : perdre une
      consommation en silence serait une réserve annoncée trop grande. */
-  function crediterConsommation(liste, dateDebut, minutes, enDepassement) {
-    if (!minutes && !enDepassement) return;
+  function crediterConsommation(liste, dateDebut, minutes) {
+    if (!minutes) return;
     for (var i = 0; i < liste.length; i++) {
-      if (liste[i].date_debut === dateDebut) {
-        liste[i].minutes += minutes;
-        liste[i].minutesEnDepassement += (enDepassement || 0);
-        return;
-      }
+      if (liste[i].date_debut === dateDebut) { liste[i].minutes += minutes; return; }
     }
-    liste.push({ date_debut: dateDebut, minutes: minutes,
-                 minutesEnDepassement: enDepassement || 0 });
+    liste.push({ date_debut: dateDebut, minutes: minutes });
   }
 
   /* Minutes de récupération ACQUISES dans le mois avant `jour`, en ne
@@ -377,27 +372,12 @@
       if (impCp < 0 || impSup < 0 || impSansSolde < 0) {
         throw erreurCode('IMPUTATION_NEGATIVE');
       }
-      /* 3. LES CONGÉS PAYÉS, ET EUX SEULS, NE PEUVENT PAS ÊTRE DÉPASSÉS.
-
-         ARBITRAGE 4 DU 28 AOÛT 2026 — « la récupération peut passer en
-         négatif, et la pose n'est JAMAIS refusée ». Maria a pris par le passé
-         des journées de récupération que son solde ne couvrait pas ;
-         l'application doit pouvoir les enregistrer telles qu'elles ont eu
-         lieu. Elle AVERTIT, elle ne bloque pas — l'avertissement vit dans les
-         écrans (§4.3), le refus a disparu d'ici.
-
-         Aucun écrêtage non plus, et c'est aussi important que le refus levé :
-         la ventilation est appliquée TELLE QUE MARIA L'A CHOISIE, sans qu'un
-         jour bascule en silence vers le sans solde. Un jour déplacé sans
-         qu'elle le sache serait une retenue sur son salaire qu'elle n'a pas
-         décidée.
-
-         Les congés payés gardent leur garde-fou (§28.3, tranché le 25 août) :
-         ils ne descendent jamais sous zéro, par aucun chemin. Le disponible
-         peut être négatif (compteur incohérent, reprise manuelle erronée) :
-         dans ce cas toute consommation de congés payés est refusée. */
+      /* 3. La répartition ne consomme pas plus que le disponible. Le
+         disponible peut être négatif (compteur incohérent, reprise manuelle
+         erronée) : dans ce cas toute consommation est refusée. */
       var dispoCp = (compteur && compteur.minutesCp) || 0;
-      if (impCp * minutesParJour > dispoCp) {
+      var dispoSup = (compteur && compteur.minutesSup) || 0;
+      if (impCp * minutesParJour > dispoCp || impSup * minutesParJour > dispoSup) {
         throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
       }
 
@@ -1574,10 +1554,7 @@
              répartir. Rattacher au plus tôt est le choix prudent — une pose
              ultérieure dans le mois voit cette consommation déduite. */
           date_debut: plan[0].date_debut,
-          minutes: imputation.minutesSupConsommees,
-          /* Sans ventilation choisie, `imputerConges` ne prend jamais plus que
-             le disponible : il n'y a rien à dépasser. */
-          minutesEnDepassement: 0
+          minutes: imputation.minutesSupConsommees
         });
       }
     } else {
@@ -1604,38 +1581,56 @@
            rapporté avant le premier jour de cette période, journées déjà
            passées seulement. C'est la formule du §1, sans un terme de plus.
 
-           DEPUIS L'ARBITRAGE 4, CETTE CONFRONTATION NE REFUSE PLUS RIEN : elle
-           produit une DONNÉE. Ce que la période prend au-delà de la réserve à
-           sa date est mesuré et rendu (`minutesEnDepassement`), pour que les
-           écrans puissent le dire — « votre récupération passera à − 4 h 30 ».
-           Un refus fermait la porte ; une donnée l'ouvre en disant ce qu'il y
-           a derrière.
+           `supFinDeMois` est la même somme SANS le filtre « déjà passées » :
+           elle ne sert qu'à nommer le refus (§4.3). Une période que le mois
+           financerait mais dont les heures ne sont pas encore faites n'est
+           pas « hors réserves » : elle est « pas encore acquise », et Maria
+           doit lire la différence.
 
            Rien de tout cela ne touche les congés payés : `dispoCp` reste la
-           réserve d'ENTRÉE du mois (arbitrage n° 2), et le refus y reste
-           entier (arbitrage n° 4, seconde moitié). */
+           réserve d'ENTRÉE du mois, arbitrage n° 2. */
         var supEnPlus = 0;
+        var supFinDeMois = 0;
         if (aujourdhui && plan[v].imposee) {
           supEnPlus = recuperationAcquiseAvant(minutesSupParJour, plan[v].date_debut, aujourdhui);
+          supFinDeMois = recuperationAcquiseAvant(minutesSupParJour, plan[v].date_debut, null);
         }
         var dispoSupDate = dispoSup + supEnPlus;
+        var dispoSupFinDeMois = dispoSup + supFinDeMois;
 
         /* C1 — au mois où la période COMMENCE, la ventilation est confrontée
            aux réserves pour la période ENTIÈRE, pas seulement pour la part du
            mois. Un mois clôturable sur une ventilation impossible à honorer
-           est pire qu'un refus franc. Ne vaut plus que pour les congés
-           payés : la récupération ne refuse plus. */
+           est pire qu'un refus franc. */
         var tot = plan[v].imposeeTotale;
         if (tot && tot.joursSurCp * mpj > dispoCp) {
           throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
         }
-        var r = imputerConges(plan[v].nbJours,
-          { minutesSup: dispoSupDate, minutesCp: dispoCp }, conditions, plan[v].imposee);
+        if (tot && tot.joursSurSup * mpj > dispoSupDate) {
+          throw erreurCode(tot.joursSurSup * mpj <= dispoSupFinDeMois
+            ? 'RESERVES_PAS_ENCORE_ACQUISES'
+            : 'IMPUTATION_DEPASSE_RESERVES');
+        }
+        var r;
+        try {
+          r = imputerConges(plan[v].nbJours,
+            { minutesSup: dispoSupDate, minutesCp: dispoCp }, conditions, plan[v].imposee);
+        } catch (eImp) {
+          /* Le même refus, mieux nommé — et seulement quand c'est bien la
+             récupération pas encore acquise qui le provoque. Les contrôles
+             d'`imputerConges` gardent leur ordre : une ventilation incomplète
+             ou négative est refusée pour ce qu'elle est, avant tout calcul de
+             réserve. */
+          if (eImp && eImp.code === 'IMPUTATION_DEPASSE_RESERVES' &&
+              plan[v].imposee &&
+              (plan[v].imposee.joursSurSup || 0) * mpj > dispoSupDate &&
+              (plan[v].imposee.joursSurSup || 0) * mpj <= dispoSupFinDeMois) {
+            throw erreurCode('RESERVES_PAS_ENCORE_ACQUISES');
+          }
+          throw eImp;
+        }
         crediterConsommation(recuperationConsommeeParPeriode,
-          plan[v].date_debut, r.minutesSupConsommees,
-          /* Ce que CETTE période a pris au-delà de la réserve à SA date. Zéro
-             quand elle est financée — le cas de très loin le plus fréquent. */
-          Math.max(0, r.minutesSupConsommees - dispoSupDate));
+          plan[v].date_debut, r.minutesSupConsommees);
         imputation.joursSurSup += r.joursSurSup;
         imputation.minutesSupConsommees += r.minutesSupConsommees;
         imputation.joursSurCp += r.joursSurCp;
@@ -1943,22 +1938,6 @@
          `Engine.recuperationALaDate`. Une règle, un seul endroit. */
       minutesSupParJour: minutesSupParJour,
       recuperationConsommeeParPeriode: recuperationConsommeeParPeriode,
-      /* ARBITRAGE 4 (§4.1) — LE NÉGATIF SE DIT, IL NE SE CACHE PAS.
-
-         La pose n'est plus refusée : le solde descend sous zéro et le moteur
-         le porte tel quel. Encore faut-il que les écrans puissent le DIRE —
-         le récapitulatif du mois, l'accueil, l'espace enfant. C'est le rôle de
-         ces deux champs : ils ne décident rien, ils nomment un état.
-
-         Ils portent le SOLDE DE SORTIE du mois, celui que le récapitulatif
-         affiche. Ce qu'une période donnée a pris au-delà de la réserve à sa
-         date se lit, lui, dans `recuperationConsommeeParPeriode`.
-
-         Un solde négatif n'est pas nouveau — un écart d'horaire pouvait déjà
-         l'y mettre depuis le §17.5. Ce qui est nouveau, c'est qu'une pose de
-         congé le peut aussi, et que le moteur le nomme. */
-      recuperationNegative: compteurSortie.minutesSup < 0,
-      minutesRecuperationNegative: Math.max(0, -compteurSortie.minutesSup),
       retenueSansSoldeCentimes: retenueSansSoldeCentimes,
       minutesCpAcquis: minutesCpAcquises,
       /* LOT 28 (§28.1) — POURQUOI CE MOIS ACQUIERT CE QU'IL ACQUIERT. L'écran

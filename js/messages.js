@@ -62,23 +62,14 @@
       }],
     [/IMPUTATION_NEGATIVE/,
       'une des valeurs de la répartition est négative : reprenez la répartition.'],
+    /* ARBITRAGE 4 DU 28 AOÛT — CE REFUS NE PORTE PLUS QUE SUR LES CONGÉS
+       PAYÉS. La récupération, elle, a le droit de passer en négatif : elle
+       n'est plus refusée, elle est annoncée. Parler encore de récupération ici
+       enverrait Maria corriger une répartition que l'application accepte. */
     [/IMPUTATION_DEPASSE_RESERVES/,
-      'vous n’avez pas assez de congés payés ou de récupération pour cette ' +
-      'répartition. Placez une partie des jours en sans solde, ou choisissez ' +
-      'des dates plus courtes.'],
-    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR (§4.3 du brief du 28 août
-       2026) — LE REFUS QUI DIT POURQUOI.
-
-       Ce n'est pas le même refus que celui du dessus, et les confondre serait
-       cruel : la réserve EXISTERA, elle n'est simplement pas encore gagnée.
-       Maria n'a rien à corriger — elle a à attendre, ou à décaler. Lui dire
-       « vous n'avez pas assez de récupération » l'enverrait chercher une
-       erreur qui n'existe pas. */
-    [/RESERVES_PAS_ENCORE_ACQUISES/,
-      'ces heures ne sont pas encore acquises : la récupération de ce jour ' +
-      'serait financée par des journées que vous n’avez pas encore ' +
-      'travaillées. Reposez ce jour une fois ces journées faites, ou placez-le ' +
-      'sur vos congés payés ou en sans solde.'],
+      'vous n’avez pas assez de congés payés pour cette répartition. Placez ' +
+      'une partie des jours sur votre récupération ou en sans solde, ou ' +
+      'choisissez des dates plus courtes.'],
     /* --- LOT 17 : les refus du temps et des conditions datées ----------
        Cinq codes nouveaux. Aucun ne doit tomber dans le repli « une erreur
        inattendue s'est produite » : chacun a une cause connue, et chacun se

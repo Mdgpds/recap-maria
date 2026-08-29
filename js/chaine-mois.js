@@ -247,14 +247,19 @@
   var CODES_IMPUTATION = {
     IMPUTATION_DEPASSE_RESERVES: true,
     IMPUTATION_INCOMPLETE: true,
-    IMPUTATION_NEGATIVE: true,
-    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR (§4.3) — le refus d'une
-       ventilation financée par des heures PAS ENCORE FAITES. C'est le même
-       refus que `IMPUTATION_DEPASSE_RESERVES`, mieux nommé : il a donc
-       exactement les mêmes conséquences, repli compris. L'oublier ici ferait
-       tomber l'écran entier — le défaut même que le §16.1 a corrigé. */
-    RESERVES_PAS_ENCORE_ACQUISES: true
+    IMPUTATION_NEGATIVE: true
   };
+
+  /* ARBITRAGE 4 DU 28 AOÛT — CE QUI A DISPARU DE CETTE LISTE, ET POURQUOI.
+
+     `RESERVES_PAS_ENCORE_ACQUISES` y a figuré le temps d'une livraison : il
+     nommait le refus d'une récupération financée par des heures pas encore
+     faites. Adrien a tranché depuis — la récupération ne se refuse plus, elle
+     descend sous zéro et s'annonce. Le code n'est donc plus levé nulle part,
+     et le laisser ici entretiendrait l'idée qu'un tel refus existe encore.
+
+     `IMPUTATION_DEPASSE_RESERVES` reste, et il reste utile : il ne concerne
+     plus que les CONGÉS PAYÉS, qui ne descendent jamais sous zéro (§28.3). */
 
   function estErreurImputation(e) {
     return !!(e && e.code && CODES_IMPUTATION[e.code] === true);

@@ -244,7 +244,24 @@
    neuf servi avec une chaîne ancienne ne recevrait jamais `aujourdhui` et
    refuserait encore le 28 mai ce que le mois a financé. Aucun fichier
    ajouté. */
-var CACHE = 'recap-recuperation-au-fil-du-mois-v1';
+/* LA RÉCUPÉRATION PEUT PASSER EN NÉGATIF — NOM DE CACHE CHANGÉ.
+
+   Six fichiers servis changent : `js/engine.js` (la récupération ne se refuse
+   plus, le solde descend sous zéro et le moteur le NOMME), `js/chaine-mois.js`
+   (un code de refus retiré de la liste du repli), `js/messages.js` (le refus
+   ne parle plus que des congés payés), `js/ui-conges.js` (le stepper
+   déplafonné, l'avertissement « votre récupération passera à − X », le solde
+   signé dans « Vos réserves »), `js/ui-enfant.js` (l'encart des répartitions
+   écartées) et `js/ui-document.js` (le solde négatif dit en toutes lettres
+   sur le récapitulatif).
+
+   Ils se RÉPONDENT, et le mélange serait pire que d'habitude : un écran neuf
+   servi avec l'ancien moteur laisserait Maria pousser le stepper au-delà de sa
+   réserve, puis l'écriture ferait tomber le mois entier sur
+   `IMPUTATION_DEPASSE_RESERVES` — un geste offert et refusé une seconde plus
+   tard. Un moteur neuf servi avec l'ancien écran, à l'inverse, garderait le
+   mur là où la règle vient de l'ôter. Aucun fichier ajouté. */
+var CACHE = 'recap-recuperation-negative-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

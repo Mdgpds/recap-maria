@@ -2511,28 +2511,17 @@
   function phraseEcartee(e) {
     var plage = 'Du ' + Kit.dateLongue(e.date_debut) + ' au ' + Kit.dateLongue(e.date_fin) + ', ';
     if (e.code === 'IMPUTATION_DEPASSE_RESERVES') {
-      var manques = [];
-      if (e.choisi.joursSurSup > e.disponible.joursSup) {
-        manques.push('vous aviez choisi ' + Kit.jours(e.choisi.joursSurSup) +
-          ' de récupération. Vous n’en avez que ' + Kit.jours(e.disponible.joursSup) + '.');
-      }
+      /* ARBITRAGE 4 DU 28 AOÛT — LA BRANCHE « RÉCUPÉRATION » A DISPARU D'ICI,
+         et ce n'est pas un oubli : le moteur ne lève plus ce code pour elle.
+         Une récupération au-delà du disponible n'est plus une répartition à
+         corriger, c'est un solde négatif à afficher (§4.3). La garder
+         enverrait Maria refaire une ventilation que l'application a acceptée
+         telle quelle. */
       if (e.choisi.joursSurCp > e.disponible.joursCp) {
-        manques.push('vous aviez choisi ' + Kit.jours(e.choisi.joursSurCp) +
-          ' de congés payés. Vous n’en avez que ' + Kit.jours(e.disponible.joursCp) + '.');
+        return plage + 'vous aviez choisi ' + Kit.jours(e.choisi.joursSurCp) +
+          ' de congés payés. Vous n’en avez que ' + Kit.jours(e.disponible.joursCp) + '.';
       }
-      if (manques.length) return plage + manques.join(' Et ');
-      return plage + 'votre répartition dépasse ce que vos réserves couvrent.';
-    }
-    /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR (§4.3) — LE REFUS QUI N'EN
-       EST PAS UN. La réserve n'est pas insuffisante : elle n'est PAS ENCORE
-       GAGNÉE. Maria n'a rien à corriger, elle a à attendre — ou à déplacer.
-       Servir ici la phrase des réserves l'enverrait chercher une erreur qui
-       n'existe pas. */
-    if (e.code === 'RESERVES_PAS_ENCORE_ACQUISES') {
-      return plage + 'vous aviez choisi ' + Kit.jours(e.choisi.joursSurSup) +
-        ' de récupération, financés par des journées que vous n’avez pas ' +
-        'encore travaillées. Ces heures ne sont pas encore acquises : ' +
-        'refaites cette répartition une fois ces journées faites.';
+      return plage + 'votre répartition dépasse vos congés payés disponibles.';
     }
     if (e.code === 'IMPUTATION_INCOMPLETE') {
       /* CORRECTION RELECTURE LOT 16 (B1) — LA PHRASE DISAIT QUE 5 NE COUVRE

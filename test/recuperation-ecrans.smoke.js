@@ -10,18 +10,24 @@
 
    Ce fichier vérifie la moitié ÉCRAN, sur le vrai `index.html` :
 
-     E1  LE STEPPER MONTE QUAND LA DATE AVANCE DANS LE MOIS. La même période
-         d'un jour, posée en début puis en fin de mois, n'offre pas le même
-         plafond de récupération — et c'est le mois travaillé entre les deux
-         qui fait la différence.
+     E1  LA RÉSERVE ANNONCÉE MONTE QUAND LA DATE AVANCE DANS LE MOIS. La même
+         période, posée en début puis en fin de mois, n'offre pas la même
+         récupération — et c'est le mois travaillé entre les deux qui fait la
+         différence. Elle se lit sur la ligne « Récupération » ET dans la
+         répartition que le moteur propose.
      E2  LA PHRASE « dont N gagnés depuis le 1er » APPARAÎT SEULEMENT QUAND
          C'EST LE CAS : absente en début de mois, présente en fin de mois.
      E3  UNE DATE FUTURE NE GAGNE RIEN. Posée à une date que les journées
          travaillées n'ont pas encore financée, la récupération reste au
          plafond du 1er : l'arbitrage n° 1 se voit à l'écran comme au moteur.
-     E4  L'ÉCRAN NE PROPOSE JAMAIS PLUS QUE LE MOTEUR N'ACCEPTE — le défaut du
-         lot 16, vérifié dans l'autre sens : ce que le stepper autorise, le
-         moteur le calcule sans lever.
+     E4  AU-DELÀ DU DISPONIBLE, L'ÉCRAN AVERTIT ET LE BOUTON RESTE ACTIF
+         (arbitrage 4, §4.3) : « votre récupération passera à − 9 h 00 »,
+         « vous devrez 9 h 00 à cette famille », et le geste reste possible.
+         Ce que le stepper autorise, le moteur l'accepte — vérifié en le
+         rejouant.
+     E5  LE RÉCAPITULATIF DU MOIS AFFICHE UN SOLDE NÉGATIF TEL QUEL, jamais
+         borné à zéro, et il dit ce que ça veut dire. « Un compteur qu'on
+         affiche à zéro alors qu'il vaut − 4 h 30 est un chiffre faux. »
 
    Décor : deux enfants, réserves différentes, repris tel quel du test de fumée
    du congé par enfant. Valeurs FICTIVES (dépôt public).
@@ -410,9 +416,8 @@ function zoneTotal() { return txt(sheet); }
 
 /* LE DÉCOR DE CE FICHIER — Léa entre juillet avec UN SEUL jour de
    récupération et aucun congé payé. C'est ce qui rend la démonstration
-   lisible : au 1er juillet le stepper plafonne à 1, et il faut que le mois
-   travaille pour qu'il monte à 2. Avec des réserves confortables, le plafond
-   serait borné par le décompte de la période et rien ne se verrait. */
+   lisible : au 1er juillet la réserve couvre un jour, et il faut que le mois
+   travaille pour qu'elle en couvre deux. */
 COMPTEURS['c-lea'] = { dixiemes_cp_acquis: 0, dixiemes_cp_pris: 0, minutes_sup: 540 };
 
 /* La ligne « Récupération » de la carte d'un enfant, et sa phrase d'aide. */
@@ -421,14 +426,6 @@ function sousTitreRecup(prenom) {
   if (!c) return null;
   var cl = c.querySelector('.cl');
   return cl ? sansInsecable(txt(cl)) : null;
-}
-/* Le plafond ne s'affiche pas : on le MESURE, en appuyant sur « + » jusqu'à
-   ce que le bouton s'éteigne. C'est ce que ferait un doigt, et c'est la seule
-   mesure qui ne suppose rien du dessin de l'écran. */
-function plafondRecup(prenom) {
-  if (!compteurDe(prenom, 'Récupération')) return null;
-  cliquer(prenom, 'Récupération', '+', 40);
-  return valeurDe(prenom, 'Récupération');
 }
 
 /* Poser une période et ouvrir la carte de Léa. */
@@ -468,9 +465,9 @@ function moteurSur(joursPoses, joursSurSup, entree, aujourdhui) {
   await pause(400);
 
   /* ==================================================================== */
-  /* E1 + E2 — LE STEPPER MONTE, ET LA PHRASE DIT POURQUOI                */
+  /* E1 + E2 — LA RÉSERVE ANNONCÉE MONTE, ET LA PHRASE DIT POURQUOI       */
   /* ==================================================================== */
-  console.log('\n--- E1/E2 : le plafond suit la date dans le mois ---');
+  console.log('\n--- E1/E2 : la réserve annoncée suit la date dans le mois ---');
 
   /* On est le 31 juillet : tout le mois est passé. Léa entre juillet avec un
      seul jour de récupération ; vingt journées travaillées séparent le 1er du
@@ -478,26 +475,34 @@ function moteurSur(joursPoses, joursSurSup, entree, aujourdhui) {
      de 9 h. */
   scene.aujourdhui = '2026-07-31';
 
-  /* Deux jours ouvrables, tout au DÉBUT du mois : rien n'a encore été gagné. */
+  /* Deux jours ouvrables, tout au DÉBUT du mois : rien n'a encore été gagné.
+     Le moteur ne propose donc qu'un jour sur la récupération, et le second
+     tombe en sans solde. */
   await poserPeriode('2026-07-01', '2026-07-02');
-  var plafondDebut = plafondRecup('Léa');
+  var proposeDebut = valeurDe('Léa', 'Récupération');
   var phraseDebut = sousTitreRecup('Léa');
-  assert(plafondDebut === 1,
-    'E1 : au 1er juillet, le stepper plafonne au seul jour du compteur d’entrée ' +
-    '(obtenu ' + plafondDebut + ')');
+  assert(proposeDebut === 1,
+    'E1 : au 1er juillet, la réserve ne couvre qu’un jour — c’est ce que le ' +
+    'moteur propose (obtenu ' + proposeDebut + ')');
+  assert(phraseDebut.indexOf('reste 1 j') !== -1,
+    'E1 : et la ligne l’annonce : ' + phraseDebut);
   assert(phraseDebut.indexOf('gagné') === -1,
     'E2 : le 1er juillet, rien n’a été gagné — la phrase se tait : ' + phraseDebut);
 
   /* Les deux mêmes jours ouvrables, tout à la FIN du mois. */
   await poserPeriode('2026-07-30', '2026-07-31');
-  var plafondFin = plafondRecup('Léa');
+  var proposeFin = valeurDe('Léa', 'Récupération');
   var phraseFin = sousTitreRecup('Léa');
-  assert(plafondFin === 2,
-    'E1 : au 30 juillet, le mois a financé un second jour (obtenu ' + plafondFin + ')');
-  assert(plafondFin > plafondDebut,
-    'E1 : le stepper MONTE quand la date avance dans le mois');
+  assert(proposeFin === 2,
+    'E1 : au 30 juillet, le mois a financé un second jour (obtenu ' + proposeFin + ')');
+  assert(proposeFin > proposeDebut,
+    'E1 : la réserve MONTE quand la date avance dans le mois');
+  assert(phraseFin.indexOf('reste 2 j') !== -1,
+    'E1 : et la ligne annonce deux jours : ' + phraseFin);
   assert(phraseFin.indexOf('dont 1 gagné depuis le 1er') !== -1,
     'E2 : la phrase annonce le jour gagné, et le bon nombre : ' + phraseFin);
+  assert(valeurDe('Léa', 'Sans solde') === 0,
+    'E1 : et plus rien ne tombe en sans solde');
 
   /* ==================================================================== */
   /* E3 — UNE DATE FUTURE NE GAGNE RIEN (arbitrage n° 1)                  */
@@ -508,43 +513,88 @@ function moteurSur(joursPoses, joursSurSup, entree, aujourdhui) {
      journée du mois n'est passée, rien n'est acquis. */
   scene.aujourdhui = '2026-07-01';
   await poserPeriode('2026-07-30', '2026-07-31');
-  var plafondFutur = plafondRecup('Léa');
+  var proposeFutur = valeurDe('Léa', 'Récupération');
   var phraseFutur = sousTitreRecup('Léa');
-  assert(plafondFutur === plafondDebut,
-    'E3 : au 1er juillet, poser le 30 ne donne rien de plus (' + plafondFutur +
-    ' contre ' + plafondDebut + ')');
+  assert(proposeFutur === proposeDebut,
+    'E3 : au 1er juillet, poser le 30 ne donne rien de plus (' + proposeFutur +
+    ' contre ' + proposeDebut + ')');
   assert(phraseFutur.indexOf('gagné') === -1,
     'E3 : rien n’a été gagné, la phrase se tait : ' + phraseFutur);
 
   /* ==================================================================== */
-  /* E4 — L'ÉCRAN ET LE MOTEUR DISENT LA MÊME CHOSE                       */
+  /* E4 — AU-DELÀ DU DISPONIBLE : L'ÉCRAN AVERTIT, IL NE BLOQUE PAS       */
   /* ==================================================================== */
-  console.log('\n--- E4 : le plafond de l’écran est celui du moteur ---');
+  console.log('\n--- E4 : l’arbitrage n° 4, à l’écran ---');
 
-  scene.aujourdhui = '2026-07-31';
+  /* On reste au 1er juillet, sur la période du 30-31 que le mois n'a pas
+     financée pour Maria. Elle pousse quand même la récupération à 2 : c'est
+     le geste que l'arbitrage 4 existe pour rendre possible. */
+  cliquer('Léa', 'Récupération', '+', 5);
+  await pause(120);
+  assert(valeurDe('Léa', 'Récupération') === 2,
+    'E4 : le stepper monte AU-DELÀ du disponible (obtenu ' +
+    valeurDe('Léa', 'Récupération') + ')');
+  var phraseDette = sousTitreRecup('Léa');
+  assert(phraseDette.indexOf('passera à −') !== -1,
+    'E4 : la ligne dit ce que ça fait — « votre récupération passera à − X » : ' +
+    phraseDette);
+  assert(sansInsecable(txt(sheet)).indexOf('vous devrez') !== -1,
+    'E4 : et la dette est rappelée au-dessus du bouton, avant l’appui');
+  assert(!boutonPoser().disabled,
+    'E4 : LE BOUTON RESTE ACTIF — c’est un avertissement, pas un refus');
+  assert(valeurDe('Léa', 'Sans solde') === 0,
+    'E4 : et rien n’est écrêté vers le sans solde');
+
+  /* Et ce que l'écran vient d'autoriser, le moteur l'accepte — aux deux
+     dates, parce que la récupération ne se refuse plus jamais. */
   window.App.invalider();
   var serie = await window.App.serie(LEA, { annee: 2026, mois: 7 });
   var juillet = window.App.moisDe(serie, 2026, 7);
   var deuxJours = ['2026-07-30', '2026-07-31'];
+  assert(moteurSur(deuxJours, 2, juillet, '2026-07-31') === null,
+    'E4 : le moteur accepte, mois financé');
+  assert(moteurSur(deuxJours, 2, juillet, '2026-07-01') === null,
+    'E4 : et il accepte aussi quand le mois ne l’a pas financé — la pose ' +
+    'n’est JAMAIS refusée sur la récupération');
 
-  /* Ce que l'écran OFFRE le 30 juillet — deux jours — le moteur l'accepte. */
-  var codeAccepte = moteurSur(deuxJours, 2, juillet, '2026-07-31');
-  assert(codeAccepte === null,
-    'E4 : ce que le stepper offre le 30 juillet, le moteur l’accepte (obtenu ' +
-    codeAccepte + ')');
+  /* Les congés payés, eux, restent refusés : la seconde moitié de
+     l'arbitrage 4, vérifiée à côté de la première. */
+  var surCp = null;
+  try {
+    Engine.calculerMois({
+      contrat: LEA, conditions: juillet.conditions,
+      journees: deuxJours.map(function (j) { return { jour: j, type: 'conge_maria' }; }),
+      compteurEntree: juillet.compteurEntree, annee: 2026, mois: 7,
+      imputations: [{ id: 'i-cp', date_debut: deuxJours[0], date_fin: deuxJours[1],
+        jours_ouvrables: 2, jours_sur_cp: 2, jours_sur_sup: 0, jours_sans_solde: 0 }],
+      samedisComptes: [], aujourdhui: '2026-07-31'
+    });
+  } catch (e) { surCp = e.code; }
+  assert(surCp === 'IMPUTATION_DEPASSE_RESERVES',
+    'E4 : sur les congés payés, le refus reste entier (obtenu ' + surCp + ')');
 
-  /* Ce que l'écran REFUSE le 1er juillet — deux jours — le moteur le refuse
-     aussi, et il le NOMME : les heures ne sont pas encore acquises. */
-  var codeRefuse = moteurSur(deuxJours, 2, juillet, '2026-07-01');
-  assert(codeRefuse === 'RESERVES_PAS_ENCORE_ACQUISES',
-    'E4 : au 1er juillet, le moteur refuse et dit pourquoi (obtenu ' +
-    codeRefuse + ')');
+  /* ==================================================================== */
+  /* E5 — LE RÉCAPITULATIF NE BORNE PAS LE SOLDE À ZÉRO                   */
+  /* ==================================================================== */
+  console.log('\n--- E5 : le négatif se voit sur le récapitulatif ---');
 
-  /* Et la phrase que Maria lira est celle-là, pas « vous n’avez pas assez ». */
-  var phrase = Messages.lisible({ code: 'RESERVES_PAS_ENCORE_ACQUISES',
-    message: 'RESERVES_PAS_ENCORE_ACQUISES' });
-  assert(String(phrase).indexOf('pas encore acquises') !== -1,
-    'E4 : le refus se traduit en français, et dit la bonne chose : ' + phrase);
+  /* Une dette franche au compteur d'entrée : cinquante heures. Même en
+     ajoutant les heures du mois, le solde de sortie reste largement négatif. */
+  COMPTEURS['c-lea'] = { dixiemes_cp_acquis: 0, dixiemes_cp_pris: 0, minutes_sup: -3000 };
+  window.App.invalider();
+  window.App.aller('document', { contratId: 'c-lea', annee: 2026, mois: 7 });
+  await pause(600);
+  var doc = sansInsecable(txt(corps));
+  assert(doc.indexOf('Récupération restante') !== -1,
+    'E5 : le récapitulatif porte bien la ligne du compteur');
+  assert(/Récupération restante\s*−?-?\s*\d/.test(doc) && doc.indexOf('-') !== -1,
+    'E5 : et elle porte un nombre, pas un zéro de repli');
+  assert(doc.indexOf('Ce solde est négatif') !== -1,
+    'E5 : le solde négatif est DIT en toutes lettres');
+  assert(doc.indexOf('à cette famille') !== -1,
+    'E5 : et il est expliqué — c’est du temps que Maria rendra');
+  assert(doc.indexOf('0h00') === -1 || doc.indexOf('-') !== -1,
+    'E5 : le compteur n’est jamais affiché borné à zéro');
 
   /* -------------------------------------------------------------------- */
   console.log('');

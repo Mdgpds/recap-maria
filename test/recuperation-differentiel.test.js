@@ -25,6 +25,16 @@
       REFUSAIT peut désormais être accepté : c'est tout l'objet du lot, et
       c'est le seul écart autorisé.
 
+   ÉCART DÉCLARÉ, LOT SUIVANT (arbitrage 4 d'Adrien, 28 août 2026). La
+   récupération ne se refuse plus du tout : un mois dont une ventilation
+   dépasse la RÉCUPÉRATION est désormais accepté, avec ou sans `aujourdhui`,
+   et son solde descend sous zéro. La preuve A ne peut donc plus exiger le
+   même refus des deux côtés sur ces mois-là — elle exige, à la place, que
+   l'écart soit exactement celui-là : le moteur d'avant refusait sur la
+   récupération, celui d'après accepte. Le différentiel propre de ce
+   lot-là vit dans `test/recuperation-negative-differentiel.test.js`, contre
+   le moteur figé au commit `b83eadd`.
+
    Valeurs FICTIVES (dépôt public).
    ========================================================================= */
 'use strict';
@@ -43,6 +53,11 @@ function sansLesRelevesAjoutes(r) {
   var c = copie(r);
   delete c.minutesSupParJour;
   delete c.recuperationConsommeeParPeriode;
+  /* ARBITRAGE 4 DU 28 AOÛT — deux champs de plus, du même lot : l'état du
+     solde de récupération, nommé pour que les écrans le disent. Ils ne
+     portent aucun montant nouveau — ils lisent le compteur de sortie. */
+  delete c.recuperationNegative;
+  delete c.minutesRecuperationNegative;
   return c;
 }
 
@@ -98,6 +113,16 @@ function surCp(debut, fin, jours) {
   return { id: 'i-' + debut, date_debut: debut, date_fin: fin,
            jours_ouvrables: jours, jours_sur_cp: jours, jours_sur_sup: 0,
            jours_sans_solde: 0 };
+}
+
+/* L'INVARIANT QUI DOIT TENIR PARTOUT — les congés payés ne descendent jamais
+   sous zéro (§28.3, arbitrage 4 seconde moitié). C'est lui qu'on vérifie
+   chaque fois qu'un refus disparaît : le lot a le droit de débloquer une
+   récupération, jamais un congé payé. */
+function congesPayesJamaisNegatifs(v, ap) {
+  var c = v.compteurEntree || { minutesCpAcquis: 16200, minutesCpPris: 0 };
+  return ap.imputation.minutesCpConsommees <=
+    (c.minutesCpAcquis || 0) - (c.minutesCpPris || 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -166,8 +191,19 @@ test('§4.1 — sans `aujourdhui`, le moteur rend EXACTEMENT ce qu’il rendait'
       try { ap = Apres.calculerMois(e); } catch (x) { eAp = x; }
 
       if (eAv || eAp) {
-        assert(eAv && eAp, m.nom + ' — un seul des deux moteurs refuse : avant=' +
-          (eAv ? eAv.code : 'ok') + ' après=' + (eAp ? eAp.code : 'ok'));
+        assert(!eAp || eAv, m.nom + ' — le nouveau moteur refuse un mois que ' +
+          'l’ancien calculait : ' + (eAp && eAp.code));
+        if (eAv && !eAp) {
+          /* L'écart déclaré de l'arbitrage 4, et LUI SEUL : l'ancien refusait
+             une ventilation hors réserves, le nouveau l'accepte parce qu'elle
+             porte sur la RÉCUPÉRATION. On vérifie que c'est bien de ça qu'il
+             s'agit — pas d'un refus d'une autre nature qu'on aurait perdu. */
+          assert(eAv.code === 'IMPUTATION_DEPASSE_RESERVES',
+            m.nom + ' — refus perdu, et ce n’est pas celui des réserves : ' + eAv.code);
+          assert(congesPayesJamaisNegatifs(m.v, ap),
+            m.nom + ' — un refus de CONGÉS PAYÉS a été perdu : régression');
+          return;
+        }
         assert(eAv.code === eAp.code,
           m.nom + ' — codes différents : ' + eAv.code + ' / ' + eAp.code);
         return;
@@ -280,8 +316,19 @@ test('§5 — différentiel large : 1 500 décors croisés, aucun montant ne bou
 
                 if (eAv) {
                   if (eAp) { refusIdentiques++; return; }
-                  assert(auj, etiquette +
-                    ' — sans `aujourdhui`, un mois refusé ne doit JAMAIS être accepté');
+                  /* Deux raisons légitimes d'être débloqué, et pas une de
+                     plus : la réserve à la date (avec `aujourdhui`), et
+                     l'arbitrage 4 — la récupération ne se refuse plus, même
+                     sans date du jour. Un refus de congés payés perdu, lui,
+                     resterait une régression. */
+                  /* Un cas qu'on ne cherchait pas et que ce croisement a
+                     trouvé : le moteur d'avant refusait une ventilation
+                     ENTIÈREMENT sur les congés payés dès que le compteur de
+                     récupération était négatif — `0 > −900` est vrai. Le
+                     contrôle ne portant plus que sur les congés payés, ce
+                     refus-là disparaît aussi, et c'est un défaut corrigé. */
+                  assert(congesPayesJamaisNegatifs(v, ap), etiquette +
+                    ' — un refus de CONGÉS PAYÉS a été perdu : régression');
                   debloques++;
                   return;
                 }

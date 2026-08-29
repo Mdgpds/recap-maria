@@ -697,17 +697,45 @@ function grosDecompte() {
   assert(valeurDe('Tom', 'Sans solde') === 5,
     'P5 (piège n° 5) : mais jamais AU-DELÀ');
   assert(sommeDe('Tom') === 5, 'et la somme fait exactement le décompte');
-  /* A4 — les congés payés ne passent JAMAIS en négatif, par aucun chemin. */
-  assert(valeurDe('Tom', 'Congés payés') >= 0 && valeurDe('Tom', 'Récupération') >= 0,
-    'A4 : aucune réserve ne passe en négatif');
 
-  /* On revient à la proposition du moteur avant d'écrire. */
+  /* A4 — LES CONGÉS PAYÉS NE PASSENT JAMAIS EN NÉGATIF, PAR AUCUN CHEMIN.
+     Tom n'en a aucun : son stepper « Congés payés » ne bouge pas d'un cran,
+     quoi qu'on appuie. C'est le §28.3, et l'arbitrage 4 du 28 août ne le
+     remet pas en cause. */
   cliquer('Tom', 'Congés payés', '+', 30);
+  await pause(60);
+  assert(valeurDe('Tom', 'Congés payés') === 0,
+    'A4 : les congés payés restent à zéro — ils ne descendent jamais sous zéro');
+
+  /* ARBITRAGE 4 DU 28 AOÛT — LA RÉCUPÉRATION, ELLE, N'A PLUS DE MUR.
+
+     « Maria a pris par le passé des journées de récupération que son solde ne
+     couvrait pas ; l'application doit pouvoir enregistrer ces journées telles
+     qu'elles ont eu lieu. Elle avertit, elle ne bloque pas. »
+
+     Tom a zéro minute de récupération. Le stepper monte quand même jusqu'au
+     décompte de la période, l'écran annonce la dette, et le bouton reste
+     ACTIF — c'est un avertissement, pas un refus. */
   cliquer('Tom', 'Récupération', '+', 30);
+  await pause(60);
+  assert(valeurDe('Tom', 'Récupération') === 5,
+    '§4.3 : la récupération peut couvrir toute la période, réserve vide ou non ' +
+    '(obtenu ' + valeurDe('Tom', 'Récupération') + ')');
+  assert(sansInsecable(txt(carteDe('Tom'))).indexOf('passera à −') !== -1,
+    '§4.3 : la ligne dit ce que ça fait — « votre récupération passera à − X » ' +
+    '(carte : « ' + sansInsecable(txt(carteDe('Tom'))) + ' »)');
+  assert(sansInsecable(txt(sheet)).indexOf('vous devrez') !== -1,
+    '§4.3 : et la dette est rappelée au-dessus du bouton, avant l’appui');
+  assert(!boutonPoser().disabled,
+    '§4.3 : LE BOUTON RESTE ACTIF — c’est un avertissement, pas un refus');
+
+  /* On revient à la proposition du moteur avant d'écrire : le sans-solde
+     reprend ce que la récupération vient de lui prendre. */
+  cliquer('Tom', 'Sans solde', '+', 30);
   await pause(60);
   assert(sommeDe('Tom') === 5, 'la ventilation couvre exactement le décompte');
   var ssFinalTom = valeurDe('Tom', 'Sans solde');
-  assert(ssFinalTom > 0, 'et Tom reste en sans-solde : ses réserves ne suffisent pas');
+  assert(ssFinalTom > 0, 'et Tom repasse en sans-solde : ses réserves ne suffisent pas');
 
   /* ==================================================================== */
   /* Étape 3 — le récapitulatif, puis l'écriture                          */
