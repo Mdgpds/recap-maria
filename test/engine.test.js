@@ -565,18 +565,30 @@ definir('T12 — Imputation incomplète : erreur, aucun compteur modifié', func
   }, 'IMPUTATION_NEGATIVE', 'T12.negative');
 });
 
-definir('T13 — Imputation au-delà des réserves : erreur', function () {
+definir('T13 — Imputation au-delà des réserves : erreur sur les CONGÉS PAYÉS seuls', function () {
   /* 5 jours sur les congés payés = 50 dixièmes, alors que 30 sont acquis. */
   leveCode(function () {
     imputer(6, { minutesSup: 5400, dixiemesCp: 30 }, contrat(),
       { joursSurCp: 5, joursSurSup: 1, joursSansSolde: 0 });
   }, 'IMPUTATION_DEPASSE_RESERVES', 'T13.cp');
 
-  /* Même refus côté récupération. */
-  leveCode(function () {
-    imputer(3, { minutesSup: 540, dixiemesCp: 100 }, contrat(),
-      { joursSurCp: 0, joursSurSup: 3, joursSansSolde: 0 });
-  }, 'IMPUTATION_DEPASSE_RESERVES', 'T13.sup');
+  /* CAS DE RÉFÉRENCE MODIFIÉ — ARBITRAGE 4 D'ADRIEN, 28 AOÛT 2026.
+
+     La récupération était refusée ici comme les congés payés. Elle ne l'est
+     plus : « la récupération peut passer en négatif, et la pose n'est JAMAIS
+     refusée. Maria a pris par le passé des journées que son solde ne couvrait
+     pas ; le passé doit pouvoir s'écrire. Elle avertit, elle ne bloque pas. »
+
+     Ce cas du cahier des charges est donc RETOURNÉ, en connaissance de cause,
+     et il vérifie maintenant les deux moitiés de la règle : la ventilation est
+     appliquée telle quelle, et RIEN ne bascule en sans solde — un écrêtage
+     silencieux serait une retenue sur salaire que Maria n'a pas décidée. */
+  var force = imputer(3, { minutesSup: 540, dixiemesCp: 100 }, contrat(),
+    { joursSurCp: 0, joursSurSup: 3, joursSansSolde: 0 });
+  egal(force.joursSurSup, 3, 'T13.sup : les trois jours sont pris sur la récupération');
+  egal(force.joursSansSolde, 0, 'T13.sup : aucun jour n’est écrêté vers le sans solde');
+  egal(force.minutesSupConsommees, 3 * 540,
+    'T13.sup : et la consommation est celle de la ventilation, pas du disponible');
 });
 
 definir('T14 — Minutes exceptionnelles d\'une journée (V8-18)', function () {

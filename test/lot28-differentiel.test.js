@@ -448,6 +448,8 @@ test('différentiel exhaustif — chaque écart est reconstruit par une règle n
        ce différentiel ne fait jamais. */
     delete apComparable.minutesSupParJour;
     delete apComparable.recuperationConsommeeParPeriode;
+    delete apComparable.recuperationNegative;
+    delete apComparable.minutesRecuperationNegative;
 
     var jsonAttendu = JSON.stringify(memeOrdre(attendu, apComparable));
     var jsonApres = JSON.stringify(apComparable);
@@ -500,6 +502,8 @@ test('sur un mois que le lot ne concerne pas, seuls les champs ajoutés diffère
      suivant, pour la même raison. */
   delete sansAjout.minutesSupParJour;
   delete sansAjout.recuperationConsommeeParPeriode;
+  delete sansAjout.recuperationNegative;
+  delete sansAjout.minutesRecuperationNegative;
   assert(JSON.stringify(sansAjout) === JSON.stringify(av),
     'un mois ordinaire est identique au champ ajouté près :\n  avant ' +
     JSON.stringify(av) + '\n  après ' + JSON.stringify(sansAjout));

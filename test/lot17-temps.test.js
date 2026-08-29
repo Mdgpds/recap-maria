@@ -110,19 +110,24 @@ definir('§17.5 A4 — le compteur peut devenir négatif, et le moteur le dit', 
   egal(r.compteurSortie.minutesSup, 22 * 30 - 3000, 'A4.compteur de sortie');
 });
 
-definir('§17.5 — un compteur négatif interdit de poser un congé dessus', function () {
-  /* Le même garde-fou qu'au §16.1 : `imputerConges` borne le disponible à 0,
-     et refuse une ventilation imposée qui dépasse. */
+definir('§17.5 — un compteur négatif ne PROPOSE rien, mais n’interdit plus rien', function () {
+  /* CE QUI NE CHANGE PAS — l'ordre PAR DÉFAUT. `imputerConges` borne le
+     disponible à 0 : sans ventilation choisie, un compteur négatif ne « rend »
+     aucun jour, et le débordement part en sans solde. C'est ce que l'écran
+     propose, et ça reste vrai. */
   var libre = Engine.imputerConges(2, { minutesSup: -540, minutesCp: 0 }, conditions());
   egal(libre.joursSurSup, 0, 'aucun jour pris sur un compteur négatif');
   egal(libre.joursSansSolde, 2, 'les deux jours partent en sans solde');
 
-  var refus = null;
-  try {
-    Engine.imputerConges(1, { minutesSup: -540, minutesCp: 0 }, conditions(),
-      { joursSurCp: 0, joursSurSup: 1, joursSansSolde: 0 });
-  } catch (e) { refus = e.code; }
-  egal(refus, 'IMPUTATION_DEPASSE_RESERVES', 'la ventilation imposée est refusée');
+  /* CE QUI CHANGE — ARBITRAGE 4 D'ADRIEN, 28 AOÛT 2026. Une ventilation
+     CHOISIE n'est plus refusée, même sur un compteur déjà négatif : c'est
+     exactement le cas que la règle existe pour couvrir — une journée de
+     récupération prise par le passé alors que le solde ne la couvrait pas.
+     « Le passé doit pouvoir s'écrire. » La dette s'aggrave, et elle est dite. */
+  var force = Engine.imputerConges(1, { minutesSup: -540, minutesCp: 0 }, conditions(),
+    { joursSurCp: 0, joursSurSup: 1, joursSansSolde: 0 });
+  egal(force.joursSurSup, 1, 'la ventilation choisie est appliquée telle quelle');
+  egal(force.minutesSupConsommees, 540, 'et elle consomme ses minutes entières');
 });
 
 definir('§17.5 A5 — le document reçoit le net ET la ligne qui l’explique', function () {

@@ -323,14 +323,29 @@
       out.push({ titre: null, lignes: lignesSup });
     }
 
+    /* ARBITRAGE 4 (§4.3) — LE SOLDE NÉGATIF SE DIT EN TOUTES LETTRES.
+
+       `Kit.heures` rend déjà « -4h30 » : le chiffre était juste, il n'était
+       pas expliqué. Sur une pièce que la famille lit, un nombre négatif sans
+       sa phrase se conteste. Depuis que poser un congé peut faire descendre
+       ce compteur, la phrase n'est plus une curiosité — c'est la moitié de
+       l'explication. Le document parle à la première personne, comme partout
+       ailleurs. Aucun montant ne change : une ligne de plus, c'est tout. */
+    var lignesCompteurs = [
+      ['Heures supplémentaires acquises dans le mois', Kit.heures(r.minutesSupAcquises)],
+      ['Récupération restante', Kit.heures(cs.minutesSup || 0)]
+    ];
+    if ((cs.minutesSup || 0) < 0) {
+      lignesCompteurs.push(['Ce solde est négatif : je dois ' +
+        Kit.heures(-(cs.minutesSup || 0)) + ' à cette famille, qui se ' +
+        'rattraperont sur mes prochaines heures supplémentaires', '',
+        { doux: true }]);
+    }
+    lignesCompteurs.push(['Congés payés restants',
+      Kit.joursCp(Kit.cpDisponible(cs), reg('minutes_par_jour_conge', 0))]);
     out.push({
       titre: 'Compteurs de ce contrat à la fin du mois',
-      lignes: [
-        ['Heures supplémentaires acquises dans le mois', Kit.heures(r.minutesSupAcquises)],
-        ['Récupération restante', Kit.heures(cs.minutesSup || 0)],
-        ['Congés payés restants',
-         Kit.joursCp(Kit.cpDisponible(cs), reg('minutes_par_jour_conge', 0))]
-      ]
+      lignes: lignesCompteurs
     });
     return out;
   }

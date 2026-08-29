@@ -8,10 +8,19 @@
    prendre le 5 mai devient possible le 28, parce qu'entre-temps elle a
    travaillé. »
 
-   Les trois arbitrages, tranchés le 28 août et vérifiés ici un par un :
+   Les QUATRE arbitrages, tranchés le 28 août et vérifiés ici un par un :
      1. seules les journées DÉJÀ PASSÉES comptent ;
      2. les congés payés ne changent pas ;
-     3. le jour posé ne se finance pas lui-même.
+     3. le jour posé ne se finance pas lui-même ;
+     4. la récupération peut passer en NÉGATIF, et la pose n'est JAMAIS
+        refusée — les congés payés, eux, ne descendent jamais sous zéro.
+
+   L'arbitrage 4 change la NATURE de ce qui se vérifie ici. La réserve à la
+   date ne décide plus d'un oui ou d'un non : elle décide de ce qui est
+   ACQUIS, donc de ce que les écrans annoncent et de ce que le moteur nomme
+   comme dépassement. Les cas ci-dessous mesurent donc des minutes, là où ils
+   attendaient un code d'erreur — c'est la même règle, observée là où elle
+   agit désormais.
 
    La preuve qu'aucun montant ne bouge sur les mois qui se calculaient déjà
    vit dans `test/recuperation-differentiel.test.js`.
@@ -83,6 +92,21 @@ function recuperation(jour) {
 function jourDeConge(jour) { return { jour: jour, type: 'conge_maria' }; }
 
 /* ------------------------------------------------------------------ */
+/* AIDES DE MESURE                                                     */
+/* ------------------------------------------------------------------ */
+
+/* Ce qu'une période a pris AU-DELÀ de la réserve à sa date. Zéro quand elle
+   est financée. C'est là que la formule du §1 s'observe maintenant : le
+   moteur n'oppose plus de refus, il mesure. */
+function depassement(v, jour) {
+  var r = calculer(v);
+  var ligne = (r.recuperationConsommeeParPeriode || []).filter(function (x) {
+    return x.date_debut === jour;
+  })[0];
+  return ligne ? ligne.minutesEnDepassement : null;
+}
+
+/* ------------------------------------------------------------------ */
 /* LE CAS DU BRIEF (§2)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -91,9 +115,9 @@ function jourDeConge(jour) { return { jour: jour, type: 'conge_maria' }; }
 
    Le planning inclut le samedi. Ce n'est pas un artifice : avec deux fériés
    (le 1er et le 8) et un samedi non travaillé, mai 2025 ne finance PAS un
-   second jour de 9 h avant le 28 — le moteur le refuse alors, et il a raison
-   (cas « le mois ne finance vraiment pas » plus bas). C'est la règle qu'on
-   teste, pas l'arithmétique d'un mois particulier. */
+   second jour de 9 h avant le 28 — le mois est alors accepté quand même, mais
+   EN DÉPASSEMENT (cas « le mois ne finance vraiment pas » plus bas). C'est la
+   règle qu'on teste, pas l'arithmétique d'un mois particulier. */
 var CAS_DU_BRIEF = {
   planning: [1, 2, 3, 4, 5, 6],
   compteurEntree: { minutesSup: 540, minutesCpAcquis: 0, minutesCpPris: 0 },
@@ -101,11 +125,16 @@ var CAS_DU_BRIEF = {
   imputations: [recuperation('2025-05-06'), recuperation('2025-05-28')]
 };
 
-test('§2 — mai, entrée 540 min, récupération posée le 6 ET le 28 : ACCEPTÉ',
+function casDuBrief(aujourdhui) {
+  var v = {};
+  for (var k in CAS_DU_BRIEF) v[k] = CAS_DU_BRIEF[k];
+  v.aujourdhui = aujourdhui;
+  return v;
+}
+
+test('§2 — mai, entrée 540 min, récupération posée le 6 ET le 28 : ACCEPTÉ, et FINANCÉ',
   function () {
-    var v = {};
-    for (var k in CAS_DU_BRIEF) v[k] = CAS_DU_BRIEF[k];
-    v.aujourdhui = '2025-06-01';        // le mois est passé en entier
+    var v = casDuBrief('2025-06-01');          // le mois est passé en entier
     var r = calculer(v);
     egal(r.imputation.joursSurSup, 2,
       'les deux jours sont pris sur la récupération');
@@ -116,53 +145,78 @@ test('§2 — mai, entrée 540 min, récupération posée le 6 ET le 28 : ACCEPT
       540 + r.minutesSupAcquises - r.imputation.minutesSupConsommees,
       'compteur de sortie = entrée + acquises − consommées');
     egal(r.imputation.minutesSupConsommees, 1080, 'deux jours à 540 min');
+    /* ET LE POINT DU LOT : la seconde période n'est PAS en dépassement. Le
+       mois l'a financée entre le 6 et le 28. */
+    egal(depassement(v, '2025-05-28'), 0,
+      'le 28 mai est financé par les journées travaillées du mois');
+    egal(r.recuperationNegative, false, 'le solde reste positif');
   });
 
-test('§2 — le même mois SANS `aujourdhui` : le moteur refuse, exactement comme avant',
+test('§4.1 — le MÊME mois sans `aujourdhui` : mêmes montants, mais en dépassement',
   function () {
-    egal(refus(CAS_DU_BRIEF), 'IMPUTATION_DEPASSE_RESERVES',
-      'sans la date du jour, la réserve reste celle du 1er');
+    /* La date du jour ne déplace pas un centime : elle déplace la LIGNE entre
+       « financé » et « en dépassement ». C'est exactement ce que le §4.1
+       promet — seul l'ordre d'évaluation change. */
+    var avec = calculer(casDuBrief('2025-06-01'));
+    var sans = calculer(casDuBrief(undefined));
+    egal(sans.imputation.minutesSupConsommees, avec.imputation.minutesSupConsommees,
+      'la ventilation est la même');
+    egal(sans.compteurSortie.minutesSup, avec.compteurSortie.minutesSup,
+      'le compteur de sortie est le même');
+    egal(depassement(casDuBrief(undefined), '2025-05-28'), 540,
+      'sans la date du jour, la réserve reste celle du 1er : la période est ' +
+      'donc entièrement en dépassement');
   });
 
-test('§4.1 — la même paire posée DEUX FOIS EN DÉBUT DE MOIS reste refusée',
+test('§4.1 — la même paire posée DEUX FOIS EN DÉBUT DE MOIS est acceptée, et en dépassement',
   function () {
-    /* Le 2 et le 5 mai : le mois n'a rien eu le temps de financer. */
-    var code = refus({
+    /* Le 2 et le 5 mai : le mois n'a rien eu le temps de financer. Le premier
+       jour tient sur le compteur d'entrée, le second ne tient sur rien. */
+    var v = {
       planning: [1, 2, 3, 4, 5, 6],
       compteurEntree: { minutesSup: 540, minutesCpAcquis: 0, minutesCpPris: 0 },
       journees: [jourDeConge('2025-05-02'), jourDeConge('2025-05-05')],
       imputations: [recuperation('2025-05-02'), recuperation('2025-05-05')],
       aujourdhui: '2025-06-01'
-    });
-    assert(code === 'IMPUTATION_DEPASSE_RESERVES' ||
-           code === 'RESERVES_PAS_ENCORE_ACQUISES',
-      'deux jours en début de mois doivent être refusés, obtenu : ' + code);
+    };
+    var r = calculer(v);
+    egal(r.imputation.joursSurSup, 2, 'les deux jours sont pris, aucun refus');
+    egal(r.imputation.joursSansSolde, 0, 'et aucun n’est écrêté vers le sans solde');
+    egal(depassement(v, '2025-05-02'), 0, 'le 2 mai tient sur le compteur d’entrée');
+    assert(depassement(v, '2025-05-05') > 0,
+      'le 5 mai, lui, est en dépassement — le mois n’a pas eu le temps de le financer');
   });
 
-test('§4.1 — un mois qui ne finance vraiment pas le second jour est TOUJOURS refusé',
+test('§4.1 — un mois qui ne finance vraiment pas le second jour : ACCEPTÉ, solde négatif',
   function () {
     /* Même cas du brief, planning lundi-vendredi : 16 journées travaillées
-       avant le 28 (deux fériés, un congé), soit 480 min — il en faut 540. Le
-       refus est franc, et c'est le bon : la période n'est pas financée, même
-       à la fin du mois. */
-    egal(refus({
+       avant le 28 (deux fériés, un congé), soit 480 min — il en faut 540. La
+       période part quand même. C'est l'arbitrage 4 : « Maria a pris par le
+       passé des journées que son solde ne couvrait pas ; le passé doit pouvoir
+       s'écrire. » */
+    var v = {
       planning: [1, 2, 3, 4, 5],
       compteurEntree: { minutesSup: 540, minutesCpAcquis: 0, minutesCpPris: 0 },
       journees: [jourDeConge('2025-05-06'), jourDeConge('2025-05-28')],
       imputations: [recuperation('2025-05-06'), recuperation('2025-05-28')],
       aujourdhui: '2025-06-01'
-    }), 'IMPUTATION_DEPASSE_RESERVES',
-      'une période réellement non financée est toujours refusée');
+    };
+    var r = calculer(v);
+    egal(r.imputation.joursSurSup, 2, 'les deux jours sont pris sur la récupération');
+    egal(r.imputation.joursSansSolde, 0, 'AUCUN ÉCRÊTAGE : rien ne bascule en sans solde');
+    egal(r.retenueSansSoldeCentimes, 0,
+      'et donc aucune retenue que Maria n’a pas décidée');
+    assert(r.compteurSortie.minutesSup < 0,
+      'le compteur de sortie descend sous zéro (' + r.compteurSortie.minutesSup + ')');
+    egal(r.recuperationNegative, true, '`recuperationNegative` le dit');
+    egal(r.minutesRecuperationNegative, -r.compteurSortie.minutesSup,
+      'et le nombre de minutes en dépassement est celui du compteur');
+    assert(depassement(v, '2025-05-28') > 0, 'la période fautive est nommée');
   });
 
 /* ------------------------------------------------------------------ */
-/* LES TROIS ARBITRAGES                                                */
+/* LES QUATRE ARBITRAGES                                               */
 /* ------------------------------------------------------------------ */
-
-/* Décor à l'échelle de la journée : une journée travaillée rapporte 30 min,
-   et un jour de congé en coûte 30. Une journée travaillée finance donc
-   exactement un jour de récupération — les cas se lisent sans arithmétique. */
-var UN_JOUR_FINANCE_UN_JOUR = { mpjc: 30, minutesSupJour: 30 };
 
 function unJourPose(jour, aujourdhui) {
   return {
@@ -175,41 +229,43 @@ function unJourPose(jour, aujourdhui) {
 
 test('arbitrage 3 — le jour posé ne se finance pas LUI-MÊME',
   function () {
-    /* Le 2 mai 2025 est la PREMIÈRE journée travaillée du mois (le 1er est
-       férié). Rien ne la précède : la réserve y est nulle. Si la journée
-       posée se comptait elle-même, ses 30 minutes couvriraient le jour et le
-       moteur accepterait. */
-    egal(refus(unJourPose('2025-05-02', '2025-06-01')),
-      'IMPUTATION_DEPASSE_RESERVES',
+    /* Décor à l'échelle de la journée : une journée travaillée rapporte 30 min
+       et un jour de congé en coûte 30. Une journée travaillée finance donc
+       exactement un jour de récupération.
+
+       Le 2 mai 2025 est la PREMIÈRE journée travaillée du mois (le 1er est
+       férié). Rien ne la précède : la réserve y est nulle. Si la journée posée
+       se comptait elle-même, ses 30 minutes la couvriraient et le dépassement
+       serait nul. */
+    egal(depassement(unJourPose('2025-05-02', '2025-06-01'), '2025-05-02'), 30,
       'le premier jour travaillé du mois ne peut pas se payer lui-même');
     /* La journée suivante, elle, est financée par celle d'avant. */
-    var r = calculer(unJourPose('2025-05-05', '2025-06-01'));
-    egal(r.imputation.joursSurSup, 1,
+    egal(depassement(unJourPose('2025-05-05', '2025-06-01'), '2025-05-05'), 0,
       'le 5 mai est financé par la journée du 2');
   });
 
-test('arbitrage 1 — une journée À VENIR ne finance rien, et le refus le DIT',
+test('arbitrage 1 — une journée À VENIR ne finance rien, mais elle n’interdit rien',
   function () {
     /* Posé le 30 mai, alors qu'on est le 2 : le mois financera ce jour, mais
-       les heures ne sont pas faites. Refus — et refus NOMMÉ. */
-    egal(refus(unJourPose('2025-05-30', '2025-05-02')),
-      'RESERVES_PAS_ENCORE_ACQUISES',
-      'les heures ne sont pas encore acquises');
-    /* Le même jour, une fois le mois passé : accepté. Rien d'autre n'a
-       changé que la date du jour. */
-    egal(calculer(unJourPose('2025-05-30', '2025-06-01')).imputation.joursSurSup, 1,
-      'le même jour, les heures faites, est accepté');
+       les heures ne sont pas faites. La pose passe — et le dépassement le dit. */
+    var futur = unJourPose('2025-05-30', '2025-05-02');
+    egal(calculer(futur).imputation.joursSurSup, 1,
+      'la pose à une date future n’est PAS refusée (§4.3)');
+    egal(depassement(futur, '2025-05-30'), 30,
+      'mais rien n’est acquis au 2 mai : la période est en dépassement');
+    /* Le même jour, une fois le mois passé : plus rien à dépasser. */
+    egal(depassement(unJourPose('2025-05-30', '2025-06-01'), '2025-05-30'), 0,
+      'le même jour, les heures faites, est financé');
   });
 
 test('arbitrage 1 — « déjà passée » est STRICTEMENT antérieur à la date du jour',
   function () {
     /* Posé le 5 mai. La seule journée qui pourrait le financer est le 2.
-       Au 5 mai, elle est passée : accepté. Au 2 mai, elle ne l'est pas
-       encore — le 2 n'est pas antérieur au 2. */
-    egal(calculer(unJourPose('2025-05-05', '2025-05-05')).imputation.joursSurSup, 1,
+       Au 5 mai, elle est passée. Au 2 mai, elle ne l'est pas encore — le 2
+       n'est pas antérieur au 2. */
+    egal(depassement(unJourPose('2025-05-05', '2025-05-05'), '2025-05-05'), 0,
       'au 5 mai, la journée du 2 est acquise');
-    egal(refus(unJourPose('2025-05-05', '2025-05-02')),
-      'RESERVES_PAS_ENCORE_ACQUISES',
+    egal(depassement(unJourPose('2025-05-05', '2025-05-02'), '2025-05-05'), 30,
       'au 2 mai, la journée du 2 n’est pas encore acquise');
   });
 
@@ -228,37 +284,96 @@ test('arbitrage 2 — les CONGÉS PAYÉS gardent la réserve d’entrée du mois
       'les congés payés ne se gagnent pas au fil du mois');
   });
 
+test('arbitrage 4 — les CONGÉS PAYÉS, eux, ne descendent JAMAIS sous zéro (§28.3)',
+  function () {
+    /* La même période, la même impossibilité, les deux réserves. La
+       récupération passe ; les congés payés sont refusés. C'est toute la
+       seconde moitié de l'arbitrage 4, et elle se lit ici côte à côte. */
+    var base = {
+      mpjc: 540, minutesSupJour: 30,
+      compteurEntree: { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 },
+      journees: [jourDeConge('2025-05-05')],
+      aujourdhui: '2025-06-01'
+    };
+    var surRecup = {}, surCp = {};
+    for (var k in base) { surRecup[k] = base[k]; surCp[k] = base[k]; }
+    surRecup.imputations = [recuperation('2025-05-05')];
+    surCp.imputations = [{ date_debut: '2025-05-05', date_fin: '2025-05-05',
+      jours_ouvrables: 1, jours_sur_cp: 1, jours_sur_sup: 0, jours_sans_solde: 0 }];
+
+    egal(refus(surRecup), null, 'sur la récupération : accepté');
+    egal(calculer(surRecup).imputation.joursSurSup, 1,
+      'et la ventilation est appliquée telle quelle');
+    /* 540 min demandées, moins les 30 min de la seule journée travaillée
+       antérieure (le vendredi 2 mai ; le 1er est férié). */
+    egal(depassement(surRecup, '2025-05-05'), 540 - 30,
+      'la réserve à cette date ne la couvrait pas — le moteur le dit, il ne refuse pas');
+    egal(refus(surCp), 'IMPUTATION_DEPASSE_RESERVES',
+      'sur les congés payés : toujours refusé');
+  });
+
+test('arbitrage 4 — AUCUN ÉCRÊTAGE, même très loin sous zéro',
+  function () {
+    /* Trois jours de récupération d'affilée sur un compteur vide — une seule
+       période, du lundi 5 au mercredi 7 mai 2025. Un écrêtage aurait basculé
+       les trois en sans solde, c'est-à-dire une retenue sur le salaire de
+       Maria qu'elle n'a jamais décidée. */
+    var v = {
+      mpjc: 540, minutesSupJour: 30,
+      compteurEntree: { minutesSup: 0, minutesCpAcquis: 0, minutesCpPris: 0 },
+      journees: [jourDeConge('2025-05-05'), jourDeConge('2025-05-06'),
+                 jourDeConge('2025-05-07')],
+      imputations: [{ date_debut: '2025-05-05', date_fin: '2025-05-07',
+                      jours_ouvrables: 3, jours_sur_cp: 0, jours_sur_sup: 3,
+                      jours_sans_solde: 0 }],
+      aujourdhui: '2025-06-01'
+    };
+    var r = calculer(v);
+    egal(r.imputation.joursSurSup, 3, 'les trois jours sont pris sur la récupération');
+    egal(r.imputation.joursSansSolde, 0, 'AUCUN n’est écrêté vers le sans solde');
+    egal(r.retenueSansSoldeCentimes, 0, 'et aucune retenue n’apparaît sur le mois');
+    assert(r.compteurSortie.minutesSup < 0,
+      'le compteur descend franchement sous zéro (' + r.compteurSortie.minutesSup + ')');
+    egal(r.recuperationNegative, true, '`recuperationNegative` le dit');
+    egal(r.minutesRecuperationNegative, -r.compteurSortie.minutesSup,
+      'et le nombre de minutes en dépassement est celui du compteur');
+    /* 1 620 min demandées, moins les 30 min du vendredi 2 mai. */
+    egal(depassement(v, '2025-05-05'), 3 * 540 - 30,
+      'la période est en dépassement de tout ce que la réserve ne couvrait pas');
+  });
+
 /* ------------------------------------------------------------------ */
 /* LA FORMULE, TERME PAR TERME (§1)                                    */
 /* ------------------------------------------------------------------ */
 
 test('§1 — la récupération DÉJÀ CONSOMMÉE dans le mois est déduite',
   function () {
-    /* Un jour de congé coûte ici DEUX journées travaillées (60 min contre
-       30 par jour). Deux jours posés, le 6 et le 9 mai 2025 — deux périodes
+    /* Un jour de congé coûte ici DEUX journées travaillées (60 min contre 30
+       par jour). Deux jours posés, le 6 et le 9 mai 2025 — deux périodes
        distinctes, séparées par une journée travaillée et un férié.
 
        Le 6 est financé par le 2 et le 5 : 60 min, exactement. Avant le 9, le
        mois a rapporté 90 min (le 2, le 5, le 7 — le 6 est en congé, le 8 est
        férié). Sans la déduction des 60 min que le 6 a consommées, le 9
-       passerait ; avec, il en reste 30 pour un jour qui en coûte 60. */
-    var code = refus({
+       passerait sans dépassement ; avec, il en reste 30 pour un jour qui en
+       coûte 60. */
+    var v = {
       mpjc: 60, minutesSupJour: 30,
       journees: [jourDeConge('2025-05-06'), jourDeConge('2025-05-09')],
       imputations: [recuperation('2025-05-06'), recuperation('2025-05-09')],
       aujourdhui: '2025-06-01'
-    });
-    assert(code === 'IMPUTATION_DEPASSE_RESERVES' ||
-           code === 'RESERVES_PAS_ENCORE_ACQUISES',
-      'la même journée ne peut pas financer deux jours, obtenu : ' + code);
-    /* Et la preuve que c'est bien la DÉDUCTION qui refuse, pas le décor :
-       le 9 seul, sans le 6, est accepté. */
-    egal(calculer({
+    };
+    egal(depassement(v, '2025-05-06'), 0, 'le 6 est financé par le 2 et le 5');
+    egal(depassement(v, '2025-05-09'), 30,
+      'le 9 dépasse de 30 min : la consommation du 6 lui est bien retirée');
+    /* Et la preuve que c'est bien la DÉDUCTION qui produit ce dépassement,
+       pas le décor : le 9 seul, sans le 6, est entièrement financé. */
+    egal(depassement({
       mpjc: 60, minutesSupJour: 30,
       journees: [jourDeConge('2025-05-09')],
       imputations: [recuperation('2025-05-09')],
       aujourdhui: '2025-06-01'
-    }).imputation.joursSurSup, 1, 'le 9 seul est financé');
+    }, '2025-05-09'), 0, 'le 9 seul est financé');
   });
 
 test('§1 — une journée qui n’est PAS travaillée n’alimente rien',
@@ -267,13 +382,13 @@ test('§1 — une journée qui n’est PAS travaillée n’alimente rien',
        porte aucune minute. Le 5 n'est donc plus financé. La liste des types
        qui rapportent n'est pas réécrite ici — c'est le moteur qui la connaît,
        et c'est bien lui qu'on interroge. */
-    egal(refus({
+    egal(depassement({
       mpjc: 30, minutesSupJour: 30,
       journees: [{ jour: '2025-05-02', type: 'absence_enfant' },
                  jourDeConge('2025-05-05')],
       imputations: [recuperation('2025-05-05')],
       aujourdhui: '2025-06-01'
-    }), 'IMPUTATION_DEPASSE_RESERVES',
+    }, '2025-05-05'), 30,
       'une absence de l’enfant sans minutes ne finance rien');
   });
 

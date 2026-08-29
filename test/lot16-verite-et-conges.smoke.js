@@ -193,24 +193,32 @@ function moisDe(s, annee, mois) {
   /* ==================================================================== */
   console.log('\n--- §16.1 : une répartition qui dépasse les réserves ---');
 
-  /* Trois semaines de congé, et une ligne qui impute 6 jours sur une
-     récupération qui n'en couvre que 5. C'est la situation exacte survenue
-     en production, à un décor fictif près. */
+  /* Trois semaines de congé, et une ligne qui impute 6 jours sur des congés
+     payés qui n'en couvrent que 5. C'est la situation exacte survenue en
+     production, à un décor fictif près.
+
+     LE DÉCOR EST PASSÉ DE LA RÉCUPÉRATION AUX CONGÉS PAYÉS — arbitrage 4
+     d'Adrien, 28 août 2026. Une récupération au-delà du disponible n'est plus
+     refusée : elle descend sous zéro et s'annonce. Le §16.1 protège un
+     mécanisme — le repli, l'encart nommé, la clôture bloquée — et ce
+     mécanisme est INTACT ; c'est sa seule porte d'entrée qui a changé. Les
+     congés payés, eux, ne descendent jamais sous zéro (§28.3), et c'est donc
+     par eux que le cas se rejoue, à l'identique. */
   var jours = ['2026-06-08', '2026-06-09', '2026-06-10', '2026-06-11', '2026-06-12',
                '2026-06-15', '2026-06-16', '2026-06-17', '2026-06-18', '2026-06-19'];
   var SAMEDIS_A8 = Engine.samedisEligibles('2026-06-08', '2026-06-19', PLANNING);
   var decompte = Engine.decompterJoursOuvrables('2026-06-08', '2026-06-19', PLANNING,
     SAMEDIS_A8);
 
-  var CINQ_JOURS_DE_RECUP = 5 * 540;   // minutes_par_jour_conge du décor
+  var CINQ_JOURS_DE_CP = 50;           // en dixièmes : 5 jours
   var opts = {
     journees: journeesConge(jours),
-    cpAcquis: 0,
-    minutesSup: CINQ_JOURS_DE_RECUP,
+    cpAcquis: CINQ_JOURS_DE_CP,
+    minutesSup: 0,
     imputations: [{ id: 'i-fautive', contrat_id: 'c-test',
       date_debut: '2026-06-08', date_fin: '2026-06-19',
       jours_ouvrables: decompte,
-      jours_sur_cp: 0, jours_sur_sup: 6, jours_sans_solde: decompte - 6 }]
+      jours_sur_cp: 6, jours_sur_sup: 0, jours_sans_solde: decompte - 6 }]
   };
 
   /* 1. LE MOTEUR REFUSE TOUJOURS. Le repli ne l'assouplit pas : s'il cédait,
@@ -225,7 +233,7 @@ function moisDe(s, annee, mois) {
       conditions: Decor.avenantDe(contrat(),
         { brut_mensuel_centimes: 200000, net_mensuel_centimes: 150000 }),
       journees: jours.map(function (d) { return opts.journees[d]; }),
-      compteurEntree: { minutesSup: CINQ_JOURS_DE_RECUP, minutesCpAcquis: 0, minutesCpPris: 0 },
+      compteurEntree: { minutesSup: 0, minutesCpAcquis: 5 * 540, minutesCpPris: 0 },
       annee: 2026, mois: 6, imputations: opts.imputations,
       samedisComptes: SAMEDIS_A8
     });
@@ -244,20 +252,20 @@ function moisDe(s, annee, mois) {
   assert(!!(m && m.resultat), 'A1 : et le mois porte un résultat calculable');
   egal(m && m.resultat.joursCongesDecomptes, decompte,
     'A2 : les congés sont décomptés, avec le chiffre du moteur');
-  egal(m && m.resultat.imputation.joursSurSup, 5,
-    'A2 : dans l’ordre par défaut du contrat, la récupération n’est consommée ' +
-    'qu’à hauteur de ce qu’elle couvre — jamais 6');
+  egal(m && m.resultat.imputation.joursSurCp, 5,
+    'A2 : dans l’ordre par défaut du contrat, les congés payés ne sont consommés ' +
+    'qu’à hauteur de ce qu’ils couvrent — jamais 6');
 
   /* 3. ET ELLE LE DIT, avec les nombres qui permettent de l'expliquer. */
   var ecartees = (m && m.imputationsEcartees) || [];
   egal(ecartees.length, 1, 'A3 : le maillon porte la répartition écartée');
   egal(ecartees[0] && ecartees[0].date_debut, '2026-06-08',
     'A3 : l’encart peut nommer la période');
-  egal(ecartees[0] && ecartees[0].choisi.joursSurSup, 6,
+  egal(ecartees[0] && ecartees[0].choisi.joursSurCp, 6,
     'A3 : le nombre CHOISI par Maria');
-  egal(ecartees[0] && ecartees[0].disponible.joursSup, 5,
+  egal(ecartees[0] && ecartees[0].disponible.joursCp, 5,
     'A3 : et le nombre DISPONIBLE, produit par le moteur — c’est la phrase ' +
-    '« vous aviez choisi 6 jours de récupération, vous n’en avez que 5 »');
+    '« vous aviez choisi 6 jours de congés payés, vous n’en avez que 5 »');
   egal(ecartees[0] && ecartees[0].id, 'i-fautive',
     'A3 : avec l’identifiant, pour que « Corriger la répartition » ouvre CETTE période');
 

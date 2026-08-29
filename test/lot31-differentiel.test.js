@@ -77,6 +77,8 @@ function sansLeChampAjoute(r) {
      est dans `test/recuperation-differentiel.test.js`. */
   delete c.minutesSupParJour;
   delete c.recuperationConsommeeParPeriode;
+  delete c.recuperationNegative;
+  delete c.minutesRecuperationNegative;
   return c;
 }
 

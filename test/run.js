@@ -49,7 +49,10 @@ var suites = [
      comme pour tous les lots qui rouvrent le moteur : si l'égalité tombe,
      tout ce qui suit est suspect. */
   { titre: 'Différentiel — la réserve à la date ne déplace aucun montant', suite: require('./recuperation-differentiel.test.js') },
-  { titre: 'La récupération se gagne jour après jour (brief du 28 août 2026)', suite: require('./recuperation-au-fil-du-mois.test.js') }
+  { titre: 'La récupération se gagne jour après jour (brief du 28 août 2026)', suite: require('./recuperation-au-fil-du-mois.test.js') },
+  /* ARBITRAGE 4 — la récupération passe en négatif, la pose ne se refuse
+     plus. Différentiel d'abord, contre la production d'avant (`b83eadd`). */
+  { titre: 'Différentiel — le négatif accepté ne déplace aucun montant', suite: require('./recuperation-negative-differentiel.test.js') }
 ];
 
 var reussis = 0;
