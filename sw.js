@@ -214,7 +214,20 @@
    `js/db.js` demande. Servi avec l'ancien, l'arrivée enregistrée le matin ne
    reviendrait jamais le soir — exactement le défaut que ce changement
    corrige. Aucun fichier ajouté. */
-var CACHE = 'recap-conge-par-enfant-v1';
+/* LES IMPUTATIONS ORPHELINES — NOM DE CACHE CHANGÉ.
+
+   Quatre fichiers servis changent : `js/engine.js` (le moteur NOMME
+   l'imputation qui ne recouvre aucune période), `js/chaine-mois.js` (le
+   maillon du mois la transporte et lui rattache son identifiant),
+   `js/ui-document.js` (l'encart du récapitulatif, le verrou de clôture et le
+   bouton « Retirer cette période ») et `js/ui-accueil.js` (l'entrée
+   d'« Aujourd'hui » et le verrou du parcours guidé). Ils se RÉPONDENT :
+   les écrans lisent `imputationsOrphelines`, que seuls le moteur et la
+   chaîne neufs produisent. Servis avec un moteur ancien, l'encart ne
+   s'afficherait JAMAIS — c'est-à-dire que le silence que ce lot supprime
+   reviendrait intact, et que la clôture resterait ouverte sur une décision
+   perdue. Aucun fichier ajouté. */
+var CACHE = 'recap-imputations-orphelines-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 

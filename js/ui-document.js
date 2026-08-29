@@ -683,7 +683,12 @@
       corps.appendChild(global.UiReouverture.bandeauMoisRouvert({
         recap: e.recap, contrat: vue.contrat, annee: vue.annee, mois: vue.mois,
         rouvertLe: vue.reouvertureLe || null,
-        recloturer: (!e.salaireManquant && !netManquant && !(e.imputationsEcartees || []).length)
+        /* LOT 31 (§3.2) — une orpheline bloque la reclôture au même titre
+           qu'une ventilation écartée : un mois ne se fige pas sur une
+           décision perdue, qu'il soit clôturé une première fois ou rouvert. */
+        recloturer: (!e.salaireManquant && !netManquant &&
+                     !(e.imputationsEcartees || []).length &&
+                     !(e.imputationsOrphelines || []).length)
           ? demanderCloture : null
       }));
     }
@@ -743,6 +748,48 @@
       return;
     }
 
+    /* LOT 31 (§3.2) — L'IMPUTATION QUI NE RECOUVRE AUCUNE JOURNÉE.
+
+       Même encart, même verrou, phrase différente. La ventilation écartée
+       ci-dessus est un choix que les réserves ne couvrent pas ; celle-ci est
+       un choix qui ne décrit PLUS RIEN — la période existe en base, les
+       journées de congé n'existent pas. Le mois se calcule (l'orpheline n'a
+       jamais rien appliqué), mais le clôturer figerait un document où la
+       décision de Maria a disparu sans un mot.
+
+       La phrase dit les trois choses du §3.2 : la période, ce qu'elle
+       demandait, et le fait qu'aucune journée de congé n'existe sur ces
+       dates. Le geste, lui, est unique et explicite (§3.3) : retirer. */
+    var orphelines = (e.imputationsOrphelines || []);
+    if (orphelines.length) {
+      var o0 = orphelines[0];
+      corps.appendChild(Kit.warnbox(
+        orphelines.length > 1
+          ? 'Des périodes de congé n’ont plus aucune journée'
+          : 'Une période de congé n’a plus aucune journée',
+        ' ' + phraseOrpheline(o0) +
+        (orphelines.length > 1
+          ? ' ' + (orphelines.length - 1) + ' autre' +
+            (orphelines.length > 2 ? 's périodes sont' : ' période est') +
+            ' dans le même cas.'
+          : '') +
+        ' Ce mois ne peut pas être clôturé tant qu’' +
+        (orphelines.length > 1 ? 'elles subsistent' : 'elle subsiste') + '.'));
+      if (o0.id) {
+        var bRetirer = Kit.bouton('btn dg', function () {
+          confirmerRetraitOrpheline(o0, bRetirer);
+        });
+        bRetirer.textContent = 'Retirer cette période';
+        corps.appendChild(bRetirer);
+      } else {
+        /* Sans identifiant, on ne retire rien à l'aveugle : on le dit. */
+        corps.appendChild(Kit.note('Retrait impossible depuis cet écran',
+          'Cette période n’a pas pu être identifiée. Signalez-la avant de clôturer.'));
+      }
+      corps.appendChild(sectionPartage());
+      return;
+    }
+
     if (!e.salaireManquant && !netManquant) {
       var b = Kit.bouton('btn', demanderCloture);
       b.textContent = 'Clôturer le mois';
@@ -769,6 +816,70 @@
   /* « Corrigez d'abord la répartition du congé du 3 au 21 août » : le libellé
      de période commence par une majuscule, il est ici au milieu d'une phrase. */
   function minuscule(t) { return t ? t.charAt(0).toLowerCase() + t.slice(1) : t; }
+
+  /* LOT 31 (§3.2) — LA PHRASE DE L'ORPHELINE.
+
+     « Du 4 au 7 mai, vous aviez réparti 4 jours sur vos congés payés — mais
+     aucune journée de congé n'existe sur ces dates. » La ventilation est
+     celle que la période DEMANDAIT : c'est la décision perdue, et c'est elle
+     qu'il faut relire avant de retirer quoi que ce soit. */
+  function phraseOrpheline(o) {
+    return Kit.libellePeriode(o.date_debut, o.date_fin) + ', vous aviez réparti ' +
+      ventilationEnTexte(o) +
+      ' — mais aucune journée de congé n’existe sur ces dates.';
+  }
+
+  function ventilationEnTexte(o) {
+    var parts = [];
+    if (o.joursSurCp) parts.push(nJours(o.joursSurCp) + ' sur vos congés payés');
+    if (o.joursSurSup) parts.push(nJours(o.joursSurSup) + ' sur votre récupération');
+    if (o.joursSansSolde) parts.push(nJours(o.joursSansSolde) + ' sans solde');
+    if (!parts.length) return 'cette période';
+    if (parts.length === 1) return parts[0];
+    return parts.slice(0, -1).join(', ') + ' et ' + parts[parts.length - 1];
+  }
+
+  function nJours(n) { return n + (n > 1 ? ' jours' : ' jour'); }
+
+  /* LOT 31 (§3.3) — LE RETRAIT, ET RIEN D'AUTRE.
+
+     On ne devine JAMAIS les journées manquantes : écrire d'office des congés
+     sur les dates de l'imputation reviendrait à décider à la place de Maria
+     qu'elle était bien absente ces jours-là. Le retrait supprime la seule
+     ligne d'imputation — la cascade de la base emporte ses samedis comptés
+     (migration 018) — et Maria repose ensuite normalement depuis
+     « Mes congés ». Le geste est réversible par une nouvelle pose. */
+  function confirmerRetraitOrpheline(o, bouton) {
+    Kit.ouvrirFeuille('Retirer cette période ?', null, function (corps) {
+      corps.appendChild(Kit.note('Ce qui sera retiré',
+        phraseOrpheline(o) + ' Seule cette répartition est supprimée : aucune ' +
+        'journée n’est ajoutée ni retirée du calendrier. Vous pourrez reposer ' +
+        'ce congé depuis « Mes congés ».'));
+
+      var b = Kit.bouton('btn dg', function () { retirerOrpheline(o, b, bouton); });
+      b.textContent = 'Retirer cette période';
+      corps.appendChild(b);
+
+      var bNon = Kit.bouton('btn nt', function () { Kit.fermerFeuille(); });
+      bNon.textContent = 'Annuler';
+      corps.appendChild(bNon);
+    });
+  }
+
+  function retirerOrpheline(o, b, bouton) {
+    b.disabled = true;
+    global.DB.supprimerImputation(o.id).then(function () {
+      global.App.invalider();
+      Kit.fermerFeuille();
+      Kit.toast('Période retirée.');
+      return global.App.rafraichir();
+    }).catch(function (e) {
+      b.disabled = false;
+      if (bouton) bouton.disabled = false;
+      Kit.toast('Le retrait n’a pas abouti : ' + Kit.messageErreur(e), true);
+      global.App.invalider();
+    });
+  }
 
   function documentHtml(id) {
     var doc = Kit.ce('div', 'doc');

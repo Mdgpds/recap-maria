@@ -302,6 +302,37 @@
      (`source: 'defaut_choix_ecarte'` + `choixEcarte`), afin que les écrans
      n'aient qu'UN seul cas à connaître. La période marquée est celle que le
      moteur a décomptée par défaut et qui recouvre l'imputation refusée. */
+  /* LOT 31 (§3.2) — rattache à chaque orpheline constatée par le moteur
+     l'identifiant de la ligne d'imputation qui la porte.
+
+     Le moteur ne connaît que des données de calcul : il rend des bornes et
+     une ventilation, pas une clé de base. Le rapprochement se fait sur le
+     couple (date_debut, date_fin), qui identifie une imputation sans
+     ambiguïté — deux imputations ne peuvent pas se chevaucher (contrainte
+     d'exclusion `imputation_sans_chevauchement`, migration 004), donc deux
+     lignes ne peuvent pas porter les mêmes bornes.
+
+     Si aucune ligne ne correspond — cas qui ne devrait pas se produire —,
+     l'orpheline est transportée SANS identifiant : l'écran la dira quand
+     même et n'offrira pas le retrait. Taire une période perdue serait pire
+     que ne pas savoir la retirer d'un clic. */
+  function orphelinesAvecId(orphelines, lignesDuMois) {
+    return (orphelines || []).map(function (o) {
+      var sortie = { id: null };
+      for (var k in o) {
+        if (Object.prototype.hasOwnProperty.call(o, k)) sortie[k] = o[k];
+      }
+      for (var i = 0; i < (lignesDuMois || []).length; i++) {
+        var imp = lignesDuMois[i];
+        if (imp && imp.date_debut === o.date_debut && imp.date_fin === o.date_fin) {
+          sortie.id = imp.id == null ? null : imp.id;
+          break;
+        }
+      }
+      return sortie;
+    });
+  }
+
   function marquerEcartees(resultat, ecartees) {
     var appliquees = (resultat && resultat.imputationsAppliquees) || [];
     ecartees.forEach(function (x) {
@@ -811,6 +842,10 @@
                        être écarté. La forme reste la même pour que les écrans
                        n'aient pas à distinguer. */
                     imputationsEcartees: [],
+                    /* LOT 31 (§3.2) — idem : un mois figé n'est pas recalculé,
+                       rien ne peut y être constaté. La forme reste la même
+                       pour que les écrans n'aient pas à distinguer. */
+                    imputationsOrphelines: [],
                     compteurEntree: compteurEntreeDe(d, compteurEntree),
                     compteurSortie: compteur
                   };
@@ -831,6 +866,7 @@
                     conditionsManquantes: true,
                     avantInitialisation: avant, horsContrat: hors,
                     imputationsEcartees: [],
+                    imputationsOrphelines: [],
                     compteurEntree: compteurEntree, compteurSortie: compteur
                   };
                 } else {
@@ -888,6 +924,15 @@
                     /* Vide dans l'immense majorité des cas. Non vide, c'est
                        l'encart du §16.1 et le blocage de la clôture. */
                     imputationsEcartees: rep.ecartees,
+                    /* LOT 31 (§3.2) — LA CHAÎNE TRANSPORTE, ELLE NE JUGE PAS.
+                       Le moteur a constaté les imputations qui ne recouvrent
+                       aucune période (§3.1) ; le maillon les porte, exactement
+                       comme il porte les écartées. L'identifiant est rattaché
+                       ici, et ici seul : le moteur reste pur, mais l'écran a
+                       besoin de savoir QUELLE ligne retirer (§3.3). */
+                    imputationsOrphelines: orphelinesAvecId(
+                      r.imputationsOrphelines,
+                      imputationsDuMois(imputations, mm.annee, mm.mois)),
                     compteurEntree: compteurEntree, compteurSortie: compteur
                   };
                 }

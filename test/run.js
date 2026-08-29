@@ -38,7 +38,13 @@ var suites = [
      moteur figé d'avant le lot. En dernier : les cas de chaîne posent un
      décor `DB` global. */
   { titre: 'Les calculs rendus justes (lot 28, §28.1 à §28.9)', suite: require('./lot28-calculs.test.js') },
-  { titre: 'Différentiel moteur avant/après le lot 28 — chaque écart nommé', suite: require('./lot28-differentiel.test.js') }
+  { titre: 'Différentiel moteur avant/après le lot 28 — chaque écart nommé', suite: require('./lot28-differentiel.test.js') },
+  /* LOT 31 — l'imputation qui ne recouvre aucune journée est NOMMÉE, et le
+     différentiel prouve qu'elle ne change pas un centime. Le différentiel
+     d'abord, comme pour tous les lots qui rouvrent le moteur : si l'égalité
+     tombe, tout ce qui suit est suspect. */
+  { titre: 'Différentiel moteur avant/après le lot 31 (§4) — aucun montant ne bouge', suite: require('./lot31-differentiel.test.js') },
+  { titre: 'Les imputations orphelines nommées (lot 31, §3.1)', suite: require('./lot31-orphelines.test.js') }
 ];
 
 var reussis = 0;
