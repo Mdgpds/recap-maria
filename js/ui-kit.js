@@ -271,6 +271,115 @@
     return quantieme(d) + ' ' + MOIS[Number(d.slice(5, 7))];
   }
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 31 §5 — DES JOURS QUI SE SUIVENT S'ÉCRIVENT « DU 15 AU 18 »     */
+  /*                                                                     */
+  /* Trois semaines de congé donnaient quinze lignes identiques : illisible */
+  /* pour Maria, et pire pour la famille qui reçoit le document.          */
+  /*                                                                     */
+  /* UN SEUL EXEMPLAIRE, ICI. Le document du mois, le repli « Journées à  */
+  /* part » et la liste de « Mes congés » regroupent la même chose ; trois */
+  /* implémentations auraient produit trois découpages, et c'est le       */
+  /* document remis à un tiers qui aurait fini par différer de l'écran que */
+  /* Maria a relu. Le document a d'ailleurs trois rendus — écran, texte à  */
+  /* copier, image — qui partagent tous cette fonction, comme l'encart     */
+  /* RG-06 (§5).                                                          */
+  /* ------------------------------------------------------------------ */
+
+  /* LA RÈGLE, TRANCHÉE PAR ADRIEN LE 1er SEPTEMBRE 2026 :
+
+       « Une plage ne regroupe que des journées STRICTEMENT IDENTIQUES.
+         Même nature, même décompte, même imputation. Dès qu'un de ces trois
+         éléments change, la plage se coupe. »
+
+     Elle est appliquée telle quelle : l'appelant fournit `cle(jour)`, qui
+     porte ces trois éléments, et deux journées de clés différentes ne se
+     rejoignent jamais. Une liste d'exceptions se périme au premier attribut
+     ajouté ; une règle unique tient par construction.
+
+     CE QUI COMPTE COMME « CONSÉCUTIF » : les jours se suivent en JOURS
+     OUVRÉS DU PLANNING. Un vendredi et le lundi suivant se suivent — le
+     week-end ne coupe pas. Un férié au milieu ne coupe pas non plus. En
+     revanche une journée ouvrable ABSENTE de la liste coupe : c'est elle qui
+     fait qu'une demi-journée posée au milieu d'une semaine de congés entiers
+     produit bien deux plages, sans qu'aucune règle spéciale n'ait à le dire.
+
+     `ouvrable(jour)` est fourni par l'appelant : lui seul connaît le
+     planning du contrat, ses bornes et le calendrier des fériés. */
+  function suitDansLeRythme(precedent, jour, ouvrable) {
+    if (jour <= precedent) return false;
+    var x = global.Feries.ajouterJours(precedent, 1);
+    var garde = 0;
+    while (x < jour && garde++ < 400) {
+      if (ouvrable(x)) return false;
+      x = global.Feries.ajouterJours(x, 1);
+    }
+    return x === jour;
+  }
+
+  /* `plagesDeJours(['2026-09-15', ...], { cle, ouvrable })`
+     -> [{ debut, fin, jours: [...], cle }], dans l'ordre des dates. */
+  function plagesDeJours(jours, options) {
+    var opts = options || {};
+    var cle = opts.cle || function () { return ''; };
+    var ouvrable = opts.ouvrable || function () { return true; };
+    var tries = (jours || []).slice().sort();
+    var out = [];
+    var courante = null;
+    tries.forEach(function (d) {
+      var k = String(cle(d));
+      if (courante && courante.cle === k &&
+          suitDansLeRythme(courante.fin, d, ouvrable)) {
+        courante.jours.push(d);
+        courante.fin = d;
+        return;
+      }
+      courante = { cle: k, jours: [d], debut: d, fin: d };
+      out.push(courante);
+    });
+    return out;
+  }
+
+  /* LES TROIS CAS DU §5, ET RIEN D'AUTRE :
+
+       un seul jour            -> « Le 15 septembre »
+       deux jours              -> « Le 15 et le 16 septembre »
+       trois jours ou plus     -> « Du 15 au 18 septembre »
+
+     Le cas à deux se décide sur le NOMBRE DE JOURS de la plage, pas sur son
+     étendue : un vendredi et le lundi suivant font deux jours et s'écrivent
+     « Le 18 et le 21 septembre », jamais « Du 18 au 21 » — qui laisserait
+     croire à quatre journées décomptées.
+
+     `quantieme` rend « 1er » pour le premier du mois : la même correction
+     qu'au lot 16, et elle vaut pour les deux bornes. */
+  function libellePlageJours(plage) {
+    var jours = (plage && plage.jours) || [];
+    if (!jours.length) return '—';
+    if (jours.length === 1) return 'Le ' + jourEtMois(jours[0]);
+    if (jours.length === 2) {
+      var memeMois2 = jours[0].slice(0, 7) === jours[1].slice(0, 7);
+      return 'Le ' + (memeMois2 ? quantieme(jours[0]) : jourEtMois(jours[0])) +
+        ' et le ' + jourEtMois(jours[1]);
+    }
+    return libellePeriode(plage.debut, plage.fin);
+  }
+
+  /* La même règle des trois cas pour une PÉRIODE déjà bornée — « Mes congés »
+     stocke des bornes, pas une liste de jours (§5, troisième endroit). Le cas
+     à deux ne s'applique que si les deux bornes se suivent dans le rythme :
+     une période qui commence un samedi non compté n'a pas ses deux journées
+     décomptées sur ses bornes, et « Le 19 et le 22 » serait faux. */
+  function libellePeriodeTroisCas(debut, fin, nbJoursDecomptes, ouvrable) {
+    if (!debut || !fin) return '—';
+    if (debut === fin) return 'Le ' + jourEtMois(debut);
+    if (nbJoursDecomptes === 2) {
+      var p = plagesDeJours([debut, fin], { ouvrable: ouvrable });
+      if (p.length === 1) return libellePlageJours(p[0]);
+    }
+    return libellePeriode(debut, fin);
+  }
+
   /* '2026-05-19' -> 'Mardi 19 mai' */
   function jourLong(iso) {
     var p = String(iso).slice(0, 10).split('-');
@@ -1621,6 +1730,9 @@
     /* LOT 16 §16.6 — élision ; §16.8 — libellé d'une période. */
     elider: elider, deMois: deMois, deMoisAnnee: deMoisAnnee,
     libellePeriode: libellePeriode,
+    plagesDeJours: plagesDeJours,
+    libellePlageJours: libellePlageJours,
+    libellePeriodeTroisCas: libellePeriodeTroisCas,
     jourLong: jourLong, dateLongue: dateLongue,
     /* LOT 28 — le quantième seul (« 1er », « 26 »), pour énumérer plusieurs
        dates d'un même mois sans répéter le mois à chaque fois. `jourEtMois`

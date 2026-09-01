@@ -249,7 +249,8 @@
        reste à placer se voit alors dans « reste à répartir », et c'est
        exactement ce qu'elle doit trancher. */
     var choix = {
-      joursSurCp: Math.min(imputation.jours_sur_cp || 0, maxCp),
+      joursSurCp: Math.min(imputation.jours_sur_cp || 0,
+        maxCp + (plafonds.anticipationCp || 0)),
       joursSurSup: Math.min(imputation.jours_sur_sup || 0, maxSup),
       joursSansSolde: Math.min(imputation.jours_sans_solde || 0, jours)
     };
@@ -257,6 +258,11 @@
     var p = {
       fiche: fiche, contrat: c, cond: cond, jours: jours, cp: cp, sup: sup,
       maxCp: maxCp, maxSup: maxSup, supGagnes: plafonds.joursSupGagnes || 0,
+      /* LOT 31 §6 — corriger une répartition sur le plafond d'avant
+         l'anticipation reproduirait le refus qu'on vient de lever : une
+         ventilation acceptée à la pose deviendrait impossible à ré-enregistrer
+         telle quelle. */
+      anticipationCp: plafonds.anticipationCp || 0,
       /* Le solde SIGNÉ à la date de la période : c'est lui qui chiffre la
          dette annoncée quand la ventilation dépasse (arbitrage 4, §4.3). */
       supSolde: supSolde,
@@ -357,9 +363,17 @@
      (§16.1 d). */
   function poserLignesVentilation(parent, p, onchange) {
     var cond = p.cond;
+    /* LOT 31 §6 — LE PLAFOND MONTE DE DEUX JOURS SUR LE MOIS EN COURS, et le
+       sous-texte le DIT. Un plafond qui monte sans un mot laisserait Maria
+       croire à un solde qu'elle n'a pas : ce sont les mêmes minutes, prises un
+       peu plus tôt, et la ligne doit le nommer. Sans anticipation possible —
+       un mois à venir — la phrase d'avant est rendue telle quelle. */
+    var anticipation = p.anticipationCp || 0;
     ligneStepper(parent, 'Congés payés',
-      'reste ' + Kit.joursCp(p.cp, mpjc(cond)) + ' au compteur',
-      p.choix.joursSurCp, Math.min(p.maxCp, p.jours),
+      'reste ' + Kit.joursCp(p.cp, mpjc(cond)) + ' au compteur' +
+        (anticipation > 0
+          ? ' · +' + anticipation + ' j par anticipation ce mois-ci' : ''),
+      p.choix.joursSurCp, Math.min(p.maxCp + anticipation, p.jours),
       function (v) { onchange('joursSurCp', v); });
     /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — LA PHRASE DIT POURQUOI LE
        PLAFOND A MONTÉ. « Maria doit comprendre pourquoi elle peut aujourd'hui
@@ -626,9 +640,16 @@
         var ligne = f.journees[d];
         if (!ligne || ligne.ecart_evenement !== 'conge_horaire') return;
         var minutes = -(ligne.ecart_minutes || 0);
-        var cle = d + '|' + minutes;
+        /* LOT 31 §3 — LA MOITIÉ ENTRE DANS LA CLÉ. Une demi-journée du matin
+           et une demi-journée de l'après-midi posées le même jour ont la même
+           durée : fondues en une ligne, elles se retireraient d'un seul geste
+           et rendraient aux compteurs des minutes que personne n'y avait
+           prises. C'est le raisonnement de la durée dans la clé, appliqué au
+           fait qui vient de s'ajouter. */
+        var moitie = ligne.demi_journee || null;
+        var cle = d + '|' + minutes + '|' + (moitie || '');
         if (!par[cle]) {
-          par[cle] = { jour: d, minutes: minutes, parts: [] };
+          par[cle] = { jour: d, minutes: minutes, moitie: moitie, parts: [] };
           ordre.push(cle);
         }
         par[cle].parts.push({
@@ -642,10 +663,24 @@
     return ordre.map(function (k) { return par[k]; });
   }
 
-  function ligneHoraire(l, h) {
+  /* LE TITRE D'UN CONGÉ À L'HEURE — UN SEUL EXEMPLAIRE.
+
+     Il était calculé à deux endroits : ici, et dans la feuille « Retirer des
+     congés ». Deux copies d'une même phrase finissent toujours par diverger —
+     et elles ont divergé au premier mot ajouté. Un seul exemplaire, comme les
+     libellés d'écart du lot 28.
+
+     LOT 31 §3 — la moitié, quand la base la connaît. Une pose antérieure à la
+     migration 020 n'en a pas : l'écran ne l'invente pas. */
+  function titreHoraire(h) {
+    if (h.moitie) return '½ journée ' + moitieAvecArticle(h.moitie === 'matin');
     var demi = demiJournee();
-    var titre = (demi.minutes > 0 && h.minutes === demi.minutes)
+    return (demi.minutes > 0 && h.minutes === demi.minutes)
       ? '½ journée' : Kit.heures(h.minutes);
+  }
+
+  function ligneHoraire(l, h) {
+    var titre = titreHoraire(h);
     var detail = h.parts.map(function (x) {
       return x.prenom + ' : ' + (LIBELLE_ISSUE[x.issue] || x.issue);
     }).join(' · ');
@@ -793,7 +828,18 @@
       parEnfant.forEach(function (t) { textes.push(t); });
     }
 
-    Kit.ligneLn(l, Kit.libellePeriode(groupe.debut, groupe.fin),
+    /* LOT 31 §5 — LA MÊME RÈGLE DES TROIS CAS QU'AILLEURS. Cette liste
+       stocke des BORNES, pas une liste de journées : le cas à deux ne
+       s'applique que si les deux bornes se suivent dans le rythme de travail
+       du contrat. Une période de deux jours décomptés qui commencerait un
+       samedi non compté s'écrirait sinon « Le 19 et le 22 », ce qui serait
+       faux — ni le 19 ni sa fin ne seraient les deux journées décomptées. */
+    var joursPlanning = planning;
+    Kit.ligneLn(l, Kit.libellePeriodeTroisCas(groupe.debut, groupe.fin,
+        ref.jours_ouvrables, function (d) {
+          return joursPlanning && joursPlanning.indexOf(Engine.jourSemaine(d)) !== -1 &&
+            !Feries.estJourFerie(d);
+        }),
       Kit.jours(ref.jours_ouvrables) + ' ouvrables',
       { sous: textes.length ? textes.join(' · ') : null });
   }
@@ -1126,8 +1172,38 @@
     var au1er = enPlus ? Chaine.reservesEnJours(cond, compteur) : r;
     return {
       maxCp: r.joursCp, maxSup: r.joursSup,
-      joursSupGagnes: Math.max(0, r.joursSup - au1er.joursSup)
+      joursSupGagnes: Math.max(0, r.joursSup - au1er.joursSup),
+      /* LOT 31 §6 — CE QUE MARIA PEUT PRENDRE PAR ANTICIPATION SUR CETTE
+         PÉRIODE. Deux jours si la période commence dans le mois en cours,
+         zéro sinon. C'est exactement la borne que le moteur applique, lue au
+         même endroit : un écran qui proposerait plus que le moteur n'accepte
+         offrirait un stepper qui refuse à l'écriture. */
+      anticipationCp: joursAnticipablesAu(jour)
     };
+  }
+
+  /* LOT 31 §6 — LA RÈGLE D'ANTICIPATION, ÉNONCÉE UNE FOIS.
+
+     « Maria peut poser des congés payés qu'elle n'a pas encore acquis — mais
+     uniquement pour des jours du MOIS EN COURS. Ce sont les 2,5 jours qu'elle
+     est en train d'acquérir. Pour un mois à venir, seuls les jours déjà acquis
+     sont posables. » (Adrien)
+
+     DEUX JOURS ENTIERS, PAS 2,5 : on ne pose pas de demi-jour par ce chemin.
+     Le moteur borne pareil — au plus l'acquisition du mois, au plus deux
+     jours — et c'est la même valeur des deux côtés, sinon le stepper
+     proposerait un cran que l'écriture refuserait.
+
+     La date de référence est celle de l'application (`App.aujourdhui`), la
+     même qui sert déjà à la récupération gagnée au fil du mois. */
+  var JOURS_ANTICIPABLES = 2;
+
+  function joursAnticipablesAu(jour) {
+    if (!jour) return 0;
+    var auj = global.App.aujourdhui && global.App.aujourdhui();
+    if (!auj) return 0;
+    return String(jour).slice(0, 7) === String(auj).slice(0, 7)
+      ? JOURS_ANTICIPABLES : 0;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1255,6 +1331,10 @@
       /* --- chemin « à l'heure » --- */
       jour: auj,
       minutes: format === 'demi' ? demiJournee().minutes : 90,
+      /* LOT 31 §3 — DE QUELLE MOITIÉ. Le moteur n'en fait rien : il ne compte
+         que des minutes. Maria et la famille en font quelque chose — c'est ce
+         qui figure sur le document. Le matin par défaut, comme la spec. */
+      demiMatin: true,
       /* `qui` et `exclu` servent LES DEUX chemins depuis le correctif du
          28 août : « Des journées » a maintenant sa case par enfant, et c'est
          la même réserve qui porte le choix. `qui[id]` est le choix EXPLICITE
@@ -1738,6 +1818,24 @@
         }
         zoneQui.appendChild(carteEnfant(p, majTout));
       });
+
+      /* LOT 31 §6 — LA PHRASE, SOUS LA LISTE, ET SEULEMENT QUAND
+         L'ANTICIPATION EST OFFERTE.
+
+         Une phrase qui s'affiche toujours n'explique plus rien : celle-ci ne
+         paraît que sur une période qui commence dans le mois en cours, là où
+         le plafond a réellement monté. Elle dit les deux moitiés de la règle —
+         ce qui est ouvert, et ce qui ne l'est pas — parce que la seconde est
+         celle que Maria découvrirait sinon en butant sur un stepper. */
+      var offerte = plans.some(function (p) {
+        return estRetenu(p) && (p.anticipationCp || 0) > 0;
+      });
+      if (offerte) {
+        zoneQui.appendChild(Kit.ce('p', 'sb q',
+          'Sur le mois en cours, vous pouvez prendre par anticipation les ' +
+          'jours de congés payés que vous êtes en train d’acquérir. Pour un ' +
+          'mois à venir, seuls les jours déjà acquis sont posables.'));
+      }
     }
 
     /* Le total du sans solde et sa retenue — ce que portait le récapitulatif
@@ -1904,7 +2002,14 @@
   /* « 4 j payés · 2 j récup », et le montant quand du sans solde apparaît. */
   function texteRepartition(p) {
     var bouts = [];
-    if (p.choix.joursSurCp) bouts.push(p.choix.joursSurCp + ' j payés');
+    if (p.choix.joursSurCp) {
+      /* LOT 31 §6 — LA CARTE RÉSUME CE QUI EST ANTICIPÉ. « 5 j payés (dont 2
+         par anticipation) » : au repli fermé, c'est la seule ligne que Maria
+         lit avant de poser, et un jour anticipé n'est pas un jour acquis. */
+      var anticipes = Math.max(0, p.choix.joursSurCp - (p.maxCp || 0));
+      bouts.push(p.choix.joursSurCp + ' j payés' +
+        (anticipes > 0 ? ' (dont ' + anticipes + ' par anticipation)' : ''));
+    }
     if (p.choix.joursSurSup) bouts.push(p.choix.joursSurSup + ' j récup');
     if (p.choix.joursSansSolde) {
       var brut = brutDe(p.fiche);
@@ -1930,21 +2035,40 @@
 
     var chDuree = null;
     if (libre) {
+      /* LOT 31 §4 — LES TROIS RACCOURCIS DISPARAISSENT.
+
+         `23 min · 1 h · 1 h 34` venaient d'une maquette ancienne et ne
+         correspondaient à rien de réel : ni à une durée que Maria pose, ni à
+         une borne du contrat. Trois boutons qui proposent des valeurs
+         arbitraires ne font pas gagner de temps, ils font douter — Maria
+         pouvait croire que la durée devait être l'une des trois.
+
+         Reste le champ seul, et sous lui la phrase qui dit la BORNE : c'est
+         la seule chose que Maria a besoin de savoir avant de saisir. */
       chDuree = Kit.champHeureMinute('Durée', minutesEnIso(parcours.minutes));
       zone.appendChild(chDuree.bloc);
-      var rang = Kit.ce('div', 'rrow');
-      [23, 60, 94].forEach(function (m) {
-        var b = Kit.bouton('btn sm nt', function () {
-          parcours.minutes = m;
-          chDuree.input.value = minutesEnIso(m);
-          majTout();
-        });
-        b.textContent = Kit.heures(m);
-        rang.appendChild(b);
-      });
-      zone.appendChild(rang);
+      zone.appendChild(Kit.ce('p', 'sb q',
+        'Une durée libre est forcément inférieure à une demi-journée. ' +
+        'Au-delà, posez une demi-journée ou une journée entière.'));
     } else {
-      zone.appendChild(Kit.fld('Durée', Kit.heures(demi.minutes) +
+      /* LOT 31 §3 — QUELLE MOITIÉ, ET ELLE SE DIT AVANT LA DURÉE.
+
+         Le chemin « ½ journée » posait 4 h 30 sans jamais dire de quelle
+         moitié il s'agissait. La durée décomptée ne change pas d'un iota :
+         c'est toujours la moitié de la journée de congé de l'avenant. Ce qui
+         s'ajoute est un FAIT que le document doit porter.
+
+         Les heures affichées sont FIXES — 8h30 / 13h00 / 18h00 — et non
+         celles de l'avenant de chaque contrat : une demi-journée se pose sur
+         plusieurs contrats à la fois, et trois heures d'arrivée différentes
+         dans un même sous-titre ne diraient plus rien. Tranché par Adrien le
+         1er septembre 2026 : « les enfants doivent tous arriver vers 8h30 ». */
+      zone.appendChild(Kit.section('Quelle demi-journée ?'));
+      var zoneMoitie = Kit.ce('div');
+      zone.appendChild(zoneMoitie);
+      dessinerMoitie(zoneMoitie, function () { majTout(); });
+
+      zone.appendChild(Kit.fld('Durée décomptée', Kit.heures(demi.minutes) +
         ' — la moitié d’une journée de congé'));
       if (demi.divergent) {
         zone.appendChild(Kit.ce('p', 'sb q',
@@ -1986,9 +2110,15 @@
             'ou « des journées ».'));
           dureeOk = false;
         } else if (parcours.minutes <= 0) {
+          /* §21.1 — LE REFUS GARDE SON TITRE EXACT. Son corps, lui, citait les
+             trois raccourcis que le §4 retire (« 1 h, 23 min, 1 h 34 ») :
+             conservé au mot près, il aurait proposé à Maria trois valeurs
+             qu'aucun bouton ne pose plus, sur un écran qui vient de les
+             supprimer. La phrase dit maintenant la seule chose qui compte —
+             la borne — et rien d'autre n'est touché. Annoncé à Adrien dans le
+             plan, validé avant écriture. */
           alerte.appendChild(Kit.note('Saisissez une durée',
-            '1 h, 23 min, 1 h 34 — ce que vous voulez, en dessous de ' +
-            Kit.heures(demi.minutes) + '.'));
+            'Ce que vous voulez, en dessous de ' + Kit.heures(demi.minutes) + '.'));
           dureeOk = false;
         }
       } else if (demi.minutes <= 0) {
@@ -2042,15 +2172,52 @@
       });
 
       bouton.disabled = !dureeOk || !retenus.length;
+      /* LOT 31 §3 — LE BOUTON REPREND LA MOITIÉ CHOISIE. « Poser 4 h 30 sur
+         2 contrats » ne disait pas ce que Maria vient de choisir juste
+         au-dessus ; le bouton est le dernier endroit où elle peut s'en
+         apercevoir. Le chemin « Durée libre » garde sa durée : elle EST le
+         choix. */
+      var quoi = libre ? Kit.heures(minutes)
+                       : 'la demi-journée ' + moitieAvecArticle(parcours.demiMatin);
       bouton.textContent = (!dureeOk || !retenus.length)
         ? 'Poser'
-        : 'Poser ' + Kit.heures(minutes) +
+        : 'Poser ' + quoi +
           (retenus.length === 1
             ? ' pour ' + retenus[0].contrat.prenom_enfant
             : ' sur ' + retenus.length + ' contrats');
     }
 
     chargerContexteDuJour().then(majTout);
+  }
+
+  /* LOT 31 §3 — les deux moitiés, et rien d'autre. `matin` est la valeur
+     écrite en base (contrainte de la migration 020) ; `apres_midi` l'autre. */
+  var MOITIES = [
+    { matin: true,  cle: 'matin',      nom: 'Le matin',      quand: 'de 8h30 à 13h00' },
+    { matin: false, cle: 'apres_midi', nom: 'L’après-midi',  quand: 'de 13h00 à 18h00' }
+  ];
+
+  function libelleMoitie(matin) { return matin ? 'matin' : 'après-midi'; }
+  /* « du matin », mais « de l'après-midi » : l'élision se fait ici, une fois,
+     plutôt que dans chaque phrase qui nomme la moitié. */
+  function moitieAvecArticle(matin) { return matin ? 'du matin' : 'de l’après-midi'; }
+  function cleMoitie(matin) { return matin ? 'matin' : 'apres_midi'; }
+
+  function dessinerMoitie(zone, apres) {
+    Kit.vider(zone);
+    MOITIES.forEach(function (m) {
+      var actif = parcours.demiMatin === m.matin;
+      var b = Kit.choix(zone, 'c1', actif ? '●' : '○', m.nom, m.quand, function () {
+        parcours.demiMatin = m.matin;
+        dessinerMoitie(zone, apres);
+        if (apres) apres();
+      });
+      if (actif) b.className += ' on';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', actif ? 'true' : 'false');
+    });
+    zone.setAttribute('role', 'radiogroup');
+    zone.setAttribute('aria-label', 'Quelle demi-journée');
   }
 
   /* §21.1 — LA DEMI-JOURNÉE, ET LE SEUIL DE LA DURÉE LIBRE.
@@ -2363,7 +2530,13 @@
           ecart_minutes: -minutes,
           ecart_evenement: 'conge_horaire',
           ecart_heure_reelle: null,
-          ecart_impute_sur: parcours.cpt[f.contrat.id] || 'recuperation'
+          ecart_impute_sur: parcours.cpt[f.contrat.id] || 'recuperation',
+          /* LOT 31 §3 — la moitié, seulement pour le chemin « ½ journée ».
+             Une durée libre l'EFFACE (`null`) : réécrire 1 h 34 sur une
+             journée qui portait une demi-journée du matin laisserait une
+             moitié orpheline, et le document la lirait. */
+          demi_journee: parcours.format === 'demi'
+            ? cleMoitie(parcours.demiMatin) : null
         });
       })).then(function () {
         global.App.invalider();
@@ -2812,6 +2985,9 @@
         cp: cp, sup: sup,
         maxCp: plafonds.maxCp,
         maxSup: plafonds.maxSup,
+        /* LOT 31 §6 — les jours de congés payés anticipables sur cette
+           période : deux si elle commence dans le mois en cours, zéro sinon. */
+        anticipationCp: plafonds.anticipationCp || 0,
         /* Le nombre de jours que le MOIS EN COURS a ajoutés au plafond : la
            phrase « dont N gagnés depuis le 1er » ne dit rien d'autre. */
         supGagnes: plafonds.joursSupGagnes || 0,
@@ -3148,11 +3324,8 @@
              parce que ce n'est pas un compteur mais une retenue qui disparaît
              avec la déclaration. */
           horaires.forEach(function (h) {
-            var demi = demiJournee();
-            var titre = (demi.minutes > 0 && h.minutes === demi.minutes)
-              ? '½ journée' : Kit.heures(h.minutes);
             Kit.choix(corps, 'c1', '−',
-              (titre + ' ' + libellePlage(h.jour, h.jour)).replace(/^./, function (c) {
+              (titreHoraire(h) + ' ' + libellePlage(h.jour, h.jour)).replace(/^./, function (c) {
                 return c.toUpperCase();
               }),
               h.parts.map(function (x) {

@@ -52,7 +52,21 @@ var suites = [
   { titre: 'La récupération se gagne jour après jour (brief du 28 août 2026)', suite: require('./recuperation-au-fil-du-mois.test.js') },
   /* ARBITRAGE 4 — la récupération passe en négatif, la pose ne se refuse
      plus. Différentiel d'abord, contre la production d'avant (`b83eadd`). */
-  { titre: 'Différentiel — le négatif accepté ne déplace aucun montant', suite: require('./recuperation-negative-differentiel.test.js') }
+  { titre: 'Différentiel — le négatif accepté ne déplace aucun montant', suite: require('./recuperation-negative-differentiel.test.js') },
+  /* LOT 31 §6 — les congés payés par anticipation, sur le mois en cours
+     seulement. Placé après les différentiels de la récupération : c'est le
+     même contrôle `IMPUTATION_DEPASSE_RESERVES` qu'ils gardent, vu de
+     l'autre côté. */
+  /* LOT 31 « LES HUIT CORRECTIONS DU PARCOURS » — LE DIFFÉRENTIEL D'ABORD,
+     comme pour tous les lots qui rouvrent le moteur : si l'égalité tombe, tout
+     ce qui suit est suspect. */
+  { titre: 'Différentiel — juin, juillet, août 2026 : rien ne bouge hors le §6', suite: require('./parcours-differentiel.test.js') },
+  { titre: 'Les congés payés par anticipation (lot 31 §6)', suite: require('./parcours-anticipation.test.js') }
+  /* `parcours-plages.test.js` N'EST PAS ICI, et c'est délibéré : il monte un
+     jsdom pour charger `js/ui-kit.js`, or ce runner a déjà posé un décor
+     global `window`/`document` pour `etat-mois` et `lot24-socle`. Les deux se
+     marcheraient dessus, et le test lirait un `Kit` qui n'est pas le sien. Il
+     vit dans `npm run test:ui`, avec les autres tests qui montent un DOM. */
 ];
 
 var reussis = 0;

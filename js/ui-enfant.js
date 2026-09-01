@@ -1008,6 +1008,21 @@
      de l'ajustement du lot 12, les quatre de l'écart du lot 17, la reprise en
      main des heures réelles et de l'indemnité. La NOTE n'y est pas — elle a
      son propre repli, et elle ne touche aucun chiffre. */
+  /* LOT 31 §5 — LE RYTHME DE TRAVAIL DE CE CONTRAT. Une journée « ouvrable »
+     est une journée du planning, dans les bornes du contrat, hors férié. Un
+     week-end et un férié ne coupent pas une plage parce qu'ils ne sont pas
+     ouvrables ; une journée de travail absente de la liste coupe, parce
+     qu'elle l'est. Même définition que celle du document — la plage lue par
+     Maria et celle lue par la famille ne peuvent pas différer. */
+  function estJourOuvrable(d) {
+    var c = vue.contrat;
+    if (c.date_debut && d < c.date_debut) return false;
+    if (c.date_fin && d > c.date_fin) return false;
+    var planning = planningDuMois();
+    if (!planning || planning.indexOf(Engine.jourSemaine(d)) === -1) return false;
+    return !Feries.estJourFerie(d);
+  }
+
   function porteUneDeclaration(ligne) {
     if (!ligne) return false;
     return (ligne.ecart_minutes != null && ligne.ecart_minutes !== 0) ||
@@ -1123,29 +1138,78 @@
       { ouvert: (r.ecartsDeclares || []).length > 0 });
     var l = f.corps;
 
+    /* LOT 31 §5 — LES JOURNÉES DÉCLARÉES SE REGROUPENT EN PLAGES.
+
+       Trois jours de départ avant l'heure, à la même heure, imputés de la même
+       façon, donnaient trois lignes rigoureusement identiques à la date près.
+       Ils en donnent une : « Du 15 au 17 septembre ».
+
+       LA CLÉ EST CE QUE LA LIGNE AFFICHE — sa valeur chiffrée ET sa phrase.
+       Ce n'est pas un raccourci : cette phrase énonce précisément la nature du
+       geste, son décompte et sa poche d'imputation (`phraseDeclaration` les
+       compose une à une). Deux journées qui produisent le même texte sont donc
+       strictement identiques au sens de la règle ; deux journées qui diffèrent
+       d'un mot ne se rejoignent pas. Regrouper sur la clé affichée garantit
+       par construction qu'aucune plage ne masque une différence — c'est
+       exactement ce que la règle protège, et ça reste vrai le jour où un
+       attribut s'ajoutera à la phrase. */
+    var detailsParJour = {};
+    var conditionsDuMois = cond();
     declarees.forEach(function (x) {
-      var conditions = cond();
-      var detailSup = conditions
-        ? Engine.detailSupDuJour(x.ligne, conditions)
-        : null;
-      /* Sans conditions, on ne prétend RIEN chiffrer : la journée est nommée,
-         sa valeur est dite illisible. Un repli silencieux sur zéro afficherait
-         un chiffre faux et crédible. */
-      Kit.ligneLn(l, Kit.jourLong(x.jour),
-        detailSup ? valeurJourneeDeclaree(detailSup) : '—', {
-          sous: detailSup ? phraseDeclaration(x.jour, x.ligne, detailSup) : null,
-          onclick: vue.lectureSeule ? null : function () { ouvrirJour(x.jour); }
-        });
+      detailsParJour[x.jour] = {
+        ligne: x.ligne,
+        /* Sans conditions, on ne prétend RIEN chiffrer : la journée est
+           nommée, sa valeur est dite illisible. Un repli silencieux sur zéro
+           afficherait un chiffre faux et crédible. */
+        detailSup: conditionsDuMois
+          ? Engine.detailSupDuJour(x.ligne, conditionsDuMois) : null
+      };
+    });
+    function affichageDeclaree(d) {
+      var x = detailsParJour[d];
+      return {
+        valeur: x.detailSup ? valeurJourneeDeclaree(x.detailSup) : '—',
+        phrase: x.detailSup ? phraseDeclaration(d, x.ligne, x.detailSup) : null
+      };
+    }
+
+    Kit.plagesDeJours(Object.keys(detailsParJour), {
+      ouvrable: estJourOuvrable,
+      cle: function (d) {
+        var a = affichageDeclaree(d);
+        return a.valeur + '|' + (a.phrase || '');
+      }
+    }).forEach(function (plage) {
+      var a = affichageDeclaree(plage.debut);
+      /* Un appui ouvre la PREMIÈRE journée de la plage (§5). */
+      Kit.ligneLn(l, Kit.libellePlageJours(plage), a.valeur, {
+        sous: a.phrase,
+        onclick: vue.lectureSeule ? null : function () { ouvrirJour(plage.debut); }
+      });
     });
 
+    /* LOT 31 §5 — GROUPÉ D'ABORD PAR NATURE, PUIS EN PLAGES.
+
+       Une nature donnait UNE ligne dont le sous-titre énumérait les
+       quantièmes : « 1, 2, 3, 4, 7, 8, 9, 10, 11, 14, 15 septembre » pour
+       trois semaines de congé. Elle donne maintenant une ligne PAR PLAGE, avec
+       son propre décompte. La nature reste le premier niveau : l'ordre de
+       `GROUPES_SANS_TRAVAIL` ne bouge pas.
+
+       Ces journées sont uniformes en décompte (une journée entière chacune) et
+       n'ont pas d'imputation propre à l'écran : la clé est donc la nature
+       seule — les deux autres composantes ne varient pas à l'intérieur d'un
+       groupe. */
     GROUPES_SANS_TRAVAIL.forEach(function (g) {
       var jours = groupes[g.type];
       if (!jours || !jours.length) return;
-      var dates = jours.map(function (d) { return Kit.quantieme(d); }).join(', ') +
-        ' ' + Kit.libelleMois(vue.mois);
-      Kit.ligneLn(l, g.titre, jours.length + ' j', {
-        sous: g.regle ? dates + ' — ' + g.regle.toLowerCase() : dates,
-        alerte: !!g.alerte
+      Kit.plagesDeJours(jours, { ouvrable: estJourOuvrable }).forEach(function (plage) {
+        var quand = Kit.libellePlageJours(plage);
+        Kit.ligneLn(l, g.titre, plage.jours.length + ' j', {
+          sous: g.regle ? quand + ' — ' + g.regle.toLowerCase() : quand,
+          alerte: !!g.alerte,
+          onclick: vue.lectureSeule ? null : function () { ouvrirJour(plage.debut); }
+        });
       });
     });
 

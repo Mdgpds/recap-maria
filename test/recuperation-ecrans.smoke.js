@@ -557,21 +557,43 @@ function moteurSur(joursPoses, joursSurSup, entree, aujourdhui) {
     'E4 : et il accepte aussi quand le mois ne l’a pas financé — la pose ' +
     'n’est JAMAIS refusée sur la récupération');
 
-  /* Les congés payés, eux, restent refusés : la seconde moitié de
-     l'arbitrage 4, vérifiée à côté de la première. */
-  var surCp = null;
-  try {
-    Engine.calculerMois({
-      contrat: LEA, conditions: juillet.conditions,
-      journees: deuxJours.map(function (j) { return { jour: j, type: 'conge_maria' }; }),
-      compteurEntree: juillet.compteurEntree, annee: 2026, mois: 7,
-      imputations: [{ id: 'i-cp', date_debut: deuxJours[0], date_fin: deuxJours[1],
-        jours_ouvrables: 2, jours_sur_cp: 2, jours_sur_sup: 0, jours_sans_solde: 0 }],
-      samedisComptes: [], aujourdhui: '2026-07-31'
-    });
-  } catch (e) { surCp = e.code; }
-  assert(surCp === 'IMPUTATION_DEPASSE_RESERVES',
-    'E4 : sur les congés payés, le refus reste entier (obtenu ' + surCp + ')');
+  /* Les congés payés, eux, gardent leur refus — mais DEPUIS LE LOT 31 §6 il
+     commence deux jours plus haut sur le mois en cours. On vérifie les deux
+     côtés de la borne, sinon ce contrôle ne dit plus rien.
+
+     Ce qui n'a pas changé : les congés payés ne descendent pas LIBREMENT sous
+     zéro. Ils descendent d'un montant décidé, et pas d'une minute au-delà. */
+  function cpSur(jours, nbJours, auj) {
+    try {
+      Engine.calculerMois({
+        contrat: LEA, conditions: juillet.conditions,
+        journees: jours.map(function (j) { return { jour: j, type: 'conge_maria' }; }),
+        compteurEntree: juillet.compteurEntree, annee: 2026, mois: 7,
+        imputations: [{ id: 'i-cp', date_debut: jours[0], date_fin: jours[jours.length - 1],
+          jours_ouvrables: nbJours, jours_sur_cp: nbJours, jours_sur_sup: 0,
+          jours_sans_solde: 0 }],
+        samedisComptes: [], aujourdhui: auj
+      });
+      return null;
+    } catch (e) { return e.code; }
+  }
+
+  /* CAS DE RÉFÉRENCE RETOURNÉ EN CONNAISSANCE DE CAUSE — LOT 31 §6 : deux
+     jours de congés payés non acquis, sur le mois en cours, sont désormais
+     ACCEPTÉS. C'est la règle donnée par Adrien : ce sont les jours que Maria
+     est en train d'acquérir. */
+  assert(cpSur(deuxJours, 2, '2026-07-31') === null,
+    'E4 + lot 31 §6 : deux jours par anticipation, sur le mois en cours, ' +
+    'sont acceptés');
+
+  /* Et la borne tient des deux autres côtés — c'est ce qui fait que le §28.3
+     n'est pas tombé. */
+  var troisJours = ['2026-07-29', '2026-07-30', '2026-07-31'];
+  assert(cpSur(troisJours, 3, '2026-07-31') === 'IMPUTATION_DEPASSE_RESERVES',
+    'E4 + §6 : au-delà de deux jours, le refus reste entier');
+  assert(cpSur(deuxJours, 2, '2026-08-03') === 'IMPUTATION_DEPASSE_RESERVES',
+    'E4 + §6 : et hors du mois en cours, aucune anticipation — le refus ' +
+    'reste entier lui aussi');
 
   /* ==================================================================== */
   /* E5 — LE RÉCAPITULATIF NE BORNE PAS LE SOLDE À ZÉRO                   */

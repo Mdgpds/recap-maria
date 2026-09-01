@@ -119,10 +119,30 @@ function surCp(debut, fin, jours) {
    sous zéro (§28.3, arbitrage 4 seconde moitié). C'est lui qu'on vérifie
    chaque fois qu'un refus disparaît : le lot a le droit de débloquer une
    récupération, jamais un congé payé. */
-function congesPayesJamaisNegatifs(v, ap) {
+/* LOT 31 §6 — LE GARDE-FOU RESTE, IL DEVIENT PRÉCIS.
+
+   Avant ce lot : les congés payés ne dépassaient JAMAIS le disponible
+   d'entrée. Depuis le §6, ils peuvent le dépasser d'un montant BORNÉ — au plus
+   l'acquisition du mois, au plus deux jours entiers — et seulement quand la
+   période commence dans le mois de référence.
+
+   Ce contrôle ne disparaît donc pas : il vérifie que tout dépassement observé
+   tient dans cette borne, et rien de plus. Un refus perdu au-delà reste une
+   régression, et le test le dira. */
+function anticipationAutorisee(v, auj) {
+  if (!auj) return 0;
+  var mpj = v.mpjc || 540;
+  /* Toutes les périodes de ces décors commencent dans le mois calculé : la
+     borne s'applique dès que le mois calculé EST celui de `aujourdhui`. */
+  var moisCalcule = v.annee + '-' + String(v.mois).padStart(2, '0');
+  if (String(auj).slice(0, 7) !== moisCalcule) return 0;
+  return Math.min(Math.round(2.5 * mpj), 2 * mpj);
+}
+
+function congesPayesJamaisNegatifs(v, ap, auj) {
   var c = v.compteurEntree || { minutesCpAcquis: 16200, minutesCpPris: 0 };
-  return ap.imputation.minutesCpConsommees <=
-    (c.minutesCpAcquis || 0) - (c.minutesCpPris || 0);
+  var dispo = (c.minutesCpAcquis || 0) - (c.minutesCpPris || 0);
+  return ap.imputation.minutesCpConsommees <= dispo + anticipationAutorisee(v, auj);
 }
 
 /* ------------------------------------------------------------------ */
@@ -200,7 +220,7 @@ test('§4.1 — sans `aujourdhui`, le moteur rend EXACTEMENT ce qu’il rendait'
              s'agit — pas d'un refus d'une autre nature qu'on aurait perdu. */
           assert(eAv.code === 'IMPUTATION_DEPASSE_RESERVES',
             m.nom + ' — refus perdu, et ce n’est pas celui des réserves : ' + eAv.code);
-          assert(congesPayesJamaisNegatifs(m.v, ap),
+          assert(congesPayesJamaisNegatifs(m.v, ap, undefined),
             m.nom + ' — un refus de CONGÉS PAYÉS a été perdu : régression');
           return;
         }
@@ -327,8 +347,13 @@ test('§5 — différentiel large : 1 500 décors croisés, aucun montant ne bou
                      récupération était négatif — `0 > −900` est vrai. Le
                      contrôle ne portant plus que sur les congés payés, ce
                      refus-là disparaît aussi, et c'est un défaut corrigé. */
-                  assert(congesPayesJamaisNegatifs(v, ap), etiquette +
-                    ' — un refus de CONGÉS PAYÉS a été perdu : régression');
+                  /* LOT 31 §6 — la borne d'anticipation entre ici : un
+                     dépassement de congés payés est admis, mais seulement
+                     jusqu'à deux jours et seulement si `aujourdhui` tombe dans
+                     le mois calculé. Au-delà, c'est toujours une régression. */
+                  assert(congesPayesJamaisNegatifs(v, ap, auj), etiquette +
+                    ' — un refus de CONGÉS PAYÉS a été perdu AU-DELÀ de ' +
+                    'l’anticipation autorisée : régression');
                   debloques++;
                   return;
                 }

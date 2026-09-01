@@ -195,7 +195,11 @@ var DB = {
                   jour: l.jour, type: l.type };
     ['minutes_reelles', 'entretien_centimes', 'commentaire', 'entretien_du',
      'minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',
-     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur']
+     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur',
+     /* LOT 31 §3 (migration 020) — le double doit rendre ce que la base
+        rendra : sans cette colonne, l'écran relirait `undefined` et la moitié
+        de journée disparaîtrait entre l'écriture et l'affichage. */
+     'demi_journee']
       .forEach(function (k) {
         ligne[k] = Object.prototype.hasOwnProperty.call(l, k) ? l[k] : null;
       });
@@ -355,7 +359,14 @@ function boutonIssue(prenom, libelle) {
   saisirDuree('00:00');
   await pause(150);
   contient(sheet, 'Saisissez une durée', 'A1 : zéro est refusé, avec sa phrase');
-  contient(sheet, '1 h, 23 min, 1 h 34', 'A1 : et la phrase donne des exemples');
+  /* CAS DE RÉFÉRENCE RETOURNÉ EN CONNAISSANCE DE CAUSE — LOT 31 §4.
+     La phrase du refus donnait pour exemples les trois raccourcis que le §4
+     retire. Les citer encore proposerait à Maria des valeurs qu'aucun bouton
+     ne pose plus, sur l'écran même qui vient de les supprimer. Le TITRE du
+     refus (« Saisissez une durée ») n'a pas bougé d'un caractère, et
+     l'assertion ci-dessus le vérifie toujours. */
+  contient(sheet, 'Ce que vous voulez, en dessous de 4h30',
+    'A1 : et la phrase dit la borne, sans citer de raccourci (lot 31 §4)');
 
   /* ==================================================================== */
   /* §21.2 — LE PRÉ-CHOIX, PAR ENFANT (A3)                                */
@@ -502,9 +513,87 @@ function boutonIssue(prenom, libelle) {
   await pause(150);
   boutonIssue('Noah', 'Sans solde').click();
   await pause(200);
-  contient(sheet, 'Poser 4h30 sur 2 contrats', 'le bouton récapitule les deux contrats');
-  parTexte(sheet, 'button', 'Poser 4h30 sur 2 contrats').click();
+  /* CAS DE RÉFÉRENCE RETOURNÉ EN CONNAISSANCE DE CAUSE — LOT 31 §3.
+     Le bouton disait « Poser 4h30 sur 2 contrats ». Il dit désormais laquelle
+     des deux moitiés Maria vient de choisir juste au-dessus : c'est le dernier
+     endroit où elle peut s'apercevoir d'une erreur, et c'est ce qui partira
+     sur le document de la famille. La durée décomptée, elle, n'a pas bougé —
+     le champ « Durée décomptée » l'affiche toujours (assertion §21.1
+     ci-dessus, intacte). */
+  contient(sheet, 'Poser la demi-journée du matin sur 2 contrats',
+    'le bouton récapitule les deux contrats, et dit quelle moitié (lot 31 §3)');
+
+  /* ==================================================================== */
+  /* LOT 31 §3 — QUELLE DEMI-JOURNÉE                                      */
+  /* ==================================================================== */
+  console.log('\n--- lot 31 §3 : la demi-journée dit laquelle ---');
+
+  contient(sheet, 'Quelle demi-journée ?', '§3 : la section est là');
+  contient(sheet, 'de 8h30 à 13h00', '§3 : le matin porte ses heures');
+  contient(sheet, 'de 13h00 à 18h00', '§3 : l’après-midi aussi');
+  var choixMatin = parTexte(sheet, '.choice', 'Le matin');
+  var choixAprem = parTexte(sheet, '.choice', 'L’après-midi');
+  egal(choixMatin.getAttribute('aria-checked'), 'true',
+    '§3 : LE MATIN PAR DÉFAUT, comme la spec');
+  egal(choixAprem.getAttribute('aria-checked'), 'false',
+    '§3 : et l’après-midi ne l’est pas');
+  contient(sheet, '4h30 — la moitié d’une journée de congé',
+    '§3 : LA DURÉE DÉCOMPTÉE NE CHANGE PAS — c’est toujours la moitié de la ' +
+    'journée de congé de l’avenant');
+
+  /* On bascule sur l'après-midi : le bouton doit suivre, puis on revient. */
+  choixAprem.click();
+  await pause(200);
+  contient(sheet, 'Poser la demi-journée de l’après-midi sur 2 contrats',
+    '§3 : le bouton suit le choix');
+  contient(sheet, '4h30 — la moitié d’une journée de congé',
+    '§3 : et la durée décomptée n’a toujours pas bougé');
+  parTexte(sheet, '.choice', 'Le matin').click();
+  await pause(200);
+
+  ecritures.length = 0;
+  parTexte(sheet, 'button', 'Poser la demi-journée du matin sur 2 contrats').click();
   await pause(600);
+
+  egal(ecritures.length, 2, '§3 : deux journées écrites, une par contrat retenu');
+  ecritures.forEach(function (e) {
+    egal(e.demi_journee, 'matin',
+      '§3 : ' + e.contrat_id + ' enregistre demi_journee = matin (migration 020)');
+    egal(e.ecart_minutes, -270,
+      '§3 : ' + e.contrat_id + ' — et les minutes décomptées sont inchangées');
+  });
+
+  /* ==================================================================== */
+  /* LOT 31 §4 — LA DURÉE LIBRE PERD SES RACCOURCIS                       */
+  /* ==================================================================== */
+  console.log('\n--- lot 31 §4 : plus aucun raccourci de durée ---');
+
+  await ouvrirFormat('Durée libre');
+  absent(sheet, '23min', '§4 : le raccourci 23 min a disparu');
+  absent(sheet, '1h34', '§4 : le raccourci 1 h 34 a disparu');
+  assert(!sheet.querySelector('.rrow'),
+    '§4 : le rang des raccourcis n’existe plus du tout');
+  contient(sheet, 'Une durée libre est forcément inférieure à une demi-journée.',
+    '§4 : la phrase qui dit la borne est là, sous le champ');
+  contient(sheet, 'Au-delà, posez une demi-journée ou une journée entière.',
+    '§4 : et elle dit quoi faire au-delà');
+  var champDuree = sheet.querySelector('input[type="time"]');
+  egal(champDuree && champDuree.value, '01:30',
+    '§4 : la valeur par défaut de 1 h 30 est conservée');
+  window.Kit.fermerFeuille();
+  await pause(250);
+
+  /* LE DOCUMENT REMIS À LA FAMILLE LE DIT — c'est l'objet du §3. */
+  window.App.invalider();
+  window.App.aller('document', { contratId: 'c-lea', annee: 2026, mois: 10 });
+  await pause(900);
+  contient(corps, 'Demi-journée du matin — jeudi 8 octobre',
+    '§3 : LE DOCUMENT nomme la moitié, au lieu de « 4h30 le jeudi 8 octobre »');
+  contient(corps, 'déduite de ma récupération',
+    '§3 : et il dit toujours de quelle poche elle sort');
+  contient(corps, '(4h30)',
+    '§3 : la durée reste, entre parenthèses — cette ligne explique un total, ' +
+    'et un total amputé de son détail est inexplicable');
 
   window.App.invalider();
   window.App.aller('enfant', { contratId: 'c-lea', annee: 2026, mois: 10 });
@@ -517,7 +606,8 @@ function boutonIssue(prenom, libelle) {
   await pause(600);
   boutonExact(corps, 'Retirer des congés').click();
   await pause(500);
-  parTexte(sheet, 'button', '½ journée le jeudi 8 octobre').click();
+  /* Retourné pour la même raison : la ligne de la liste nomme la moitié. */
+  parTexte(sheet, 'button', '½ journée du matin le jeudi 8 octobre').click();
   await pause(300);
   contient(sheet, 'reviennent au compteur qui les avait fournies',
     'A7 : le retrait dit ce qu’il rend');

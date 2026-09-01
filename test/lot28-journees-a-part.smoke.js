@@ -289,8 +289,15 @@ function lignesDe(fold) {
   console.log('\n--- 2 : le 2 juin, celui qui a fait remonter le défaut ---');
 
   var lignes = lignesDe(f);
-  var l2 = lignes.filter(function (t) { return t.indexOf('Mardi 2 juin') !== -1; })[0];
-  assert(!!l2, 'la journée est nommée en toutes lettres');
+  /* CAS DE RÉFÉRENCE RETOURNÉ EN CONNAISSANCE DE CAUSE — LOT 31 §5.
+     Les journées de ce repli se regroupent désormais en PLAGES, et une plage
+     s'écrit selon la règle des trois cas : « Le 2 juin » pour une journée
+     seule, au lieu de « Mardi 2 juin ». Le jour de la semaine disparaît de ce
+     libellé — c'est le prix d'un libellé unique pour les trois écrans (§5), et
+     la date reste sans ambiguïté. Tout le reste de la ligne est intact, et les
+     assertions ci-dessous le vérifient mot pour mot. */
+  var l2 = lignes.filter(function (t) { return t.indexOf('Le 2 juin') !== -1; })[0];
+  assert(!!l2, 'la journée est nommée et datée (lot 31 §5 : règle des plages)');
   assert(l2.indexOf('Libération anticipée') !== -1,
     'le GESTE est nommé — c’est lui qui explique pourquoi le temps a bougé, ' +
     'pas la poche où il est allé');
@@ -303,7 +310,7 @@ function lignesDe(fold) {
     'la journée porte ce que le MOTEUR retient pour elle : 30 min du contrat ' +
     'moins 5 h 30 rendues = − 5 h, et non l’écart brut');
 
-  var l9 = lignes.filter(function (t) { return t.indexOf('Mardi 9 juin') !== -1; })[0];
+  var l9 = lignes.filter(function (t) { return t.indexOf('Le 9 juin') !== -1; })[0];
   assert(!!l9, 'le renoncement du lot 9 a lui aussi sa ligne');
   assert(l9.indexOf('30 min non réclamées, votre choix') !== -1,
     'et il dit que c’est un choix, jamais une créance en attente');
@@ -317,13 +324,19 @@ function lignesDe(fold) {
   egal(lc.length, 1,
     'UNE seule ligne pour trois jours de congé — trois semaines d’été en ' +
     'feraient sinon dix-huit, qui enterreraient la ligne qui explique un chiffre');
-  assert(lc[0].indexOf('22, 23, 24 juin') !== -1,
-    'les quantièmes y sont tous : le groupement ne perd aucune date');
+  /* RETOURNÉ POUR LA MÊME RAISON — LOT 31 §5. Le sous-titre énumérait les
+     quantièmes (« 22, 23, 24 juin ») ; il écrit la plage (« Du 22 au
+     24 juin »). C'est l'objet même du §5 : trois semaines de congé donnaient
+     une énumération de quinze nombres. Aucune date n'est perdue — les trois
+     journées sont dans la plage, et le décompte « 3 j » est intact. */
+  assert(lc[0].indexOf('Du 22 au 24 juin') !== -1,
+    'le sous-titre écrit la PLAGE, et le groupement ne perd aucune date');
+  assert(lc[0].indexOf('3 j') !== -1,
+    'et le décompte de la plage est là');
   assert(lc[0].indexOf('pas d’heures sup ces jours-là') !== -1,
     'RG-04 est dite là où elle est INCONDITIONNELLE (conge_maria est dans ' +
     'TYPES_SANS_MINUTES du moteur, toujours)');
-  egal(lignes.filter(function (t) { return t.indexOf('juin') !== -1 &&
-    t.indexOf('Mardi') === -1; }).length, 1,
+  egal(lignes.filter(function (t) { return t.indexOf('Mon congé') !== -1; }).length, 1,
     'aucune ligne par jour de congé n’est ajoutée');
 
   /* ==================================================================== */

@@ -439,8 +439,26 @@ var sheet = document.getElementById('sheet');
 
   assert(txt(corps).indexOf('Chargement…') === -1,
     '§16.4 : aucune ligne ne reste sur « Chargement… »');
+  /* CAS DE RÉFÉRENCE PRÉCISÉ — LOT 31 §7.2.
+     Ce que le §16.4 vérifie est que la ligne n'est plus FIGÉE : elle lit le
+     réglage en base au lieu d'afficher un texte écrit en dur. C'est toujours
+     vrai, et c'est toujours vérifié — mais depuis le lot 31, le sous-titre dit
+     d'abord si le système est en service : tant que la clé VAPID est vide,
+     annoncer « Le 25, puis chaque jour » promettrait un rappel qui ne part
+     pas. On vérifie donc les DEUX états, plutôt que de choisir celui qui
+     arrange. */
+  assert(txt(corps).indexOf('Réglages enregistrés — pas encore activés') !== -1,
+    '§16.4 + lot 31 §7.2 : sans clé VAPID, la ligne dit l’état réel du système');
+
+  dom.window.RECAP_MARIA_CONFIG = { VAPID_PUBLIC_KEY: 'cle-de-test-non-vide' };
+  window.App.aller('menu', {}, true);
+  await pause(300);
   assert(txt(corps).indexOf('Le 25, puis chaque jour') !== -1,
-    '§16.4 : la ligne des rappels affiche son VRAI réglage, lu en base');
+    '§16.4 : la ligne des rappels affiche son VRAI réglage, lu en base — ' +
+    'dès que le système est en service');
+  delete dom.window.RECAP_MARIA_CONFIG;
+  window.App.aller('menu', {}, true);
+  await pause(300);
   assert(!!parTexte(corps, '.cd', 'Mon nom sur les documents'),
     '§16.2 : le Menu propose la saisie du nom');
   /* LOT 22 §22.1 — la ligne « Familles » est devenue « Mes enfants », et son

@@ -298,13 +298,28 @@ test('§5 — différentiel large : les congés payés ne sont JAMAIS débloqué
 
                 if (eAv) {
                   if (eAp) { refusIdentiques++; return; }
-                  /* Un refus perdu, et une seule raison acceptable : il portait
-                     sur la récupération. Les congés payés consommés doivent
-                     rester dans la réserve d'entrée — sinon c'est le §28.3 qui
-                     tombe, sur un compteur qui ne se remet jamais à zéro. */
+                  /* Un refus perdu, et deux raisons acceptables, deux
+                     seulement : il portait sur la RÉCUPÉRATION (arbitrage 4 du
+                     28 août), ou sur des congés payés dans la limite de
+                     l'ANTICIPATION du lot 31 §6 — au plus deux jours entiers,
+                     et seulement quand la période commence dans le mois de
+                     `aujourdhui`.
+
+                     Le §28.3 tient toujours : les congés payés ne descendent
+                     pas librement sous zéro, ils descendent d'un montant
+                     DÉCIDÉ. Au-delà de cette borne, un refus perdu reste une
+                     régression sur un compteur qui ne se remet jamais à zéro,
+                     et ce contrôle le dira. */
+                  var mpjDecor = mm.mpjc || 540;
+                  var memeMois = String(auj || '').slice(0, 7) ===
+                    mm.annee + '-' + String(mm.mois).padStart(2, '0');
+                  var anticipation = memeMois
+                    ? Math.min(Math.round(2.5 * mpjDecor), 2 * mpjDecor) : 0;
                   assert(ap.imputation.minutesCpConsommees <=
-                    (compteur.minutesCpAcquis || 0) - (compteur.minutesCpPris || 0),
-                    etiquette + ' — un refus de CONGÉS PAYÉS a été perdu : régression');
+                    (compteur.minutesCpAcquis || 0) - (compteur.minutesCpPris || 0) +
+                    anticipation,
+                    etiquette + ' — un refus de CONGÉS PAYÉS a été perdu ' +
+                    'AU-DELÀ de l’anticipation autorisée : régression');
                   debloques++;
                   if (ap.recuperationNegative) negatifs++;
                   return;

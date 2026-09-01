@@ -918,6 +918,34 @@ function grosDecompte() {
     'c-lea': { '2026-07-06': { type: 'conge_maria' }, '2026-07-07': { type: 'conge_maria' } },
     'c-tom': { '2026-07-06': { type: 'conge_maria' }, '2026-07-07': { type: 'conge_maria' } }
   };
+  /* ==================================================================== */
+  /* LOT 31 §5 — LE DOCUMENT ÉCRIT UNE PLAGE, PAS UNE LIGNE PAR JOUR      */
+  /* ==================================================================== */
+  console.log('\n--- lot 31 §5 : les congés du document, en plages ---');
+
+  window.App.invalider();
+  window.App.aller('document', { contratId: 'c-lea', annee: 2026, mois: 7 });
+  await pause(700);
+  var docJuillet = corps.querySelector('.doc');
+  if (!docJuillet) {
+    console.log('ok   (document non rendu dans ce décor — contrôle porté par ' +
+      'test/parcours-plages.test.js et lot28-journees-a-part)');
+  } else {
+    var texteDoc = sansInsecable(txt(docJuillet));
+    assert(texteDoc.indexOf('Le 6 et le 7 juillet') !== -1,
+      '§5 : deux journées consécutives s’écrivent « Le 6 et le 7 juillet » ' +
+      '(section lue : ' + texteDoc.slice(texteDoc.indexOf('Congés de l’assistante'), texteDoc.indexOf('Congés de l’assistante') + 90) + ')');
+    assert(texteDoc.indexOf('Lundi 6 juillet') === -1 &&
+           texteDoc.indexOf('Mardi 7 juillet') === -1,
+      '§5 : et plus AUCUNE ligne par journée, dans AUCUNE des deux sections — ' +
+      '« Journées particulières » est sur le même document et portait le même ' +
+      'défaut');
+    assert(texteDoc.indexOf('Journées particulièresLe 6 et le 7 juillet') !== -1,
+      '§5 : « Journées particulières » écrit la même plage, avec la même règle');
+    assert(texteDoc.indexOf('Le 14 juillet') !== -1,
+      '§5 : et le férié garde sa ligne — une nature différente ne se fond pas');
+  }
+
   appels.supprImput = []; appels.retirer = [];
   await ouvrirConges();
   parTexte(corps, 'button', 'Retirer des congés').click();
@@ -1102,6 +1130,41 @@ function grosDecompte() {
     'A10 : aucun retrait de samedi écrit à la main — c’est la cascade qui rend le quota');
 
   /* ==================================================================== */
+  /* ==================================================================== */
+  /* LOT 31 §6 — LES CONGÉS PAYÉS PAR ANTICIPATION                        */
+  /* ==================================================================== */
+  console.log('\n--- lot 31 §6 : l’anticipation, sur le mois en cours ---');
+
+  scene.imputations = {}; scene.journees = {};
+  window.App.invalider();
+  /* Une période de juillet, et on est le 1er juillet : l’anticipation est
+     offerte. */
+  await ouvrirConges();
+  await ouvrirPose('2026-07-13', '2026-07-17');
+  var texteAnticipation = sansInsecable(txt(sheet));
+  assert(texteAnticipation.indexOf('par anticipation ce mois-ci') !== -1,
+    '§6 : le sous-texte du stepper annonce l’anticipation');
+  assert(texteAnticipation.indexOf(
+    'Sur le mois en cours, vous pouvez prendre par anticipation') !== -1,
+    '§6 : et la phrase sous la liste dit la règle');
+  assert(texteAnticipation.indexOf(
+    'Pour un mois à venir, seuls les jours déjà acquis sont posables') !== -1,
+    '§6 : y compris sa seconde moitié — celle que Maria découvrirait sinon ' +
+    'en butant sur un stepper');
+  window.Kit.fermerFeuille();
+  await pause(250);
+
+  /* Le mois suivant, à la même date du jour : plus aucune anticipation. */
+  await ouvrirConges();
+  await ouvrirPose('2026-08-10', '2026-08-14');
+  var texteMoisSuivant = sansInsecable(txt(sheet));
+  assert(texteMoisSuivant.indexOf('par anticipation') === -1,
+    '§6 : sur un mois à venir, ni plafond relevé ni phrase — seuls les jours ' +
+    'déjà acquis sont posables');
+  window.Kit.fermerFeuille();
+  await pause(250);
+
+
   console.log('');
   if (echecs) { console.error(echecs + ' échec(s).'); process.exit(1); }
   console.log('Tout est conforme.');

@@ -153,7 +153,7 @@
     'id, contrat_id, jour, type, minutes_reelles, entretien_centimes, commentaire, ' +
     'minutes_sup_exceptionnelles, minutes_sup_renoncees, sup_dues_override, ' +
     'ecart_minutes, ecart_evenement, ecart_heure_reelle, ecart_impute_sur, ' +
-    'entretien_du, fam_heure_arrivee, fam_heure_depart';
+    'entretien_du, fam_heure_arrivee, fam_heure_depart, demi_journee';
 
   /* LOT 20 (§20.2) — les périodes de familiarisation. */
   var CHAMPS_PERIODE_FAM = 'id, contrat_id, date_debut, date_fin';
@@ -936,9 +936,14 @@
        ne sont pas touchées ; présentes à `null`, elles sont EFFACÉES. C'est
        ce qui permet à « Retirer cette déclaration » de ne laisser aucune
        heure orpheline derrière une durée remise à `null`. */
+    /* LOT 31 §3 (migration 020) — `demi_journee` suit la règle des colonnes
+       d'écart : absente, elle n'est pas touchée ; présente à `null`, elle est
+       EFFACÉE. C'est ce qui fait qu'une demi-journée corrigée en durée libre
+       ne laisse pas derrière elle une moitié de journée qui ne correspond
+       plus à rien. Le moteur ne la lit jamais. */
     ['minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',
      'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur',
-     'entretien_du', 'fam_heure_arrivee', 'fam_heure_depart']
+     'entretien_du', 'fam_heure_arrivee', 'fam_heure_depart', 'demi_journee']
       .forEach(function (champ) {
         if (Object.prototype.hasOwnProperty.call(ligne, champ) && ligne[champ] !== undefined) {
           payload[champ] = ligne[champ];

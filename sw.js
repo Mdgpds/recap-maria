@@ -261,7 +261,36 @@
    `IMPUTATION_DEPASSE_RESERVES` — un geste offert et refusé une seconde plus
    tard. Un moteur neuf servi avec l'ancien écran, à l'inverse, garderait le
    mur là où la règle vient de l'ôter. Aucun fichier ajouté. */
-var CACHE = 'recap-recuperation-negative-v1';
+/* LOT 31 — LES HUIT CORRECTIONS DU PARCOURS — NOM DE CACHE CHANGÉ.
+
+   Huit fichiers servis changent : `css/style.css` (la couleur des états du
+   calendrier gagne enfin), `js/ui-kit.js` (la règle des plages, en un seul
+   exemplaire), `js/ui-conges.js` (le choix de la demi-journée, les raccourcis
+   retirés, le plafond d'anticipation), `js/ui-document.js` (la moitié de
+   journée sur la pièce remise à la famille, et les plages), `js/ui-enfant.js`
+   (« Journées à part » en plages), `js/ui-menu.js` (la vérité sur les rappels,
+   « Reprendre mes comptes » retiré), `js/db.js` (la colonne `demi_journee`
+   lue et écrite) et `js/engine.js` (l'anticipation bornée).
+
+   ILS SE RÉPONDENT, et deux mélanges seraient franchement mauvais :
+
+   - `js/ui-document.js` neuf servi avec `js/ui-kit.js` ancien appellerait
+     `Kit.plagesDeJours` à `undefined` À SON RENDU : le document remis à une
+     famille tomberait, pas seulement une ligne de plus ou de moins ;
+   - `js/ui-conges.js` neuf servi avec `js/engine.js` ancien laisserait Maria
+     pousser le stepper des congés payés deux jours au-delà de sa réserve, puis
+     l'écriture ferait tomber le mois sur `IMPUTATION_DEPASSE_RESERVES` — un
+     geste offert et refusé une seconde plus tard, exactement le défaut que le
+     lot précédent a corrigé dans l'autre sens.
+
+   `js/db.js` neuf avec un ancien écran est inoffensif (une colonne lue que
+   personne n'affiche), mais l'inverse ne l'est pas : l'écran écrirait
+   `demi_journee` sans que la couche données la transmette, et la demi-journée
+   serait perdue en silence entre le geste et le document.
+
+   Aucun fichier ajouté : la migration `020` n'est pas servie, et les trois
+   fichiers de test non plus. */
+var CACHE = 'recap-parcours-lot31-v1';
 
 var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
