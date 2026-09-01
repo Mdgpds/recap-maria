@@ -563,8 +563,17 @@ var toast = document.getElementById('toast');
   var bPoser = parTexte(corps, 'button', 'Poser des congés');
   assert(bPoser && bPoser.disabled === true,
     'B5 : la pose est bloquée tant qu’un contrat n’est pas lisible');
-  assert(ligneDe(corps, 'Tom') === 'indisponible',
-    'B5 : le contrat en échec est nommé dans les réserves');
+  /* REDESIGN 2A §6.2 — les reserves sont des CARTES, plus des lignes. Un
+     contrat qu'on n'a pas pu lire garde sa carte et le DIT : le faire
+     disparaitre laisserait croire qu'il n'existe pas, et Maria poserait un
+     conge en pensant qu'il ne le concerne pas. */
+  var carteTom = Array.prototype.filter.call(corps.querySelectorAll('.card'), function (c) {
+    return !!c.querySelector('.qui') && txt(c).indexOf('Tom') !== -1;
+  })[0];
+  assert(!!carteTom, 'B5 : le contrat en échec garde sa carte dans les réserves');
+  assert(txt(carteTom).indexOf('compteurs indisponibles') !== -1,
+    'B5 : et elle dit que ses compteurs n’ont pas pu être lus (obtenu « ' +
+    txt(carteTom) + ' »)');
   etatTest.serieCassee = null;
 
   console.log('\n' + (echecs === 0 ? 'Tout est conforme.' : echecs + ' échec(s).'));

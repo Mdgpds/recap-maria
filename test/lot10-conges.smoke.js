@@ -410,7 +410,8 @@ function grosDecompte() {
   console.log('\n--- L’onglet « Mes congés » ---');
   await ouvrirConges();
 
-  assert(txt(corps).indexOf('Vos réserves') !== -1, 'les réserves sont affichées');
+  assert(txt(corps).indexOf('Ce que vous pouvez poser aujourd’hui') !== -1,
+    'les réserves sont affichées');
   assert(txt(corps).indexOf('Léa') !== -1 && txt(corps).indexOf('Tom') !== -1,
     'contrat par contrat, jamais consolidées');
   /* EXIGENCE CHANGÉE — LOT 26 §26.2 : « MES CONGÉS » S'ALLÈGE.
@@ -428,10 +429,15 @@ function grosDecompte() {
      temps. » quitte l'écran : c'est une RÈGLE, elle va dans « Comment
      l'application compte » (lot 27). Ce qu'elle expliquait est dit par la
      structure — une ligne par enfant, chacune avec ses propres nombres. */
-  var lignesRes = Array.prototype.filter.call(corps.querySelectorAll('.ln'), function (l) {
-    return txt(l).indexOf('Léa') === 0 || txt(l).indexOf('Tom') === 0;
+  /* REDESIGN 2A §6.2 — une CARTE par enfant, plus une ligne dans une liste.
+     CE QUE LOT 10 EXIGE NE BOUGE PAS : les DEUX reserves sont affichees,
+     contrat par contrat, pour que Maria sache avant de poser si sa
+     recuperation lui evitera le sans-solde. */
+  var lignesRes = Array.prototype.filter.call(corps.querySelectorAll('.card'), function (c) {
+    return !!c.querySelector('.qui') &&
+      (txt(c).indexOf('Léa') !== -1 || txt(c).indexOf('Tom') !== -1);
   });
-  assert(lignesRes.length === 2, 'une ligne par contrat (obtenu ' + lignesRes.length + ')');
+  assert(lignesRes.length === 2, 'une carte par contrat (obtenu ' + lignesRes.length + ')');
   assert(/\d+ j/.test(sansInsecable(txt(lignesRes[0]))) && /\d+h\d\d/.test(txt(lignesRes[0])),
     'congés payés (en jours) ET récupération (en heures) — sans la seconde, ' +
     'Maria ne peut pas éviter le sans-solde (obtenu « ' + txt(lignesRes[0]) + ' »)');
@@ -439,8 +445,8 @@ function grosDecompte() {
     '§7 : le reste du quota de samedis est visible hors de la pose');
   assert(txt(corps).indexOf('Les compteurs diffèrent') === -1,
     '§26.2 : la phrase d’explication a quitté l’écran');
-  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats.') !== -1,
-    '§26.2 : les six mots qui restent, DEVANT le bouton (§18.6)');
+  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats — vous pouvez en décocher.') !== -1,
+    '§6.1 : la phrase du 2A, DEVANT le bouton de retrait (§18.6)');
   assert(!!boutonExact(corps, 'Poser des congés'), 'V8-08 : UN SEUL bouton de pose');
   assert(!parTexte(corps, 'button', 'Poser une semaine'), 'V8-08 : le mode semaine a disparu');
   assert(!parTexte(corps, 'button', 'Poser une seule journée'),

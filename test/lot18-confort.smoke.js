@@ -501,8 +501,12 @@ function entrerSelection() {
   var iRetrait = txt(corps).indexOf('Retirer des congés');
   assert(iPhrase < iRetrait,
     '§18.6 : elle est lue avec le geste de pose, pas reléguée en bas d’écran');
-  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats.') !== -1,
-    '§26.2 : six mots, et c’est la seule explication qui reste sur cet écran');
+  /* REDESIGN 2A §6.1 — quatre mots de plus : « vous pouvez en decocher ».
+     C'est la seule chose que la phrase gagne, et elle repond a la question
+     que Maria se pose juste apres « il vaut pour tous ? » : « et si je ne
+     veux pas ? ». */
+  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats — vous pouvez en décocher.') !== -1,
+    '§6.1 : la phrase du 2A, et c’est la seule explication de cet écran');
 
   /* ==========================================================================
      EXIGENCE CHANGÉE — LOT 26 §26.1 : LES DEUX RACCOURCIS DE VENTILATION

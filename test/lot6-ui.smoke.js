@@ -768,24 +768,40 @@ var sheet = document.getElementById('sheet');
        est produit — le bloc vert de l'écran de pose — et sur l'encart RG-06
        de chaque document qui porte des congés. Vérifié ci-dessous.
      ====================================================================== */
-  assert(txt(corps).indexOf('Vos réserves') !== -1, '§2.5 : les réserves, contrat par contrat');
-  var lignesReserves = Array.prototype.filter.call(corps.querySelectorAll('.ln'), function (l) {
-    return txt(l).indexOf('Léa') === 0 || txt(l).indexOf('Tom') === 0;
+  /* REDESIGN 2A §6.2 — « CE QUE VOUS POUVEZ POSER AUJOURD'HUI ».
+     Le bloc « Vos reserves » devient une CARTE par enfant au lieu d'une ligne
+     dans une liste : pastille, prenom, samedis, et les deux soldes empiles a
+     droite. C'est la reponse au troisieme reproche d'Adrien — « j'avais du mal
+     a m'y retrouver sur le solde exact de conges, de recup et autre ».
+     L'exigence de fond ne change pas d'un iota : les deux soldes et le quota
+     de samedis, contrat par contrat, HORS de la pose. */
+  assert(txt(corps).indexOf('Ce que vous pouvez poser aujourd’hui') !== -1,
+    '§6.2 : le bloc dit ce qu’on peut poser, enfant par enfant');
+  var cartesReserves = Array.prototype.filter.call(corps.querySelectorAll('.card'), function (c) {
+    return !!c.querySelector('.qui') &&
+      (txt(c).indexOf('Léa') !== -1 || txt(c).indexOf('Tom') !== -1);
   });
-  assert(lignesReserves.length >= 2,
-    '§2.5 : une ligne par contrat (obtenu ' + lignesReserves.length + ')');
-  assert(sansInsecable(txt(lignesReserves[0])).indexOf('j') !== -1 &&
-         /\d+h\d\d/.test(txt(lignesReserves[0])),
-    'LOT 10 : congés payés (en jours) ET récupération (en heures) sont affichés ' +
-    'sur la même ligne (obtenu « ' + txt(lignesReserves[0]) + ' »)');
-  assert(txt(lignesReserves[0]).indexOf('samedis') !== -1,
+  assert(cartesReserves.length >= 2,
+    '§6.2 : une carte par contrat (obtenu ' + cartesReserves.length + ')');
+  assert(sansInsecable(txt(cartesReserves[0])).indexOf('j') !== -1 &&
+         /\d+h\d\d/.test(txt(cartesReserves[0])),
+    'LOT 10 : congés payés (en jours) ET récupération (en heures) sont sur la ' +
+    'même carte (obtenu « ' + txt(cartesReserves[0]) + ' »)');
+  assert(txt(cartesReserves[0]).indexOf('samedis') !== -1,
     '§7 : et le reste du quota de samedis, visible HORS de la pose');
+  assert(!!cartesReserves[0].querySelector('.av'),
+    '§6.2 : la carte porte la pastille d’identité de l’enfant');
+  assert(!!parTexte(cartesReserves[0], 'button', 'Le détail de ses soldes'),
+    '§6.2 : et le bouton vers le détail de ses soldes');
   assert(txt(corps).indexOf('Les compteurs diffèrent') === -1,
     '§26.2 : la phrase d’explication a quitté l’écran — c’est une règle, elle ' +
     'vit désormais dans « Comment l’application compte »');
   assert(txt(corps).indexOf('Total des congés payés') === -1, '§2.5 : jamais de compteur global');
-  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats.') !== -1,
-    '§26.2 : les six mots qui restent — et ils passent DEVANT le bouton (§18.6)');
+  /* §6.1 — la phrase du 2A ajoute quatre mots : « vous pouvez en decocher ».
+     Elle reste DEVANT le bouton de retrait et derriere celui de pose (§18.6) :
+     une explication lue apres l'appui n'evite aucune erreur. */
+  assert(txt(corps).indexOf('Un congé vaut pour vos 2 contrats — vous pouvez en décocher.') !== -1,
+    '§6.1 : la phrase du 2A, et elle passe DEVANT le bouton de retrait (§18.6)');
 
   /* V8-08 — UN SEUL bouton de pose. */
   assert(!!boutonExact(corps, 'Poser des congés'), 'V8-08 : « Poser des congés »');
