@@ -653,8 +653,22 @@ async function ouvrirFiche(id) {
   });
   assert(reglesIdentite.every(function (l) { return l.indexOf('cal') === -1; }),
     'A6 : aucune règle de couleur d’identité ne cible le calendrier');
-  /* La pastille d'identité, elle, est bien présente dans l'en-tête. */
-  assert(!!barre.querySelector('.av'), 'l’en-tête de l’espace enfant porte la pastille');
+  /* REDESIGN 2A §4.1 — L'IDENTITE DE L'ENFANT DANS L'EN-TETE DE SON ESPACE.
+
+     La pastille de 26 px cede la place a la TEINTE DE L'EN-TETE ENTIER. La
+     question a laquelle le lot 8 repondait — « chez quel enfant suis-je ? » —
+     trouve une reponse plus forte, pas plus faible : c'est toute la barre qui
+     prend la couleur, pas un rond.
+
+     L'exigence de FOND est verifiee plus fermement qu'avant : la teinte vient
+     des JETONS `--id-*`, jamais d'une couleur libre (V8-31), et le prenom
+     reste ecrit a cote — la couleur ne porte jamais le sens toute seule. */
+  assert(/var\(--id-(vert|bleu|prune|terracotta|ocre|ardoise|neutre)-/.test(
+    barre.style.background || ''),
+    'l’en-tête de l’espace enfant est teinté de la couleur de l’enfant, ' +
+    'par ses jetons (obtenu « ' + (barre.style.background || '') + ' »)');
+  assert(txt(barre).indexOf(LEA.prenom_enfant) !== -1,
+    'et le prénom y est ÉCRIT — la couleur ne porte jamais le sens seule');
 
   /* ==================================================================== */
   /* A7 — Aucune photo sur un document transmis                           */

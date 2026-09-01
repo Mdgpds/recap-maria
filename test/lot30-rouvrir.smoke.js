@@ -339,6 +339,24 @@ async function ouvrirEnfant(a, m) {
   await ouvrirEnfant(2026, 4);
   contient(corps, 'Mois rouvert le 25 mai 2026', 'A3 : l’espace enfant dit que le mois est rouvert, et quand');
   contient(corps, 'à clôturer à nouveau', 'A3 : et qu’il attend sa reclôture');
+
+  /* REDESIGN 2A §4.3 — LE BANDEAU D'ETAT, VARIANTE « MOIS ROUVERT ».
+     Le §4.3 fixe trois variantes, et une seule est vraie a la fois. Celle-ci
+     est la variante AMBRE : il reste quelque chose a finir. Elle porte ses
+     deux gestes — reclôturer, et ajouter un motif apres coup. */
+  var bandeauR = parTexte(corps, '.warnbox', 'Mois rouvert') ||
+                 parTexte(corps, '.enc', 'Mois rouvert');
+  assert(!!bandeauR, '§4.3 : le bandeau du mois rouvert est là');
+  assert(!!boutonContenant(bandeauR, 'Reclôturer'),
+    '§4.3 : et il porte « Reclôturer <mois> »');
+  assert(!!boutonContenant(bandeauR, 'motif'),
+    '§4.3 : et « Ajouter un motif »');
+  /* Les deux AUTRES variantes ne s'affichent pas en meme temps : un ecran qui
+     dirait a la fois « clôturé » et « rouvert » ne dirait rien. */
+  absent(corps, 'Les journées ne se modifient pas',
+    '§4.3 : la variante « mois clôturé » ne s’affiche pas en même temps');
+  absent(corps, 'Touchez un jour pour déclarer ce qui sort de l’ordinaire',
+    '§4.3 : ni celle du mois ouvert');
   assert(!!celluleDu(15) && celluleDu(15).getAttribute('role') === 'button',
     'A3 : ses journées se corrigent librement, sans nouvelle réouverture');
   celluleDu(15).click();

@@ -823,16 +823,27 @@ function entrerSelection() {
     '§30.2 : sur un mois clôturé, le ⋯ reste — valider proposera de rouvrir');
   assert(txt(corps).indexOf('Rien à faire les jours normaux') === -1,
     '§18.6 : et la phrase qui invite à toucher des jours inertes a disparu');
+  /* REDESIGN 2A §4.3 — LE CHEMIN RACCOURCIT D'UN APPUI.
+     Le bandeau d'un mois cloture porte desormais « Rouvrir » directement : il
+     ne renvoie plus au document pour y trouver le bouton. L'assertion ne
+     s'affaiblit pas — on verifie toujours qu'au bout du chemin la reouverture
+     est offerte —, le chemin est simplement plus court. */
   var encClos = parTexte(corps, '.enc', 'Mois clôturé');
   assert(!!encClos, '§18.6 : l’écran dit ce qui est vrai — le mois est clôturé');
-  var porteClos = encClos.tagName === 'BUTTON' ? encClos : encClos.querySelector('button');
-  assert(!!porteClos, '§18.6 : et il ouvre le chemin pour corriger');
+  assert(txt(encClos).indexOf('ne se modifient pas') !== -1,
+    '§4.3 : et il dit pourquoi (obtenu « ' + txt(encClos).slice(0, 90) + ' »)');
+  var porteClos = boutonExact(encClos, 'Rouvrir');
+  assert(!!porteClos, '§18.6 : et il ouvre le chemin pour corriger, d’un appui');
   porteClos.click();
   await pause(350);
-  assert(!!boutonExact(corps, 'Rouvrir pour corriger'),
+  /* La reouverture s'offre dans une FEUILLE montante, pas dans le corps de
+     l'ecran : Maria n'a pas quitte son calendrier. */
+  assert(!!boutonExact(sheet, 'Rouvrir pour corriger'),
     '§18.6 : au bout de ce chemin, la réouverture est offerte');
-  assert(txt(corps).indexOf('n’a pas encore été transmis') !== -1,
-    '§18.6 : et l’écran signale qu’aucun document n’est parti');
+  assert(txt(sheet).indexOf('n’a pas encore été transmis') !== -1,
+    '§18.6 : et la feuille signale qu’aucun document n’est parti');
+  window.Kit.fermerFeuille();
+  await pause(80);
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 4 }, true);
   await pause(350);
 

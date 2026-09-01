@@ -370,10 +370,46 @@ var sheet = document.getElementById('sheet');
     '§22.3 : et c’est « Accueil », l’onglet parent, qui est actif');
   assert(ongletActif.getAttribute('aria-current') === 'page',
     '§22.3 : l’état actif est annoncé, pas seulement peint');
-  assert(!!barre.querySelector('.bk'), 'l’espace enfant a un bouton retour');
-  assert(txt(barre).indexOf('Léa · mai 2026') !== -1, 'titre de la barre : enfant et mois');
-  assert(!!barre.querySelector('.av'),
-    '§25.3 : l’avatar de l’enfant est dans la barre, à côté du titre');
+  /* REDESIGN 2A §4.1 — L'EN-TETE DE L'ESPACE ENFANT.
+     Fleche de retour, prenom, « famille X » en dessous, et TOUT L'EN-TETE
+     teinte de la couleur de l'enfant. */
+  assert(!!barre.querySelector('.back'), 'l’espace enfant a un bouton retour');
+  assert(txt(barre).indexOf('Léa') !== -1, '§4.1 : le prénom est dans l’en-tête');
+  assert(txt(barre).indexOf('famille') !== -1, '§4.1 : et la famille en dessous');
+
+  /* LE MOIS QUITTE L'EN-TETE (§4.2). C'etait un reproche explicite : « on ne
+     devrait pas pouvoir changer de mois en haut a droite ». Deux fleches
+     identiques a deux endroits — l'une qui QUITTE l'ecran, l'autre qui change
+     de mois — se confondent au pouce. */
+  assert(txt(barre).indexOf('mai 2026') === -1,
+    '§4.2 : le mois n’est PLUS dans l’en-tête (obtenu « ' + txt(barre) + ' »)');
+  assert(!barre.querySelector('.nav'),
+    '§4.2 : ni la navigation de mois en haut à droite');
+  var nav = corps.querySelector('.navmois');
+  assert(!!nav, '§4.2 : elle est DANS LE FLUX, au-dessus du calendrier');
+  assert(txt(nav).indexOf('Mai 2026') !== -1,
+    '§4.2 : et elle porte le mois affiché (obtenu « ' + txt(nav) + ' »)');
+  assert(!!corps.querySelector('table.cal') &&
+         (nav.compareDocumentPosition(corps.querySelector('table.cal')) &
+          nav.DOCUMENT_POSITION_FOLLOWING) !== 0,
+    '§4.2 : au-DESSUS du calendrier, pas en dessous');
+
+  /* §25.3 — L'IDENTITE DE L'ENFANT DANS L'EN-TETE. La pastille de 26 px cede
+     la place a la TEINTE de l'en-tete entier : la question à laquelle le
+     lot 8 repondait — « chez quel enfant suis-je ? » — trouve une reponse
+     plus forte, et le prenom reste ecrit a cote. */
+  assert(barre.className.indexOf('top') !== -1,
+    '§4.1 : l’en-tête est celui du 2A');
+  assert(/linear-gradient\(155deg, var\(--id-/.test(barre.style.background || ''),
+    '§4.1 : et il est teinté de la couleur de l’enfant, par ses jetons ' +
+    '(obtenu « ' + (barre.style.background || '') + ' »)');
+
+  /* §4.3 — LE BANDEAU D'ETAT dit OU L'ON EST. */
+  var bandeau = corps.querySelector('.enc');
+  assert(!!bandeau, '§4.3 : le bandeau d’état est là');
+  assert(txt(bandeau).indexOf('Touchez un jour') !== -1,
+    '§4.3 : sur un mois ouvert, il dit ce qu’on attend de Maria (obtenu « ' +
+    txt(bandeau).slice(0, 80) + ' »)');
   assert(!!corps.querySelector('table.cal'), 'calendrier présent');
 
   /* ==========================================================================
@@ -448,7 +484,7 @@ var sheet = document.getElementById('sheet');
          sansInsecable(txt(rMois.querySelector('.ln.tot b'))),
     '§24.3 : la tête du repli affiche le total, identique à celui de la ligne');
 
-  var rNote = parTexte(corps, '.fold', 'Mes notes');
+  var rNote = parTexte(corps, '.fold', 'Ses notes');
   assert(!!rNote, 'V8-17 : le repli de note est présent');
   var champNote = rNote.querySelector('textarea');
   assert(!!champNote &&
@@ -457,7 +493,7 @@ var sheet = document.getElementById('sheet');
 
   /* LOT 18 §18.5 — « Compteurs de » est devenu « Réserves de » au lot 18, puis
      « Réserves » tout court au lot 25 : la barre dit déjà de qui. */
-  var rReserves = parTexte(corps, '.fold', 'Réserves');
+  var rReserves = parTexte(corps, '.fold', 'Ses réserves');
   assert(!!rReserves && txt(rReserves).indexOf('Récupération') !== -1 &&
          txt(rReserves).indexOf('Congés payés') !== -1,
     'les deux réserves du contrat sont présentes');
@@ -496,11 +532,16 @@ var sheet = document.getElementById('sheet');
   var titresOrdre = Array.prototype.map.call(replis, function (f) {
     return txt(f.querySelector('.fh > span'));
   }).join(' | ');
-  assert(titresOrdre === 'Le mois | Réserves | Mes notes | Depuis le début',
-    '§25.3 : les quatre replis dans l’ordre des spécifications (obtenu ' +
+  /* REDESIGN 2A §4.6 — LES REPLIS PRENNENT LE POSSESSIF DE L'ENFANT.
+     Sur l'espace d'un enfant, tout ce qui est liste est LE SIEN : « Ses
+     reserves », « Ses notes ». Le mois affiche n'a ni familiarisation ni
+     journee a part : les deux replis qui les portent ne s'affichent pas —
+     un repli vide serait une case de plus a ouvrir pour lire « rien ». */
+  assert(titresOrdre === 'Le mois | Ses réserves | Ses notes | Depuis le début',
+    '§4.6 : les replis dans l’ordre des spécifications (obtenu ' +
     titresOrdre + ')');
   assert(Array.prototype.indexOf.call(replis, rNote) <= 2,
-    'V8-17 : la tête « Mes notes » reste dans le premier écran, atteignable ' +
+    'V8-17 : la tête « Ses notes » reste dans le premier écran, atteignable ' +
     'sans dérouler un autre repli');
 
   /* Mai 2026 : 21 jours du lundi au vendredi, dont 4 fériés (1, 8, 14, 25).

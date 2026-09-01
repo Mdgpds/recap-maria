@@ -312,13 +312,27 @@ var toast = document.getElementById('toast');
      les boutons ne mènent nulle part passait l'ancienne assertion ; il ne
      passe plus celle-ci.
      ====================================================================== */
+  /* REDESIGN 2A §4.3 et §4.7 — LE BANDEAU DIT, LE BOUTON DU BAS MENE.
+
+     Le bandeau d'etat d'un mois cloture porte desormais la phrase du §4.3
+     — « Les journees ne se modifient pas. Le document est parti a la
+     famille. » — et le bouton « Rouvrir ». La PORTE VERS LE DOCUMENT, elle,
+     est le bouton du bas d'ecran : « Revoir le mois cloture » (§4.7).
+
+     L'assertion ne s'affaiblit pas : on verifie le bandeau, PUIS la porte,
+     PUIS on la franchit et on verifie les trois elements au bout. */
   var encartClos = parTexte(corps, '.enc', 'Mois clôturé');
   assert(!!encartClos,
-    'B1 : le mois clôturé porte un encart qui le dit');
-  var porteDocument = encartClos.tagName === 'BUTTON'
-    ? encartClos : encartClos.querySelector('button');
+    'B1 : le mois clôturé porte un bandeau qui le dit');
+  assert(txt(encartClos).indexOf('ne se modifient pas') !== -1,
+    '§4.3 : et il dit pourquoi on ne peut plus rien saisir (obtenu « ' +
+    txt(encartClos).slice(0, 90) + ' »)');
+  var porteDocument = Array.prototype.filter.call(
+    corps.querySelectorAll('button'), function (b) {
+      return txt(b).indexOf('Revoir le mois clôturé') !== -1;
+    })[0];
   assert(!!porteDocument,
-    '§25.3 : et cet encart est la porte vers le document du mois');
+    '§4.7 : le bouton du bas est la porte vers le document du mois');
 
   /* On franchit la porte, et on vérifie les trois éléments au bout. */
   porteDocument.click();
