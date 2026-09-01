@@ -1924,7 +1924,7 @@
     gr.appendChild(Kit.ce('span', 'nm', c.prenom_enfant));
     gr.appendChild(Kit.ce('span', 'dt', texteRepartition(p)));
     hd.appendChild(gr);
-    hd.appendChild(Kit.ce('span', 'ch', '›'));
+    hd.appendChild(Kit.ce('span', 'chev', '›'));
     kid.appendChild(hd);
 
     var adj = Kit.ce('div', 'adj');

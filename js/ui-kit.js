@@ -568,7 +568,7 @@
   function encOne(ton, titre, onclick) {
     var e = bouton('enc one' + (ton ? ' ' + ton : ''), onclick);
     e.appendChild(ce('b', null, titre));
-    e.appendChild(ce('span', 'ch', '›'));
+    e.appendChild(ce('span', 'chev', '›'));
     return e;
   }
 
@@ -599,7 +599,7 @@
     g.appendChild(ce('span', 'n', titre));
     if (sous) g.appendChild(ce('span', 'd', sous));
     b.appendChild(g);
-    b.appendChild(opts.droite || ce('span', 'ch', '›'));
+    b.appendChild(opts.droite || ce('span', 'chev', '›'));
     return b;
   }
 
@@ -615,7 +615,7 @@
     h.appendChild(ce('span', null, titre));
     var vv = ce('span', 'vv', valeur == null ? '' : valeur);
     h.appendChild(vv);
-    h.appendChild(ce('span', 'ch', '›'));
+    h.appendChild(ce('span', 'chev', '›'));
     h.setAttribute('aria-expanded', opts.ouvert ? 'true' : 'false');
     f.appendChild(h);
     var corps = ce('div', 'fb');

@@ -117,12 +117,27 @@ function fondGagnant(css, doc, el) {
 
 /* Un calendrier de test, avec une case par état. Les classes sont exactement
    celles que `js/ui-enfant.js` pose : `ok`, `cg`, `ab`, `fe`, `nt`, `we`. */
+/* REDESIGN 2A — LES ETATS CHANGENT, ET C'EST VOULU.
+
+   Au lot 31, SEPT etats etaient colores, dont `ok` (journee de garde) et `we`
+   (fin de semaine). La maquette 2A ne colore QUE LES EXCEPTIONS : une journee
+   de garde ordinaire est une case blanche, et c'est ce qui rend les conges et
+   les absences lisibles d'un coup d'oeil sur un mois entier.
+
+   `ok` quitte donc cette liste — ce n'est pas un etat perdu, c'est l'etat par
+   defaut. Et `ec` (depart avant l'heure) et `fa` (familiarisation) y entrent :
+   la maquette leur donne une couleur, l'application n'en avait pas.
+
+   C'est aussi ce qui a permis de mettre le CONGE EN VERT (arbitrage d'Adrien
+   du 1er septembre) : le vert etait pris par la journee de garde, il ne l'est
+   plus. */
 var ETATS = [
   { classe: 'cg', quoi: 'congé de Maria' },
   { classe: 'ab', quoi: 'absence de l’enfant' },
   { classe: 'fe', quoi: 'jour férié' },
-  { classe: 'nt', quoi: 'journée non travaillée' },
-  { classe: 'ok', quoi: 'journée de garde' }
+  { classe: 'ec', quoi: 'départ avant l’heure' },
+  { classe: 'fa', quoi: 'familiarisation' },
+  { classe: 'nt', quoi: 'journée non travaillée' }
 ];
 
 function monter(css) {
@@ -148,7 +163,15 @@ function mesurer(cssBrut) {
 /* 1. La feuille d'AUJOURD'HUI : chaque état gagne, et aucun n'est blanc     */
 /* ------------------------------------------------------------------------ */
 
-var BLANC = '#ffffff';
+/* Le blanc de `table.cal td`. La maquette 2A l'ecrit `#fff` la ou le lot 24
+   ecrivait `#ffffff` : les deux notations designent la meme couleur, et un
+   test qui n'en connait qu'une se met a mentir des que le jeton est reecrit.
+   C'est arrive ici meme. */
+var BLANCS = ['#ffffff', '#fff'];
+function estBlanc(v) {
+  var s = String(v).toLowerCase();
+  return BLANCS.some(function (b) { return s.indexOf(b) !== -1; });
+}
 var cssActuel = fs.readFileSync(path.join(racine, 'css', 'style.css'), 'utf8');
 
 console.log('\n--- §2 : la couleur d’état l’emporte sur la règle de base ---');
@@ -159,7 +182,7 @@ mesurer(cssActuel).forEach(function (r) {
   if (!g) return;
   assert(g.sel.indexOf('.' + r.etat.classe) !== -1,
     r.etat.quoi + ' : la règle gagnante est bien celle de l’état (' + g.sel + ')');
-  assert(g.fond.toLowerCase().indexOf(BLANC) === -1,
+  assert(!estBlanc(g.fond),
     r.etat.quoi + ' : le fond n’est pas blanc (' + g.fond + ')');
 });
 
@@ -167,8 +190,13 @@ mesurer(cssActuel).forEach(function (r) {
    `!important` sur un fond de calendrier gagnerait aussi contre la prochaine
    règle légitime — un thème sombre, un état ajouté. */
 var sansCommentaires = cssActuel.replace(/\/\*[\s\S]*?\*\//g, ' ');
+/* Le bloc du calendrier, delimite par ses deux bornes reelles dans la
+   feuille : de `table.cal {` a la legende `.leg {` qui le suit
+   immediatement. (Le repere d'avant, `.lg {`, est desormais mille lignes
+   plus bas — il aurait fait avaler la moitie du fichier au controle, et
+   ramasse le `!important` d'un composant qui n'a rien a voir.) */
 var zoneCal = sansCommentaires.slice(sansCommentaires.indexOf('table.cal {'),
-                                     sansCommentaires.indexOf('.lg {'));
+                                     sansCommentaires.indexOf('.leg {'));
 assert(zoneCal.length > 0 && zoneCal.indexOf('!important') === -1,
   'aucun !important n’a été ajouté dans le bloc du calendrier');
 
@@ -186,7 +214,7 @@ assert(zoneCal.length > 0 && zoneCal.indexOf('!important') === -1,
 console.log('\n--- on remet le défaut : la mesure doit s’effondrer ---');
 
 var cssAvecLeDefaut = cssActuel.replace(
-  /table\.cal td\.(ok|ab|fe|cg|we|nt|warn)\b/g, 'td.$1');
+  /table\.cal td\.(ab|cg|fe|ec|fa|nt)\b/g, 'td.$1');
 
 assert(cssAvecLeDefaut !== cssActuel,
   'la mutation a bien retiré la requalification (sinon le contrôle serait vide)');
@@ -201,7 +229,7 @@ assert(perdants.length === ETATS.length,
 
 mesurer(cssAvecLeDefaut).forEach(function (r) {
   if (!r.gagnante) return;
-  assert(r.gagnante.fond.toLowerCase().indexOf(BLANC) !== -1,
+  assert(estBlanc(r.gagnante.fond),
     r.etat.quoi + ' : et le fond qui gagnait était bien LE BLANC de ' +
     '`table.cal td` (' + r.gagnante.fond + ')');
 });

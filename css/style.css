@@ -61,50 +61,105 @@
 /* ------------------------------------------------------------------------ */
 
 :root {
-  /* Vert d'accent (thème de l'application installable). */
-  --ac:  #0d5c46;
-  --ac2: #0a4a38;   /* le second arrêt du dégradé (connexion) */
-  --acs: #dcefe8;
-  --acl: #7bb9a4;
-  --acd: #0b4635;
+  /* ------------------------------------------------------------------ */
+  /* LES JETONS DE LA MAQUETTE 2A — valeurs reprises au caractère près.  */
+  /* ------------------------------------------------------------------ */
 
   /* Encres. */
-  --ink:  #0f1419;
-  --ink2: #3d4852;
-  --ink3: #5a6672;
+  --ink:  #10201b;
+  --ink2: #3d514a;
+  --ink3: #77877f;
 
   /* Traits. */
-  --ln:  #cfd6dd;
-  --ln2: #e6eaee;
-
-  /* Orange — attention. */
-  --wa:  #a34e00;
-  --was: #fde9cf;
-  --wal: #dda44f;
-  --wad: #7a3b00;
-
-  /* Bleu — congé de Maria. */
-  --bl:  #39428a;
-  --bls: #e6e9f5;
-  --bll: #b9c3e8;
-
-  /* Rouge — blocage, gestes destructifs. */
-  --dg:  #8f2d2d;
-  --dgs: #f9ecec;
-  --dgl: #e0a0a0;
+  --ln:  #e3eae5;
+  --ln2: #f0f4f1;
 
   /* Fonds. */
-  --bg:  #f4f6f8;   /* fond de page */
-  --bg2: #ffffff;   /* surfaces */
-  --bg3: #eef1f3;   /* fond neutre : rails, boutons inactifs, tuiles grises */
-  --bg4: #fbfcfd;   /* fond à peine teinté : corps dépliés, aperçus */
+  --bg:  #f7faf8;   /* fond de page */
+  --bg2: #fff;      /* surfaces */
+
+  /* Vert d'accent. NOTE : le dégradé s'est INVERSÉ par rapport au lot 24 —
+     `--ac2` était plus SOMBRE que `--ac`, il est maintenant plus CLAIR.
+     Toute règle `linear-gradient(..., var(--ac2), var(--ac))` descend donc
+     du clair vers le foncé, et c'est voulu. */
+  --ac:  #0b5140;
+  --ac2: #0e6b53;
+  --acs: #e8f2ee;
+  --acl: #8dc4b0;
+
+  /* Ambre — attention. */
+  --wa:  #9a5c14;
+  --was: #fdf3e6;
+
+  /* Rouge — blocage, gestes destructifs. */
+  --ko:  #9c3529;
+  --kos: #fbebe9;
+
+  /* Ocre — accent secondaire. */
+  --or:  #c98a3c;
+
+  /* Rayons et ombres. */
+  --r:  15px;
+  --r2: 11px;
+  --sh:  0 1px 2px rgba(16, 32, 27, .04), 0 3px 10px rgba(16, 32, 27, .045);
+  --sh2: 0 2px 5px rgba(16, 32, 27, .06), 0 12px 28px rgba(16, 32, 27, .09);
+
+  /* ------------------------------------------------------------------ */
+  /* LES COULEURS QUE LA MAQUETTE ÉCRIVAIT EN DUR, REMONTÉES ICI.        */
+  /*                                                                     */
+  /* La maquette porte 28 valeurs hexadécimales hors de son `:root` — des */
+  /* bords d'états, des gris de service, des hauts de dégradé. Les voici  */
+  /* AUX MÊMES VALEURS EXACTES, nommées : le rendu est identique au pixel */
+  /* près, et la loi « aucune couleur en dur hors :root » survit au       */
+  /* redesign. C'est le seul écart de forme pris sur la maquette, et il   */
+  /* ne change pas une couleur.                                          */
+  /* ------------------------------------------------------------------ */
+
+  /* Verts d'appoint : bord d'état, haut de dégradé, encre sur fond vert. */
+  --acl2: #c3e0d5;
+  --acs2: #f1f8f5;
+  --acd:  #094536;
+
+  /* Ambres d'appoint. */
+  --wal:  #f2ddba;
+  --was2: #fefaf3;
+  --wad:  #7c4a10;
+
+  /* Rouge d'appoint : le haut du dégradé du bouton destructif. */
+  --ko2: #b54234;
+
+  /* Départ avant l'heure — bleu (état de calendrier `ec`). */
+  --ecf: #eef4fd;  --ecl: #cbdcf5;  --ect: #33578f;
+
+  /* Familiarisation — prune (état de calendrier `fa`). */
+  --faf: #f5f0f8;  --fal: #e0d1e8;  --fat: #6B4A7A;
+
+  /* Les jours ENTRE les deux bornes d'une sélection de période. */
+  --dansf: #d7ebe2;  --dansl: #a9d3c2;
 
   /* Gris de service. */
-  --ch:  #9aa3ad;   /* chevrons, éléments inactifs */
+  --ch:      #b9c5bf;  /* chevrons */
+  --ch2:     #ccd6d1;  /* jour hors du mois affiché */
+  --poignee: #dde5e1;  /* la poignée d'une feuille montante */
+  --rdb:     #cfdbd5;  /* bord d'une pastille à cocher */
+  --off:     #eaefec;  /* fond d'un bouton inactif */
+  --offt:    #a9b4af;  /* son texte */
+  --toast:   #16211d;  /* le bandeau de confirmation */
 
-  /* Palette d'identité des enfants — SIX teintes + la neutre. Jetons, jamais
-     une couleur libre (V8-31) : elles ne servent qu'à reconnaître un enfant
-     et n'entrent jamais dans le codage des états du calendrier. */
+  /* ------------------------------------------------------------------ */
+  /* HÉRITÉ DU LOT 24 — encore référencé par les écrans non migrés.      */
+  /* Chaque jeton part avec le dernier écran qui le lit ; le commit 8    */
+  /* vérifie qu'il n'en reste aucun.                                     */
+  /* ------------------------------------------------------------------ */
+  --bg3: #eef1f3;
+  --bg4: #fbfcfd;
+  --bl:  #39428a;   --bls: #e6e9f5;   --bll: #b9c3e8;
+  --dg:  #8f2d2d;   --dgs: #f9ecec;   --dgl: #e0a0a0;
+
+  /* Palette d'identité des enfants — SIX teintes + la neutre. Jetons,
+     jamais une couleur libre (V8-31) : elles ne servent qu'à reconnaître
+     un enfant et n'entrent jamais dans le codage des états du calendrier.
+     C'est l'exception écrite du §3.3 du redesign. */
   --id-vert-f: #dcefe8;       --id-vert-t: #2f6b56;       --id-vert-x: #1d4436;
   --id-bleu-f: #dee6f4;       --id-bleu-t: #3a5a8c;       --id-bleu-x: #24395a;
   --id-prune-f: #eee0ec;      --id-prune-t: #7a4370;      --id-prune-x: #4e2b48;
@@ -113,6 +168,402 @@
   --id-ardoise-f: #e4e8ea;    --id-ardoise-t: #4d5a61;    --id-ardoise-x: #30393e;
   --id-neutre-f: #e9edf0;     --id-neutre-t: #5a666e;     --id-neutre-x: #39434a;
 }
+
+
+
+/* ------------------------------------------------------------------------ */
+/* 1 bis. LE SOCLE 2A — les composants de la maquette, repris tels quels     */
+/* ------------------------------------------------------------------------ */
+
+/* Ce bloc EST la maquette `maquette-2A-v2.html`, validée par l'utilisatrice
+   finale. Les valeurs ne sont pas discutées : elles ont été mesurées à
+   390 px et essayées au doigt. Trois écarts de FORME, aucun de rendu :
+
+   1. la maquette dessine un téléphone (`.phone`, `.tag`, `.col`, un `body`
+      en dégradé) pour se montrer dans un navigateur de bureau. L'application
+      EST le téléphone : cette carrosserie ne traverse pas ;
+   2. les couleurs que la maquette écrivait en dur sont devenues des jetons
+      du `:root`, aux mêmes valeurs (voir §1) ;
+   3. les états du calendrier sont écrits `table.cal td.X` et NON `td.X`.
+      C'est le piège du §1.3 : `table.cal td` pèse (0,1,2) et `td.cg` (0,1,1),
+      donc la règle générale gagnait et toutes les cases restaient blanches.
+      Sans `!important` — un `!important` sur un fond de calendrier gagnerait
+      aussi contre la prochaine règle légitime.
+
+   Les écrans migrent vers ces composants commit après commit. Tant qu'un
+   écran n'a pas migré, il garde les siens, plus bas dans ce fichier. */
+
+/* --- L'EN-TÊTE ---------------------------------------------------------- */
+
+.top {
+  background: linear-gradient(155deg, var(--ac2), var(--ac));
+  color: var(--bg2);
+  padding: 17px 18px 16px;
+  padding-top: calc(17px + env(safe-area-inset-top));
+  padding-left: calc(18px + env(safe-area-inset-left, 0px));
+  padding-right: calc(18px + env(safe-area-inset-right, 0px));
+  flex: none;
+}
+.top .hi { font-size: 12.5px; opacity: .72; letter-spacing: .01em; }
+.top h1 { margin: 3px 0 0; font-size: 25px; font-weight: 700; letter-spacing: -.6px; line-height: 1.15; }
+.top .sub { font-size: 13px; opacity: .8; margin-top: 4px; }
+.top.slim { padding: 15px 18px; padding-top: calc(15px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 11px; }
+.top.slim h1 { font-size: 17px; margin: 0; flex: 1; letter-spacing: -.2px; }
+.top.slim .av { box-shadow: none; }
+
+.back {
+  background: rgba(255, 255, 255, .15); border: 0; color: var(--bg2);
+  width: 32px; height: 32px; border-radius: 999px; font-size: 17px;
+  cursor: pointer; flex: none; transition: background .15s; font-family: inherit;
+}
+.back:active { background: rgba(255, 255, 255, .3); }
+
+/* --- LA BARRE DES QUATRE ONGLETS ---------------------------------------- */
+
+.tabs {
+  display: flex; background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--ln); flex: none;
+  padding-bottom: calc(2px + env(safe-area-inset-bottom));
+}
+.tabs button {
+  flex: 1; background: none; border: 0; padding: 10px 4px 12px;
+  font: inherit; font-size: 10.5px; color: var(--ink3); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  letter-spacing: .01em; transition: color .15s;
+  /* §10.4 : aucune zone tactile sous 44 px. */
+  min-height: 46px; justify-content: center; position: relative;
+}
+.tabs button .ic { font-size: 17px; line-height: 1; }
+.tabs button .ic svg { width: 19px; height: 19px; display: block; }
+.tabs button.on { color: var(--ac); font-weight: 600; }
+
+/* --- LE CONTENU QUI DÉFILE ---------------------------------------------- */
+
+.wrap { padding: 16px 15px 28px; padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+
+.ttl {
+  font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink3); margin: 24px 3px 9px;
+}
+.ttl:first-child { margin-top: 2px; }
+
+/* --- LA CARTE ----------------------------------------------------------- */
+
+.card {
+  background: var(--bg2); border: 1px solid var(--ln); border-radius: var(--r);
+  padding: 14px 15px; margin-bottom: 10px; box-shadow: var(--sh);
+}
+.card.tap {
+  cursor: pointer; display: flex; align-items: center; gap: 13px; width: 100%;
+  text-align: left; font: inherit; color: inherit;
+  transition: transform .12s, box-shadow .12s;
+}
+.card.tap:active { transform: scale(.988); box-shadow: 0 1px 2px rgba(16, 32, 27, .05); }
+.card.warn { border-color: var(--wal); background: linear-gradient(180deg, var(--was2), var(--was)); }
+.card.acc { border-color: var(--acl2); background: linear-gradient(180deg, var(--acs2), var(--acs)); }
+
+.av {
+  width: 40px; height: 40px; border-radius: 999px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--bg2); font-weight: 600; font-size: 15px; letter-spacing: .02em;
+  box-shadow: inset 0 -2px 6px rgba(0, 0, 0, .14), 0 2px 6px rgba(16, 32, 27, .16);
+}
+.gro { flex: 1; min-width: 0; }
+.nm { font-weight: 600; font-size: 15.5px; display: block; letter-spacing: -.15px; }
+.dt { font-size: 13px; color: var(--ink3); display: block; margin-top: 2px; line-height: 1.4; }
+.mt { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: -.2px; }
+.chev { color: var(--ch); font-size: 18px; flex: none; }
+.ico {
+  width: 34px; height: 34px; border-radius: 999px; background: var(--was); color: var(--wa);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; flex: none; font-size: 15px;
+}
+.card.acc .ico { background: var(--acs); color: var(--ac); }
+.tdr { font-size: 13px; opacity: .85; margin-left: auto; }
+
+/* --- L'ÉTIQUETTE -------------------------------------------------------- */
+
+.pill {
+  display: inline-block; font-size: 11px; font-weight: 700;
+  padding: 3px 10px; border-radius: 999px; letter-spacing: .01em;
+}
+.pill.w { background: var(--was); color: var(--wa); }
+.pill.o { background: var(--acs); color: var(--ac); }
+.pill.g { background: var(--ln2); color: var(--ink3); }
+
+/* --- LE BOUTON ---------------------------------------------------------- */
+
+.btn {
+  display: block; width: 100%; padding: 15px; border-radius: var(--r); border: 0;
+  background: linear-gradient(165deg, var(--ac2), var(--ac)); color: var(--bg2);
+  font: inherit; font-size: 15.5px; font-weight: 600; cursor: pointer;
+  margin-bottom: 10px; letter-spacing: -.1px;
+  box-shadow: 0 2px 5px rgba(11, 81, 64, .22), 0 8px 20px rgba(11, 81, 64, .16);
+  transition: transform .12s;
+}
+.btn:active:not([disabled]) { transform: scale(.988); }
+.btn.nt { background: var(--bg2); color: var(--ink); border: 1px solid var(--ln); box-shadow: var(--sh); }
+.btn:disabled, .btn[disabled] { background: var(--off); color: var(--offt); cursor: default; box-shadow: none; }
+.btn.sm {
+  padding: 9px 14px; width: auto; display: inline-block; font-size: 13.5px;
+  margin: 0 6px 6px 0; border-radius: 999px;
+}
+.btn.ko {
+  background: linear-gradient(165deg, var(--ko2), var(--ko));
+  box-shadow: 0 2px 5px rgba(156, 53, 41, .2), 0 8px 20px rgba(156, 53, 41, .14);
+}
+
+/* --- LE CHOIX COCHABLE -------------------------------------------------- */
+
+.ch {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left;
+  background: var(--bg2); border: 1px solid var(--ln); border-radius: var(--r);
+  padding: 13px 14px; margin-bottom: 9px; font: inherit; color: inherit;
+  cursor: pointer; box-shadow: var(--sh); transition: border-color .15s, background .15s;
+}
+.ch.on { border-color: var(--acl); background: linear-gradient(180deg, var(--acs2), var(--acs)); }
+.ch .rd {
+  width: 20px; height: 20px; border-radius: 999px; border: 1.5px solid var(--rdb);
+  flex: none; margin-top: 1px; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--bg2); transition: background .15s, border-color .15s;
+}
+.ch.on .rd { background: var(--ac); border-color: var(--ac); }
+.rdb {
+  width: 22px; height: 22px; border-radius: 999px; border: 1.5px solid var(--rdb);
+  background: var(--bg2); color: var(--bg2); font-size: 12px; cursor: pointer; padding: 0; flex: none;
+}
+.rdb.on { background: var(--ac); border-color: var(--ac); }
+.qui { display: flex; align-items: center; gap: 11px; }
+
+/* --- LE CALENDRIER ------------------------------------------------------ */
+
+table.cal { width: 100%; border-collapse: separate; border-spacing: 5px; table-layout: fixed; }
+table.cal th {
+  font-size: 10.5px; color: var(--ink3); font-weight: 700;
+  padding-bottom: 3px; letter-spacing: .05em;
+}
+table.cal td {
+  height: 46px; border-radius: var(--r2); text-align: center; vertical-align: middle;
+  font-size: 14px; background: var(--bg2); border: 1px solid var(--ln); cursor: pointer;
+  padding: 0; box-shadow: 0 1px 2px rgba(16, 32, 27, .035);
+  transition: transform .1s; position: relative;
+}
+table.cal td:active { transform: scale(.94); }
+
+/* LES ÉTATS — écrits `table.cal td.X`, jamais `td.X`. Voir l'avertissement
+   en tête de section : c'est le défaut du lot 31 §2, et il est resté invisible
+   parce que jsdom résout la cascade dans l'ordre des sources et IGNORE la
+   spécificité. `test/parcours-calendrier.smoke.js` fait l'arithmétique
+   lui-même et remet le défaut pour prouver qu'il mord. */
+table.cal td.no { background: transparent; border-color: transparent; color: var(--ch2); cursor: default; box-shadow: none; }
+table.cal td.ab { background: var(--was); border-color: var(--wal); color: var(--wa); }
+table.cal td.cg { background: var(--acs); border-color: var(--acl2); color: var(--ac); }
+table.cal td.fe { background: var(--ln2); border-color: var(--ln2); color: var(--ink3); box-shadow: none; }
+table.cal td.ec { background: var(--ecf); border-color: var(--ecl); color: var(--ect); }
+table.cal td.fa { background: var(--faf); border-color: var(--fal); color: var(--fat); }
+table.cal td.nt { background: var(--ln2); border-color: var(--ln); color: var(--ink3); }
+table.cal td.selb { background: var(--ac); border-color: var(--ac); color: var(--bg2); }
+table.cal td.selb .m { opacity: .9; }
+table.cal td.dans { background: var(--dansf); border-color: var(--dansl); color: var(--ac); }
+table.cal td.auj { outline: 2px solid var(--ac); outline-offset: 1.5px; }
+
+table.cal td .n { display: block; font-weight: 600; line-height: 1; }
+table.cal td .m { display: block; font-size: 9.5px; margin-top: 3px; line-height: 1; opacity: .85; }
+table.cal td .rep { position: absolute; bottom: 3px; right: 5px; font-size: 9px; color: var(--ink3); }
+
+.leg {
+  display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px;
+  color: var(--ink3); margin: 12px 3px 0;
+}
+.leg i {
+  width: 11px; height: 11px; border-radius: 3.5px; display: inline-block;
+  margin-right: 5px; vertical-align: -1px; border: 1px solid var(--ln);
+}
+.navmois { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
+.navl { flex: 1; text-align: center; font-weight: 700; font-size: 16px; }
+.synth { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 2px 4px; }
+
+/* --- LA LIGNE ----------------------------------------------------------- */
+
+.ln {
+  display: flex; align-items: baseline; padding: 12px 0;
+  border-bottom: 1px solid var(--ln2); gap: 10px;
+}
+.ln:last-child { border-bottom: 0; }
+.ln .k { color: var(--ink2); }
+.ln .v { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.15px; }
+.ln.tot { border-top: 1.5px solid var(--ink); border-bottom: 0; margin-top: 5px; padding-top: 13px; }
+.ln.tot .k { font-weight: 700; }
+.ln.tot .v { font-size: 19px; font-weight: 700; letter-spacing: -.4px; }
+
+/* --- L'ENCART ----------------------------------------------------------- */
+
+.enc { border-radius: var(--r); padding: 13px 14px; font-size: 13.5px; margin-bottom: 11px; line-height: 1.5; }
+.enc.i { background: var(--ln2); color: var(--ink2); }
+.enc.w { background: linear-gradient(180deg, var(--was2), var(--was)); color: var(--wad); border: 1px solid var(--wal); }
+.enc.o { background: linear-gradient(180deg, var(--acs2), var(--acs)); color: var(--acd); border: 1px solid var(--acl2); }
+
+/* --- LA FEUILLE QUI MONTE DU BAS ---------------------------------------- */
+
+.sh {
+  position: fixed; inset: 0; background: rgba(10, 26, 20, .46);
+  display: none; align-items: flex-end; z-index: 9;
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+}
+.sh.open { display: flex; }
+.shb {
+  background: var(--bg2); width: 100%; max-height: 88%; overflow-y: auto;
+  border-radius: 24px 24px 0 0; padding: 8px 15px 22px;
+  padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 40px rgba(10, 30, 25, .2);
+  display: flex; flex-direction: column;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+}
+/* La garde Safari du §24.3 : un conteneur flex qui défile écrase ses enfants
+   sur iPhone. Elle vit dans le composant, pas au cas par cas. */
+.shb > * { flex: none; }
+.shb::before {
+  content: ''; display: block; width: 38px; height: 4px; border-radius: 999px;
+  background: var(--poignee); margin: 0 auto 14px;
+}
+.shb h2 { margin: 0 0 3px; font-size: 18px; letter-spacing: -.3px; }
+.shb .s { font-size: 13px; color: var(--ink3); margin-bottom: 16px; }
+
+/* --- LE CHAMP ----------------------------------------------------------- */
+
+.fld {
+  border: 1px solid var(--ln); border-radius: var(--r); padding: 12px 14px;
+  margin-bottom: 9px; display: flex; align-items: center; gap: 10px;
+  background: var(--bg2); box-shadow: var(--sh);
+}
+.fld .lb { color: var(--ink3); flex: 0 0 42%; }
+/* `input[type=time]` EST couvert par cette règle — c'est le §1.3 : sans elle,
+   l'`overflow` du champ rogne le contrôle de plus de 20 px sur Safari iOS.
+   Et JAMAIS de `-webkit-appearance:none` dessus : le contrôle y perd sa
+   taille intrinsèque et devient inutilisable. */
+.fld input, .fld select, .fld input[type="time"], .fld input[type="date"] {
+  margin-left: auto; font: inherit; font-weight: 600; text-align: right;
+  border: 0; background: none; color: var(--ink);
+  min-width: 6.5em; flex: 1; padding: 0; min-height: 26px;
+}
+.fld.col { display: block; }
+.fld.col .lb { display: block; margin-bottom: 7px; flex: none; }
+.fld.col input { width: 100%; text-align: left; margin: 0; }
+.ta {
+  width: 100%; font: inherit; border: 1px solid var(--ln); border-radius: var(--r2);
+  padding: 10px 12px; resize: none; background: var(--bg);
+}
+
+/* --- LE SÉLECTEUR SEGMENTÉ ---------------------------------------------- */
+
+.seg { display: flex; background: var(--ln2); border-radius: var(--r); padding: 3px; margin-bottom: 13px; }
+.seg button {
+  flex: 1; border: 0; background: none; font: inherit; font-size: 13.5px;
+  padding: 9px 4px; border-radius: 12px; cursor: pointer; color: var(--ink2);
+  transition: background .15s; min-height: 44px;
+}
+.seg button.on { background: var(--bg2); font-weight: 600; color: var(--ink); box-shadow: 0 1px 4px rgba(0, 0, 0, .09); }
+
+/* --- LE REPLI ----------------------------------------------------------- */
+
+.fold {
+  background: var(--bg2); border: 1px solid var(--ln); border-radius: var(--r);
+  margin-bottom: 10px; box-shadow: var(--sh); overflow: hidden;
+}
+.foldh {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 15px;
+  border: 0; background: none; font: inherit; cursor: pointer; text-align: left;
+}
+.ft { font-weight: 600; flex: 1; font-size: 15.5px; }
+.fv { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 14px; color: var(--ink2); }
+.fc { color: var(--ch); font-size: 13px; }
+.foldc { padding: 0 15px 13px; }
+.foldc .card { box-shadow: none; border: 0; padding: 0; margin: 0; }
+.foldc .ttl { margin-top: 12px; }
+
+/* --- LA CARTE À TROIS ÉTAGES (§3.2) ------------------------------------- */
+
+.cart3 { padding: 0; overflow: hidden; }
+.etg1 { border: 0; margin: 0; border-radius: 0; background: none; padding: 14px 15px; box-shadow: none; width: 100%; }
+.etg2 { padding: 11px 15px; border-top: 1px solid var(--ln2); display: flex; align-items: center; gap: 10px; }
+.etg2.w { background: var(--was); }
+.e2t { flex: 1; font-size: 13.5px; }
+.etg3 {
+  padding: 11px 15px; border: 0; border-top: 1px solid var(--ln2); display: flex; gap: 15px;
+  font: inherit; font-size: 12.5px; color: var(--ink3); width: 100%; background: none;
+  cursor: pointer; text-align: left; align-items: center;
+}
+.etg3 b { color: var(--ink); }
+.etg3 .dr { margin-left: auto; }
+
+/* --- LE DÉTAIL D'UN SOLDE ----------------------------------------------- */
+
+.compt { padding: 0; overflow: hidden; }
+.comptt { padding: 17px 15px 15px; text-align: center; }
+.comptv { font-size: 30px; font-weight: 700; letter-spacing: -.7px; margin: 3px 0 1px; }
+.comptd { padding: 2px 15px 10px; border-top: 1px solid var(--ln2); }
+.comptp { padding: 12px 15px; background: var(--ln2); font-size: 12.5px; color: var(--ink2); line-height: 1.5; }
+
+/* --- LE DOCUMENT -------------------------------------------------------- */
+
+.pane-t { font-weight: 700; font-size: 15.5px; margin-bottom: 11px; display: flex; align-items: center; gap: 8px; }
+.doc {
+  background: var(--bg2); border: 1px solid var(--ln); border-radius: var(--r);
+  padding: 18px 16px; margin-bottom: 12px; box-shadow: var(--sh);
+}
+.doch { text-align: center; padding-bottom: 14px; border-bottom: 1.5px solid var(--ln); margin-bottom: 6px; }
+.doct { font-weight: 700; font-size: 16.5px; letter-spacing: -.3px; }
+.docs { font-size: 12.5px; color: var(--ink3); margin-top: 3px; }
+.docsec {
+  font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ink3); margin: 18px 0 4px;
+}
+.doc .card { box-shadow: none; border: 0; padding: 0; margin: 0; }
+.bandeau {
+  text-align: center; font-size: 11.5px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; padding: 6px; border-radius: 999px; margin: 12px 0 2px;
+}
+.bandeau.def { background: var(--acs); color: var(--ac); }
+.bandeau.prov { background: var(--was); color: var(--wa); }
+.apercu {
+  background: var(--ln2); border-radius: var(--r2); padding: 12px 13px;
+  font: inherit; font-size: 12.5px; white-space: pre-wrap; color: var(--ink2); margin: 0 0 10px;
+}
+.moisp { display: flex; align-items: baseline; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--ln2); }
+.moisp:last-child { border-bottom: 0; }
+.moisp .av { width: 26px; height: 26px; font-size: 11px; }
+.moisd { padding: 4px 15px 10px; border-top: 1px solid var(--ln2); }
+.moisd .ln { padding: 9px 0; }
+
+/* --- DIVERS ------------------------------------------------------------- */
+
+/* LA PETITE PHRASE DE FIN. La maquette l'appelle `.note` ; ce nom est déjà
+   pris dans l'application par un ENCART ENCADRÉ (`Kit.note`), et deux sens
+   pour un même nom finissent toujours par se rencontrer. Elle prend donc le
+   nom de son propre fabricant dans la maquette : `pfin`. */
+.pfin { font-size: 13px; color: var(--ink3); margin: 9px 3px 16px; line-height: 1.5; }
+.stepper { display: flex; align-items: center; gap: 9px; }
+.stepper .mt { min-width: 22px; text-align: center; }
+.vent { margin-top: 12px; }
+.vl { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(0, 0, 0, .05); }
+.vn { font-weight: 600; font-size: 14px; }
+.trio { display: flex; gap: 6px; margin-top: 11px; }
+.trio .btn { flex: 1; margin: 0; }
+.etapes { display: flex; gap: 8px; margin-bottom: 14px; }
+.etape { flex: 1; text-align: center; opacity: .4; font-size: 12px; }
+.etape.on { opacity: 1; font-weight: 600; }
+.etape .av { margin: 0 auto 4px; }
+.big2 { font-size: 21px; font-weight: 700; letter-spacing: -.4px; margin: 2px 0 0; }
+.anh { display: flex; align-items: center; gap: 10px; margin: 2px 2px 10px; font-weight: 700; }
+.anh span { flex: 1; }
+.nuancier { display: flex; gap: 9px; margin-bottom: 12px; }
+.nu { width: 34px; height: 34px; border-radius: 999px; border: 2px solid transparent; cursor: pointer; }
+.nu.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--bg2) inset; }
+.prog { height: 4px; background: var(--ln2); border-radius: 999px; margin-bottom: 16px; overflow: hidden; }
+.prog i { display: block; height: 4px; background: var(--ac); border-radius: 999px; }
+/* Le toast de la maquette est `position:absolute` — il ne tient que dans le
+   `.phone` de la démonstration. Celui de l'application est FIXE et s'anime ;
+   il est conservé tel quel, plus bas, et ne prend d'ici que ses couleurs. */
 
 /* ------------------------------------------------------------------------ */
 /* 2. BASE, OSSATURE                                                         */
@@ -305,34 +756,17 @@ body {
 
 /* LES TROIS BOUTONS (§24.2) : plein, contour (nt / dg), texte (lien).
    La variante `sm` est une pastille. */
-.btn {
-  display: block; width: 100%; text-align: center;
-  background: var(--ac); color: var(--bg2); border: none; border-radius: 12px;
-  padding: 14px; font: inherit; font-weight: 600; font-size: 17px;
-  margin: 0 0 9px; cursor: pointer;
-}
-.btn:active:not([disabled]) { transform: scale(.985); }
-.btn[disabled] { background: var(--bg3); color: var(--ch); cursor: default; }
-.btn.nt {
-  background: var(--bg2); color: var(--ink2);
-  border: 1.5px solid var(--ln); font-weight: 400; font-size: 15px; padding: 12px;
-}
-.btn.nt[disabled] { background: var(--bg3); color: var(--ch); border-color: var(--ln2); }
+/* Le bouton PLEIN, le NEUTRE et la pastille `sm` viennent du socle 2A.
+   Ne restent ici que les deux variantes propres a l'application. */
 .btn.dg {
-  background: var(--bg2); color: var(--dg);
-  border: 1.5px solid var(--dgl); font-weight: 400; font-size: 15px; padding: 12px;
+  background: var(--bg2); color: var(--ko); border: 1px solid var(--ko);
+  font-weight: 600; font-size: 15.5px; box-shadow: var(--sh);
 }
 /* `gh` (ancien contour vert) est absorbé par le contour neutre. */
 .btn.gh {
-  background: var(--bg2); color: var(--ac);
-  border: 1.5px solid var(--acl); font-weight: 600; font-size: 15px; padding: 12px;
+  background: var(--bg2); color: var(--ac); border: 1px solid var(--acl);
+  font-weight: 600; font-size: 15.5px; box-shadow: var(--sh);
 }
-.btn.sm {
-  display: inline-block; width: auto;
-  padding: 9px 12px; font-size: 13px; font-weight: 600; border-radius: 999px;
-  margin: 0;
-}
-.btn.sm.nt, .btn.sm.dg { padding: 9px 12px; }
 
 /* Bouton-texte. */
 .lien {
@@ -371,22 +805,33 @@ body {
 /*    prennent la géométrie et les tons du composant.                        */
 /* ------------------------------------------------------------------------ */
 
-.enc, .note, .warnbox {
-  border: 1.5px solid var(--acl);
-  background: var(--acs);
+/* `enc` vient du socle 2A (tons `i` / `w` / `o`). `note` et `warnbox` sont
+   les encarts ENCADRES de l'application : ils gardent leur geometrie et
+   prennent les nouvelles couleurs. */
+.note, .warnbox {
+  border: 1px solid var(--acl2);
+  background: linear-gradient(180deg, var(--acs2), var(--acs));
   color: var(--acd);
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 13px;
+  border-radius: var(--r);
+  padding: 13px 14px;
+  font-size: 13.5px;
   line-height: 1.5;
-  margin: 0 0 9px;
+  margin: 0 0 11px;
 }
-.enc.w, .warnbox {
-  border-color: var(--wal); background: var(--was); color: var(--wad);
+.warnbox {
+  border-color: var(--wal);
+  background: linear-gradient(180deg, var(--was2), var(--was));
+  color: var(--wad);
 }
-.enc.k {
-  border-color: var(--dgl); background: var(--dgs); color: var(--dg);
+/* Un `enc` SANS variante gardait le ton vert au lot 24 : les ecrans non
+   migres en posent encore. Le socle, lui, n'en donne qu'aux variantes. */
+.enc:not(.i):not(.w):not(.o):not(.k) {
+  border: 1px solid var(--acl2);
+  background: linear-gradient(180deg, var(--acs2), var(--acs));
+  color: var(--acd);
 }
+/* Le ton BLOCAGE, propre a l'application : la maquette n'en a pas. */
+.enc.k { border: 1px solid var(--ko); background: var(--kos); color: var(--ko); }
 .enc b, .note b, .warnbox b {
   display: block; font-size: 15px; font-weight: 600; margin-bottom: 4px; line-height: 1.35;
 }
@@ -395,7 +840,7 @@ body {
   width: 100%; text-align: left; font-family: inherit;
 }
 .enc.one b { margin: 0; flex: 1; }
-.enc.one .ch { color: inherit; opacity: .7; font-size: 15px; flex: none; }
+.enc.one .chev { color: inherit; opacity: .7; font-size: 15px; flex: none; }
 .enc.one:active { transform: scale(.985); }
 .note .btn, .warnbox .btn, .enc .btn { margin: 9px 0 0; }
 .note .btn.sm, .warnbox .btn.sm { margin: 9px 6px 0 0; }
@@ -413,22 +858,15 @@ body {
 
 /* Le composant cible : padding 11 px, sous-texte `sb2` à 3 px, variante
    `tot` (trait 2 px au-dessus), variante `tap` (cliquable). */
-.ln {
-  display: flex; justify-content: space-between; gap: 14px;
-  padding: 11px 0; border-bottom: 1px solid var(--ln2);
-  font-size: 15px; align-items: baseline; line-height: 1.45;
-}
-.ln:last-child { border-bottom: 0; }
+/* `ln` vient du socle 2A. La maquette met la valeur dans un `.v` ;
+   l'application la met dans un `<b>` — le `margin-left:auto` doit donc etre
+   donne aux deux, sans quoi toutes les valeurs se collent au libelle. */
 .ln b {
-  font-weight: 600; font-variant-numeric: tabular-nums;
-  white-space: nowrap; text-align: right;
+  margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap; text-align: right; letter-spacing: -.15px;
 }
 .ln .sb2 { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 3px; }
-.ln.tot {
-  border-top: 2px solid var(--ink); border-bottom: 0;
-  font-weight: 700; margin-top: 4px; padding-top: 12px;
-}
-.ln.tot b { font-weight: 700; }
+.ln.tot b { font-weight: 700; font-size: 19px; letter-spacing: -.4px; }
 /* LOT 28 — DÉFAUT TROUVÉ EN VÉRIFIANT AU NAVIGATEUR, ANTÉRIEUR À CE LOT.
 
    `.ln.tap` ne portait QUE `cursor: pointer`. Or `Kit.ligneLn` avec un
@@ -485,7 +923,6 @@ body {
 .menu .d { font-size: 13px; color: var(--ink3); display: block; margin-top: 3px; font-weight: 400; }
 
 /* Carte-liste héritée. */
-.card { border: 1.5px solid var(--ln); border-radius: 12px; padding: 13px 14px; margin: 0 0 9px; background: var(--bg2); }
 .card.click { cursor: pointer; width: 100%; text-align: left; font: inherit; color: inherit; display: block; font-family: inherit; }
 .card.click:active { transform: scale(.985); }
 .row { display: flex; align-items: baseline; gap: 9px; }
@@ -522,7 +959,7 @@ body {
 .cd .gr { flex: 1; min-width: 0; }
 .cd .n { display: block; font-weight: 600; font-size: 15px; line-height: 1.3; }
 .cd .d { display: block; font-size: 13px; color: var(--ink3); line-height: 1.45; margin-top: 3px; }
-.cd .ch { color: var(--ch); font-size: 17px; flex: none; }
+.cd .chev { color: var(--ch); font-size: 17px; flex: none; }
 /* Une carte qui RÉCLAME quelque chose prend le ton attention — et son titre
    le dit en toutes lettres : la couleur ne porte jamais le sens seule. */
 .cd.w { border-color: var(--wal); }
@@ -661,8 +1098,8 @@ body {
 .kid.warn { border-color: var(--wal); }
 .kid.warn .dt { color: var(--wa); font-weight: 600; }
 .kid.off { opacity: .55; }
-.kid .ch { color: var(--ch); font-size: 15px; transition: transform .18s; flex: none; }
-.kid.open .ch { transform: rotate(90deg); }
+.kid .chev { color: var(--ch); font-size: 15px; transition: transform .18s; flex: none; }
+.kid.open .chev { transform: rotate(90deg); }
 .kid .adj { border-top: 1px solid var(--ln2); padding: 11px 13px; display: none; flex-direction: column; gap: 9px; background: var(--bg4); }
 .kid.open .adj { display: flex; }
 .cnt { display: flex; align-items: center; gap: 11px; font-size: 15px; }
@@ -708,7 +1145,6 @@ button.coche:active { transform: scale(.985); }
 /* 8. REPLI (`fold`) — en-tête (titre · valeur · chevron), corps replié       */
 /* ------------------------------------------------------------------------ */
 
-.fold { background: var(--bg2); border: 1.5px solid var(--ln); border-radius: 12px; overflow: hidden; margin: 0 0 9px; }
 .fold .fh {
   display: flex; align-items: center; gap: 10px; padding: 14px 15px;
   cursor: pointer; font-size: 15px; font-weight: 600;
@@ -716,8 +1152,8 @@ button.coche:active { transform: scale(.985); }
   background: none; border: none;
 }
 .fold .fh .vv { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink3); font-weight: 600; font-size: 15px; white-space: nowrap; }
-.fold .fh .ch { color: var(--ch); font-size: 15px; transition: transform .18s; flex: none; }
-.fold.open .fh .ch { transform: rotate(90deg); }
+.fold .fh .chev { color: var(--ch); font-size: 15px; transition: transform .18s; flex: none; }
+.fold.open .fh .chev { transform: rotate(90deg); }
 .fold .fb { display: none; padding: 2px 15px 13px; border-top: 1px solid var(--ln2); }
 .fold.open .fb { display: block; }
 
@@ -738,13 +1174,7 @@ button.coche:active { transform: scale(.985); }
 /* 9. SEGMENTÉ (`seg`), STEPPER (`stp`), compteurs hérités                    */
 /* ------------------------------------------------------------------------ */
 
-.seg { display: flex; background: var(--bg3); border-radius: 12px; padding: 3px; gap: 3px; margin: 0 0 9px; }
-.seg button {
-  flex: 1; border: 0; background: transparent; font-family: inherit;
-  font-size: 13px; font-weight: 600; color: var(--ink3);
-  padding: 9px 4px; border-radius: 12px; cursor: pointer; line-height: 1.2;
-}
-.seg button.on { background: var(--bg2); color: var(--ac); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+/* `seg` vient du socle 2A ; seules ses variantes restent ici. */
 .seg button[disabled] { opacity: .45; cursor: default; }
 .seg.mini button { padding: 7px 4px; }
 
@@ -790,17 +1220,11 @@ button.coche:active { transform: scale(.985); }
 /* 10. PASTILLES — `pill` (4 tons), pastille d'état, badge, synthèse, avatars */
 /* ------------------------------------------------------------------------ */
 
-.pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
-  background: var(--acs); color: var(--acd); white-space: nowrap;
-}
-.pill.w { background: var(--was); color: var(--wa); }
-.pill.g { background: var(--bg3); color: var(--ink3); }
+/* `pill` vient du socle 2A (tons `w` / `o` / `g`). Une etiquette SANS
+   variante etait verte au lot 24 ; le ton bleu reste propre a l'application. */
+.pill:not(.w):not(.o):not(.g):not(.b) { background: var(--acs); color: var(--ac); }
 .pill.b { background: var(--bls); color: var(--bl); }
 
-/* La ligne de synthèse chiffrée du calendrier (lot 25). */
-.synth { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 9px; }
 
 /* Pastille d'état héritée — le mot est toujours écrit à côté du rond. */
 .pastille { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
@@ -821,12 +1245,10 @@ button.coche:active { transform: scale(.985); }
 .badge.ar { background: var(--bg3); color: var(--ink3); }
 
 /* Avatars — photo ou initiale, dans la couleur d'identité de l'enfant. */
-.av {
-  width: 34px; height: 34px; border-radius: 999px;
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 13px; flex: 0 0 auto; overflow: hidden;
-  border: 1.5px solid;
-}
+/* `av` vient du socle 2A : 40 px, sans bordure, ombre interieure. Les sept
+   teintes d'identite (§3.3) restent la seule exception a « pas de couleur en
+   dur » avec les etats du calendrier. */
+.av { overflow: hidden; }
 .av.id-vert       { background: var(--id-vert-f);       color: var(--id-vert-x);       border-color: var(--id-vert-t); }
 .av.id-bleu       { background: var(--id-bleu-f);       color: var(--id-bleu-x);       border-color: var(--id-bleu-t); }
 .av.id-prune      { background: var(--id-prune-f);      color: var(--id-prune-x);      border-color: var(--id-prune-t); }
@@ -851,86 +1273,66 @@ button.coche:active { transform: scale(.985); }
 /* 11. CALENDRIER — cellules pleine largeur, mini-libellés, repères          */
 /* ------------------------------------------------------------------------ */
 
-table.cal { width: 100%; border-collapse: separate; border-spacing: 3px; table-layout: fixed; margin: 0 0 9px; }
-table.cal th { font-size: 13px; font-weight: 600; color: var(--ink3); padding-bottom: 2px; }
-table.cal td {
-  height: 44px; vertical-align: middle; text-align: center; border-radius: 12px;
-  border: 1.5px solid var(--ln2); background: var(--bg2); cursor: pointer;
-  padding: 0; position: relative;
+/* LE CALENDRIER VIENT DU SOCLE 2A : cases de 46 px, rayon 11, espacement 5,
+   et six etats — `ab` `cg` `fe` `ec` `fa` `nt` — plus `auj`, `no`, `selb` et
+   `dans`. Tous ecrits `table.cal td.X`, jamais `td.X` (§1.3).
+
+   CE QUI CHANGE DANS LE CODAGE DES ETATS, ET POURQUOI CE N'EST PAS UNE PERTE.
+
+   Au lot 24, SEPT etats etaient colores, dont `ok` (journee de garde) et `we`
+   (fin de semaine). La maquette 2A ne colore QUE LES EXCEPTIONS : une journee
+   de garde ordinaire est une case blanche. C'est ce qui rend les congés et
+   les absences lisibles d'un coup d'oeil sur un mois — quand tout est colore,
+   plus rien ne ressort.
+
+   C'est aussi ce qui a permis de mettre le CONGÉ EN VERT (arbitrage du
+   1er septembre) : le vert etait pris par la journee de garde, il ne l'est
+   plus.
+
+   Ce bloc ne garde donc que la COMPATIBILITE le temps que le calendrier
+   migre (commit 4) : la geometrie des textes que le code actuel pose
+   (`.num`, `.mini`, `.reperes`) et les trois etats hérités. */
+
+/* Les textes d'une case HERITEE. Ils n'imposent plus leur couleur : ils
+   HERITENT de celle de l'etat, exactement comme `.n` et `.m` du socle. */
+.num { font-size: 14px; font-weight: 600; line-height: 1.1; display: block; }
+.mini {
+  font-size: 9.5px; font-weight: 600; margin-top: 3px; line-height: 1;
+  opacity: .85; white-space: nowrap; display: block;
 }
-/* L'amplitude du calendrier : .94, l'exception écrite de la spécification. */
-table.cal td:active { transform: scale(.94); }
-table.cal td.no { cursor: default; }
-table.cal td.no:active { transform: none; }
-.num { font-size: 15px; font-weight: 600; color: var(--ink2); line-height: 1.1; }
-/* Le mini-libellé porte le mot de l'état — jamais la couleur seule (V8-01).
-   13 px : la plus petite taille du socle (écart assumé à la maquette, qui
-   descendait à 8 px — le document de spécification prime). */
-.mini { font-size: 13px; font-weight: 600; margin-top: 1px; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; }
 
-/* LOT 31 §2 — LA COULEUR D'ÉTAT DOIT GAGNER, ET ELLE NE GAGNAIT PAS.
+/* Les trois etats HERITES, le temps du commit 4.
+   `ok` (garde) et `we` (fin de semaine) deviennent NEUTRES — c'est la regle
+   du 2A, pas un oubli. `warn` reste l'ambre de l'absence. */
+table.cal td.warn { background: var(--was); border-color: var(--wal); color: var(--wa); }
 
-   `table.cal td` pèse (0,1,2) et posait `background: var(--bg2)`.
-   `td.cg` pèse (0,1,1) : la règle de base l'emportait, et le fond des
-   cellules d'état restait blanc. On ne voyait que la bordure et le texte —
-   sur TOUS les états, pas seulement le congé.
-
-   La correction requalifie chaque état au même niveau que la règle de base,
-   plutôt que d'ajouter des `!important` : un `!important` gagne aussi, mais
-   il gagne contre tout, y compris contre la prochaine règle légitime.
-
-   Les sélecteurs descendants (`.num`, `.mini`) n'ont jamais été en cause :
-   aucune règle de `table.cal` ne les visait. Ils restent tels quels. */
-table.cal td.ok { background: var(--acs); border-color: var(--acl); }
-td.ok .num { color: var(--acd); font-weight: 700; }
-table.cal td.ab { background: var(--was); border-color: var(--wal); }
-td.ab .num { color: var(--wa); font-weight: 700; }
-td.ab .mini { color: var(--wad); }
-table.cal td.fe { background: var(--bg3); border-color: var(--ch); }
-td.fe .num { color: var(--ink3); font-weight: 400; }
-td.fe .mini { color: var(--ink3); }
-table.cal td.cg { background: var(--bls); border-color: var(--bll); }
-td.cg .num { color: var(--bl); font-weight: 700; }
-td.cg .mini { color: var(--bl); }
-table.cal td.we { background: var(--bg); border-color: var(--bg3); }
-td.we .num { color: var(--ch); font-weight: 400; }
-table.cal td.nt { background: var(--bg3); border-color: var(--ch); }
-td.nt .num { color: var(--ink3); font-weight: 700; }
-td.nt .mini { color: var(--ink3); }
-table.cal td.warn { background: var(--was); border-color: var(--wal); }
-td.warn .num { color: var(--wa); font-weight: 700; }
-td.warn .mini { color: var(--wa); }
-
-/* Aujourd'hui : contour vert, distinct des fonds d'état. */
-table.cal td.auj { box-shadow: 0 0 0 2px var(--ac); }
-
-/* Jours à venir : pointillés, non touchables ; un congé déjà posé reste
-   touchable et garde sa couleur d'état. */
-table.cal td.futur { border-style: dashed; }
-table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) { background: var(--bg2); border-color: var(--ln); }
-table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) .num { color: var(--ink3); font-weight: 400; }
-table.cal td.futur { cursor: default; }
+/* Jours a venir : pointilles, non touchables ; un conge deja pose reste
+   touchable et garde sa couleur d'etat. */
+table.cal td.futur { border-style: dashed; cursor: default; }
+table.cal td.futur:not(.ok):not(.ab):not(.cg):not(.nt) { background: var(--bg2); border-color: var(--ln); color: var(--ink3); }
 table.cal td.futur:active { transform: none; }
+table.cal td.no:active { transform: none; }
 
-/* Sélection multiple : cadre épais + aria-checked, jamais une teinte de plus. */
+/* Selection multiple : cadre epais + aria-checked, jamais une teinte de plus. */
 table.cal td.sel { box-shadow: inset 0 0 0 3px var(--ac); }
 table.cal td.hors-sel { opacity: .4; cursor: default; }
 table.cal td.hors-sel:active { transform: none; }
 
-/* Repères de journée : des FORMES (• note, ◆ heures, ▾ congé posé). */
+/* Reperes de journee : des FORMES (• note, ◆ heures, ▾ conge pose). */
 .reperes { display: flex; gap: 2px; justify-content: center; align-items: center; line-height: 1; margin-top: 1px; height: 7px; }
-.rp { font-size: 13px; color: var(--ink3); line-height: .55; }
+.rp { font-size: 11px; color: var(--ink3); line-height: .55; }
 .rp.conge { color: var(--ac); }
 
-/* Légende (remplacée par la synthèse au lot 25 ; stylée d'ici là). */
-.lg { display: flex; flex-wrap: wrap; gap: 5px 13px; margin: 0 0 9px; font-size: 13px; color: var(--ink2); font-weight: 600; }
-.lg i { display: inline-block; width: 11px; height: 11px; border-radius: 999px; margin-right: 5px; vertical-align: -1px; border: 1.5px solid; }
-.g1 { background: var(--acs); border-color: var(--acl); }
+/* Legende HERITEE (`lg`). Le socle en apporte une neuve, `leg` (§4.4) ; celle
+   d'ici part avec le commit 4. */
+.lg { display: flex; flex-wrap: wrap; gap: 5px 13px; margin: 0 0 9px; font-size: 12px; color: var(--ink3); }
+.lg i { display: inline-block; width: 11px; height: 11px; border-radius: 3.5px; margin-right: 5px; vertical-align: -1px; border: 1px solid var(--ln); }
+.g1 { background: var(--bg2); border-color: var(--ln); }
 .g2 { background: var(--was); border-color: var(--wal); }
-.g3 { background: var(--bg3); border-color: var(--ch); }
-.g5 { background: var(--bls); border-color: var(--bll); }
-.g6 { background: var(--bg2); border-color: var(--ch); border-style: dashed; }
-.lg i.gnote, .lg i.gheures { border: none; background: none; width: auto; height: auto; color: var(--ink3); font-size: 13px; line-height: 1; }
+.g3 { background: var(--ln2); border-color: var(--ln2); }
+.g5 { background: var(--acs); border-color: var(--acl2); }
+.g6 { background: var(--bg2); border-color: var(--ln); border-style: dashed; }
+.lg i.gnote, .lg i.gheures { border: none; background: none; width: auto; height: auto; color: var(--ink3); font-size: 12px; line-height: 1; }
 
 /* ------------------------------------------------------------------------ */
 /* 12. BLOC RÉSULTAT VERT (`res`), décompte, reste à répartir                */
@@ -975,12 +1377,10 @@ table.cal td.hors-sel:active { transform: none; }
 /* 13. CHAMPS                                                                */
 /* ------------------------------------------------------------------------ */
 
-.fld {
-  border: 1.5px solid var(--ln); border-radius: 12px; padding: 11px 13px; margin: 0 0 8px;
-  display: flex; align-items: center; gap: 10px; font-size: 15px; background: var(--bg2);
-  overflow: hidden;
-}
-.fld .lb { color: var(--ink3); flex: 0 0 46%; }
+/* `fld` vient du socle 2A. ATTENTION : le socle NE MET PLUS `overflow:hidden`
+   — c'etait lui qui rognait `input[type=time]` de plus de 20 px sur Safari
+   iOS (§1.3). Ne pas le remettre. */
+.fld .vl { color: inherit; }
 .fld .vl { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .fld input[type=text], .fld input[type=email], .fld input[type=password], .fld select {
   margin-left: auto; font: inherit; font-weight: 600; text-align: right;
@@ -1293,6 +1693,36 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 .panne p { font-size: 13px; color: var(--ink2); margin: 0 0 10px; line-height: 1.45; }
 .panne p.q { font-size: 13px; color: var(--ink3); }
 .panne .btn { margin-bottom: 0; }
+
+/* ------------------------------------------------------------------------ */
+/* 17 bis. LES ZONES TACTILES                                               */
+/*     La maquette gagne sur le dessin : ces règles n'agrandissent rien à    */
+/*     l'œil. Elles posent, au centre de commandes dessinées plus petites,   */
+/*     une surface transparente d'au moins 44 px qui reçoit le doigt.        */
+/*     Hors flux (position: absolute) : aucune mise en page ne bouge.        */
+/*     Mesuré sur les écrans réels à 390 px de large, appareil tactile.      */
+/* ------------------------------------------------------------------------ */
+
+.btn.sm, .back, .bar .bk, .bar .nav button, .etg3, .stp button, .seg button {
+  position: relative;
+}
+.btn.sm::after,
+.back::after,
+.bar .bk::after,
+.bar .nav button::after,
+.etg3::after,
+.stp button::after,
+.seg button::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  min-width: 44px;
+  min-height: 44px;
+}
 
 [hidden] { display: none !important; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

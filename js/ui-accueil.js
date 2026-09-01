@@ -412,7 +412,7 @@
     g.appendChild(Kit.ce('span', 'n', titre));
     if (sous) g.appendChild(Kit.ce('span', 'd', sous));
     b.appendChild(g);
-    if (onclick) b.appendChild(Kit.ce('span', 'ch', '›'));
+    if (onclick) b.appendChild(Kit.ce('span', 'chev', '›'));
     return b;
   }
 

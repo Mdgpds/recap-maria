@@ -73,11 +73,41 @@ var cas = [];
 /* ====================================================================== */
 /* A1 — les quatre tailles                                                */
 
-cas.push({ nom: 'A1 — hors papier, aucune taille de police hors 13/15/17/22 px', fn: function () {
+/* REDESIGN 2A — L'ECHELLE CHANGE, LE GARDE-FOU RESTE.
+
+   Le lot 24 tenait QUATRE tailles (13/15/17/22). La maquette 2A, testee et
+   validee par l'utilisatrice finale, en porte VINGT : elle module beaucoup
+   plus finement, et c'est ce que Maria a essaye au doigt. Arbitrage d'Adrien
+   du 1er septembre 2026 : « la maquette gagne ».
+
+   Le garde-fou n'est donc pas supprime, il est REECRIT sur la nouvelle
+   echelle : la liste ci-dessous est FERMEE. Une vingt-et-unieme taille fait
+   echouer ce test. C'est plus lache qu'avant — quatre valeurs valaient mieux
+   que vingt — et il faut le savoir : ce qu'on garde ici, c'est l'interdiction
+   d'inventer une taille de plus au fil des lots, pas la discipline du lot 24. */
+var ECHELLE_2A = ['9', '9.5', '10.5', '11', '11.5', '12', '12.5', '13', '13.5',
+                  '14', '15', '15.5', '16', '16.5', '17', '18', '19', '21', '25', '30',
+                  /* HERITE du lot 24, le temps de la migration des ecrans :
+                     22 px est le titre d'ecran d'avant (`.t-ecran`, `.av.gd`).
+                     Il part avec le dernier ecran qui le porte, au commit 8. */
+                  '22'];
+
+cas.push({ nom: 'A1 — hors papier, aucune taille de police hors l\u2019echelle 2A (20 valeurs)', fn: function () {
   var interdites = taillesDe(horsPapier).filter(function (t) {
-    return ['13', '15', '17', '22'].indexOf(t) === -1;
+    return ECHELLE_2A.indexOf(t) === -1;
   });
-  egal(interdites.join(','), '', 'tailles hors socle');
+  egal(interdites.join(','), '', 'tailles hors echelle 2A');
+} });
+
+cas.push({ nom: 'A1 — l\u2019echelle 2A est FERMEE : une taille de plus fait echouer', fn: function () {
+  /* La preuve que le controle mord : on injecte une taille absente de
+     l'echelle et la mesure doit la denoncer. Sans cela, une liste de vingt
+     valeurs finirait par tout accepter sans que personne s'en apercoive. */
+  var mute = horsPapier + '\n.faux { font-size: 23.5px; }';
+  var interdites = taillesDe(mute).filter(function (t) {
+    return ECHELLE_2A.indexOf(t) === -1;
+  });
+  egal(interdites.join(','), '23.5', 'la taille intruse doit etre denoncee');
 } });
 
 cas.push({ nom: 'A1 — la section papier tient en quatre tailles (11/13/15/17)', fn: function () {
@@ -104,25 +134,35 @@ cas.push({ nom: 'A2 — les doublons du :root d’avant ont disparu (--bd, #6496
 /* ====================================================================== */
 /* A3 — deux rayons, une amplitude, trois graisses                        */
 
-cas.push({ nom: 'A3 — deux rayons seulement : 12 px et 999 px', fn: function () {
+/* REDESIGN 2A — les rayons. Le lot 24 en tenait deux (12 px et 999 px) ; la
+   maquette en porte six, dont deux nommes : `--r` (15 px, les surfaces) et
+   `--r2` (11 px, les cases du calendrier et les apercus). La liste reste
+   FERMEE, et les deux jetons sont a preferer aux valeurs libres. */
+var RAYONS_2A = ['var(--r)', 'var(--r2)', '999px', '12px', '24px', '3.5px', '0'];
+
+cas.push({ nom: 'A3 — les rayons tiennent dans la liste fermee du 2A', fn: function () {
   var re = /border-radius:\s*([^;]+);/g;
   var m, interdits = [];
   var t = sansCommentaires(css);
   while ((m = re.exec(t))) {
     m[1].split(/\s+/).forEach(function (v) {
       if (!v) return;
-      if (['12px', '999px', '0'].indexOf(v) === -1 && interdits.indexOf(v) === -1) interdits.push(v);
+      if (RAYONS_2A.indexOf(v) === -1 && interdits.indexOf(v) === -1) interdits.push(v);
     });
   }
-  egal(interdits.join(','), '', 'rayons hors socle');
+  egal(interdits.join(','), '', 'rayons hors liste 2A');
 } });
 
-cas.push({ nom: 'A3 — une amplitude au toucher : .985 (et .94 pour le calendrier)', fn: function () {
+cas.push({ nom: 'A3 — deux amplitudes au toucher : .988 (2A) et .94 (calendrier)', fn: function () {
+  /* La maquette 2A appuie a .988 la ou le lot 24 appuyait a .985. Les ecrans
+     non encore migres gardent .985 le temps de leur commit ; les trois
+     valeurs cohabitent donc, et rien d'autre n'est admis. */
   var re = /scale\(([^)]+)\)/g;
   var m, interdites = [];
   var t = sansCommentaires(css);
   while ((m = re.exec(t))) {
-    if (['.985', '.94', '0.985', '0.94'].indexOf(m[1]) === -1 && interdites.indexOf(m[1]) === -1) {
+    if (['.988', '.985', '.94', '0.988', '0.985', '0.94'].indexOf(m[1]) === -1 &&
+        interdites.indexOf(m[1]) === -1) {
       interdites.push(m[1]);
     }
   }
