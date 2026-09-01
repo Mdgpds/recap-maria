@@ -313,8 +313,9 @@ test('§5 — différentiel large : les congés payés ne sont JAMAIS débloqué
                   var mpjDecor = mm.mpjc || 540;
                   var memeMois = String(auj || '').slice(0, 7) ===
                     mm.annee + '-' + String(mm.mois).padStart(2, '0');
-                  var anticipation = memeMois
-                    ? Math.min(Math.round(2.5 * mpjDecor), 2 * mpjDecor) : 0;
+                  /* La borne du moteur est l'ACQUISITION DU MOIS (2,5 j), pas
+                     les deux jours que l'écran propose. */
+                  var anticipation = memeMois ? Math.round(2.5 * mpjDecor) : 0;
                   assert(ap.imputation.minutesCpConsommees <=
                     (compteur.minutesCpAcquis || 0) - (compteur.minutesCpPris || 0) +
                     anticipation,

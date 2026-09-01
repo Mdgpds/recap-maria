@@ -590,7 +590,7 @@ function moteurSur(joursPoses, joursSurSup, entree, aujourdhui) {
      n'est pas tombé. */
   var troisJours = ['2026-07-29', '2026-07-30', '2026-07-31'];
   assert(cpSur(troisJours, 3, '2026-07-31') === 'IMPUTATION_DEPASSE_RESERVES',
-    'E4 + §6 : au-delà de deux jours, le refus reste entier');
+    'E4 + §6 : au-delà de l’acquisition du mois, le refus reste entier');
   assert(cpSur(deuxJours, 2, '2026-08-03') === 'IMPUTATION_DEPASSE_RESERVES',
     'E4 + §6 : et hors du mois en cours, aucune anticipation — le refus ' +
     'reste entier lui aussi');

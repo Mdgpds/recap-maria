@@ -16,7 +16,7 @@
      - il n'apparaît QUE sur un mois qui refusait pour dépassement des congés
        payés ;
      - et seulement quand `aujourdhui` tombe dans le mois de la période ;
-     - et le dépassement observé ne dépasse jamais deux jours.
+     - et le dépassement observé ne dépasse jamais l'acquisition du mois.
    Tout autre écart est une régression, et le test le nomme.
 
    POURQUOI LES POINTS 1 À 5, 7 ET 8 N'ONT RIEN À PROUVER ICI, ET POURQUOI ON
@@ -55,7 +55,10 @@ var POSTES_IMPUTATION = ['joursSurCp', 'minutesCpConsommees',
                          'joursSurSup', 'minutesSupConsommees', 'joursSansSolde'];
 
 var MPJ = 540;
-var DEUX_JOURS = 2 * MPJ;
+/* La borne du MOTEUR : l'acquisition mensuelle (2,5 j). L'écran n'offre que
+   deux jours entiers — un stepper ne pose pas de demi-jour — mais c'est une
+   limite du geste, pas du calcul, et c'est le calcul qu'on surveille ici. */
+var ACQUISITION_MOIS = Math.round(2.5 * MPJ);
 
 function conditions(v) {
   return {
@@ -208,12 +211,12 @@ test('§9.3 — juin, juillet et août 2026 : poste à poste, rien ne bouge hors
                   v.annee + '-' + String(v.mois).padStart(2, '0'),
                   quoi + ' — un refus perdu HORS du mois en cours : ' +
                   'l’anticipation n’avait pas à s’ouvrir');
-                /* Et jamais au-delà de deux jours. */
+                /* Et jamais au-delà de l'acquisition du mois. */
                 var dispo = (cpt.c.minutesCpAcquis || 0) - (cpt.c.minutesCpPris || 0);
                 var depassement = ap.r.imputation.minutesCpConsommees - dispo;
-                assert(depassement <= DEUX_JOURS,
+                assert(depassement <= ACQUISITION_MOIS,
                   quoi + ' — dépassement de ' + depassement + ' min, au-delà ' +
-                  'des deux jours autorisés (' + DEUX_JOURS + ')');
+                  'de l’acquisition du mois (' + ACQUISITION_MOIS + ')');
                 debloques++;
                 return;
               }

@@ -136,7 +136,9 @@ function anticipationAutorisee(v, auj) {
      borne s'applique dès que le mois calculé EST celui de `aujourdhui`. */
   var moisCalcule = v.annee + '-' + String(v.mois).padStart(2, '0');
   if (String(auj).slice(0, 7) !== moisCalcule) return 0;
-  return Math.min(Math.round(2.5 * mpj), 2 * mpj);
+  /* La borne du moteur est l'ACQUISITION DU MOIS (2,5 j), pas les deux jours
+     que l'écran propose : celle-là appartient au geste, pas au calcul. */
+  return Math.round(2.5 * mpj);
 }
 
 function congesPayesJamaisNegatifs(v, ap, auj) {

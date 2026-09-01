@@ -1579,15 +1579,16 @@
        moteur ne lit aucune horloge, et sans `aujourdhui` il se comporte
        exactement comme avant ce lot.
 
-       Le montant est le plus petit de l'acquisition mensuelle nominale
-       (2,5 jours) et de deux jours entiers — le §6 pose les deux bornes, et
-       la plus serrée gagne. Ce n'est pas le disponible : c'est ce qu'on
-       autorise EN PLUS de lui. */
+       Le montant est l'ACQUISITION MENSUELLE de ce contrat — 2,5 jours au
+       nominal, moins si un prorata s'applique. Ce n'est pas le disponible :
+       c'est ce qu'on autorise EN PLUS de lui. Et ce n'est pas la borne de
+       l'écran non plus : le stepper offre deux jours entiers parce qu'il ne
+       pose pas de demi-jour, mais cette limite-là appartient au geste, pas au
+       calcul (voir le commentaire de `imputerConges`). */
     function anticipationCpPour(dateDebut) {
       if (!aujourdhui || !dateDebut) return 0;
       if (dateDebut.slice(0, 7) !== String(aujourdhui).slice(0, 7)) return 0;
-      return Math.min(minutesCpParMois(conditions),
-                      2 * conditions.minutes_par_jour_conge);
+      return minutesCpParMois(conditions);
     }
 
     /* RG-05 / RG-07 : imputation sur les compteurs disponibles.
@@ -1685,13 +1686,23 @@
            lit aucune horloge : sans `aujourdhui`, l'anticipation vaut zéro et
            le comportement est exactement celui d'avant ce lot.
 
-           LE MONTANT : au plus l'acquisition du mois, et au plus deux jours
-           entiers. Le §6 énonce les deux — « au plus l'acquisition du mois »
-           pour le moteur, « deux jours entiers, pas 2,5 » pour l'écran — et
-           le plus petit des deux vaut. Deux jours parce qu'on ne pose pas de
-           demi-jour par ce chemin ; l'acquisition du mois parce qu'un contrat
-           qui n'acquiert qu'au prorata ne peut pas anticiper plus qu'il ne
-           gagnera. */
+           LE MONTANT : L'ACQUISITION DU MOIS, ni plus ni moins.
+
+           J'avais d'abord serré cette borne à deux jours, croyant que le §6 se
+           contredisait — « au plus l'acquisition du mois » d'un côté, « deux
+           jours entiers, pas 2,5 » de l'autre. Adrien a tranché le
+           1er septembre : les deux phrases ne parlaient pas de la même chose.
+
+             · LE MOTEUR borne à l'acquisition du mois. C'est la règle de
+               fond : on n'anticipe pas plus que ce qu'on est en train de
+               gagner.
+             · L'ÉCRAN offre deux jours ENTIERS, parce qu'un stepper en jours
+               ne pose pas de demi-jour. C'est une limite du geste, pas de la
+               règle.
+
+           Serrer le moteur à la limite du geste aurait figé dans le calcul une
+           contrainte d'interface — et le jour où un autre chemin consommerait
+           un demi-jour de congés payés, il aurait été refusé sans raison. */
         var anticipationCp = anticipationCpPour(plan[v].date_debut);
         var tot = plan[v].imposeeTotale;
         if (tot && tot.joursSurCp * mpj > dispoCp + anticipationCp) {

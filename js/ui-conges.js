@@ -1189,10 +1189,14 @@
      est en train d'acquérir. Pour un mois à venir, seuls les jours déjà acquis
      sont posables. » (Adrien)
 
-     DEUX JOURS ENTIERS, PAS 2,5 : on ne pose pas de demi-jour par ce chemin.
-     Le moteur borne pareil — au plus l'acquisition du mois, au plus deux
-     jours — et c'est la même valeur des deux côtés, sinon le stepper
-     proposerait un cran que l'écriture refuserait.
+     DEUX JOURS ENTIERS, PAS 2,5, ET C'EST UNE LIMITE DE L'ÉCRAN, PAS DE LA
+     RÈGLE. Un stepper compte en journées : il ne sait pas poser un demi-jour.
+     Le MOTEUR, lui, borne à l'acquisition du mois (2,5 j) — c'est la règle de
+     fond, et elle est plus large. L'écart est sans conséquence ici : deux
+     jours entiers tiennent toujours sous 2,5, donc le stepper ne propose
+     jamais un cran que l'écriture refuserait. Ce sont deux limites
+     différentes, à deux endroits différents, et c'est voulu (Adrien,
+     1er septembre 2026).
 
      La date de référence est celle de l'application (`App.aujourdhui`), la
      même qui sert déjà à la récupération gagnée au fil du mois. */

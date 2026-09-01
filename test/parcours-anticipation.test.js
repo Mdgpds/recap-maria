@@ -10,7 +10,9 @@
    Ce que ce fichier prouve, dans l'ordre du §9.2 :
      - anticipation ACCEPTÉE sur le mois en cours ;
      - REFUSÉE sur le mois suivant ;
-     - JAMAIS au-delà de deux jours ;
+     - JAMAIS au-delà de l'acquisition du mois (2,5 j) — la borne du MOTEUR ;
+       l'écran, lui, n'offre que deux jours entiers, faute de pouvoir poser un
+       demi-jour par ce chemin ;
    et trois choses de plus, que le §6 promet et qu'un test doit tenir :
      - sans `aujourdhui`, le moteur ne change pas d'un iota (il reste pur) ;
      - la récupération garde son droit au négatif (lot précédent) ;
@@ -26,6 +28,11 @@ var Engine = require('../js/engine.js');
 
 var MPJ = 540;                       // une journée de congé, en minutes
 var DEUX_JOURS = 2 * MPJ;
+/* L'acquisition mensuelle : 2,5 jours (RG — `DIXIEMES_CP_PAR_MOIS` = 25).
+   C'est la borne du MOTEUR. L'écran, lui, offre deux jours entiers parce qu'un
+   stepper ne pose pas de demi-jour : deux limites différentes, deux endroits
+   différents. */
+var ACQUISITION_MOIS = Math.round(2.5 * MPJ);
 
 function conditions(v) {
   return {
@@ -58,7 +65,10 @@ function decor(v) {
     journees: jours,
     compteurEntree: {
       minutesSup: v.minutesSup == null ? 0 : v.minutesSup,
-      minutesCpAcquis: v.cpJours * MPJ,
+      /* `cpMinutes` permet un disponible qui n'est PAS un nombre entier de
+         journées — c'est le seul décor où la borne à 2,5 j se distingue d'une
+         borne à 2 j. */
+      minutesCpAcquis: v.cpMinutes != null ? v.cpMinutes : v.cpJours * MPJ,
       minutesCpPris: 0
     },
     annee: v.annee, mois: v.mois,
@@ -88,6 +98,7 @@ function moisDe(liste, n, opts) {
     surCp: o.surCp == null ? n : o.surCp,
     surSup: o.surSup || 0,
     cpJours: o.cpJours == null ? 0 : o.cpJours,
+    cpMinutes: o.cpMinutes,
     minutesSup: o.minutesSup,
     aujourdhui: o.aujourdhui
   };
@@ -102,6 +113,9 @@ function calcule(entrees) {
 var cas = [];
 function test(nom, fn) { cas.push({ nom: nom, fn: fn }); }
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
+function egalOuPresque(obtenu, attendu, msg) {
+  assert(obtenu === attendu, msg + ' (attendu ' + attendu + ', obtenu ' + obtenu + ')');
+}
 
 /* ------------------------------------------------------------------------ */
 /* 1. ACCEPTÉE SUR LE MOIS EN COURS                                          */
@@ -139,15 +153,51 @@ test('§6 — l’anticipation s’AJOUTE au disponible, elle ne le remplace pas
   });
 
 /* ------------------------------------------------------------------------ */
-/* 2. JAMAIS AU-DELÀ DE DEUX JOURS                                           */
+/* 2. JAMAIS AU-DELÀ DE L'ACQUISITION DU MOIS                                */
 /* ------------------------------------------------------------------------ */
 
-test('§9.2 — JAMAIS au-delà de deux jours, même sur le mois en cours',
+test('§9.2 — JAMAIS au-delà de l’acquisition du mois, même sur le mois en cours',
   function () {
     var out = calcule(moisDe(OUVRES_SEPT, 3, { cpJours: 0, aujourdhui: '2026-09-08' }));
-    assert(out.e, 'trois jours anticipés doivent être REFUSÉS');
+    assert(out.e, 'trois jours anticipés sur un solde à zéro doivent être REFUSÉS');
     assert(out.e.code === 'IMPUTATION_DEPASSE_RESERVES',
       'et le refus garde son code : ' + out.e.code);
+  });
+
+/* LA BORNE EST L'ACQUISITION DU MOIS (2,5 j), PAS DEUX JOURS — et ces deux cas
+   sont les SEULS qui savent faire la différence.
+
+   Tant que le disponible est un nombre entier de journées, un dépassement est
+   forcément un multiple d'une journée : 2 j (1 080 min) passe des deux côtés,
+   3 j (1 620 min) est refusé des deux côtés. Il faut un disponible en demi-
+   journée pour que 2,5 j se distingue de 2 j. Sans ces deux cas, la borne
+   pourrait être remise à deux jours sans qu'un seul test ne bronche — et un
+   test qui ne sait pas voir ce qu'il garde ne garde rien. */
+test('§6 — un demi-jour disponible + 2,5 j anticipés : ACCEPTÉ, exactement à la borne',
+  function () {
+    /* 270 min au compteur (une demi-journée), trois jours posés :
+       1 620 − 270 = 1 350 min = 2,5 jours pile. */
+    var out = calcule(moisDe(OUVRES_SEPT, 3,
+      { cpMinutes: MPJ / 2, aujourdhui: '2026-09-08' }));
+    assert(!out.e, 'la borne est bien l’acquisition du mois et non deux jours ' +
+      '(obtenu ' + (out.e && out.e.code) + ')');
+    assert(out.r.imputation.joursSurCp === 3,
+      'et les trois jours sont sur les congés payés');
+    /* Le dépassement se mesure sur le disponible d'ENTRÉE, pas sur le compteur
+       de sortie : celui-ci porte déjà l'acquisition du mois, et la
+       soustraction ne dirait plus ce qu'on veut lire. */
+    egalOuPresque(out.r.imputation.minutesCpConsommees - (MPJ / 2),
+      ACQUISITION_MOIS,
+      'le dépassement vaut exactement l’acquisition du mois — on est PILE ' +
+      'sur la borne, et elle passe');
+  });
+
+test('§6 — un pas de plus, et c’est refusé', function () {
+    /* 270 min au compteur, QUATRE jours : 2 160 − 270 = 1 890 min > 1 350. */
+    var out = calcule(moisDe(OUVRES_SEPT, 4,
+      { cpMinutes: MPJ / 2, aujourdhui: '2026-09-08' }));
+    assert(out.e && out.e.code === 'IMPUTATION_DEPASSE_RESERVES',
+      'au-delà de l’acquisition du mois, le refus reste entier');
   });
 
 test('§9.2 — la borne se compte en jours de congé, pas en jours calendaires',
@@ -228,15 +278,30 @@ test('§6 — les congés payés ne descendent QUE de ce qui a été autorisé',
   function () {
     var out = calcule(moisDe(OUVRES_SEPT, 2, { cpJours: 0, aujourdhui: '2026-09-08' }));
     var cs = out.r.compteurSortie;
-    var solde = cs.minutesCpAcquis - cs.minutesCpPris;
-    assert(solde >= -DEUX_JOURS,
-      'le solde de congés payés ne descend pas au-delà de deux jours (obtenu ' +
-      solde + ' min, borne ' + (-DEUX_JOURS) + ')');
-    /* Et il descend VRAIMENT : l'anticipation est une consommation, pas un
-       cadeau. Ce sont les mêmes minutes, prises un peu plus tôt. */
+
+    /* CE QUI A ÉTÉ PRIS AU-DELÀ DU DISPONIBLE D'ENTRÉE — le disponible
+       d'entrée est zéro ici, donc tout est anticipé. */
+    var depassement = out.r.imputation.minutesCpConsommees - 0;
+    assert(depassement <= ACQUISITION_MOIS,
+      'le dépassement ne passe jamais l’acquisition du mois (obtenu ' +
+      depassement + ' min, borne ' + ACQUISITION_MOIS + ')');
+    egalOuPresque(depassement, DEUX_JOURS,
+      'ici il vaut deux jours, parce que c’est ce que l’ÉCRAN a permis de ' +
+      'poser — la borne du moteur, elle, est plus haute');
+
+    /* Et les minutes descendent VRAIMENT : l'anticipation est une
+       consommation, pas un cadeau. Ce sont les mêmes minutes, prises un peu
+       plus tôt. */
     assert(cs.minutesCpPris === DEUX_JOURS,
       'les deux jours anticipés sont bien COMPTÉS comme pris (obtenu ' +
       cs.minutesCpPris + ')');
+    /* Le solde de sortie reste positif parce que le mois vient d'acquérir ses
+       2,5 jours : 1 350 acquis − 1 080 pris = 270. C'est exactement le sens de
+       « ce sont les mêmes minutes, prises un peu plus tôt ». */
+    egalOuPresque(cs.minutesCpAcquis - cs.minutesCpPris,
+      ACQUISITION_MOIS - DEUX_JOURS,
+      'et le solde de sortie est celui de l’acquisition du mois moins ce qui ' +
+      'a été pris');
   });
 
 test('§6 — le total versé ne cache aucune retenue : rien en sans solde',
