@@ -12,8 +12,13 @@
    explicite (js/messages.js) et la saisie en cours reste affichée.
 
    Règles de cache, volontairement simples :
+   - LA PAGE elle-même (une navigation) : demandée au RÉSEAU à chaque
+     ouverture, le cache ne servant que de secours hors ligne. C'est elle qui
+     désigne tous les autres fichiers : une copie périmée fait perdre la
+     livraison entière ;
    - les fichiers de l'application (même origine) : servis depuis le cache,
-     rafraîchis en arrière-plan ;
+     rafraîchis en arrière-plan — sans risque, puisqu'ils portent désormais
+     leur version dans leur URL (`?v=`) ;
    - le client Supabase du CDN : même traitement, sinon l'application ne
      démarre pas hors ligne ;
    - TOUT LE RESTE (appels à l'API Supabase, authentification) : jamais
@@ -290,18 +295,49 @@
 
    Aucun fichier ajouté : la migration `020` n'est pas servie, et les trois
    fichiers de test non plus. */
-var CACHE = 'recap-parcours-lot31-v1';
+/* CORRECTIF DU PARCOURS DE MISE À JOUR — NOM DE CACHE CHANGÉ, ET SURTOUT :
+   LE NUMÉRO DE VERSION SORT D'ICI ET ENTRE DANS LES URLS.
 
-var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+   Ce qui s'est passé le 31 août 2026, et qu'il ne faut plus jamais revoir :
+   le lot 31 était en ligne, servi correctement par GitHub Pages, et le
+   téléphone continuait d'afficher la version d'avant. Deux causes, qui se
+   renforçaient l'une l'autre.
 
-var FICHIERS = [
-  './',
-  './index.html',
-  './manifest.json',
+   1. Le gestionnaire `fetch` servait le CACHE D'ABORD, y compris pour la
+      NAVIGATION — c'est-à-dire pour la page elle-même. Le réseau n'était
+      consulté qu'en arrière-plan, pour la fois SUIVANTE. Or une application
+      posée sur l'écran d'accueil n'est pas rechargée quand on la rouvre : le
+      système la met en pause et la reprend. Elle n'avait donc jamais de
+      « fois suivante ».
+
+   2. `index.html` désignait ses fichiers par des URLs INVARIANTES
+      (`js/app.js`). Un `index.html` en cache redemandait exactement les
+      mêmes URLs, et rien ne distinguait le fichier neuf de l'ancien.
+
+   La correction porte sur les deux, parce que corriger l'une sans l'autre
+   laisse la panne possible :
+
+   - la NAVIGATION passe en RÉSEAU D'ABORD, cache en secours (plus bas) ;
+   - chaque fichier `js/` et `css/` servi porte `?v=` + VERSION, ici comme
+     dans `index.html`. Un fichier modifié devient une URL DIFFÉRENTE :
+     aucune ancienne copie ne peut plus être servie à sa place, ni par ce
+     cache, ni par celui du navigateur, ni par celui de GitHub Pages.
+
+   LA RÈGLE, DÉSORMAIS, TIENT EN UNE LIGNE : à chaque livraison qui touche un
+   fichier `js/` ou `css/`, on change VERSION — et rien d'autre. Le nom du
+   cache et les dix-huit URLs en découlent. `test/cache-navigation.smoke.js`
+   refuse la livraison si `index.html` et ce fichier ne portent pas la même. */
+var VERSION = 'lot31-2';
+
+var CACHE = 'recap-' + VERSION;
+
+/* Les fichiers dont le CONTENU change d'une livraison à l'autre : ils portent
+   la version dans leur URL. La liste doit rester identique, au même ordre
+   près, à celle des balises `<script>` et `<link>` de `index.html` — c'est ce
+   que le test vérifie. */
+var VERSIONNES = [
   './css/style.css',
   './config.js',
-  './icones/icone-192.png',
-  './icones/icone-512.png',
   './js/messages.js',
   './js/feries.js',
   './js/format.js',
@@ -321,6 +357,19 @@ var FICHIERS = [
   './js/ui-periode.js',
   './js/app.js'
 ];
+
+var CDN_SUPABASE = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+
+/* Ce qui NE porte PAS de version : la page elle-même — elle est désormais
+   servie réseau d'abord, la question ne se pose plus — le manifeste et les
+   icônes, dont le contenu ne change pas d'une livraison à l'autre. */
+var FICHIERS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icones/icone-192.png',
+  './icones/icone-512.png'
+].concat(VERSIONNES.map(function (u) { return u + '?v=' + VERSION; }));
 
 self.addEventListener('install', function (e) {
   e.waitUntil(
@@ -367,6 +416,50 @@ self.addEventListener('fetch', function (e) {
   var estCdn = requete.url.indexOf(CDN_SUPABASE) === 0;
   if (!memeOrigine && !estCdn) return;      // API Supabase : jamais interceptée
 
+  /* ---------------------------------------------------------------------- */
+  /* LA NAVIGATION : RÉSEAU D'ABORD, CACHE EN SECOURS.                       */
+  /* ---------------------------------------------------------------------- */
+
+  /* La page elle-même est le seul fichier dont une copie périmée fait perdre
+     TOUTE la livraison : elle désigne les autres. Elle est donc demandée au
+     réseau à chaque ouverture, et le cache ne sert plus que de filet.
+
+     `cache: 'reload'` pour la même raison qu'à l'installation : GitHub Pages
+     sert les statiques en `max-age=600`, et sans lui le navigateur pourrait
+     rendre depuis SON cache une page vieille de dix minutes — on aurait
+     déplacé la panne d'un cran, pas supprimée.
+
+     Le coût est une requête par ouverture, pour un fichier de quelques
+     kilo-octets. Hors ligne, `fetch` échoue, on retombe sur le cache, et
+     l'application s'ouvre exactement comme avant. */
+  if (requete.mode === 'navigate') {
+    e.respondWith(
+      fetch(new Request(requete.url, { cache: 'reload' })).then(function (reponse) {
+        if (reponse && reponse.ok) {
+          var copie = reponse.clone();
+          caches.open(CACHE).then(function (cache) {
+            cache.put('./index.html', copie);
+          });
+        }
+        return reponse;
+      }).catch(function () {
+        return caches.match(requete).then(function (enCache) {
+          return enCache || caches.match('./index.html');
+        });
+      })
+    );
+    return;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* TOUT LE RESTE : CACHE D'ABORD — et c'est maintenant sans danger.        */
+  /* ---------------------------------------------------------------------- */
+
+  /* Ces fichiers portent leur version dans leur URL (`?v=`). Une entrée en
+     cache ne peut donc plus correspondre qu'au contenu qu'on lui demande :
+     servir le cache d'abord rend l'application instantanée sans risquer de
+     servir un fichier périmé. C'est le versionnement des URLs qui autorise
+     cette stratégie, pas l'inverse. */
   e.respondWith(
     caches.match(requete).then(function (enCache) {
       var reseau = fetch(requete).then(function (reponse) {
@@ -376,10 +469,10 @@ self.addEventListener('fetch', function (e) {
         }
         return reponse;
       }).catch(function () {
-        /* Hors ligne : on retombe sur le cache, et à défaut sur la page
-           d'accueil pour une navigation (l'application s'ouvre quand même). */
+        /* Hors ligne : on retombe sur le cache. Le cas de la NAVIGATION ne
+           passe plus par ici — il a sa propre branche, plus haut, avec son
+           propre secours. */
         if (enCache) return enCache;
-        if (requete.mode === 'navigate') return caches.match('./index.html');
         throw new Error('hors ligne');
       });
       return enCache || reseau;
