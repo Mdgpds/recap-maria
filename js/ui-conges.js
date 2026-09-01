@@ -1178,7 +1178,7 @@
          zéro sinon. C'est exactement la borne que le moteur applique, lue au
          même endroit : un écran qui proposerait plus que le moteur n'accepte
          offrirait un stepper qui refuse à l'écriture. */
-      anticipationCp: joursAnticipablesAu(jour)
+      anticipationCp: joursAnticipablesAu(jour, cond)
     };
   }
 
@@ -1189,25 +1189,30 @@
      est en train d'acquérir. Pour un mois à venir, seuls les jours déjà acquis
      sont posables. » (Adrien)
 
-     DEUX JOURS ENTIERS, PAS 2,5, ET C'EST UNE LIMITE DE L'ÉCRAN, PAS DE LA
-     RÈGLE. Un stepper compte en journées : il ne sait pas poser un demi-jour.
-     Le MOTEUR, lui, borne à l'acquisition du mois (2,5 j) — c'est la règle de
-     fond, et elle est plus large. L'écart est sans conséquence ici : deux
-     jours entiers tiennent toujours sous 2,5, donc le stepper ne propose
-     jamais un cran que l'écriture refuserait. Ce sont deux limites
-     différentes, à deux endroits différents, et c'est voulu (Adrien,
-     1er septembre 2026).
+     LE PLAFOND VIENT DU MOTEUR, IL N'EST PAS ÉCRIT ICI — correction de
+     relecture (contrôle A.4-2 : « les effets chiffrés annoncés à
+     l'utilisatrice sont obtenus en rejouant le calcul avec `Engine`, jamais
+     écrits en dur »). Il valait « 2 » en dur ; il vaut maintenant ce que
+     `Engine.minutesAnticipationCp` répond pour les conditions de ce contrat.
+     Le jour où l'acquisition mensuelle changera, l'écran suivra tout seul —
+     sans quoi Maria pousserait un cran que l'écriture refuserait.
+
+     LA CONVERSION EN JOURNÉES ENTIÈRES, ELLE, RESTE ICI, et c'est sa place :
+     un stepper compte en journées et ne sait pas poser un demi-jour, donc on
+     tronche vers le bas. C'est une limite du GESTE, pas de la règle — et
+     tronquer vers le bas garantit qu'on n'offre jamais plus que ce que le
+     moteur accepte.
 
      La date de référence est celle de l'application (`App.aujourdhui`), la
      même qui sert déjà à la récupération gagnée au fil du mois. */
-  var JOURS_ANTICIPABLES = 2;
-
-  function joursAnticipablesAu(jour) {
-    if (!jour) return 0;
+  function joursAnticipablesAu(jour, cond) {
+    if (!jour || !cond) return 0;
     var auj = global.App.aujourdhui && global.App.aujourdhui();
     if (!auj) return 0;
-    return String(jour).slice(0, 7) === String(auj).slice(0, 7)
-      ? JOURS_ANTICIPABLES : 0;
+    if (String(jour).slice(0, 7) !== String(auj).slice(0, 7)) return 0;
+    var mpj = mpjc(cond);
+    if (!mpj) return 0;
+    return Math.floor(Engine.minutesAnticipationCp(cond) / mpj);
   }
 
   /* ------------------------------------------------------------------ */
@@ -2201,7 +2206,6 @@
     { matin: false, cle: 'apres_midi', nom: 'L’après-midi',  quand: 'de 13h00 à 18h00' }
   ];
 
-  function libelleMoitie(matin) { return matin ? 'matin' : 'après-midi'; }
   /* « du matin », mais « de l'après-midi » : l'élision se fait ici, une fois,
      plutôt que dans chaque phrase qui nomme la moitié. */
   function moitieAvecArticle(matin) { return matin ? 'du matin' : 'de l’après-midi'; }

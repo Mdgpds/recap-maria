@@ -78,6 +78,29 @@
     return Math.round(DIXIEMES_CP_PAR_MOIS * conditions.minutes_par_jour_conge / 10);
   }
 
+  /* LOT 31 §6 — CE QUE MARIA PEUT PRENDRE PAR ANTICIPATION, EN MINUTES.
+
+     EXPOSÉE, et c'est une correction de relecture. L'écran de pose calculait
+     son propre plafond — « deux jours » écrit en dur — pendant que le moteur
+     calculait le sien. Le contrôle A.4-2 l'interdit : « les effets chiffrés
+     annoncés à l'utilisatrice sont obtenus en rejouant le calcul avec
+     `Engine`, jamais écrits en dur — bloquant même si le résultat est juste
+     aujourd'hui ». Le plafond d'un stepper est un effet chiffré annoncé.
+
+     Le risque n'était pas théorique : le jour où l'acquisition mensuelle
+     change — une règle revue, un contrat particulier — le moteur bornerait
+     plus bas et l'écran continuerait d'offrir deux jours. Maria pousserait le
+     stepper d'un cran de trop, appuierait sur « Poser », et le mois tomberait
+     sur `IMPUTATION_DEPASSE_RESERVES` : un geste offert puis refusé une
+     seconde plus tard. Une seule source, et le défaut ne peut plus naître.
+
+     Fonction PURE : elle ne lit ni horloge ni base. Le mois de référence
+     reste la décision de l'appelant — ici on répond seulement « combien ». */
+  function minutesAnticipationCp(conditions) {
+    if (!conditions) return 0;
+    return minutesCpParMois(conditions);
+  }
+
   /* ------------------------------------------------------------------ */
   /* Utilitaires de calendrier (purs, sans fuseau)                       */
   /* ------------------------------------------------------------------ */
@@ -1588,7 +1611,7 @@
     function anticipationCpPour(dateDebut) {
       if (!aujourdhui || !dateDebut) return 0;
       if (dateDebut.slice(0, 7) !== String(aujourdhui).slice(0, 7)) return 0;
-      return minutesCpParMois(conditions);
+      return minutesAnticipationCp(conditions);
     }
 
     /* RG-05 / RG-07 : imputation sur les compteurs disponibles.
@@ -2376,6 +2399,9 @@
     /* §5.2 — les samedis d'une période qui sont un CHOIX, et non une règle. */
     samedisEligibles: samedisEligibles,
     imputerConges: imputerConges,
+    /* LOT 31 §6 — le plafond d'anticipation, lu par l'écran de pose plutôt
+       que recalculé par lui (correction de relecture, contrôle A.4-2). */
+    minutesAnticipationCp: minutesAnticipationCp,
     minutesSupDuJour: minutesSupDuJour,
     /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — la formule du §1, lue par
        les écrans comme par le moteur. */

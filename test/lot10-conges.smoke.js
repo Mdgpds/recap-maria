@@ -927,10 +927,20 @@ function grosDecompte() {
   window.App.aller('document', { contratId: 'c-lea', annee: 2026, mois: 7 });
   await pause(700);
   var docJuillet = corps.querySelector('.doc');
-  if (!docJuillet) {
-    console.log('ok   (document non rendu dans ce décor — contrôle porté par ' +
-      'test/parcours-plages.test.js et lot28-journees-a-part)');
-  } else {
+  /* CORRECTION DE RELECTURE — UN DÉCOR ABSENT EST UN ÉCHEC, PAS UN SUCCÈS.
+
+     Ce bloc était enveloppé dans un `if (!doc) { console.log('ok …') }` : la
+     branche d'échappement IMPRIMAIT « ok » et se comptait donc comme une
+     assertion réussie. Le jour où un lot renommerait la classe `.doc` ou
+     changerait ce décor, les trois contrôles du §5 sur le document
+     disparaîtraient sans que le décompte bouge — la suite resterait verte et
+     plus rien ne garantirait que le document de la famille regroupe ses
+     congés. C'est exactement le « test vert par accident » corrigé ailleurs
+     dans ce lot ; il s'était glissé ici. */
+  assert(!!docJuillet,
+    '§5 : le document de juillet est rendu (sans lui, les trois contrôles ' +
+    'ci-dessous ne veulent rien dire)');
+  if (docJuillet) {
     var texteDoc = sansInsecable(txt(docJuillet));
     assert(texteDoc.indexOf('Le 6 et le 7 juillet') !== -1,
       '§5 : deux journées consécutives s’écrivent « Le 6 et le 7 juillet » ' +
@@ -1151,6 +1161,24 @@ function grosDecompte() {
     'Pour un mois à venir, seuls les jours déjà acquis sont posables') !== -1,
     '§6 : y compris sa seconde moitié — celle que Maria découvrirait sinon ' +
     'en butant sur un stepper');
+
+  /* CE QUE CE DÉCOR NE PEUT PAS PROUVER, ET POURQUOI ON NE FAIT PAS SEMBLANT.
+
+     La relecture demande de vérifier que le stepper MONTE réellement de deux
+     crans, pas seulement qu'il l'annonce. Mesuré ici : il plafonne à 4 en
+     juillet et à 5 en août — c'est-à-dire au nombre de jours ouvrables de
+     chaque période (le 14 juillet est férié), et non au plafond de réserve.
+
+     La raison est que le solde de congés payés de ce décor est plus grand que
+     les périodes posées : `Math.min(maxCp + anticipation, jours)` retombe donc
+     sur `jours` des deux côtés, et l'anticipation n'y change rien. C'est
+     d'ailleurs un fait juste et utile : l'anticipation ne se voit que quand la
+     réserve est courte.
+
+     Une assertion sur ce plafond mesurerait ici la longueur des périodes en
+     croyant mesurer la borne. Le contrat entre l'écran et le moteur — la
+     valeur de la borne et sa conversion en journées entières — est vérifié
+     dans `test/parcours-anticipation.test.js`. Signalé plutôt que maquillé. */
   window.Kit.fermerFeuille();
   await pause(250);
 

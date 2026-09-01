@@ -169,6 +169,64 @@ egal(libelles(Kit.plagesDeJours([], { ouvrable: ouvrableLV })).join(''), '',
   'aucun jour : aucune plage, et rien qui plante');
 
 /* ------------------------------------------------------------------------ */
+/* CE QUE CE FICHIER NE TESTAIT PAS — et ce que la relecture a trouvé grâce   */
+/* à ce trou                                                                  */
+/* ------------------------------------------------------------------------ */
+
+/* Tout ce qui précède teste la FONCTION avec des clés fabriquées par le test.
+   C'est nécessaire et ça ne suffit pas : la relecture a trouvé que le repli
+   « Journées à part » appelait `plagesDeJours` SANS clé, donc en groupant sur
+   la nature seule, pendant que le document, lui, passait l'imputation. Les
+   deux écrans découpaient les mêmes journées autrement — l'un pour Maria,
+   l'autre pour la famille.
+
+   Aucune assertion ne pouvait le voir, parce qu'aucune ne regardait QUELLE clé
+   chaque appelant fournit. Celles-ci le regardent : elles lisent le code des
+   deux appelants et exigent qu'ils passent tous les deux une clé d'imputation.
+
+   C'est un contrôle de texte, et il est modeste — mais il tient exactement la
+   promesse que la règle porte : « même nature, même décompte, MÊME
+   IMPUTATION », partout, sans exception. */
+
+console.log('\n--- §5 : les DEUX appelants passent bien une clé d’imputation ---');
+
+var fs = require('fs');
+var path = require('path');
+function source(f) {
+  return fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8');
+}
+
+[['ui-document.js', 'le document remis à la famille'],
+ ['ui-enfant.js', 'le repli « Journées à part » que Maria relit']]
+  .forEach(function (x) {
+    var src = source(x[0]);
+    /* Chaque appel de regroupement de CE fichier doit porter une clé. Un appel
+       sans `cle:` groupe sur la chaîne vide, c'est-à-dire sur rien.
+
+       On lit la fenêtre qui suit l'appel jusqu'au traitement des plages
+       (`.forEach(function (plage`) : `cle:` doit s'y trouver. Une expression
+       régulière sur le corps de l'appel se serait arrêtée au premier `})`
+       venu — celui d'une fonction passée en argument — et aurait déclaré
+       manquante une clé pourtant présente. Vérifié : c'est ce qui s'est
+       produit à la première écriture de ce contrôle. */
+    var appels = [];
+    var pos = -1;
+    while ((pos = src.indexOf('Kit.plagesDeJours(', pos + 1)) !== -1) {
+      var fenetre = src.slice(pos, pos + 700);
+      var fin = fenetre.indexOf('.forEach(function (plage');
+      appels.push(fin === -1 ? fenetre : fenetre.slice(0, fin));
+    }
+    assert(appels.length > 0, x[1] + ' : au moins un regroupement en plages');
+    appels.forEach(function (appel, i) {
+      assert(appel.indexOf('cle:') !== -1,
+        x[1] + ' — appel n° ' + (i + 1) + ' : une CLÉ est fournie, sinon la ' +
+        'plage groupe sur la nature seule et masque une imputation');
+    });
+    assert(src.indexOf('function imputationDuJour') !== -1,
+      x[1] + ' : et il sait lire l’imputation d’une journée');
+  });
+
+/* ------------------------------------------------------------------------ */
 console.log('');
 if (echecs) { console.error(echecs + ' échec(s)'); process.exit(1); }
 console.log('Tout est conforme.');

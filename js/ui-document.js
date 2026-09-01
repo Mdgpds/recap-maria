@@ -130,6 +130,12 @@
 
   /* Forme PURE, sans `vue` : c'est elle que partagent les deux chemins de
      clôture (correctif B4). */
+  function joursCongeDe(journees) {
+    return Object.keys(journees || {}).filter(function (d) {
+      return journees[d].type === 'conge_maria';
+    }).sort();
+  }
+
   /* LOT 31 §5 — LE RYTHME DE TRAVAIL DE CE CONTRAT, POUR CE MOIS.
 
      Une journée « ouvrable » est une journée du planning, dans les bornes du
@@ -154,12 +160,6 @@
       if (d >= a.date_debut && d <= a.date_fin) return a.date_debut + '|' + a.date_fin;
     }
     return '';
-  }
-
-  function joursCongeDe(journees) {
-    return Object.keys(journees || {}).filter(function (d) {
-      return journees[d].type === 'conge_maria';
-    }).sort();
   }
 
   /* LOT 17 §17.3 — LES CONDITIONS DU MOIS. Un document est la pièce qui doit

@@ -1008,12 +1008,27 @@
      de l'ajustement du lot 12, les quatre de l'écart du lot 17, la reprise en
      main des heures réelles et de l'indemnité. La NOTE n'y est pas — elle a
      son propre repli, et elle ne touche aucun chiffre. */
+  function porteUneDeclaration(ligne) {
+    if (!ligne) return false;
+    return (ligne.ecart_minutes != null && ligne.ecart_minutes !== 0) ||
+           (ligne.minutes_sup_exceptionnelles || 0) > 0 ||
+           (ligne.minutes_sup_renoncees || 0) > 0 ||
+           ligne.sup_dues_override != null ||
+           ligne.minutes_reelles != null ||
+           ligne.entretien_centimes != null;
+  }
+
   /* LOT 31 §5 — LE RYTHME DE TRAVAIL DE CE CONTRAT. Une journée « ouvrable »
      est une journée du planning, dans les bornes du contrat, hors férié. Un
      week-end et un férié ne coupent pas une plage parce qu'ils ne sont pas
      ouvrables ; une journée de travail absente de la liste coupe, parce
      qu'elle l'est. Même définition que celle du document — la plage lue par
-     Maria et celle lue par la famille ne peuvent pas différer. */
+     Maria et celle lue par la famille ne peuvent pas différer.
+
+     (Cette fonction est posée ICI, après `porteUneDeclaration`, et pas avant :
+     insérée plus haut, elle séparait un commentaire de la fonction qu'il
+     documentait. Un commentaire orphelin finit par décrire la mauvaise
+     fonction — relevé en relecture du lot 31.) */
   function estJourOuvrable(d) {
     var c = vue.contrat;
     if (c.date_debut && d < c.date_debut) return false;
@@ -1023,14 +1038,30 @@
     return !Feries.estJourFerie(d);
   }
 
-  function porteUneDeclaration(ligne) {
-    if (!ligne) return false;
-    return (ligne.ecart_minutes != null && ligne.ecart_minutes !== 0) ||
-           (ligne.minutes_sup_exceptionnelles || 0) > 0 ||
-           (ligne.minutes_sup_renoncees || 0) > 0 ||
-           ligne.sup_dues_override != null ||
-           ligne.minutes_reelles != null ||
-           ligne.entretien_centimes != null;
+  /* LOT 31 §5, CORRECTION DE RELECTURE — LA TROISIÈME COMPOSANTE DE LA CLÉ.
+
+     « Une plage ne regroupe que des journées strictement identiques. Même
+     nature, même décompte, MÊME IMPUTATION. » La règle ne pose pas
+     d'exception, et le document la respectait déjà ; ce repli-ci ne la
+     respectait pas — il groupait sur la nature seule.
+
+     Le défaut se voyait à l'œil nu : deux congés collés, l'un sur les congés
+     payés, l'autre sur la récupération, donnaient UNE ligne « Du 15 au
+     18 septembre » à Maria, et DEUX lignes sur le document qu'elle envoie à la
+     famille. L'écran qu'elle relit et la pièce qu'elle transmet découpaient
+     les mêmes journées autrement — exactement la divergence que la règle
+     unique existe pour rendre impossible.
+
+     Même source que le document : `imputationsAppliquees`, produit par le
+     moteur. L'écran ne devine aucune période. */
+  function imputationDuJour(d) {
+    var appliquees = (vue.entree && vue.entree.resultat &&
+                      vue.entree.resultat.imputationsAppliquees) || [];
+    for (var i = 0; i < appliquees.length; i++) {
+      var a = appliquees[i];
+      if (d >= a.date_debut && d <= a.date_fin) return a.date_debut + '|' + a.date_fin;
+    }
+    return '';
   }
 
   /* La phrase d'une journée déclarée. Elle nomme le GESTE avant la poche : le
@@ -1196,14 +1227,19 @@
        son propre décompte. La nature reste le premier niveau : l'ordre de
        `GROUPES_SANS_TRAVAIL` ne bouge pas.
 
-       Ces journées sont uniformes en décompte (une journée entière chacune) et
-       n'ont pas d'imputation propre à l'écran : la clé est donc la nature
-       seule — les deux autres composantes ne varient pas à l'intérieur d'un
-       groupe. */
+       Ces journées sont uniformes en décompte — une journée entière chacune —
+       mais PAS en imputation : deux congés collés peuvent relever de deux
+       périodes ventilées différemment. La clé porte donc la nature ET
+       l'imputation, comme sur le document. Groupé sur la nature seule, ce
+       repli donnait à Maria une ligne là où la pièce qu'elle envoie en
+       affichait deux (corrigé en relecture du lot 31). */
     GROUPES_SANS_TRAVAIL.forEach(function (g) {
       var jours = groupes[g.type];
       if (!jours || !jours.length) return;
-      Kit.plagesDeJours(jours, { ouvrable: estJourOuvrable }).forEach(function (plage) {
+      Kit.plagesDeJours(jours, {
+        ouvrable: estJourOuvrable,
+        cle: imputationDuJour
+      }).forEach(function (plage) {
         var quand = Kit.libellePlageJours(plage);
         Kit.ligneLn(l, g.titre, plage.jours.length + ' j', {
           sous: g.regle ? quand + ' — ' + g.regle.toLowerCase() : quand,

@@ -210,6 +210,58 @@ test('§9.2 — la borne se compte en jours de congé, pas en jours calendaires'
   });
 
 /* ------------------------------------------------------------------------ */
+/* LE CONTRAT ENTRE L'ÉCRAN ET LE MOTEUR — correction de relecture            */
+/* ------------------------------------------------------------------------ */
+
+/* La relecture a relevé que l'écran écrivait « 2 » EN DUR pendant que le
+   moteur calculait sa propre borne (contrôle A.4-2 : un effet chiffré annoncé
+   à l'utilisatrice se rejoue avec `Engine`, il ne se réécrit pas).
+
+   `Engine.minutesAnticipationCp` est désormais la SEULE source, et l'écran la
+   convertit en journées entières par troncature — un stepper ne pose pas de
+   demi-jour. Les deux assertions ci-dessous fixent ce contrat : la valeur, et
+   sa conversion. Elles sont ce qui empêchera l'écran de rediverger du moteur. */
+
+test('§6 — le moteur EXPOSE la borne, et c’est l’acquisition du mois',
+  function () {
+    egalOuPresque(Engine.minutesAnticipationCp(conditions()), ACQUISITION_MOIS,
+      'la borne exposée vaut l’acquisition mensuelle');
+    /* Fonction PURE : aucune horloge, aucune base — le mois de référence
+       reste la décision de l'appelant. */
+    egalOuPresque(Engine.minutesAnticipationCp(null), 0,
+      'sans conditions, aucune anticipation — et rien qui plante');
+  });
+
+test('§6 — l’écran en tire DEUX journées entières, jamais plus', function () {
+  /* La conversion que fait l'écran : troncature vers le bas. Tronquer vers le
+     bas est ce qui garantit qu'il n'offre jamais un cran que l'écriture
+     refuserait — c'est le sens du contrôle A.4-2. */
+  var jours = Math.floor(Engine.minutesAnticipationCp(conditions()) / MPJ);
+  egalOuPresque(jours, 2,
+    'deux journées entières tiennent dans 2,5 ; une troisième non');
+  assert(jours * MPJ <= Engine.minutesAnticipationCp(conditions()),
+    'et ce que l’écran offre tient TOUJOURS dans ce que le moteur accepte');
+});
+
+test('§6 — une réserve courte : c’est là que l’anticipation se voit',
+  function () {
+    /* Le décor de `lot10-conges` ne peut pas montrer le plafond du stepper :
+       son solde de congés payés est plus grand que les périodes posées, donc
+       `min(maxCp + anticipation, jours)` retombe sur `jours`. Ici la réserve
+       est courte, et la borne devient la contrainte qui mord. */
+    var accepte = calcule(moisDe(OUVRES_SEPT, 3,
+      { cpJours: 1, aujourdhui: '2026-09-08' }));
+    assert(!accepte.e,
+      'un jour acquis + deux anticipés : accepté (obtenu ' +
+      (accepte.e && accepte.e.code) + ')');
+    var refuse = calcule(moisDe(OUVRES_SEPT, 4,
+      { cpJours: 1, aujourdhui: '2026-09-08' }));
+    assert(refuse.e && refuse.e.code === 'IMPUTATION_DEPASSE_RESERVES',
+      'un jour acquis + trois anticipés : refusé — la borne est bien la ' +
+      'contrainte, pas la longueur de la période');
+  });
+
+/* ------------------------------------------------------------------------ */
 /* 3. REFUSÉE SUR LE MOIS SUIVANT                                            */
 /* ------------------------------------------------------------------------ */
 
