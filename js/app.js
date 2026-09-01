@@ -33,7 +33,15 @@
   /* Lot 8 — quatre onglets. L'ordre de la barre est aussi celui du tableau :
      c'est lui qui décide de ce qui est un écran RACINE (pile remise à zéro,
      barre visible) et de ce qui est un sous-écran atteint par un retour. */
-  var ONGLETS = ['accueil', 'historique', 'conges', 'menu'];
+  /* REDESIGN 2A §2.1 — QUATRE ONGLETS, DANS CET ORDRE :
+     Mes enfants · Conges · Documents · Menu.
+
+     « Historique » disparait au profit de « Documents ». Ce n'est pas un
+     renommage : l'onglet ne classe plus par DATE mais par ce qu'on vient y
+     chercher — le mois a cloturer, les mois passes, les documents a remettre
+     aux familles. Les ecrans de l'historique (bilan, periode) y sont
+     rattaches. */
+  var ONGLETS = ['accueil', 'conges', 'docs', 'menu'];
 
   /* LOT 22 §22.3 — LA BARRE SUIT LES ÉCRANS INTÉRIEURS.
 
@@ -51,17 +59,36 @@
      Un écran absent de cette table n'a pas de parent : la barre y reste
      masquée. C'est le cas de la connexion et du verrou. */
   var ONGLET_PARENT = {
-    accueil: 'accueil', enfant: 'accueil', document: 'accueil', finDeMois: 'accueil',
-    historique: 'historique', bilan: 'historique', periode: 'historique',
+    /* Mes enfants — tout ce qui parle d'UN enfant. `fiche` et
+       `familiarisation` viennent du Menu : on y arrive depuis la carte de
+       l'enfant, pas depuis les reglages. */
+    accueil: 'accueil', enfant: 'accueil', compteurs: 'accueil',
+    fiche: 'accueil', familiarisation: 'accueil', fin: 'accueil',
+    finDeMois: 'accueil',
+
+    /* Conges. */
     conges: 'conges',
-    menu: 'menu', fiche: 'menu', familles: 'menu', enfants: 'menu',
-    familiarisation: 'menu', reprise: 'menu', rappels: 'menu', compte: 'menu',
-    /* LOT 27 §27.1 — « Comment l'application compte », atteint depuis le
-       Menu, dont il garde donc l'onglet actif. */
-    regles: 'menu'
+
+    /* Documents — tout ce qui se fige et tout ce qui se remet. `document`,
+       `bilan` et `periode` quittent Accueil et Historique pour venir ici. */
+    docs: 'docs', document: 'docs', histoContrat: 'docs', bilan: 'docs',
+    periode: 'docs', cloture: 'docs', moisPasse: 'docs', historique: 'docs',
+
+    /* Menu — les reglages. */
+    menu: 'menu', enfants: 'menu', familles: 'menu', regles: 'menu',
+    rappels: 'menu', compte: 'menu', reprise: 'menu'
   };
+
   var ECRANS = {
     accueil: 'UiAccueil',
+    /* REDESIGN 2A §7.1 — LA RACINE DE L'ONGLET DOCUMENTS.
+
+       L'ecran a deux sections a lui — « Cloturer le mois en cours » et « Les
+       mois precedents » — et il arrive au commit 7. D'ici la, l'onglet est
+       BRANCHE sur la liste des mois de l'historique : elle rend deja le
+       service, et un onglet qui mene a une page blanche pendant six commits
+       serait pire que pas d'onglet du tout. */
+    docs: 'UiHistorique',
     conges: 'UiConges',
     menu: 'UiMenu',
     enfant: 'UiEnfant',

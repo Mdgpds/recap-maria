@@ -226,7 +226,8 @@ function ongletActif() {
   /* ==================================================================== */
   console.log('\n--- §22.3 A1 : quatre vraies icônes SVG ---');
 
-  var icones = tabbar.querySelectorAll('button .i');
+  /* La barre du 2A nomme la pastille d'icone `.ic` (et non `.i`). */
+  var icones = tabbar.querySelectorAll('button .ic');
   egal(icones.length, 4, 'quatre onglets');
   var tousSvg = Array.prototype.every.call(icones, function (i) {
     return i.querySelector('svg') !== null;
@@ -264,7 +265,11 @@ function ongletActif() {
   window.App.aller('fiche', { contratId: 'c-lea' });
   await pause(500);
   egal(tabbar.hidden, false, 'et sur une fiche de contrat');
-  egal(ongletActif(), 'menu', '« Menu » est actif sur une fiche');
+  /* REDESIGN 2A §2.2 — LA FICHE CHANGE DE PARENT.
+     Elle relevait du Menu, parce qu'on y arrivait par les reglages. Dans le
+     2A on y arrive par la carte de l'enfant, et l'onglet allume doit dire
+     d'ou l'on vient : c'est « Mes enfants ». */
+  egal(ongletActif(), 'accueil', '« Mes enfants » est actif sur une fiche');
 
   /* ==================================================================== */
   /* §22.3 A2 — LE BADGE                                                  */

@@ -294,17 +294,30 @@ async function ouvrirFiche(id) {
   console.log('\n--- A9 : la barre à quatre onglets ---');
   var onglets = tabbar.querySelectorAll('button');
   assert(onglets.length === 4, 'A9 : quatre onglets (obtenu ' + onglets.length + ')');
-  assert(txt(onglets[0]).indexOf('Accueil') !== -1, 'A9 : Accueil en premier');
-  assert(txt(onglets[1]).indexOf('Historique') !== -1, 'A9 : Historique en deuxième');
-  assert(txt(onglets[2]).indexOf('Mes congés') !== -1, 'A9 : Mes congés');
-  assert(txt(onglets[3]).indexOf('Menu') !== -1, 'A9 : Menu');
+  /* REDESIGN 2A §2.1 — L'ORDRE ET LES NOMS CHANGENT.
+     « Accueil » devient « Mes enfants », « Historique » cede sa place a
+     « Documents » et passe en troisieme, « Conges » remonte en deuxieme.
+     L'onglet ne classe plus par DATE mais par ce qu'on vient y chercher. */
+  assert(txt(onglets[0]).indexOf('Mes enfants') !== -1, 'A9 : Mes enfants en premier');
+  assert(txt(onglets[1]).indexOf('Congés') !== -1, 'A9 : Congés en deuxième');
+  assert(txt(onglets[2]).indexOf('Documents') !== -1, 'A9 : Documents en troisième');
+  assert(txt(onglets[3]).indexOf('Menu') !== -1, 'A9 : Menu en quatrième');
+  assert(txt(onglets[1]).indexOf('Historique') === -1 && txt(onglets[2]).indexOf('Historique') === -1,
+    'A9 : plus aucun onglet ne s’appelle « Historique »');
   /* La troncature ne se mesure pas dans jsdom, qui ne fait pas de mise en
      page. Ce qui SE vérifie ici, c'est la règle qui l'empêche : aucune
      étiquette ne doit pouvoir être coupée. « Mes cong… » serait pire que rien. */
   var css = fs.readFileSync(path.join(racine, 'css', 'style.css'), 'utf8');
-  var bloc = css.slice(css.indexOf('.tabbar button {'), css.indexOf('.tabbar button .i'));
-  assert(bloc.indexOf('white-space: nowrap') !== -1,
-    'A9 : les étiquettes ne se coupent pas en deux lignes');
+  /* La barre du 2A s'appelle `.tabs` et pose ses etiquettes en colonne sous
+     l'icone : chaque onglet est un `flex-direction: column`, l'etiquette a
+     toute la largeur de sa colonne et ne peut pas etre coupee en deux par un
+     retour a la ligne au milieu d'un mot. Ce qui se verifie ici, c'est la
+     regle qui le garantit, et la zone tactile de 44 px du §10.4. */
+  var bloc = css.slice(css.indexOf('.tabs button {'), css.indexOf('.tabs button .ic'));
+  assert(bloc.indexOf('flex-direction: column') !== -1,
+    'A9 : chaque onglet empile son icone et son etiquette');
+  assert(/min-height:\s*4[4-9]px|min-height:\s*[5-9]\dpx/.test(bloc),
+    'A9 : la zone tactile d’un onglet fait au moins 44 px (§10.4)');
   assert(bloc.indexOf('text-overflow') === -1 && bloc.indexOf('overflow: hidden') === -1,
     'A9 : aucune troncature par points de suspension');
 
