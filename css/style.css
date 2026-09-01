@@ -147,13 +147,22 @@
   --toast:   #16211d;  /* le bandeau de confirmation */
 
   /* ------------------------------------------------------------------ */
-  /* HÉRITÉ DU LOT 24 — encore référencé par les écrans non migrés.      */
-  /* Chaque jeton part avec le dernier écran qui le lit ; le commit 8    */
-  /* vérifie qu'il n'en reste aucun.                                     */
+  /* HÉRITÉ DU LOT 24 — encore référencé par les écrans hors du lot.     */
+  /*                                                                     */
+  /* LE COMMIT 1 ANNONÇAIT QU'IL N'EN RESTERAIT AUCUN AU COMMIT 8. C'EST */
+  /* FAUX, ET IL FAUT LE DIRE : les huit sections du redesign couvrent   */
+  /* l'accueil, l'espace enfant, les feuilles, les congés, les documents */
+  /* et le Menu. Elles NE COUVRENT PAS la fiche de contrat, l'écran de   */
+  /* période, la familiarisation, la réouverture ni la connexion — cinq  */
+  /* écrans que la maquette ne montre pas et que la spécification ne     */
+  /* mentionne nulle part. Ils gardent donc leurs jetons, et les jetons  */
+  /* restent déclarés.                                                    */
+  /*                                                                     */
+  /* Ce qui EST parti : `--bll`, que plus personne ne lisait.            */
   /* ------------------------------------------------------------------ */
   --bg3: #eef1f3;
   --bg4: #fbfcfd;
-  --bl:  #39428a;   --bls: #e6e9f5;   --bll: #b9c3e8;
+  --bl:  #39428a;   --bls: #e6e9f5;
   --dg:  #8f2d2d;   --dgs: #f9ecec;   --dgl: #e0a0a0;
 
   /* Palette d'identité des enfants — SIX teintes + la neutre. Jetons,
@@ -978,21 +987,31 @@ body {
    `gap: 13px` entre blocs, et ses cartes n'ont aucune marge. On obtient le
    même résultat par la marge basse de la carte — un `gap` sur `.bd`
    s'ajouterait aux marges des composants qui n'ont pas encore migré. */
-.cd { background: var(--bg2); border: 1.5px solid var(--ln); border-radius: 12px; padding: 14px 15px; margin: 0 0 13px; }
-.cd.tap {
-  display: flex; align-items: center; gap: 11px; cursor: pointer;
-  width: 100%; text-align: left; font-family: inherit; color: inherit; font-size: 15px;
+/* `cd` EST LA CARTE DU 2A, SOUS SON NOM D'ORIGINE.
+
+   Même raisonnement que pour `choice` au commit 5 : l'application la fabrique
+   à un seul endroit (`Kit.carteTap`) et six fichiers de test la nomment
+   vingt-cinq fois. La renommer coûtait vingt-cinq remplacements pour zéro
+   sûreté de plus. Elle prend l'apparence exacte de `card` et garde son nom. */
+.cd {
+  background: var(--bg2); border: 1px solid var(--ln); border-radius: var(--r);
+  padding: 14px 15px; margin: 0 0 10px; box-shadow: var(--sh);
 }
-.cd.tap:active { transform: scale(.985); }
+.cd.tap {
+  display: flex; align-items: center; gap: 13px; cursor: pointer;
+  width: 100%; text-align: left; font: inherit; color: inherit;
+  transition: transform .12s, box-shadow .12s;
+}
+.cd.tap:active { transform: scale(.988); box-shadow: 0 1px 2px rgba(16, 32, 27, .05); }
 .cd.pad0 { padding: 4px 14px; }
 .cd .gr { flex: 1; min-width: 0; }
-.cd .n { display: block; font-weight: 600; font-size: 15px; line-height: 1.3; }
-.cd .d { display: block; font-size: 13px; color: var(--ink3); line-height: 1.45; margin-top: 3px; }
+.cd .n { display: block; font-weight: 600; font-size: 15.5px; letter-spacing: -.15px; line-height: 1.3; }
+.cd .d { display: block; font-size: 13px; color: var(--ink3); line-height: 1.4; margin-top: 2px; }
 .cd .chev { color: var(--ch); font-size: 17px; flex: none; }
 /* Une carte qui RÉCLAME quelque chose prend le ton attention — et son titre
    le dit en toutes lettres : la couleur ne porte jamais le sens seule. */
-.cd.w { border-color: var(--wal); }
-.cd.k { border-color: var(--dgl); }
+.cd.w { border-color: var(--wal); background: linear-gradient(180deg, var(--was2), var(--was)); }
+.cd.k { border-color: var(--ko); background: var(--kos); }
 /* La pastille de ton d'une carte du bloc « Aujourd'hui » : même géométrie
    qu'un avatar, mais elle porte un signe, pas une identité. */
 .cd .ic { width: 34px; height: 34px; border-radius: 999px; border: 1.5px solid var(--acl);
@@ -1538,7 +1557,8 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 
 .toast {
   position: fixed; left: 14px; right: 14px; bottom: calc(84px + env(safe-area-inset-bottom));
-  background: var(--ink); color: var(--bg2); padding: 12px 14px; border-radius: 12px; font-size: 13px;
+  background: var(--toast); color: var(--bg2); padding: 13px 15px;
+  border-radius: var(--r); font-size: 13.5px; box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
   opacity: 0; transform: translateY(8px); transition: .22s; pointer-events: none; z-index: 40;
 }
 .toast.on { opacity: 1; transform: translateY(0); pointer-events: auto; }

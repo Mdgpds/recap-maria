@@ -118,8 +118,11 @@
   }
 
   function afficherMenu(ctx) {
-    ctx.barre.className = 'bar';
-    ctx.barre.appendChild(Kit.ce('span', 'ti', 'Menu'));
+    /* REDESIGN 2A §8 — le Menu est une racine : en-tête plein, pas de flèche
+       de retour. Son sous-titre a disparu au lot 31 §7 quand les rappels ont
+       cessé de promettre ce qu'ils ne tiennent pas. */
+    ctx.barre.className = 'top';
+    ctx.barre.appendChild(Kit.ce('h1', null, 'Menu'));
     var corps = ctx.corps;
 
     /* LOT 8 — la rubrique « Consulter » DISPARAÎT.
@@ -1885,8 +1888,22 @@
     ligneActif.appendChild(boxActif);
     var txA = Kit.ce('span', 'tx');
     txA.appendChild(Kit.ce('b', null, 'Recevoir un rappel sur mon téléphone'));
-    txA.appendChild(Kit.ce('span', 'd',
-      'Même application fermée, si votre téléphone l’autorise.'));
+    /* REDESIGN 2A §8 — AUCUNE CASE À COCHER NE DOIT LAISSER CROIRE QU'UN
+       RAPPEL PARTIRA.
+
+       L'encart du haut disait déjà que le système n'est pas en service, mais
+       cette case, elle, promettait : « Même application fermée, si votre
+       téléphone l'autorise. » Une phrase vraie le jour où la clé sera posée,
+       et fausse aujourd'hui — et c'est la phrase que Maria lit au moment où
+       elle coche, pas celle du haut de l'écran.
+
+       Le réglage reste enregistrable, et il le reste VRAIMENT : la préférence
+       part en base, et elle sera là le jour où le système démarre. C'est ce
+       que la phrase dit maintenant, sans rien promettre de plus. */
+    txA.appendChild(Kit.ce('span', 'd', clePubliqueVapid()
+      ? 'Même application fermée, si votre téléphone l’autorise.'
+      : 'Votre réglage sera enregistré. Aucun rappel ne partira tant que le ' +
+        'système n’est pas en service.'));
     ligneActif.appendChild(txA);
     p.appendChild(ligneActif);
 
