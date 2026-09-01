@@ -84,8 +84,11 @@
   </section>
 
   <!-- Feuille en bas d'écran (saisie d'une journée, formulaires) -------- -->
-  <div id="sheetwrap" class="sheetwrap" hidden>
-    <div id="sheet" class="sheet" role="dialog" aria-modal="true"></div>
+  <!-- REDESIGN 2A §5 — LA FEUILLE QUI MONTE DU BAS.
+       Les classes viennent du socle (`sh` / `shb`) ; les identifiants ne
+       changent pas — c'est par eux que `Kit.ouvrirFeuille` la trouve. -->
+  <div id="sheetwrap" class="sh" hidden>
+    <div id="sheet" class="shb" role="dialog" aria-modal="true"></div>
   </div>
 
   <!-- Message éphémère -------------------------------------------------- -->

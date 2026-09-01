@@ -184,13 +184,13 @@ cas.push({ nom: 'A3 — trois graisses : 400, 600, 700', fn: function () {
 
 cas.push({ nom: 'A6 — chaque conteneur défilant en colonne flex porte > * { flex: none }', fn: function () {
   [['.bd', /\.bd\s*>\s*\*\s*\{\s*flex:\s*none/],
-   ['.sheet', /\.sheet\s*>\s*\*\s*\{\s*flex:\s*none/],
+   ['.shb', /\.shb\s*>\s*\*\s*\{\s*flex:\s*none/],
    ['.corps-feuille', /\.corps-feuille\s*>\s*\*\s*\{\s*flex:\s*none/],
    ['.selbar', /\.selbar\s*>\s*\*\s*\{\s*flex:\s*none/]].forEach(function (x) {
     vrai(x[1].test(css), 'la garde flex:none manque pour ' + x[0]);
   });
   vrai(/\.bd\s*\{[^}]*display:\s*flex/.test(sansCommentaires(css)), '.bd doit être une colonne flex');
-  vrai(/\.sheet\s*\{[^}]*display:\s*flex/.test(sansCommentaires(css)), '.sheet doit être une colonne flex');
+  vrai(/\.shb\s*\{[^}]*display:\s*flex/.test(sansCommentaires(css)), '.shb doit être une colonne flex');
 } });
 
 cas.push({ nom: '§24.1 — les valeurs chiffrées sont en tabular-nums', fn: function () {

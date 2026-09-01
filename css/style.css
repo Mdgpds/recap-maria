@@ -328,6 +328,25 @@
   font-size: 11px; color: var(--bg2); transition: background .15s, border-color .15s;
 }
 .ch.on .rd { background: var(--ac); border-color: var(--ac); }
+
+/* `choice` EST le choix cochable du 2A, sous son nom d'origine.
+
+   L'application le fabrique à un seul endroit (`Kit.choix`) et dix fichiers
+   de test le nomment. Le renommer en `ch` aurait coûté vingt-sept
+   remplacements dans les tests pour zéro sûreté de plus : ce que le §5
+   demande — « des choix cochables, pas une liste déroulante » — est une
+   FORME, pas un nom de classe. Il prend donc l'apparence du 2A et garde son
+   nom. C'est une décision de nommage, que le §11 laisse au développeur. */
+.choice {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; text-align: left;
+  background: var(--bg2); border: 1px solid var(--ln); border-radius: var(--r);
+  padding: 13px 14px; margin: 0 0 9px; font: inherit; font-size: 15px; color: inherit;
+  cursor: pointer; box-shadow: var(--sh); transition: border-color .15s, background .15s;
+  font-weight: 400; font-family: inherit;
+}
+.choice:active { transform: scale(.988); }
+.choice.on { border-color: var(--acl); background: linear-gradient(180deg, var(--acs2), var(--acs)); }
+.choice.off { opacity: .55; cursor: default; }
 .rdb {
   width: 22px; height: 22px; border-radius: 999px; border: 1.5px solid var(--rdb);
   background: var(--bg2); color: var(--bg2); font-size: 12px; cursor: pointer; padding: 0; flex: none;
@@ -422,10 +441,20 @@ table.cal td .rep { position: absolute; bottom: 3px; right: 5px; font-size: 9px;
 /* La garde Safari du §24.3 : un conteneur flex qui défile écrase ses enfants
    sur iPhone. Elle vit dans le composant, pas au cas par cas. */
 .shb > * { flex: none; }
-.shb::before {
-  content: ''; display: block; width: 38px; height: 4px; border-radius: 999px;
-  background: var(--poignee); margin: 0 auto 14px;
+/* LA POIGNÉE EST UN VRAI BOUTON, pas un `::before` décoratif : c'est le
+   geste que tout le monde essaie en premier pour fermer une feuille
+   montante (§5). Sa zone tactile fait 44 px de haut — le trait, lui, en fait
+   quatre, et il est centré dedans. */
+.poignee {
+  display: block; width: 100%; height: 44px; border: 0; background: none;
+  padding: 0; margin: -8px 0 6px; cursor: pointer; position: relative;
 }
+.poignee::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 38px; height: 4px; border-radius: 999px; background: var(--poignee);
+}
+.poignee:active::before { background: var(--ch); }
 .shb h2 { margin: 0 0 3px; font-size: 18px; letter-spacing: -.3px; }
 .shb .s { font-size: 13px; color: var(--ink3); margin-bottom: 16px; }
 
@@ -1023,14 +1052,7 @@ body {
 .big.off { opacity: .62; background: var(--bg4); }
 .big.warn .av:not([class*="id-"]) { background: var(--was); color: var(--wa); border-color: var(--wal); }
 
-/* Choix de feuille hérité (liste unique de la feuille du jour comprise). */
-.choice {
-  display: flex; align-items: center; gap: 11px; border: 1.5px solid var(--ln);
-  border-radius: 12px; padding: 12px 13px; margin: 0 0 8px;
-  font-size: 15px; font-weight: 400; cursor: pointer; background: var(--bg2);
-  width: 100%; text-align: left; font-family: inherit; color: inherit;
-}
-.choice:active { transform: scale(.985); }
+/* Les VARIANTES du choix cochable ; le composant lui-même vient du socle. */
 .choice .ic {
   width: 34px; height: 34px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center; font-size: 15px; flex: 0 0 auto;
@@ -1040,8 +1062,7 @@ body {
 .choice.c3 .ic { background: var(--bls); color: var(--bl); }
 .choice .tx { flex: 1; }
 .choice .why { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 3px; line-height: 1.35; }
-.choice.on { border-color: var(--acl); background: var(--acs); }
-.choice.off { opacity: .55; cursor: default; }
+
 
 /* La liste unique de choix (feuille du jour) : pastille radio de 20 px. */
 .amorce { margin: 2px 0 9px; color: var(--ink3); }
@@ -1494,20 +1515,13 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 /* 14. FEUILLE EN BAS D'ÉCRAN, TOAST, MESSAGES                               */
 /* ------------------------------------------------------------------------ */
 
-.sheetwrap { position: fixed; inset: 0; background: rgba(15, 20, 25, .42); display: flex; z-index: 30; align-items: flex-end; }
-.sheetwrap[hidden] { display: none; }
-.sheet {
-  background: var(--bg2); border-radius: 12px 12px 0 0; padding: 16px 15px 24px;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom));
-  width: 100%; max-height: 88%; overflow-y: auto;
-  display: flex; flex-direction: column;
-  box-shadow: 0 -10px 30px rgba(0, 0, 0, .19);
-}
-/* La garde Safari, ici aussi : la feuille défile et est une colonne flex. */
-.sheet > * { flex: none; }
-.sheet .h { font-weight: 700; font-size: 17px; margin-bottom: 3px; line-height: 1.2; }
-.sheet .s { font-size: 13px; color: var(--ink3); margin-bottom: 13px; }
-.sheet .btn[disabled] { background: var(--bg3); color: var(--ch); opacity: 1; }
+/* La feuille vient du socle 2A (`sh` / `shb`) : voile, poignée, rayon de
+   24 px, et la garde Safari posée dans le composant. Ne restent ici que les
+   deux titres que `Kit.ouvrirFeuille` pose, et le fond du bouton inactif. */
+.sh[hidden] { display: none; }
+.shb .h { font-weight: 700; font-size: 18px; letter-spacing: -.3px; margin-bottom: 3px; line-height: 1.2; }
+.shb .s { font-size: 13px; color: var(--ink3); margin-bottom: 16px; }
+.shb .btn[disabled] { background: var(--off); color: var(--offt); opacity: 1; }
 /* Le corps d'une feuille est lui aussi une colonne : mêmes lois. */
 .corps-feuille { display: flex; flex-direction: column; align-items: stretch; }
 .corps-feuille > * { flex: none; }

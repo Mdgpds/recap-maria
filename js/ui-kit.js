@@ -1333,6 +1333,15 @@
     var sheet = document.getElementById('sheet');
     if (!wrap || !sheet) return;
     vider(sheet);
+    /* REDESIGN 2A §5 — LA POIGNÉE FERME LA FEUILLE.
+       « Fermer par la poignée, par le fond, ou par la flèche : les trois
+       marchent. » La maquette dessine la poignée en `::before`, donc en
+       décor : on ne peut pas la toucher. Elle devient ici un vrai bouton —
+       le geste que tout le monde essaie en premier sur une feuille montante
+       doit marcher, et il doit être atteignable au clavier. */
+    var poignee = bouton('poignee', fermerFeuille);
+    poignee.setAttribute('aria-label', 'Fermer');
+    sheet.appendChild(poignee);
     if (titre) sheet.appendChild(ce('div', 'h', titre));
     if (sousTitre) sheet.appendChild(ce('div', 's', sousTitre));
     /* LOT 24 (§24.3) — le corps d'une feuille est une colonne flex qui peut
