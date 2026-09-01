@@ -71,13 +71,26 @@ function cartesDeSection(titre) {
   }
   return out;
 }
-function aFaire() { return cartesDeSection('Aujourd’hui'); }
+/* REDESIGN 2A §3 — L'ACCUEIL N'A PLUS DE SECTIONS TITREES.
+
+   Les deux blocs « Aujourd'hui » et « Mes contrats » sont fusionnes en une
+   seule liste : une carte par enfant, a trois etages. Ce qui EMPECHE de
+   cloturer — salaire manquant, periode de conge sans journee, mois a
+   cloturer — remonte au-dessus, en cartes d'ALERTE (`.card.warn`).
+
+   Les deux reperes du fichier suivent : `aFaire()` rend les alertes,
+   `carteContrat()` rend les cartes d'enfant. Rien d'autre ne change ici. */
+function aFaire() {
+  return Array.prototype.slice.call(corps.querySelectorAll('.card.warn'));
+}
 function aFaireParTexte(morceau) {
   return aFaire().filter(function (e) {
     return e.textContent.indexOf(morceau) !== -1;
   })[0] || null;
 }
-function carteContrat(rang) { return cartesDeSection('Mes contrats')[rang || 0]; }
+function carteContrat(rang) {
+  return corps.querySelectorAll('.card.cart3')[rang || 0];
+}
 
 function boutonExact(racineEl, libelle) {
   return Array.prototype.filter.call(racineEl.querySelectorAll('button'), function (e) {
@@ -322,7 +335,7 @@ async function ouvrirAccueil() {
     txt(tuiles[0]).slice(0, 60) + ' »)');
   assert(txt(tuiles[0]).indexOf('Alix') !== -1,
     'P1 : et la carte nomme l’enfant concerné');
-  assert(txt(tuiles[0].querySelector('.ic')) === '!',
+  assert(txt(tuiles[0].querySelector('.ico')) === '!',
     'P1 : la carte porte l’icône d’alerte');
   assert(txt(tuiles[0]).indexOf('Terminé depuis le 31 juil. 2026') !== -1,
     'P1 : la carte dit depuis quand le mois est terminé');
@@ -338,14 +351,19 @@ async function ouvrirAccueil() {
   assert(!aFaireParTexte('Août à clôturer'),
     'P1 : août n’est PAS proposé à la clôture le 11 (V8-03)');
 
+  /* REDESIGN 2A §3.2 — LA PASTILLE D'ETAT QUITTE LA CARTE DE L'ENFANT.
+     La carte du 2A porte l'identite, la journee DU JOUR et les compteurs :
+     l'etat de CLOTURE du mois n'y figure plus. Il n'a pas disparu pour
+     autant, il a change d'endroit — et l'exigence V8-01 (l'etat est ECRIT,
+     jamais peint seulement) se verifie la ou il est ecrit : sur l'alerte,
+     qui le nomme, le chiffre, et dit quoi faire. */
   var carte = carteContrat();
-  assert(txt(carte.querySelector('.pill')) === 'en cours' ||
-         txt(carte.querySelector('.pill')).indexOf('en retard') !== -1,
-    'P1 : la carte du contrat porte un MOT d’état, pas seulement une couleur ' +
-    '(obtenu « ' + txt(carte.querySelector('.pill')) + ' »)');
-  assert(txt(carte.querySelector('.pill')) === '1 mois en retard',
-    'P1 : le retard se voit aussi depuis la carte du contrat, et il est ' +
-    'chiffré (obtenu « ' + txt(carte.querySelector('.pill')) + ' »)');
+  assert(!!carte, 'P1 : la carte de l’enfant est là');
+  assert(txt(tuiles[0]).indexOf('à clôturer') !== -1,
+    'P1 : le retard est ÉCRIT en toutes lettres, pas peint (obtenu « ' +
+    txt(tuiles[0]).slice(0, 60) + ' »)');
+  assert(aFaire().length === 1,
+    'P1 : un seul mois en retard, une seule alerte (obtenu ' + aFaire().length + ')');
 
   /* ==================================================================== */
   /* P2 — Le 26, tout à jour sauf août                                    */
@@ -368,16 +386,17 @@ async function ouvrirAccueil() {
     '7·A5 : et elle n’affirme PAS qu’un mois qui court encore est terminé');
   assert(!aFaireParTexte('en retard'),
     'P2 : aucun mois en retard n’est signalé');
-  assert(txt(carteContrat().querySelector('.pill')) === 'à clôturer',
-    'P2 : la pastille passe à « à clôturer »');
+  assert(txt(carteAout).indexOf('à clôturer') !== -1,
+    'P2 : l’alerte nomme l’état, en toutes lettres');
 
   /* Le 25 est la frontière : la veille, rien. */
   scene.aujourdhui = '2026-08-24';
   await ouvrirAccueil();
   assert(!aFaireParTexte('Août à clôturer'),
     'P2bis : le 24, août n’est pas encore proposé');
-  assert(txt(carteContrat().querySelector('.pill')) === 'en cours',
-    'P2bis : et la pastille dit encore « en cours »');
+  assert(aFaire().length === 0,
+    'P2bis : et AUCUNE alerte ne l’évoque — un mois en cours n’a rien à ' +
+    'réclamer (obtenu ' + aFaire().length + ')');
   scene.aujourdhui = '2026-08-25';
   await ouvrirAccueil();
   assert(!!aFaireParTexte('Août à clôturer pour Alix'),
@@ -391,12 +410,14 @@ async function ouvrirAccueil() {
   figer(A.id, 2026, 8);
   await ouvrirAccueil();
 
-  assert(!!parTexte(corps, '.cd', 'Rien à clôturer'),
-    'P3 : « Rien à clôturer »');
-  assert(txt(corps).indexOf('Les mois terminés sont tous clôturés.') !== -1,
-    'P3 : la phrase exacte de la spécification');
-  assert(txt(carteContrat().querySelector('.pill')) === 'clôturé',
-    'P3 : la pastille porte l’état clôturé');
+  /* REDESIGN 2A — « Rien a cloturer » disparait, et c'est le principe du
+     2A : l'accueil montre CE QU'IL Y A A FAIRE. Quand il n'y a rien, il
+     n'affiche pas une carte pour le dire — c'est la ligne de contexte de
+     l'en-tete qui le porte, et l'absence d'alerte qui le prouve. */
+  assert(aFaire().length === 0,
+    'P3 : tout est clôturé, donc AUCUNE alerte (obtenu ' + aFaire().length + ')');
+  assert(!!carteContrat(),
+    'P3 : et les cartes des enfants sont toujours là — l’accueil n’est pas vide');
 
   /* ==================================================================== */
   /* P4 — Clôture le 20 : avertissement avec le décompte des jours         */

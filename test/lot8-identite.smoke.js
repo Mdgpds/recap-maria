@@ -680,12 +680,13 @@ async function ouvrirFiche(id) {
   window.App.invalider();
   window.App.aller('accueil', {}, true);
   await pause(300);
-  /* LOT 25 §25.1 — la grande carte `.big` est devenue la carte `.cd` du
-     socle. La photo et la couleur d'identité sont exigées à l'identique, sur
-     le composant qui la remplace. */
-  assert(corps.querySelectorAll('.cd .av img').length >= 1,
+  /* LOT 25 §25.1 puis REDESIGN 2A §3.2 — la grande carte `.big` est devenue
+     la carte `.cd`, puis la carte a trois etages `.cart3`. La photo et la
+     couleur d'identite sont exigees a l'identique, sur le composant qui la
+     remplace : le PREMIER etage, celui de l'identite. */
+  assert(corps.querySelectorAll('.cart3 .etg1 .av img').length >= 1,
     'la photo apparaît sur la carte d’accueil');
-  assert(!!corps.querySelector('.cd .av.id-prune, .cd .av.id-bleu'),
+  assert(!!corps.querySelector('.cart3 .etg1 .av.id-prune, .cart3 .etg1 .av.id-bleu'),
     'les cartes portent la couleur de l’enfant');
 
   /* ==================================================================== */

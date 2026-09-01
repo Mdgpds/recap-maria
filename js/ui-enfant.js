@@ -113,14 +113,26 @@
       Kit.vider(ctx.corps);
       rendre(ctx.corps);
 
-      /* LOT 20 (§20.4 d) — ARRIVÉE DEPUIS L'ÉCRAN DE LA PÉRIODE. Toucher un
-         jour là-bas ouvre sa feuille ICI, dans le mois du jour : la feuille de
-         saisie vit à un seul endroit, et Maria voit l'effet de sa déclaration
-         sur le mois au moment où elle la fait. Le paramètre est ignoré si le
-         jour n'est pas (ou plus) dans une période. */
-      if (ctx.params.jour && !vue.lectureSeule && enFamiliarisation(ctx.params.jour)) {
-        feuilleFamiliarisation(ctx.params.jour);
-      }
+      /* ARRIVÉE AVEC UN JOUR À OUVRIR. Deux appelants, une seule porte.
+
+         LOT 20 (§20.4 d) — l'écran de la période : toucher un jour là-bas
+         ouvre sa feuille ICI, dans le mois du jour. La feuille de saisie vit à
+         un seul endroit, et Maria voit l'effet de sa déclaration sur le mois
+         au moment où elle la fait.
+
+         REDESIGN 2A (§3.2) — l'accueil : le bouton du deuxième étage d'une
+         carte ouvre la feuille du jour de CET enfant, pour AUJOURD'HUI. « Un
+         seul appui depuis l'ouverture de l'application » : Maria touche, la
+         feuille s'ouvre, et le calendrier de l'enfant est derrière — c'est là
+         qu'elle voudrait être de toute façon.
+
+         C'est `ouvrirJour` qui reçoit le jour, et non plus la seule feuille de
+         familiarisation : il sait déjà router vers elle quand le jour est dans
+         une période, vers la feuille courte d'un jour en congé, et vers la
+         proposition de réouverture sur un mois clôturé (lot 30 §30.2). Écrire
+         un second aiguillage ici aurait fait diverger les deux au premier
+         correctif. */
+      if (ctx.params.jour) ouvrirJour(ctx.params.jour);
     });
   }
 

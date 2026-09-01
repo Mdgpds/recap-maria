@@ -209,7 +209,12 @@ var sheet = document.getElementById('sheet');
   /* ---------- 1. Accueil ---------- */
   assert(document.getElementById('vue-app').hidden === false, 'l’application est affichée après reconnexion automatique');
   assert(document.getElementById('vue-login').hidden === true, 'aucun passage par l’écran de connexion');
-  assert(barre.className === 'hero', 'l’accueil porte l’en-tête vert, pas une barre de retour');
+  /* REDESIGN 2A — l'en-tete de l'accueil s'appelle `top` (un degrade vert,
+     trois lignes) et non plus `hero`. Ce qui compte n'a pas change : ce n'est
+     PAS une barre de retour, l'accueil est une racine. */
+  assert(barre.className === 'top', 'l’accueil porte l’en-tête 2A, pas une barre de retour');
+  assert(!barre.querySelector('.bk') && !barre.querySelector('.back'),
+    'l’accueil n’a aucun bouton de retour — c’est une racine');
   /* ==========================================================================
      EXIGENCE CHANGÉE — LOT 25 : L'ACCUEIL EST REFAIT (§25.1 des spécifications).
      L'accueil ne montre plus une grande carte par contrat avec sa barre de
@@ -254,54 +259,102 @@ var sheet = document.getElementById('sheet');
     '§16.2 : sans émettrice enregistrée, aucun prénom n’est inventé');
   assert(srcAccueil.indexOf('App.nomEmettrice()') !== -1,
     '§16.2 : la salutation est bien branchée sur le nom enregistré');
-  assert(txt(barre).indexOf('Mai 2026') !== -1, 'en-tête : mois en cours');
+  /* ====================================================================== */
+  /* REDESIGN 2A §3 — L'ACCUEIL EST UNE SEULE LISTE DE CARTES A TROIS ETAGES */
+  /*                                                                        */
+  /* Ce qui change : les deux blocs « Aujourd'hui » et « Mes contrats » sont */
+  /* fusionnes en UNE carte par enfant. Ce qui NE change pas, et qui est     */
+  /* verifie ci-dessous exactement comme avant : la salutation branchee sur  */
+  /* le nom enregistre, une carte par contrat actif, le prenom, l'avatar,    */
+  /* le montant du mois calcule par le moteur, l'absence de montant          */
+  /* d'entretien isole, et la garde V8-03 du 24.                             */
+  /* ====================================================================== */
+
+  /* §3.1 — l'en-tete porte le TITRE DE L'ECRAN et une ligne de contexte qui
+     dit la date du jour et ce qui reste a faire. Le mois n'y est plus : il
+     appartient a l'espace de l'enfant, ou l'on change de mois. */
+  assert(barre.className.indexOf('top') !== -1,
+    '§3.1 : l’accueil porte l’en-tête 2A (`top`)');
+  assert(!!barre.querySelector('h1') && txt(barre.querySelector('h1')) === 'Mes enfants',
+    '§3.1 : le titre de l’écran est « Mes enfants »');
+  var sousTitre = barre.querySelector('.sub');
+  assert(!!sousTitre, '§3.1 : l’en-tête porte sa ligne de contexte');
+  assert(txt(sousTitre).indexOf('24 mai') !== -1,
+    '§3.1 : elle dit LA DATE DU JOUR (obtenu « ' + txt(sousTitre) + ' »)');
+  /* Le decompte est CALCULE, jamais ecrit en dur — et quand il n'y a rien a
+     declarer, la ligne le dit plutot que de se taire. */
+  assert(/rien à déclarer|journée[s]? à déclarer/.test(txt(sousTitre)),
+    '§3.1 : et ce qui reste à déclarer, calculé (obtenu « ' + txt(sousTitre) + ' »)');
+  assert(srcAccueil.indexOf('aDeclarerAujourdhui') !== -1,
+    '§3.1 : le décompte vient d’une fonction, pas d’une constante');
+
   assert(!barre.querySelector('.pbar'),
     '§25.1 : plus de barre de progression du mois calendaire');
   assert(tabbar.hidden === false, 'barre d’onglets visible sur l’accueil');
 
-  /* Les deux blocs, dans cet ordre : ce qu'il y a à faire, puis les contrats. */
-  var sections = Array.prototype.map.call(corps.querySelectorAll('.sec'), txt);
-  assert(sections.length === 2 && sections[0] === 'Aujourd’hui' &&
-         sections[1] === 'Mes contrats',
-    '§25.1 : deux blocs, « Aujourd’hui » puis « Mes contrats » (obtenu ' +
-    sections.join(' | ') + ')');
-
-  var titreContrats = parTexte(corps, '.sec', 'Mes contrats');
-  var cartes = [];
-  for (var n = titreContrats.nextSibling; n; n = n.nextSibling) {
-    if (n.nodeType === 1 && n.className.indexOf('cd') !== -1) cartes.push(n);
-  }
+  /* §3.2 — UNE carte par enfant, a TROIS etages, et chacun mene ailleurs. */
+  var cartes = Array.prototype.slice.call(corps.querySelectorAll('.card.cart3'));
   assert(cartes.length === 2, 'une carte par contrat actif (obtenu ' + cartes.length + ')');
-  assert(cartes[0].className.indexOf('cd tap') !== -1,
-    '§24.3 : la carte de contrat est le composant `cd tap` du socle');
-  assert(txt(cartes[0]).indexOf('Léa') !== -1, 'la carte porte le prénom');
-  assert(!!cartes[0].querySelector('.av'),
-    '§25.1 : la carte porte l’avatar de l’enfant');
-  assert(sansInsecable(txt(cartes[0])).indexOf('1 157,50 €') !== -1,
-    '§25.1 : le sous-texte porte le montant du mois, calculé par le moteur (obtenu « ' +
-    sansInsecable(txt(cartes[0])) + ' »)');
+
+  var c1 = cartes[0];
+  var etg1 = c1.querySelector('.etg1');
+  var etg2 = c1.querySelector('.etg2');
+  var etg3 = c1.querySelector('.etg3');
+  assert(!!etg1 && !!etg2 && !!etg3, '§3.2 : la carte porte ses trois étages');
+  assert(etg1.tagName === 'BUTTON' && etg3.tagName === 'BUTTON',
+    '§3.2 : les étages 1 et 3 sont de vrais boutons — atteignables au clavier');
+  assert(!!etg2.querySelector('button'),
+    '§3.2 : l’étage 2 porte le bouton du geste du jour');
+
+  /* Etage 1 — l'identite. */
+  assert(txt(etg1).indexOf('Léa') !== -1, '§3.2 : l’étage 1 porte le prénom');
+  assert(!!etg1.querySelector('.av'), '§3.2 : et sa pastille d’identité');
+  assert(txt(etg1).indexOf('famille') !== -1, '§3.2 : et la famille');
+
+  /* Etage 2 — la journee du jour. Le tableau du §3.2 : sans ligne pour
+     aujourd'hui, c'est « rien a faire » et le bouton propose de DECLARER. */
+  assert(txt(etg2).indexOf('Aujourd’hui') !== -1 ||
+         txt(etg2).indexOf('Familiarisation') !== -1,
+    '§3.2 : l’étage 2 parle d’AUJOURD’HUI (obtenu « ' + txt(etg2) + ' »)');
+  var boutonJour = etg2.querySelector('button');
+  assert(/Déclarer|Corriger/.test(txt(boutonJour)),
+    '§3.2 : son bouton dit « Déclarer » ou « Corriger » (obtenu « ' + txt(boutonJour) + ' »)');
+
+  /* Etage 3 — les compteurs, et le montant du mois calcule par le moteur. */
+  assert(txt(etg3).indexOf('congés') !== -1, '§3.2 : l’étage 3 porte les congés payés');
+  assert(txt(etg3).indexOf('récup') !== -1, '§3.2 : et la récupération');
+  assert(sansInsecable(txt(etg3)).indexOf('1 157,50 €') !== -1,
+    '§3.2 : et le montant du mois, calculé par le moteur (obtenu « ' +
+    sansInsecable(txt(etg3)) + ' »)');
+
   assert(txt(corps).indexOf('entretien') === -1,
     '§2.1 : aucun montant d’entretien isolé sur l’accueil');
-  /* LOT 7 (V8-03) — on est le 24 mai : le mois COURANT n'est pas encore proposé
-     à la clôture. Il ne le sera qu'à partir du 25. Avant le lot 7, l'accueil
-     invitait Maria à figer un mois dont il restait un tiers à vivre — et la
-     clôture est le seul geste irréversible de l'application. */
-  assert(!parTexte(corps, '.cd', 'Clôturer mai pour Léa'),
+
+  /* §3.4 — le pied : la phrase, puis les deux boutons. */
+  assert(txt(corps).indexOf('Touchez la ligne des compteurs') !== -1,
+    '§3.4 : le pied explique le troisième étage');
+  assert(!!parTexte(corps, 'button', 'Poser des congés'),
+    '§3.4 : « Poser des congés »');
+  assert(!!parTexte(corps, 'button', 'Clôturer le mois de mai'),
+    '§3.4 : « Clôturer le mois de mai »');
+
+  /* LOT 7 (V8-03), CONSERVE — on est le 24 mai : le mois COURANT n'est pas
+     propose a la cloture. Le bouton du pied existe (c'est la maquette), mais
+     ce qu'il ouvre respecte la garde, et AUCUNE alerte n'invite a figer un
+     mois dont il reste un tiers a vivre. */
+  assert(!parTexte(corps, '.card', 'Clôturer mai pour Léa'),
     'V8-03 : le 24, le mois courant n’est PAS proposé à la clôture');
-  /* L'état est ÉCRIT, pas seulement peint : chaque carte de contrat porte une
-     pastille dont le texte n'est pas vide. */
-  cartes.forEach(function (carte, rang) {
-    var pastille = carte.querySelector('.pill');
-    assert(!!pastille && txt(pastille).trim().length > 0,
-      '§25.2 : la carte ' + (rang + 1) + ' annonce son état avec un MOT, pas ' +
-      'seulement une couleur (obtenu « ' + txt(pastille) + ' »)');
-  });
+  assert(srcAccueil.indexOf("f.etat !== 'a_cloturer'") !== -1,
+    'V8-03 : la garde est toujours dans le code qui construit la liste');
+
   assert(txt(corps).indexOf('provisoire') === -1,
     '§25.2 : l’adjectif « provisoire » ne se répète plus sur chaque carte — ' +
     'la pastille et le bandeau du document portent cette information');
 
   /* ---------- 2. Espace enfant ---------- */
-  cartes[0].click();
+  /* §3.2 — c'est l'ETAGE 1 qui mene a l'espace de l'enfant. Les deux autres
+     menent ailleurs : l'etage 2 a la feuille du jour, l'etage 3 aux soldes. */
+  etg1.click();
   await pause(80);
 
   /* LOT 22 §22.3 — LA BARRE SUIT DÉSORMAIS LES ÉCRANS INTÉRIEURS.

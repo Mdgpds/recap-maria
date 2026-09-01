@@ -277,10 +277,33 @@ function celluleDu(numero) {
      à l'identique, et renforcée par le rang. */
   window.App.aller('accueil', {});
   await pause(400);
-  contient(corps, 'Noah — heures à déclarer',
-    'A8 : la carte réclame la déclaration du jour, et nomme l’enfant');
-  contient(corps, 'Familiarisation · jour 8 sur 14',
-    'A8 : et elle dit où l’on en est de la période');
+  /* REDESIGN 2A §3.2 — LA CARTE DE FAMILIARISATION DEVIENT L'ETAGE 2.
+     Le tableau du §3.2 fixe la phrase au mot pres : « Familiarisation — a
+     declarer », ton ambre, bouton « Corriger ». Le prenom n'y est plus
+     REPETE : il est juste au-dessus, a l'etage 1 de la meme carte.
+
+     CE QUI SE PERD ICI, ET OU IL SE RETROUVE : le rang dans la periode
+     (« jour 8 sur 14 ») ne tient pas dans une ligne d'etage. Il vit dans le
+     repli « Familiarisation » de l'espace enfant (§4.6.1), qui liste la
+     periode jour par jour — c'est la que Maria va quand elle veut savoir ou
+     elle en est, pas sur un accueil qu'elle traverse.
+
+     L'EXIGENCE A8 — l'accueil reclame la declaration du jour — est verifiee
+     a l'identique : la carte le dit, en ton ambre, et son bouton mene a la
+     feuille. */
+  var carteNoah = Array.prototype.filter.call(
+    corps.querySelectorAll('.card.cart3'), function (c) {
+      return txt(c).indexOf('Noah') !== -1;
+    })[0];
+  assert(!!carteNoah, 'A8 : la carte de Noah est là');
+  contient(carteNoah, 'Noah', 'A8 : elle nomme l’enfant');
+  contient(carteNoah, 'Familiarisation — à déclarer',
+    'A8 : et elle réclame la déclaration du jour, dans les mots du §3.2');
+  var e2Noah = carteNoah.querySelector('.etg2');
+  assert(!!e2Noah && e2Noah.className.indexOf('w') !== -1,
+    'A8 : en ton ambre — il y a quelque chose à faire');
+  assert(txt(e2Noah.querySelector('button')) === 'Corriger',
+    'A8 : et son bouton mène à la feuille de déclaration');
 
   /* ==================================================================== */
   /* §20.4 b — L'ENCART DE L'ESPACE ENFANT                                */
@@ -494,10 +517,16 @@ function celluleDu(numero) {
      ====================================================================== */
   window.App.aller('accueil', {});
   await pause(400);
-  contient(corps, 'Noah — 2h30 déclarées', 'A8 : la carte a changé');
-  contient(corps, 'Familiarisation · jour 8 sur 14',
-    'A8 : et elle dit toujours où l’on en est de la période');
-  absent(corps, 'heures à déclarer', 'A8 : elle ne réclame plus rien');
+  var carteNoah2 = Array.prototype.filter.call(
+    corps.querySelectorAll('.card.cart3'), function (c) {
+      return txt(c).indexOf('Noah') !== -1;
+    })[0];
+  contient(carteNoah2, 'Familiarisation — 2h30 déclarées',
+    'A8 : la carte a changé, dans les mots du §3.2');
+  var e2Noah2 = carteNoah2.querySelector('.etg2');
+  assert(!!e2Noah2 && e2Noah2.className.indexOf('w') === -1,
+    'A8 : et le ton ambre s’en va — il n’y a plus rien à réclamer');
+  absent(corps, 'à déclarer', 'A8 : elle ne réclame plus rien');
 
   /* L'espace enfant aussi. L'encart passe en ton neutre et RESTE UNE PORTE :
      le bouton « Corriger » n'a plus lieu d'être, l'encart entier l'est. */

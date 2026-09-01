@@ -89,6 +89,11 @@
        service, et un onglet qui mene a une page blanche pendant six commits
        serait pire que pas d'onglet du tout. */
     docs: 'UiHistorique',
+    /* REDESIGN 2A §3.2 — LE DÉTAIL DES SOLDES, troisième étage d'une carte
+       d'enfant. L'écran propre arrive au commit 4 ; d'ici là il est branché
+       sur l'espace de l'enfant, qui porte déjà le repli « Ses réserves » avec
+       les mêmes chiffres, lus à la même source. */
+    compteurs: 'UiEnfant',
     conges: 'UiConges',
     menu: 'UiMenu',
     enfant: 'UiEnfant',
