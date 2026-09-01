@@ -1,0 +1,68 @@
+# ============================================================================
+# Dépôt PUBLIC. Ce fichier est la première barrière, pas la seule : un fichier
+# committé reste dans l'historique git même après suppression. Ce qui ne doit
+# pas être publié ne doit pas être écrit dans ce dossier.
+# ============================================================================
+
+# --- Dépendances -------------------------------------------------------------
+# Reconstruites par `npm install`, jamais livrées. `package-lock.json` a déjà
+# été poussé une fois par accident, et il a fallu réécrire l'historique pour
+# l'en retirer.
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# --- Environnement et secrets ------------------------------------------------
+# La clé `service_role` Supabase, la clé VAPID PRIVÉE et RAPPELS_SECRET vivent
+# dans les secrets Supabase, jamais ici. `config.js` est suivi volontairement :
+# il ne porte que l'URL et la clé « publishable », faites pour le navigateur.
+.env
+.env.*
+!.env.example
+*.local
+secrets.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- Fichiers système --------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# --- Journaux et rapports ----------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+
+# --- Rebuts d'éditeurs -------------------------------------------------------
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-workspace
+
+# --- Temporaires et sorties de travail ---------------------------------------
+tmp/
+temp/
+.cache/
+coverage/
+*.bak
+*.orig
+*.rej
+
+# --- Supabase CLI ------------------------------------------------------------
+# Le dossier local du CLI ; les migrations, elles, sont suivies.
+supabase/.temp/
+supabase/.branches/
