@@ -83,6 +83,24 @@ var Messages = require('../js/messages.js');
 var Chaine = require('../js/chaine-mois.js');
 global.Feries = Feries; window.Feries = Feries;
 global.Format = Format; window.Format = Format;
+/* REDESIGN 2A §7.3 — UN MOIS CLOTURE LIT SON INSTANTANE, IL NE SE RECALCULE
+   PAS. « C'est l'endroit exact ou un redesign peut introduire un recalcul sans
+   qu'on le voie : sois vigilant. »
+
+   ON N'ESPIONNE PAS LE NOMBRE D'APPELS, ON ESPIONNE LEURS MOIS. Ouvrir un
+   ecran fait calculer TOUTE la chaine du contrat — c'est ainsi qu'un compteur
+   de sortie devient le compteur d'entree du mois suivant —, donc compter les
+   appels ne prouverait rien. Ce qui doit etre vrai, c'est qu'AUCUN appel ne
+   porte sur un mois FIGE : ses chiffres sont dans `recap.donnees`, et les
+   recalculer donnerait un resultat plausible et FAUX des que les conditions du
+   contrat ont change depuis — un avenant, un bareme. Le document parti a la
+   famille ne correspondrait plus a ce que l'ecran montre. */
+var moisRecalcules = [];
+var calculerMoisVrai = Engine.calculerMois;
+Engine.calculerMois = function (entrees) {
+  moisRecalcules.push(entrees.annee + '-' + entrees.mois);
+  return calculerMoisVrai.apply(this, arguments);
+};
 global.Engine = Engine; window.Engine = Engine;
 global.Messages = Messages; window.Messages = Messages;
 global.ChaineMois = Chaine; window.ChaineMois = Chaine;
@@ -584,6 +602,25 @@ async function ouvrirEnfant(a, m) {
   await pause(400);
   assert(!celluleDu(10) || celluleDu(10).getAttribute('role') !== 'button',
     'A7 : sur un contrat rangé, un mois clôturé ne se rouvre pas depuis le calendrier');
+
+  /* ==================================================================== */
+  /* REDESIGN 2A §7.3 — L'ECRAN D'UN MOIS PASSE NE RECALCULE RIEN         */
+  /* ==================================================================== */
+  console.log('\n--- §7.3 : un mois passé lit son instantané ---');
+  /* Les scenes precedentes ont ROUVERT avril : on le refige, sinon on
+     mesurerait un mois ouvert et le controle ne prouverait rien. */
+  poserFige(2026, 4);
+  window.App.invalider();
+  moisRecalcules = [];
+  window.App.aller('moisPasse', { annee: 2026, mois: 4 }, true);
+  await pause(600);
+  assert(moisRecalcules.indexOf('2026-4') === -1,
+    '§7.3 : le mois FIGÉ n’est jamais recalculé — il lit son instantané ' +
+    '(mois recalculés : ' + (moisRecalcules.join(', ') || 'aucun') + ')');
+  contient(corps, 'Mois clôturé', '§7.3 : l’écran dit que le mois est clôturé');
+  contient(corps, 'ses chiffres ne bougent plus', '§7.3 : et pourquoi');
+  contient(corps, 'Jours de présence', '§7.3 : il est détaillé enfant par enfant');
+  assert(!!parTexte(corps, '.ln', 'Total du mois'), '§7.3 : et une ligne de total');
 
   console.log('');
   if (echecs) { console.error(echecs + ' échec(s).'); process.exit(1); }

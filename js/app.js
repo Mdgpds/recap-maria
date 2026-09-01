@@ -94,6 +94,10 @@
        sur l'espace de l'enfant, qui porte déjà le repli « Ses réserves » avec
        les mêmes chiffres, lus à la même source. */
     compteurs: 'UiEnfant',
+    /* REDESIGN 2A §7 — les trois écrans de l'onglet Documents. */
+    cloture: 'UiHistorique',
+    moisPasse: 'UiHistorique',
+    histoContrat: 'UiHistorique',
     conges: 'UiConges',
     menu: 'UiMenu',
     enfant: 'UiEnfant',
