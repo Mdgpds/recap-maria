@@ -356,8 +356,9 @@ body {
 
 /* Une phrase centrée sous un bouton — la seule de l'application (§26.2). */
 .centre { text-align: center; }
-.rrow { display: flex; gap: 8px; margin: 0 0 9px; }
-.rrow .btn { flex: 1; margin: 0; }
+/* LOT 31 §4 — `.rrow` retiré : c'était le rang des trois raccourcis de durée
+   (23 min · 1 h · 1 h 34), et plus rien ne le porte. Une classe morte dans une
+   feuille servie se retrouve un jour réutilisée pour autre chose. */
 
 .actions { display: flex; flex-direction: column; gap: 9px; margin: 5px 0 9px; }
 .actions .btn { margin: 0; }
@@ -867,23 +868,36 @@ table.cal td.no:active { transform: none; }
    descendait à 8 px — le document de spécification prime). */
 .mini { font-size: 13px; font-weight: 600; margin-top: 1px; letter-spacing: -.04em; line-height: 1.1; white-space: nowrap; }
 
-td.ok { background: var(--acs); border-color: var(--acl); }
+/* LOT 31 §2 — LA COULEUR D'ÉTAT DOIT GAGNER, ET ELLE NE GAGNAIT PAS.
+
+   `table.cal td` pèse (0,1,2) et posait `background: var(--bg2)`.
+   `td.cg` pèse (0,1,1) : la règle de base l'emportait, et le fond des
+   cellules d'état restait blanc. On ne voyait que la bordure et le texte —
+   sur TOUS les états, pas seulement le congé.
+
+   La correction requalifie chaque état au même niveau que la règle de base,
+   plutôt que d'ajouter des `!important` : un `!important` gagne aussi, mais
+   il gagne contre tout, y compris contre la prochaine règle légitime.
+
+   Les sélecteurs descendants (`.num`, `.mini`) n'ont jamais été en cause :
+   aucune règle de `table.cal` ne les visait. Ils restent tels quels. */
+table.cal td.ok { background: var(--acs); border-color: var(--acl); }
 td.ok .num { color: var(--acd); font-weight: 700; }
-td.ab { background: var(--was); border-color: var(--wal); }
+table.cal td.ab { background: var(--was); border-color: var(--wal); }
 td.ab .num { color: var(--wa); font-weight: 700; }
 td.ab .mini { color: var(--wad); }
-td.fe { background: var(--bg3); border-color: var(--ch); }
+table.cal td.fe { background: var(--bg3); border-color: var(--ch); }
 td.fe .num { color: var(--ink3); font-weight: 400; }
 td.fe .mini { color: var(--ink3); }
-td.cg { background: var(--bls); border-color: var(--bll); }
+table.cal td.cg { background: var(--bls); border-color: var(--bll); }
 td.cg .num { color: var(--bl); font-weight: 700; }
 td.cg .mini { color: var(--bl); }
-td.we { background: var(--bg); border-color: var(--bg3); }
+table.cal td.we { background: var(--bg); border-color: var(--bg3); }
 td.we .num { color: var(--ch); font-weight: 400; }
-td.nt { background: var(--bg3); border-color: var(--ch); }
+table.cal td.nt { background: var(--bg3); border-color: var(--ch); }
 td.nt .num { color: var(--ink3); font-weight: 700; }
 td.nt .mini { color: var(--ink3); }
-td.warn { background: var(--was); border-color: var(--wal); }
+table.cal td.warn { background: var(--was); border-color: var(--wal); }
 td.warn .num { color: var(--wa); font-weight: 700; }
 td.warn .mini { color: var(--wa); }
 

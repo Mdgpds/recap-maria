@@ -1018,6 +1018,52 @@
            ligne.entretien_centimes != null;
   }
 
+  /* LOT 31 §5 — LE RYTHME DE TRAVAIL DE CE CONTRAT. Une journée « ouvrable »
+     est une journée du planning, dans les bornes du contrat, hors férié. Un
+     week-end et un férié ne coupent pas une plage parce qu'ils ne sont pas
+     ouvrables ; une journée de travail absente de la liste coupe, parce
+     qu'elle l'est. Même définition que celle du document — la plage lue par
+     Maria et celle lue par la famille ne peuvent pas différer.
+
+     (Cette fonction est posée ICI, après `porteUneDeclaration`, et pas avant :
+     insérée plus haut, elle séparait un commentaire de la fonction qu'il
+     documentait. Un commentaire orphelin finit par décrire la mauvaise
+     fonction — relevé en relecture du lot 31.) */
+  function estJourOuvrable(d) {
+    var c = vue.contrat;
+    if (c.date_debut && d < c.date_debut) return false;
+    if (c.date_fin && d > c.date_fin) return false;
+    var planning = planningDuMois();
+    if (!planning || planning.indexOf(Engine.jourSemaine(d)) === -1) return false;
+    return !Feries.estJourFerie(d);
+  }
+
+  /* LOT 31 §5, CORRECTION DE RELECTURE — LA TROISIÈME COMPOSANTE DE LA CLÉ.
+
+     « Une plage ne regroupe que des journées strictement identiques. Même
+     nature, même décompte, MÊME IMPUTATION. » La règle ne pose pas
+     d'exception, et le document la respectait déjà ; ce repli-ci ne la
+     respectait pas — il groupait sur la nature seule.
+
+     Le défaut se voyait à l'œil nu : deux congés collés, l'un sur les congés
+     payés, l'autre sur la récupération, donnaient UNE ligne « Du 15 au
+     18 septembre » à Maria, et DEUX lignes sur le document qu'elle envoie à la
+     famille. L'écran qu'elle relit et la pièce qu'elle transmet découpaient
+     les mêmes journées autrement — exactement la divergence que la règle
+     unique existe pour rendre impossible.
+
+     Même source que le document : `imputationsAppliquees`, produit par le
+     moteur. L'écran ne devine aucune période. */
+  function imputationDuJour(d) {
+    var appliquees = (vue.entree && vue.entree.resultat &&
+                      vue.entree.resultat.imputationsAppliquees) || [];
+    for (var i = 0; i < appliquees.length; i++) {
+      var a = appliquees[i];
+      if (d >= a.date_debut && d <= a.date_fin) return a.date_debut + '|' + a.date_fin;
+    }
+    return '';
+  }
+
   /* La phrase d'une journée déclarée. Elle nomme le GESTE avant la poche : le
      geste explique pourquoi le temps a bougé, la poche dit seulement où il est
      allé (correction de la remarque 4 de la relecture du lot 17). Les libellés
@@ -1123,29 +1169,83 @@
       { ouvert: (r.ecartsDeclares || []).length > 0 });
     var l = f.corps;
 
+    /* LOT 31 §5 — LES JOURNÉES DÉCLARÉES SE REGROUPENT EN PLAGES.
+
+       Trois jours de départ avant l'heure, à la même heure, imputés de la même
+       façon, donnaient trois lignes rigoureusement identiques à la date près.
+       Ils en donnent une : « Du 15 au 17 septembre ».
+
+       LA CLÉ EST CE QUE LA LIGNE AFFICHE — sa valeur chiffrée ET sa phrase.
+       Ce n'est pas un raccourci : cette phrase énonce précisément la nature du
+       geste, son décompte et sa poche d'imputation (`phraseDeclaration` les
+       compose une à une). Deux journées qui produisent le même texte sont donc
+       strictement identiques au sens de la règle ; deux journées qui diffèrent
+       d'un mot ne se rejoignent pas. Regrouper sur la clé affichée garantit
+       par construction qu'aucune plage ne masque une différence — c'est
+       exactement ce que la règle protège, et ça reste vrai le jour où un
+       attribut s'ajoutera à la phrase. */
+    var detailsParJour = {};
+    var conditionsDuMois = cond();
     declarees.forEach(function (x) {
-      var conditions = cond();
-      var detailSup = conditions
-        ? Engine.detailSupDuJour(x.ligne, conditions)
-        : null;
-      /* Sans conditions, on ne prétend RIEN chiffrer : la journée est nommée,
-         sa valeur est dite illisible. Un repli silencieux sur zéro afficherait
-         un chiffre faux et crédible. */
-      Kit.ligneLn(l, Kit.jourLong(x.jour),
-        detailSup ? valeurJourneeDeclaree(detailSup) : '—', {
-          sous: detailSup ? phraseDeclaration(x.jour, x.ligne, detailSup) : null,
-          onclick: vue.lectureSeule ? null : function () { ouvrirJour(x.jour); }
-        });
+      detailsParJour[x.jour] = {
+        ligne: x.ligne,
+        /* Sans conditions, on ne prétend RIEN chiffrer : la journée est
+           nommée, sa valeur est dite illisible. Un repli silencieux sur zéro
+           afficherait un chiffre faux et crédible. */
+        detailSup: conditionsDuMois
+          ? Engine.detailSupDuJour(x.ligne, conditionsDuMois) : null
+      };
+    });
+    function affichageDeclaree(d) {
+      var x = detailsParJour[d];
+      return {
+        valeur: x.detailSup ? valeurJourneeDeclaree(x.detailSup) : '—',
+        phrase: x.detailSup ? phraseDeclaration(d, x.ligne, x.detailSup) : null
+      };
+    }
+
+    Kit.plagesDeJours(Object.keys(detailsParJour), {
+      ouvrable: estJourOuvrable,
+      cle: function (d) {
+        var a = affichageDeclaree(d);
+        return a.valeur + '|' + (a.phrase || '');
+      }
+    }).forEach(function (plage) {
+      var a = affichageDeclaree(plage.debut);
+      /* Un appui ouvre la PREMIÈRE journée de la plage (§5). */
+      Kit.ligneLn(l, Kit.libellePlageJours(plage), a.valeur, {
+        sous: a.phrase,
+        onclick: vue.lectureSeule ? null : function () { ouvrirJour(plage.debut); }
+      });
     });
 
+    /* LOT 31 §5 — GROUPÉ D'ABORD PAR NATURE, PUIS EN PLAGES.
+
+       Une nature donnait UNE ligne dont le sous-titre énumérait les
+       quantièmes : « 1, 2, 3, 4, 7, 8, 9, 10, 11, 14, 15 septembre » pour
+       trois semaines de congé. Elle donne maintenant une ligne PAR PLAGE, avec
+       son propre décompte. La nature reste le premier niveau : l'ordre de
+       `GROUPES_SANS_TRAVAIL` ne bouge pas.
+
+       Ces journées sont uniformes en décompte — une journée entière chacune —
+       mais PAS en imputation : deux congés collés peuvent relever de deux
+       périodes ventilées différemment. La clé porte donc la nature ET
+       l'imputation, comme sur le document. Groupé sur la nature seule, ce
+       repli donnait à Maria une ligne là où la pièce qu'elle envoie en
+       affichait deux (corrigé en relecture du lot 31). */
     GROUPES_SANS_TRAVAIL.forEach(function (g) {
       var jours = groupes[g.type];
       if (!jours || !jours.length) return;
-      var dates = jours.map(function (d) { return Kit.quantieme(d); }).join(', ') +
-        ' ' + Kit.libelleMois(vue.mois);
-      Kit.ligneLn(l, g.titre, jours.length + ' j', {
-        sous: g.regle ? dates + ' — ' + g.regle.toLowerCase() : dates,
-        alerte: !!g.alerte
+      Kit.plagesDeJours(jours, {
+        ouvrable: estJourOuvrable,
+        cle: imputationDuJour
+      }).forEach(function (plage) {
+        var quand = Kit.libellePlageJours(plage);
+        Kit.ligneLn(l, g.titre, plage.jours.length + ' j', {
+          sous: g.regle ? quand + ' — ' + g.regle.toLowerCase() : quand,
+          alerte: !!g.alerte,
+          onclick: vue.lectureSeule ? null : function () { ouvrirJour(plage.debut); }
+        });
       });
     });
 

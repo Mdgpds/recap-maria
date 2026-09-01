@@ -188,7 +188,11 @@ var DB = {
     var ligne = { id: 'j-' + l.jour, contrat_id: l.contrat_id, jour: l.jour, type: l.type };
     ['minutes_reelles', 'entretien_centimes', 'commentaire', 'entretien_du',
      'minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override',
-     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur']
+     'ecart_minutes', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_impute_sur',
+     /* LOT 31 §3 (migration 020) — le double doit rendre ce que la base
+        rendra : sans cette colonne, l'écran relirait `undefined` et la moitié
+        de journée disparaîtrait entre l'écriture et l'affichage. */
+     'demi_journee']
       .forEach(function (k) {
         ligne[k] = Object.prototype.hasOwnProperty.call(l, k) ? l[k] : garde[k];
       });

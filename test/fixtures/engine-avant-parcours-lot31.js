@@ -78,29 +78,6 @@
     return Math.round(DIXIEMES_CP_PAR_MOIS * conditions.minutes_par_jour_conge / 10);
   }
 
-  /* LOT 31 §6 — CE QUE MARIA PEUT PRENDRE PAR ANTICIPATION, EN MINUTES.
-
-     EXPOSÉE, et c'est une correction de relecture. L'écran de pose calculait
-     son propre plafond — « deux jours » écrit en dur — pendant que le moteur
-     calculait le sien. Le contrôle A.4-2 l'interdit : « les effets chiffrés
-     annoncés à l'utilisatrice sont obtenus en rejouant le calcul avec
-     `Engine`, jamais écrits en dur — bloquant même si le résultat est juste
-     aujourd'hui ». Le plafond d'un stepper est un effet chiffré annoncé.
-
-     Le risque n'était pas théorique : le jour où l'acquisition mensuelle
-     change — une règle revue, un contrat particulier — le moteur bornerait
-     plus bas et l'écran continuerait d'offrir deux jours. Maria pousserait le
-     stepper d'un cran de trop, appuierait sur « Poser », et le mois tomberait
-     sur `IMPUTATION_DEPASSE_RESERVES` : un geste offert puis refusé une
-     seconde plus tard. Une seule source, et le défaut ne peut plus naître.
-
-     Fonction PURE : elle ne lit ni horloge ni base. Le mois de référence
-     reste la décision de l'appelant — ici on répond seulement « combien ». */
-  function minutesAnticipationCp(conditions) {
-    if (!conditions) return 0;
-    return minutesCpParMois(conditions);
-  }
-
   /* ------------------------------------------------------------------ */
   /* Utilitaires de calendrier (purs, sans fuseau)                       */
   /* ------------------------------------------------------------------ */
@@ -383,23 +360,7 @@
        - présent : { joursSurCp, joursSurSup, joursSansSolde }. Le moteur
          APPLIQUE cette répartition sans la recalculer, après trois
          vérifications qui lèvent un CODE d'erreur et n'écrivent rien. */
-  /* LOT 31 §6 — `minutesAnticipationCp` (5e paramètre, OPTIONNEL).
-
-     Maria peut poser des congés payés qu'elle n'a pas encore acquis, mais
-     UNIQUEMENT pour des jours du mois en cours : ce sont les 2,5 jours
-     qu'elle est en train d'acquérir. Pour un mois à venir, seuls les jours
-     déjà acquis sont posables.
-
-     LE MOTEUR NE SAIT PAS QUEL MOIS ON EST, et il ne doit pas l'apprendre.
-     Il reçoit un NOMBRE DE MINUTES d'anticipation, déjà décidé par l'appelant
-     qui, lui, connaît le mois de référence. Absent ou zéro, le comportement
-     est celui d'avant ce lot, au caractère près.
-
-     Ce paramètre n'ouvre RIEN d'autre : il ne desserre que le contrôle n° 3,
-     celui qui refusait un dépassement des congés payés. Le sans solde, la
-     récupération et les deux premiers contrôles sont intacts. */
-  function imputerConges(nbJours, compteur, conditions, imputationImposee,
-                         minutesAnticipationCp) {
+  function imputerConges(nbJours, compteur, conditions, imputationImposee) {
     var minutesParJour = conditions.minutes_par_jour_conge;
     var restant = nbJours;
 
@@ -435,18 +396,8 @@
          ils ne descendent jamais sous zéro, par aucun chemin. Le disponible
          peut être négatif (compteur incohérent, reprise manuelle erronée) :
          dans ce cas toute consommation de congés payés est refusée. */
-      /* LOT 31 §6 — LE DÉPASSEMENT BORNÉ, ET RIEN AU-DELÀ.
-
-         Le plafond monte de `minutesAnticipationCp`, jamais d'un pas de plus.
-         Ce que ce paramètre NE change pas : les congés payés ne descendent
-         toujours pas librement sous zéro (§28.3, tranché le 25 août) — ils
-         descendent d'un montant DÉCIDÉ, et pas d'une minute au-delà. Un
-         disponible négatif (compteur incohérent, reprise erronée) ne devient
-         pas posable pour autant : l'anticipation s'ajoute à ce qu'il est,
-         elle ne le remet pas à zéro. */
       var dispoCp = (compteur && compteur.minutesCp) || 0;
-      var plafondCp = dispoCp + Math.max(0, minutesAnticipationCp || 0);
-      if (impCp * minutesParJour > plafondCp) {
+      if (impCp * minutesParJour > dispoCp) {
         throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
       }
 
@@ -1595,38 +1546,10 @@
       }
     }
 
-    /* LOT 31 §6 — LES MINUTES DE CONGÉS PAYÉS ANTICIPABLES SUR UNE PÉRIODE.
-
-       Zéro, sauf si la période COMMENCE dans le mois de référence. Le mois de
-       référence est celui de `aujourdhui`, qui entre par les paramètres : le
-       moteur ne lit aucune horloge, et sans `aujourdhui` il se comporte
-       exactement comme avant ce lot.
-
-       Le montant est l'ACQUISITION MENSUELLE de ce contrat — 2,5 jours au
-       nominal, moins si un prorata s'applique. Ce n'est pas le disponible :
-       c'est ce qu'on autorise EN PLUS de lui. Et ce n'est pas la borne de
-       l'écran non plus : le stepper offre deux jours entiers parce qu'il ne
-       pose pas de demi-jour, mais cette limite-là appartient au geste, pas au
-       calcul (voir le commentaire de `imputerConges`). */
-    function anticipationCpPour(dateDebut) {
-      if (!aujourdhui || !dateDebut) return 0;
-      if (dateDebut.slice(0, 7) !== String(aujourdhui).slice(0, 7)) return 0;
-      return minutesAnticipationCp(conditions);
-    }
-
     /* RG-05 / RG-07 : imputation sur les compteurs disponibles.
        Sans aucune imputation imposée, on garde EXACTEMENT le chemin d'avant
        le lot 9 : un seul appel, sur le total du mois. C'est ce qui garantit
-       la non-régression des 10 cas de référence.
-
-       LOT 31 §6 — L'ANTICIPATION N'ENTRE PAS SUR CE CHEMIN, ET C'EST VOULU.
-       Sans ventilation choisie, `imputerConges` ne refuse rien : il PREND ce
-       que la réserve couvre et met le reste en sans solde. Lui donner une
-       réserve plus grande déplacerait des jours du sans solde vers les congés
-       payés — c'est-à-dire annulerait une retenue sur le salaire que personne
-       n'a demandé d'annuler. Le §6 décrit un REFUS qui devient un plafond ;
-       le refus n'existe que sur le chemin de la ventilation imposée, et c'est
-       là, et là seulement, que le plafond monte. Signalé en restitution. */
+       la non-régression des 10 cas de référence. */
     var imputation;
     if (!auMoinsUneImposee) {
       for (var s = 0; s < plan.length; s++) joursCongesDecomptes += plan[s].nbJours;
@@ -1702,38 +1625,12 @@
            mois. Un mois clôturable sur une ventilation impossible à honorer
            est pire qu'un refus franc. Ne vaut plus que pour les congés
            payés : la récupération ne refuse plus. */
-        /* LOT 31 §6 — L'ANTICIPATION DE CETTE PÉRIODE.
-
-           Elle n'est offerte que si la période COMMENCE dans le mois de
-           référence — celui de `aujourdhui`, passé en entrée. Le moteur ne
-           lit aucune horloge : sans `aujourdhui`, l'anticipation vaut zéro et
-           le comportement est exactement celui d'avant ce lot.
-
-           LE MONTANT : L'ACQUISITION DU MOIS, ni plus ni moins.
-
-           J'avais d'abord serré cette borne à deux jours, croyant que le §6 se
-           contredisait — « au plus l'acquisition du mois » d'un côté, « deux
-           jours entiers, pas 2,5 » de l'autre. Adrien a tranché le
-           1er septembre : les deux phrases ne parlaient pas de la même chose.
-
-             · LE MOTEUR borne à l'acquisition du mois. C'est la règle de
-               fond : on n'anticipe pas plus que ce qu'on est en train de
-               gagner.
-             · L'ÉCRAN offre deux jours ENTIERS, parce qu'un stepper en jours
-               ne pose pas de demi-jour. C'est une limite du geste, pas de la
-               règle.
-
-           Serrer le moteur à la limite du geste aurait figé dans le calcul une
-           contrainte d'interface — et le jour où un autre chemin consommerait
-           un demi-jour de congés payés, il aurait été refusé sans raison. */
-        var anticipationCp = anticipationCpPour(plan[v].date_debut);
         var tot = plan[v].imposeeTotale;
-        if (tot && tot.joursSurCp * mpj > dispoCp + anticipationCp) {
+        if (tot && tot.joursSurCp * mpj > dispoCp) {
           throw erreurCode('IMPUTATION_DEPASSE_RESERVES');
         }
         var r = imputerConges(plan[v].nbJours,
-          { minutesSup: dispoSupDate, minutesCp: dispoCp }, conditions, plan[v].imposee,
-          anticipationCp);
+          { minutesSup: dispoSupDate, minutesCp: dispoCp }, conditions, plan[v].imposee);
         crediterConsommation(recuperationConsommeeParPeriode,
           plan[v].date_debut, r.minutesSupConsommees,
           /* Ce que CETTE période a pris au-delà de la réserve à SA date. Zéro
@@ -2399,9 +2296,6 @@
     /* §5.2 — les samedis d'une période qui sont un CHOIX, et non une règle. */
     samedisEligibles: samedisEligibles,
     imputerConges: imputerConges,
-    /* LOT 31 §6 — le plafond d'anticipation, lu par l'écran de pose plutôt
-       que recalculé par lui (correction de relecture, contrôle A.4-2). */
-    minutesAnticipationCp: minutesAnticipationCp,
     minutesSupDuJour: minutesSupDuJour,
     /* LA RÉCUPÉRATION SE GAGNE JOUR APRÈS JOUR — la formule du §1, lue par
        les écrans comme par le moteur. */

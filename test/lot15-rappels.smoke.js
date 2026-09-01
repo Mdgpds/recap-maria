@@ -50,6 +50,18 @@ function assert(cond, msg) {
 }
 function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 30); }); }
 function txt(el) { return el ? el.textContent : ''; }
+/* LOT 31 — deux aides de lecture, du même modèle que les autres tests de
+   fumée : elles disent CE QUI MANQUE quand elles échouent, pas seulement
+   qu'elles ont échoué. */
+function contient(el, morceau, msg) {
+  var ok = txt(el).replace(/[\u00a0\u202f]/g, ' ').indexOf(morceau) !== -1;
+  assert(ok, ok ? msg : msg + ' — « ' + morceau + ' » introuvable dans : ' +
+    txt(el).slice(0, 300));
+}
+function absent(el, morceau, msg) {
+  var ok = txt(el).replace(/[\u00a0\u202f]/g, ' ').indexOf(morceau) === -1;
+  assert(ok, ok ? msg : msg + ' — « ' + morceau + ' » ne devrait pas être là');
+}
 function parTexte(racineEl, selecteur, morceau) {
   return Array.prototype.filter.call(racineEl.querySelectorAll(selecteur), function (e) {
     return e.textContent.indexOf(morceau) !== -1;
@@ -551,7 +563,61 @@ var moisPrecedent = corpsMoisPrecedent
   assert(!!koCle && txt(koCle).indexOf('Réessayez') === -1,
     'B8 : et on n’invite plus à réessayer une action qui ne peut pas aboutir');
   assert(boxSansCle.checked === false, 'B8 : la case reste décochée');
+
+  /* ==================================================================== */
+  /* LOT 31 §7 — L'ÉCRAN DIT LA VÉRITÉ TANT QUE LA CLÉ EST VIDE           */
+  /* ==================================================================== */
+  console.log('\n--- lot 31 §7 : ne rien promettre qu’on ne tient pas ---');
+
+  contient(corps, 'Les rappels ne sont pas encore activés',
+    '§7.1 : l’encart est en tête de l’écran, sans clé');
+  contient(corps, 'elles seront utilisées dès que les notifications seront en service',
+    '§7.1 : et il dit que la préférence servira le jour venu');
+  assert(!!caseActif() && !caseActif().disabled,
+    '§7.1 : la case et les réglages RESTENT utilisables — la préférence ' +
+    's’enregistre dès maintenant');
+
+  /* Le sous-titre du Menu ne doit plus annoncer un rappel qui ne part pas. */
+  scene.preference = { actif: true, jour_du_mois: 25, heure: '19:00',
+    chaque_jour_ensuite: true };
+  await ouvrir('menu');
+  await pause(350);
+  var ligneMenu = parTexte(corps, '.gr', 'Me rappeler de clôturer mes mois');
+  assert(!!ligneMenu, '§7.2 : la ligne du Menu est là');
+  contient(ligneMenu, 'Réglages enregistrés — pas encore activés',
+    '§7.2 : et son sous-titre dit l’état réel');
+  absent(ligneMenu, 'puis chaque jour tant qu’un mois n’est pas clôturé',
+    '§7.2 : il n’annonce plus un rappel qui ne partira pas');
+
+  /* Avec la clé, la phrase d’avant revient : ce lot ne casse rien pour le
+     jour où le déploiement sera fait. */
   dom.window.RECAP_MARIA_CONFIG.VAPID_PUBLIC_KEY = vraieCle;
+  await ouvrir('menu');
+  await pause(350);
+  contient(parTexte(corps, '.gr', 'Me rappeler de clôturer mes mois'),
+    'puis chaque jour tant qu’un mois n’est pas clôturé',
+    '§7.2 : la clé posée, le sous-titre redit le réglage — rien n’est perdu');
+  await ouvrir('rappels');
+  absent(corps, 'Les rappels ne sont pas encore activés',
+    '§7.1 : et l’encart disparaît de lui-même');
+
+  /* ==================================================================== */
+  /* LOT 31 §8 — « REPRENDRE MES COMPTES » N'EST PLUS PROPOSÉ             */
+  /* ==================================================================== */
+  console.log('\n--- lot 31 §8 : l’entrée disparaît, l’écran reste ---');
+
+  await ouvrir('menu');
+  await pause(350);
+  absent(corps, 'Reprendre mes comptes',
+    '§8 : l’entrée a disparu du Menu (compteur_initial : 0 ligne en base)');
+  absent(corps, 'Vos compteurs papier, une fois',
+    '§8 : son sous-titre aussi');
+
+  await ouvrir('reprise');
+  await pause(400);
+  assert(txt(corps).length > 0 && txt(corps).indexOf('introuvable') === -1,
+    '§8 : mais l’écran reste ATTEIGNABLE par sa route — c’est un filet, pas ' +
+    'une fonctionnalité retirée');
 
   /* Panne de LECTURE des réglages : l'écran s'ouvre quand même, sur les
      valeurs par défaut, plutôt que de rester vide. */

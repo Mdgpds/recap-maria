@@ -136,6 +136,32 @@
     }).sort();
   }
 
+  /* LOT 31 §5 — LE RYTHME DE TRAVAIL DE CE CONTRAT, POUR CE MOIS.
+
+     Une journée « ouvrable » est une journée du planning, dans les bornes du
+     contrat, hors férié. C'est elle qui décide de ce qui coupe une plage : un
+     week-end et un férié ne coupent pas parce qu'ils ne sont pas ouvrables ;
+     une journée de travail absente de la liste coupe, parce qu'elle l'est. */
+  function estJourOuvrable(d) {
+    var c = vue.contrat;
+    if (c.date_debut && d < c.date_debut) return false;
+    if (c.date_fin && d > c.date_fin) return false;
+    var planning = planningDuMois();
+    if (!planning || planning.indexOf(Engine.jourSemaine(d)) === -1) return false;
+    return !Feries.estJourFerie(d);
+  }
+
+  /* La période d'imputation qui couvre cette journée, ou `''`. Sert de
+     troisième composante à la clé de plage : « même imputation ». */
+  function imputationDuJour(d) {
+    var appliquees = (vue.entree.resultat.imputationsAppliquees) || [];
+    for (var i = 0; i < appliquees.length; i++) {
+      var a = appliquees[i];
+      if (d >= a.date_debut && d <= a.date_fin) return a.date_debut + '|' + a.date_fin;
+    }
+    return '';
+  }
+
   /* LOT 17 §17.3 — LES CONDITIONS DU MOIS. Un document est la pièce qui doit
      éteindre un désaccord : il doit porter les conditions de SON époque, pas
      celles d'aujourd'hui. La chaîne les a résolues et les transporte sur le
@@ -254,7 +280,33 @@
 
     var lignesConge = [];
     if (conges && conges.length) {
-      conges.forEach(function (d) { lignesConge.push([Kit.jourLong(d), '1 jour']); });
+      /* LOT 31 §5 — UNE LIGNE PAR PLAGE, PAS UNE PAR JOURNÉE.
+
+         Trois semaines de congé donnaient quinze lignes identiques sur la
+         pièce que la famille reçoit. Elles en donnent une : « Du 15 au
+         18 septembre — 4 jours ».
+
+         La clé de regroupement porte L'IMPUTATION, comme la règle l'exige :
+         deux journées de congé qui relèvent de deux périodes d'imputation
+         différentes ne se rejoignent pas, même collées et de même nature.
+         C'est la seule des trois composantes qui ne se lit pas sur la journée
+         elle-même — le moteur la donne, période par période, dans
+         `imputationsAppliquees`.
+
+         La nature est uniforme par construction (`joursConge` ne rend que des
+         `conge_maria`), et le décompte l'est aussi : ces journées valent
+         toutes un jour. Une demi-journée n'est PAS une journée de congé — elle
+         vit sur une journée de présence, et elle apparaît plus bas, dans le
+         détail des heures. C'est ce qui fait qu'une demi-journée au milieu
+         d'une semaine de congés entiers coupe la plage sans qu'aucune règle
+         particulière n'ait à le dire : la journée du milieu n'est pas dans
+         cette liste, et elle est ouvrable. */
+      Kit.plagesDeJours(conges, {
+        ouvrable: estJourOuvrable,
+        cle: imputationDuJour
+      }).forEach(function (plage) {
+        lignesConge.push([Kit.libellePlageJours(plage), Kit.jours(plage.jours.length)]);
+      });
     }
     if (r.joursCongesDecomptes > 0) {
       lignesConge.push(['Décompte en jours ouvrables', r.joursCongesDecomptes + ' j']);
@@ -277,11 +329,32 @@
     out.push({ titre: 'Congés de l’assistante maternelle', lignes: lignesConge });
 
     /* Les journées qui s'écartent de la normale, datées en clair. */
+    /* LOT 31 §5 — ET ICI AUSSI, ET C'EST DÉLIBÉRÉ.
+
+       Le §5 nomme la section « Congés de l'assistante maternelle ». Mais
+       « Journées particulières » est sur LE MÊME DOCUMENT, deux blocs plus
+       bas, et elle porte exactement le défaut que le §5 décrit : une ligne par
+       journée, quinze lignes identiques pour trois semaines de congé. Groupée
+       en haut et déroulée en bas, la pièce remise à la famille se
+       contredirait elle-même — « Le 6 et le 7 juillet », puis « Lundi 6
+       juillet », « Mardi 7 juillet ».
+
+       La clé est le LIBELLÉ de la journée (`quoi`), qui est sa nature : deux
+       journées de natures différentes ne se rejoignent jamais, et un férié ne
+       se fond pas dans un congé. Extension au périmètre du §5, signalée à
+       Adrien en restitution — elle ne touche aucun montant. */
     var part = journeesParticulieres(identite().prenom);
     if (part.length) {
+      var quoiParJour = {};
+      part.forEach(function (j) { quoiParJour[j.date] = j.quoi; });
       out.push({
         titre: 'Journées particulières',
-        lignes: part.map(function (j) { return [Kit.jourLong(j.date), j.quoi]; })
+        lignes: Kit.plagesDeJours(part.map(function (j) { return j.date; }), {
+          ouvrable: estJourOuvrable,
+          cle: function (d) { return quoiParJour[d]; }
+        }).map(function (plage) {
+          return [Kit.libellePlageJours(plage), quoiParJour[plage.debut]];
+        })
       });
     }
 
@@ -376,9 +449,49 @@
   var LIBELLE_DESTINATION_ECART = Kit.LIBELLE_DESTINATION_ECART;
   var LIBELLE_EVENEMENT_ECART = Kit.LIBELLE_EVENEMENT_ECART;
 
+  /* LOT 31 §3 — LA MOITIÉ DE JOURNÉE, SUR LA PIÈCE QUE LA FAMILLE LIT.
+
+     « 4 h 30 que je n'ai pas gardée du mardi 8 septembre » est vrai et
+     illisible : la famille ne sait pas si l'enfant était là le matin ou
+     l'après-midi, et c'est précisément ce qu'elle a besoin de savoir. La
+     phrase devient « Demi-journée du matin — mardi 8 septembre ».
+
+     LA DURÉE RESTE, ENTRE PARENTHÈSES, ET C'EST DÉLIBÉRÉ. Cette ligne est un
+     « dont » sous le total des heures supplémentaires du mois : elle explique
+     un total. La retirer rendrait ce total incontestable et inexplicable en
+     même temps — le défaut que ce document existe pour supprimer. La spec §3
+     demande de ne plus écrire « 4 h 30 le mardi 8 septembre » ; elle ne
+     demande pas de faire disparaître le chiffre qui explique la déduction.
+     Signalé à Adrien en restitution.
+
+     La moitié se lit sur la journée, JAMAIS sur le moteur : `demi_journee`
+     est une donnée d'affichage (migration 020), et le moteur ne la lit pas.
+     Une pose antérieure à la migration n'en a pas — la phrase d'avant est
+     alors rendue telle quelle, sans rien inventer. */
+  function moitieDuJour(jour) {
+    var l = (vue.journees || {})[jour];
+    if (!l || l.ecart_evenement !== 'conge_horaire') return null;
+    if (l.demi_journee === 'matin') return 'du matin';
+    if (l.demi_journee === 'apres_midi') return 'de l’après-midi';
+    return null;
+  }
+
   function libelleEcartHoraire(e) {
     var quand = ' du ' + Kit.jourLong(e.jour).toLowerCase();
     var evenement = LIBELLE_EVENEMENT_ECART[e.evenement] || null;
+    var moitie = e.minutes < 0 && e.evenement === 'conge_horaire'
+      ? moitieDuJour(e.jour) : null;
+    if (moitie) {
+      var dest = LIBELLE_DESTINATION_ECART[e.imputeSur] || '';
+      if (e.imputeSur === 'conges_payes' &&
+          e.minutesSurRecuperation > 0 && e.minutesSurCp > 0) {
+        dest = Kit.heures(e.minutesSurCp) + ' déduites de mes congés payés, ' +
+          Kit.heures(e.minutesSurRecuperation) + ' de ma récupération';
+      }
+      return 'Demi-journée ' + moitie + ' — ' +
+        Kit.jourLong(e.jour).toLowerCase() + ' (' + Kit.heures(-e.minutes) + ')' +
+        (dest ? ', ' + dest : '');
+    }
     if (e.minutes > 0) {
       return 'Dont ' + Kit.heures(e.minutes) + ' de garde en plus' + quand +
         (evenement ? ' — ' + evenement : '');

@@ -183,9 +183,22 @@
     var ligneRappels = entree('Me rappeler de clôturer mes mois', null,
       function () { global.App.aller('rappels', {}); });
     corps.appendChild(ligneRappels);
-    corps.appendChild(entree('Reprendre mes comptes',
-      'Vos compteurs papier, une fois',
-      function () { global.App.aller('reprise', {}); }));
+    /* LOT 31 §8 — « REPRENDRE MES COMPTES » DISPARAÎT DU MENU.
+
+       Constaté en base : `compteur_initial` contient 0 ligne. Cette page n'a
+       jamais servi — les compteurs sont partis de zéro à l'ouverture des
+       contrats. Une entrée de Menu qui ne sert jamais coûte à chaque fois
+       qu'on cherche autre chose.
+
+       CE QUI RESTE, ET POURQUOI. L'écran (`route reprise`, plus bas dans ce
+       fichier) reste dans le code et reste atteignable par son URL : c'est un
+       filet, pas une fonctionnalité. La table `compteur_initial` n'est pas
+       supprimée, et le moteur continue de la lire — une migration qui
+       l'effacerait ferait perdre le seul moyen de reprendre un historique
+       papier le jour où un nouveau contrat arriverait avec des compteurs
+       existants. Les mentions « Mois antérieur à la reprise de vos
+       compteurs » restent : elles ne s'affichent que si une reprise existe,
+       donc jamais aujourd'hui. */
     corps.appendChild(entree('Exporter tout mon historique',
       'Tous vos mois, tous vos contrats. À garder de côté.',
       function () { feuilleExport(); }));
@@ -238,6 +251,17 @@
   /* « Le 25, puis chaque jour tant qu'un mois n'est pas clôturé ». Le jour
      vient du réglage, jamais écrit en dur : Maria peut l'avoir mis au 28. */
   function libelleReglageRappel(pref) {
+    /* LOT 31 §7 — LE SOUS-TITRE NE MENT PLUS.
+
+       Il annonçait « Le 25, puis chaque jour tant qu'un mois n'est pas
+       clôturé » comme si le rappel partait. Tant que le système est inactif —
+       clé VAPID vide — il ne part pas, et cette phrase est un engagement que
+       personne ne tient. Le réglage, lui, EST enregistré : le sous-titre dit
+       exactement ça, et rien de plus. */
+    if (!clePubliqueVapid()) {
+      if (!pref || !pref.actif) return 'Vous ne recevez aucun rappel';
+      return 'Réglages enregistrés — pas encore activés';
+    }
     if (!pref || !pref.actif) return 'Vous ne recevez aucun rappel';
     var jour = pref.jour_du_mois || 25;
     var base = 'Le ' + (jour === 1 ? '1er' : jour);
@@ -1798,6 +1822,17 @@
     corps.appendChild(msg);
   }
 
+  /* LOT 31 §7 — LA CLÉ PUBLIQUE VAPID, LUE EN UN SEUL ENDROIT.
+
+     Deux écrans en dépendent maintenant — l'écran des rappels et le sous-titre
+     du Menu — et l'abonnement la lisait déjà. Trois lectures d'une même
+     condition finissent par diverger, et la divergence ici s'appelle « l'écran
+     dit que c'est actif, l'abonnement échoue en silence ». */
+  function clePubliqueVapid() {
+    var cfg = global.RECAP_MARIA_CONFIG || {};
+    return cfg.VAPID_PUBLIC_KEY || '';
+  }
+
   function afficherRappels(ctx) {
     global.App.barreRetour(ctx.barre, 'Me rappeler de clôturer');
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture de vos réglages…'));
@@ -1819,6 +1854,29 @@
     };
 
     var p = Kit.pane('Me rappeler de clôturer mes mois');
+
+    /* LOT 31 §7 — DIRE LA VÉRITÉ À L'ÉCRAN.
+
+       Le système de rappels n'est pas en service : la clé publique VAPID de
+       `config.js` est vide, la fonction Supabase n'est pas déployée, `pg_cron`
+       n'est pas installé, et aucun appareil n'est abonné. Le CODE est écrit et
+       correct — ce qui manque est entièrement du déploiement, et rien de tout
+       cela ne peut être fait par un agent.
+
+       Tant que la clé est vide, cet écran promettait un rappel qui ne partira
+       pas. Un écran qui promet ce qu'il ne tient pas est pire qu'un écran qui
+       manque : Maria compte dessus pour ne pas oublier une clôture, et
+       découvre l'absence de rappel au moment où il aurait dû arriver.
+
+       Les réglages RESTENT UTILISABLES et ils s'enregistrent : le jour où la
+       clé sera posée, la préférence sera déjà là — c'est la promesse que
+       l'encart fait, et c'est une promesse que le code tient déjà. */
+    if (!clePubliqueVapid()) {
+      p.appendChild(Kit.warnbox('Les rappels ne sont pas encore activés',
+        ' sur cette application. Vous pouvez régler vos préférences dès ' +
+        'maintenant : elles seront utilisées dès que les notifications seront ' +
+        'en service.'));
+    }
 
     var ligneActif = Kit.ce('label', 'coche-ligne');
     var boxActif = document.createElement('input');
