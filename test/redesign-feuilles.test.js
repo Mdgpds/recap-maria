@@ -120,19 +120,67 @@ console.log('\n--- §5 : la feuille reste ouverte si l’écriture échoue ---')
 /* `fermerFeuille` ne doit jamais être appelée dans une branche d'ERREUR :
    une feuille qui se referme sur un échec emporte ce que Maria venait de
    saisir, et elle doit tout retaper sans savoir ce qui a échoué. */
-function fermeSurEchec(src, nom) {
+/* Chaque `.catch(` est suivi jusqu'a SA parenthese fermante par un comptage
+   de parentheses et d'accolades — pas par une expression reguliere bornee a
+   400 caracteres et dix espaces d'indentation, qui laissait passer 3 blocs
+   sur 31 et que la relecture du 1er septembre a fait mentir en injectant une
+   fermeture indentee de quatorze espaces (reserve R3). Les chaines et les
+   commentaires de ligne sont sautes pour qu'une accolade dans un message ne
+   fausse pas le compte. Le nombre de blocs inspectes est rendu, et controle :
+   un filet qui n'attrape rien ne prouve rien. */
+function blocsCatch(src) {
   var s = sansCommentaires(src);
-  var re = /\.catch\(function\s*\([^)]*\)\s*\{([\s\S]{0,400}?)\n\s{0,10}\}\)/g;
-  var m, coupables = 0;
-  while ((m = re.exec(s))) {
-    if (/fermerFeuille\(\)/.test(m[1])) coupables++;
+  var out = [], i = 0;
+  while ((i = s.indexOf('.catch(', i)) !== -1) {
+    var debut = i + '.catch'.length;      // sur la parenthese ouvrante
+    var prof = 0, j = debut, dansChaine = null;
+    for (; j < s.length; j++) {
+      var c = s.charAt(j);
+      if (dansChaine) {
+        if (c === '\\') { j++; continue; }
+        if (c === dansChaine) dansChaine = null;
+        continue;
+      }
+      if (c === '\'' || c === '"' || c === '`') { dansChaine = c; continue; }
+      if (c === '/' && s.charAt(j + 1) === '/') { j = s.indexOf('\n', j); if (j === -1) j = s.length; continue; }
+      if (c === '(' || c === '{') prof++;
+      else if (c === ')' || c === '}') { prof--; if (prof === 0) break; }
+    }
+    out.push(s.slice(debut, j + 1));
+    i = j;
   }
+  return out;
+}
+function fermeSurEchec(src, nom) {
+  var blocs = blocsCatch(src);
+  var coupables = blocs.filter(function (b) { return /fermerFeuille\s*\(/.test(b); }).length;
+  assert(blocs.length > 0,
+    '§5 : ' + nom + ' — le filet trouve bien des branches d’échec à inspecter (' + blocs.length + ')');
   assert(coupables === 0,
     '§5 : ' + nom + ' ne referme jamais la feuille dans une branche d’échec ' +
-    '(' + coupables + ' trouvée(s))');
+    '(' + coupables + ' sur ' + blocs.length + ' inspectée(s))');
+  return blocs.length;
 }
-fermeSurEchec(ENFANT, 'ui-enfant.js');
-fermeSurEchec(CONGES, 'ui-conges.js');
+var ECRANS_A_FEUILLES = ['ui-enfant.js', 'ui-conges.js', 'ui-menu.js', 'ui-accueil.js', 'ui-historique.js'];
+var totalCatch = 0;
+ECRANS_A_FEUILLES.forEach(function (f) {
+  totalCatch += fermeSurEchec(fs.readFileSync(path.join(racine, 'js', f), 'utf8'), f);
+});
+
+/* La preuve que le filet mord, y compris la ou l'ancien passait a cote : une
+   fermeture injectee dans un `.catch` a QUATORZE espaces d'indentation, avec
+   un corps long, doit etre denoncee. */
+var piege = ENFANT.replace(/\.catch\(function\s*\(([^)]*)\)\s*\{/, function (m, arg) {
+  return '.catch(function (' + arg + ') {\n' +
+    '              var explication = "' + new Array(60).join('x') + '";\n' +
+    '              console.log(explication, explication, explication, explication, explication, explication, explication);\n' +
+    '              fermerFeuille();\n' +
+    '              ';
+});
+assert(piege !== ENFANT, '§5 : la mutation a bien injecté une fermeture dans une branche d’échec');
+var denonces = blocsCatch(piege).filter(function (b) { return /fermerFeuille\s*\(/.test(b); }).length;
+assert(denonces === 1,
+  '§5 : une fermeture indentée de quatorze espaces dans un corps long est DÉNONCÉE (' + denonces + ')');
 
 /* ------------------------------------------------------------------------ */
 

@@ -186,24 +186,37 @@
       });
   }
 
+  /* LE TOTAL D'UN MOIS, ECRIT UNE FOIS. Trois ecrans l'affichent — la liste
+     des mois passes, l'ecran de cloture, l'ecran d'un mois passe — et trois
+     copies de la meme boucle vivaient ici (reserve R4 de la relecture du
+     1er septembre). Deux copies du meme calcul finissent par diverger : le
+     lot 31 l'a paye sur un titre de conge. Les valeurs additionnees viennent
+     du moteur ; seul l'agregat entre contrats est fait ici, et il n'est fait
+     qu'a un endroit. Une entree absente (contrat sans mois calcule) compte
+     zero, et c'est la seule garde. */
+  function totalDuMois(entrees) {
+    var total = 0;
+    entrees.forEach(function (e) {
+      if (e && e.resultat) total += e.resultat.totalAVerserCentimes || 0;
+    });
+    return total;
+  }
+
   function carteMoisPasse(p) {
     var auj = global.App.aujourdhui();
-    var total = 0;
-    var tousClos = true;
-    p.entrees.forEach(function (x) {
-      total += x.entree.resultat.totalAVerserCentimes || 0;
-      if (Kit.etatDuMois(x.annee || p.annee, p.mois, x.entree.recap, auj) !== 'cloture') {
-        tousClos = false;
-      }
-    });
-    var b = Kit.bouton('card tap' + (tousClos ? '' : ' warn'), function () {
+    var total = totalDuMois(p.entrees.map(function (x) { return x.entree; }));
+    var aCloturer = p.entrees.filter(function (x) {
+      return Kit.etatDuMois(x.annee || p.annee, p.mois, x.entree.recap, auj) !== 'cloture';
+    }).length;
+    var b = Kit.bouton('card tap' + (aCloturer === 0 ? '' : ' warn'), function () {
       global.App.aller('moisPasse', { annee: p.annee, mois: p.mois });
     });
     var g = Kit.ce('span', 'gro');
     g.appendChild(Kit.ce('span', 'nm', Kit.moisCapitale(p.annee, p.mois)));
     g.appendChild(Kit.ce('span', 'dt',
       p.entrees.length + (p.entrees.length > 1 ? ' récapitulatifs' : ' récapitulatif') +
-      ' · ' + (tousClos ? 'tous clôturés' : 'un mois reste à clôturer')));
+      ' · ' + (aCloturer === 0 ? 'tous clôturés' :
+               aCloturer + ' à clôturer')));
     b.appendChild(g);
     b.appendChild(Kit.ce('span', 'mt', Kit.eur(total)));
     b.appendChild(Kit.ce('span', 'chev', '›'));
@@ -241,14 +254,14 @@
         'Clôturer fige les chiffres du mois et prépare les documents. ' +
         'Un mois clôturé peut toujours être rouvert.'));
 
-      var total = 0;
       var manquants = [];
+      var total = totalDuMois(series.map(function (s) {
+        return s.chaine && global.App.moisDe(s.chaine, m.annee, m.mois);
+      }));
 
       series.forEach(function (s) {
-        var e = s.chaine && global.App.moisDe(s.chaine, m.annee, m.mois);
         var pret = estPret(s, m);
         if (!pret) manquants.push({ contrat: s.contrat, quoi: cePourquoiIlManque(s, m) });
-        if (e) total += e.resultat.totalAVerserCentimes || 0;
 
         var b = Kit.bouton('card tap' + (pret ? '' : ' warn'), function () {
           if (pret) {
@@ -373,7 +386,7 @@
 
       ctx.corps.appendChild(Kit.enc('i',
         'Mois clôturé. Chaque récapitulatif est figé : ses chiffres ne bougent ' +
-        'plus. Vous pouvez rouvrir un enfant pour le corriger.'));
+        'plus. Touchez un enfant pour le rouvrir et le corriger.'));
 
       if (!avec.length) {
         ctx.corps.appendChild(Kit.ce('p', 'vide',
@@ -381,9 +394,8 @@
         return;
       }
 
-      var total = 0;
+      var total = totalDuMois(avec.map(function (x) { return x.entree; }));
       avec.forEach(function (x) {
-        total += x.entree.resultat.totalAVerserCentimes || 0;
         ctx.corps.appendChild(carteEnfantDuMois(x, annee, mois));
       });
 
@@ -407,8 +419,8 @@
     var g = Kit.ce('span', 'gro');
     g.appendChild(Kit.ce('span', 'nm', x.contrat.prenom_enfant));
     g.appendChild(Kit.ce('span', 'dt',
-      Kit.pastilleEtat(Kit.etatDuMois(annee, mois, x.entree.recap,
-        global.App.aujourdhui())).textContent));
+      Kit.LIBELLE_ETAT[Kit.etatDuMois(annee, mois, x.entree.recap,
+        global.App.aujourdhui())] || ''));
     haut.appendChild(g);
     haut.appendChild(Kit.ce('span', 'mt', Kit.eur(r.totalAVerserCentimes)));
     carte.appendChild(haut);

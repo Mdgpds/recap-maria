@@ -563,6 +563,39 @@ async function ouvrirEnfant(a, m) {
   panne.recaps = false;
 
   /* ==================================================================== */
+  /* RELECTURE DU 1er SEPTEMBRE — R4 et R5, sur la liste des mois passes   */
+  /* ==================================================================== */
+  console.log('\n--- R4/R5 : la liste des mois et l’écran du mois disent la même chose ---');
+  window.App.invalider();
+  window.App.aller('moisPasse', { annee: 2026, mois: 4 }, true);
+  await pause(600);
+  /* RELECTURE DU 1er SEPTEMBRE, R4 et R5. Le total d'un mois est affiche a
+     deux endroits — la liste des mois passes et l'ecran du mois — et il etait
+     additionne deux fois. Il ne l'est plus qu'une fois : on verifie que les
+     deux ecrans montrent LE MEME NOMBRE. Et la ligne sous le mois dit combien
+     de recapitulatifs restent a cloturer, jamais « un mois reste a cloturer »
+     — qui etait faux des qu'il en restait deux, et parlait d'un mois la ou il
+     s'agit d'un recapitulatif. */
+  var ligneTotal = parTexte(corps, '.ln', 'Total du mois');
+  var totalEcran = ligneTotal ? ligneTotal.textContent.replace('Total du mois', '').trim() : '';
+  assert(/\d/.test(totalEcran), 'R4 : l’écran du mois affiche un total chiffré (' + totalEcran + ')');
+  window.App.aller('docs', {}, true);
+  await pause(600);
+  var carteAvril = Array.prototype.filter.call(corps.querySelectorAll('.card'), function (c) {
+    return /Avril 2026/.test(c.textContent);
+  })[0];
+  assert(!!carteAvril, 'R4 : la liste des mois passés porte une carte pour avril 2026');
+  var totalListe = carteAvril ? (carteAvril.querySelector('.mt') || {}).textContent || '' : '';
+  egal(totalListe.trim(), totalEcran,
+    'R4 : la liste et l’écran du mois affichent le MÊME total (' + totalListe.trim() + ')');
+  assert(corps.textContent.indexOf('un mois reste à clôturer') === -1,
+    'R5 : la liste ne dit plus « un mois reste à clôturer »');
+  assert(/\d+ à clôturer|tous clôturés/.test(carteAvril ? carteAvril.textContent : ''),
+    'R5 : la carte compte ce qui reste à clôturer, ou dit « tous clôturés » (' +
+    (carteAvril ? carteAvril.querySelector('.dt').textContent : '') + ')');
+
+
+  /* ==================================================================== */
   /* A2 — LA FIN DE CONTRAT                                                */
   /* ==================================================================== */
   console.log('\n--- A2 : la fin de contrat ---');
