@@ -226,6 +226,15 @@
                 (transmis[0].recap.transmis_le
                   ? ' le ' + Kit.dateLongue(transmis[0].recap.transmis_le) : ''),
             ' Si les chiffres changent, il faudra renvoyer la version corrigée.'));
+        } else if (n === 1) {
+          /* LOT 25 (A.2) — LE CAS NÉGATIF EST DIT, LUI AUSSI, et il vient
+             ici depuis le redesign 2A : le bandeau d'état ouvre désormais
+             cette feuille DIRECTEMENT (§4.3), sans passer par le document où
+             la mention vivait. Rouvrir un mois déjà remis à la famille n'est
+             pas le même geste que rouvrir un mois qu'elle n'a jamais vu, et
+             Maria doit le savoir au moment où elle décide. */
+          corps.appendChild(Kit.ce('p', 'msg',
+            'Ce récapitulatif n’a pas encore été transmis à la famille.'));
         }
 
         var b = Kit.bouton('btn', function () { rouvrirTout(b); });

@@ -83,6 +83,24 @@ var Messages = require('../js/messages.js');
 var Chaine = require('../js/chaine-mois.js');
 global.Feries = Feries; window.Feries = Feries;
 global.Format = Format; window.Format = Format;
+/* REDESIGN 2A §7.3 — UN MOIS CLOTURE LIT SON INSTANTANE, IL NE SE RECALCULE
+   PAS. « C'est l'endroit exact ou un redesign peut introduire un recalcul sans
+   qu'on le voie : sois vigilant. »
+
+   ON N'ESPIONNE PAS LE NOMBRE D'APPELS, ON ESPIONNE LEURS MOIS. Ouvrir un
+   ecran fait calculer TOUTE la chaine du contrat — c'est ainsi qu'un compteur
+   de sortie devient le compteur d'entree du mois suivant —, donc compter les
+   appels ne prouverait rien. Ce qui doit etre vrai, c'est qu'AUCUN appel ne
+   porte sur un mois FIGE : ses chiffres sont dans `recap.donnees`, et les
+   recalculer donnerait un resultat plausible et FAUX des que les conditions du
+   contrat ont change depuis — un avenant, un bareme. Le document parti a la
+   famille ne correspondrait plus a ce que l'ecran montre. */
+var moisRecalcules = [];
+var calculerMoisVrai = Engine.calculerMois;
+Engine.calculerMois = function (entrees) {
+  moisRecalcules.push(entrees.annee + '-' + entrees.mois);
+  return calculerMoisVrai.apply(this, arguments);
+};
 global.Engine = Engine; window.Engine = Engine;
 global.Messages = Messages; window.Messages = Messages;
 global.ChaineMois = Chaine; window.ChaineMois = Chaine;
@@ -339,6 +357,24 @@ async function ouvrirEnfant(a, m) {
   await ouvrirEnfant(2026, 4);
   contient(corps, 'Mois rouvert le 25 mai 2026', 'A3 : l’espace enfant dit que le mois est rouvert, et quand');
   contient(corps, 'à clôturer à nouveau', 'A3 : et qu’il attend sa reclôture');
+
+  /* REDESIGN 2A §4.3 — LE BANDEAU D'ETAT, VARIANTE « MOIS ROUVERT ».
+     Le §4.3 fixe trois variantes, et une seule est vraie a la fois. Celle-ci
+     est la variante AMBRE : il reste quelque chose a finir. Elle porte ses
+     deux gestes — reclôturer, et ajouter un motif apres coup. */
+  var bandeauR = parTexte(corps, '.warnbox', 'Mois rouvert') ||
+                 parTexte(corps, '.enc', 'Mois rouvert');
+  assert(!!bandeauR, '§4.3 : le bandeau du mois rouvert est là');
+  assert(!!boutonContenant(bandeauR, 'Reclôturer'),
+    '§4.3 : et il porte « Reclôturer <mois> »');
+  assert(!!boutonContenant(bandeauR, 'motif'),
+    '§4.3 : et « Ajouter un motif »');
+  /* Les deux AUTRES variantes ne s'affichent pas en meme temps : un ecran qui
+     dirait a la fois « clôturé » et « rouvert » ne dirait rien. */
+  absent(corps, 'Les journées ne se modifient pas',
+    '§4.3 : la variante « mois clôturé » ne s’affiche pas en même temps');
+  absent(corps, 'Touchez un jour pour déclarer ce qui sort de l’ordinaire',
+    '§4.3 : ni celle du mois ouvert');
   assert(!!celluleDu(15) && celluleDu(15).getAttribute('role') === 'button',
     'A3 : ses journées se corrigent librement, sans nouvelle réouverture');
   celluleDu(15).click();
@@ -527,6 +563,39 @@ async function ouvrirEnfant(a, m) {
   panne.recaps = false;
 
   /* ==================================================================== */
+  /* RELECTURE DU 1er SEPTEMBRE — R4 et R5, sur la liste des mois passes   */
+  /* ==================================================================== */
+  console.log('\n--- R4/R5 : la liste des mois et l’écran du mois disent la même chose ---');
+  window.App.invalider();
+  window.App.aller('moisPasse', { annee: 2026, mois: 4 }, true);
+  await pause(600);
+  /* RELECTURE DU 1er SEPTEMBRE, R4 et R5. Le total d'un mois est affiche a
+     deux endroits — la liste des mois passes et l'ecran du mois — et il etait
+     additionne deux fois. Il ne l'est plus qu'une fois : on verifie que les
+     deux ecrans montrent LE MEME NOMBRE. Et la ligne sous le mois dit combien
+     de recapitulatifs restent a cloturer, jamais « un mois reste a cloturer »
+     — qui etait faux des qu'il en restait deux, et parlait d'un mois la ou il
+     s'agit d'un recapitulatif. */
+  var ligneTotal = parTexte(corps, '.ln', 'Total du mois');
+  var totalEcran = ligneTotal ? ligneTotal.textContent.replace('Total du mois', '').trim() : '';
+  assert(/\d/.test(totalEcran), 'R4 : l’écran du mois affiche un total chiffré (' + totalEcran + ')');
+  window.App.aller('docs', {}, true);
+  await pause(600);
+  var carteAvril = Array.prototype.filter.call(corps.querySelectorAll('.card'), function (c) {
+    return /Avril 2026/.test(c.textContent);
+  })[0];
+  assert(!!carteAvril, 'R4 : la liste des mois passés porte une carte pour avril 2026');
+  var totalListe = carteAvril ? (carteAvril.querySelector('.mt') || {}).textContent || '' : '';
+  egal(totalListe.trim(), totalEcran,
+    'R4 : la liste et l’écran du mois affichent le MÊME total (' + totalListe.trim() + ')');
+  assert(corps.textContent.indexOf('un mois reste à clôturer') === -1,
+    'R5 : la liste ne dit plus « un mois reste à clôturer »');
+  assert(/\d+ à clôturer|tous clôturés/.test(carteAvril ? carteAvril.textContent : ''),
+    'R5 : la carte compte ce qui reste à clôturer, ou dit « tous clôturés » (' +
+    (carteAvril ? carteAvril.querySelector('.dt').textContent : '') + ')');
+
+
+  /* ==================================================================== */
   /* A2 — LA FIN DE CONTRAT                                                */
   /* ==================================================================== */
   console.log('\n--- A2 : la fin de contrat ---');
@@ -566,6 +635,25 @@ async function ouvrirEnfant(a, m) {
   await pause(400);
   assert(!celluleDu(10) || celluleDu(10).getAttribute('role') !== 'button',
     'A7 : sur un contrat rangé, un mois clôturé ne se rouvre pas depuis le calendrier');
+
+  /* ==================================================================== */
+  /* REDESIGN 2A §7.3 — L'ECRAN D'UN MOIS PASSE NE RECALCULE RIEN         */
+  /* ==================================================================== */
+  console.log('\n--- §7.3 : un mois passé lit son instantané ---');
+  /* Les scenes precedentes ont ROUVERT avril : on le refige, sinon on
+     mesurerait un mois ouvert et le controle ne prouverait rien. */
+  poserFige(2026, 4);
+  window.App.invalider();
+  moisRecalcules = [];
+  window.App.aller('moisPasse', { annee: 2026, mois: 4 }, true);
+  await pause(600);
+  assert(moisRecalcules.indexOf('2026-4') === -1,
+    '§7.3 : le mois FIGÉ n’est jamais recalculé — il lit son instantané ' +
+    '(mois recalculés : ' + (moisRecalcules.join(', ') || 'aucun') + ')');
+  contient(corps, 'Mois clôturé', '§7.3 : l’écran dit que le mois est clôturé');
+  contient(corps, 'ses chiffres ne bougent plus', '§7.3 : et pourquoi');
+  contient(corps, 'Jours de présence', '§7.3 : il est détaillé enfant par enfant');
+  assert(!!parTexte(corps, '.ln', 'Total du mois'), '§7.3 : et une ligne de total');
 
   console.log('');
   if (echecs) { console.error(echecs + ' échec(s).'); process.exit(1); }

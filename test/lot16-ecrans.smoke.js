@@ -397,6 +397,26 @@ var sheet = document.getElementById('sheet');
   assert(txt(corps).indexOf('ne compte pas') !== -1,
     'B2 : et la phrase dit qu’il ne compte pas');
 
+  /* ARBITRAGE D'ADRIEN DU 2 SEPTEMBRE — « VOS PÉRIODES POSÉES » EST UN
+     HISTORIQUE MOIS PAR MOIS : un repli par mois, le plus récent en premier,
+     le mois en cours ouvert, les autres fermés. Le décor a une période en
+     juin et une en août ; l'écran est ouvert sur août. */
+  var replis = corps.querySelectorAll('.mois-conges');
+  egal(replis.length, 2, 'A3 : deux mois portent un congé, deux replis');
+  var titres = Array.prototype.map.call(replis, function (r) {
+    return r.querySelector('.fh').textContent.replace(/\s+/g, ' ').trim();
+  });
+  assert(/^Août 2026/.test(titres[0]) && /^Juin 2026/.test(titres[1]),
+    'A3 : le plus récent en premier — ' + titres.join(' | '));
+  assert(replis[0].classList.contains('open') && !replis[1].classList.contains('open'),
+    'A3 : le mois en cours est ouvert, le mois passé est replié');
+  assert(txt(replis[1]).indexOf('Du 8 au 12 juin') !== -1,
+    'A3 : le repli de juin porte bien la période de juin, avec ses vraies bornes');
+  assert(txt(replis[0]).indexOf('juin') === -1,
+    'A3 : et la période de juin n’est pas listée sous août');
+  assert(txt(replis[1]).indexOf('1 congé') !== -1,
+    'A3 : chaque repli annonce son compte en valeur');
+
   /* ==================================================================== */
   /* §16.2 — AUCUNE ADRESSE E-MAIL SUR LE DOCUMENT                        */
   /* ==================================================================== */

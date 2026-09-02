@@ -333,6 +333,28 @@ function lignesDe(fold) {
     'le sous-titre écrit la PLAGE, et le groupement ne perd aucune date');
   assert(lc[0].indexOf('3 j') !== -1,
     'et le décompte de la plage est là');
+  /* ==================================================================== */
+  /* REDESIGN 2A §4.4 — TOUTE LA PERIODE D'UN CONGE EST COLOREE           */
+  /* ==================================================================== */
+  /* « du premier au dernier jour — pas seulement les bornes ». C'etait le
+     point 2 du lot 31, et le §4.4 dit de ne pas le casser en refaisant le
+     calendrier. Le decor porte trois jours de conge colles : les 22, 23 et
+     24 juin. Les TROIS cases doivent porter la classe d'etat, et pas
+     seulement la premiere et la derniere. */
+  var casesConge = corps.querySelectorAll('table.cal td.cg');
+  egal(casesConge.length, 3,
+    '§4.4 : les trois jours du congé sont colorés, pas seulement les bornes');
+  var numerosColores = Array.prototype.map.call(casesConge, function (td) {
+    return txt(td.querySelector('.n'));
+  }).join(',');
+  egal(numerosColores, '22,23,24',
+    '§4.4 : et ce sont bien les jours 22, 23 et 24 (obtenu ' + numerosColores + ')');
+  /* Une journee de garde ordinaire n'est PAS coloree : le 2A ne colore que
+     les exceptions, et c'est ce qui rend le conge lisible d'un coup d'oeil. */
+  assert(corps.querySelectorAll('table.cal td.ok').length === 0,
+    '§4.4 : et la journée de garde ordinaire reste blanche — le 2A ne colore ' +
+    'que les exceptions');
+
   assert(lc[0].indexOf('pas d’heures sup ces jours-là') !== -1,
     'RG-04 est dite là où elle est INCONDITIONNELLE (conge_maria est dans ' +
     'TYPES_SANS_MINUTES du moteur, toujours)');

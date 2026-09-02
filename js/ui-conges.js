@@ -97,8 +97,20 @@
              posés se construit désormais à partir des imputations, seule
              donnée qui porte les vraies bornes et le décompte RG-06. La
              fonction existait déjà et n'était appelée par aucun écran. */
-          global.DB.listImputationsPourMois(c.id, m.annee, m.mois)
-            .catch(function () { return null; }),
+          /* REDESIGN 2A §6.3 — « VOS PÉRIODES POSÉES », ET NON PLUS « POSÉS
+             EN <MOIS> ». Le sélecteur de mois disparaît (§6.4) ; sans élargir
+             la fenêtre, un congé posé pour septembre deviendrait invisible dès
+             qu'on est en août, et Maria n'aurait plus AUCUN moyen de le
+             retrouver ni de le retirer.
+
+             La fenêtre va donc du 1er du mois affiché à douze mois plus tard —
+             exactement l'horizon que la feuille de pose autorise. Ce qu'on
+             peut poser, on peut le voir et le retirer.
+
+             ELLE NE REMONTE PAS DANS LE PASSÉ, et c'est délibéré : un congé
+             échu se lit sur le document de son mois, où il est figé avec le
+             reste. Le remonter ici ferait une liste qui s'allonge sans fin. */
+          imputationsDeLaFenetre(c, m).catch(function () { return null; }),
           /* LOT 17 §17.2 — les conditions du contrat, datées. L'écran des
              congés lit trois réglages : le planning (quelles journées écrire),
              les minutes d'un jour de congé (la retenue de sans solde) et le
@@ -127,6 +139,10 @@
             avenants: r[3],
             samedis: r[4],
             entree: global.App.moisDe(r[0], m.annee, m.mois),
+            /* La chaîne entière : l'historique des congés à l'heure des autres
+               mois se lit dans ses résultats (`ecartsDeclares`), sans relire
+               les journées de chaque mois. */
+            chaine: r[0],
             journees: r[1],
             /* `null` — et non `[]` — quand la lecture échoue : l'écran doit
                pouvoir dire « je n'ai pas pu lire vos périodes » au lieu de
@@ -448,37 +464,61 @@
 
   /* Navigation par mois : sans elle, un congé posé d'avance était écrit en base
      puis n'apparaissait sur aucun écran et ne pouvait plus être retiré. */
+  /* REDESIGN 2A §6.4 — PLUS DE SÉLECTEUR DE MOIS EN HAUT À DROITE.
+
+     « On choisit le jour, le mois et l'année dans la feuille de pose : un
+     second sélecteur ne sert à rien et embrouille. » Il avait une autre
+     conséquence, moins visible : la liste des périodes ne montrait que le
+     mois affiché, et un congé posé pour septembre disparaissait dès qu'on
+     revenait en août. La liste montre désormais TOUT ce qui est posé (§6.3).
+
+     L'état `vue.annee` / `vue.mois` reste : il donne son mois par défaut à la
+     feuille de pose, et c'est lui qui définit l'année de référence du quota
+     de samedis. Il n'a simplement plus de commande à l'écran. */
+  /* La fenêtre de lecture des périodes posées : du DÉBUT DU CONTRAT à douze
+     mois après le mois en cours. `MOIS_POSE_A_VENIR` est l'horizon de la
+     feuille de pose ; les deux doivent rester égaux, sans quoi on pourrait
+     poser un congé qu'on ne verrait pas.
+
+     ARBITRAGE D'ADRIEN DU 2 SEPTEMBRE — la liste remonte dans le passé. Le
+     commit 6 s'y refusait (« un congé échu se lit sur le document de son
+     mois ») ; Adrien veut un historique mois par mois, le plus récent en
+     premier, chaque mois derrière un repli. Un repli fermé ne coûte rien à
+     lire, et Maria retrouve un congé de mars sans ouvrir le document de
+     mars. */
+  var MOIS_POSE_A_VENIR = 12;
+
+  /* Contrôle de CAPACITÉ, pas rattrapage d'erreur — c'est la règle du fichier
+     pour les fonctions de `DB` : un décor de test ancien n'expose pas
+     `listImputations`, et il n'a de toute façon aucune période au-delà du mois
+     affiché. Une erreur RÉELLE, elle, remonte et l'écran dit qu'il n'a pas pu
+     lire, au lieu d'afficher « aucun congé posé » — un chiffre faux et
+     crédible. */
+  function imputationsDeLaFenetre(c, m) {
+    if (typeof global.DB.listImputations !== 'function') {
+      return global.DB.listImputationsPourMois(c.id, m.annee, m.mois);
+    }
+    var f = fenetrePeriodes(m, c);
+    return global.DB.listImputations(c.id, f.debut, f.fin);
+  }
+
+  function fenetrePeriodes(m, contrat) {
+    var fin = { annee: m.annee, mois: m.mois };
+    for (var i = 0; i < MOIS_POSE_A_VENIR; i++) {
+      fin = Chaine.moisSuivant(fin.annee, fin.mois);
+    }
+    var debutContrat = contrat && contrat.date_debut ? String(contrat.date_debut).slice(0, 10) : null;
+    var debutMois = Kit.iso(m.annee, m.mois, 1);
+    return {
+      debut: debutContrat && debutContrat < debutMois ? debutContrat : debutMois,
+      fin: Kit.iso(fin.annee, fin.mois, Kit.nbJoursDansMois(fin.annee, fin.mois))
+    };
+  }
+
   function barre(barreEl, m) {
     Kit.vider(barreEl);
-    barreEl.className = 'bar';
-    barreEl.appendChild(Kit.ce('span', 'ti', 'Mes congés'));
-
-    var nav = Kit.ce('div', 'nav');
-    var prec = Kit.bouton(null, function () { changerMois(-1); });
-    prec.textContent = '‹';
-    prec.setAttribute('aria-label', 'Mois précédent');
-    var etiquette = Kit.ce('span', 'r', Kit.libelleMoisAnnee(m.annee, m.mois));
-    var suiv = Kit.bouton(null, function () { changerMois(1); });
-    suiv.textContent = '›';
-    suiv.setAttribute('aria-label', 'Mois suivant');
-
-    var maintenant = global.App.moisCourant();
-    var limite = maintenant;
-    for (var i = 0; i < 12; i++) limite = Chaine.moisSuivant(limite.annee, limite.mois);
-    var debut = maintenant;
-    global.App.contrats().forEach(function (c) {
-      var d = Chaine.moisDeDate(c.date_debut);
-      if (Chaine.cmpMois(d.annee, d.mois, debut.annee, debut.mois) < 0) debut = d;
-    });
-    var p = Chaine.moisPrecedent(m.annee, m.mois);
-    var s = Chaine.moisSuivant(m.annee, m.mois);
-    prec.disabled = Chaine.cmpMois(p.annee, p.mois, debut.annee, debut.mois) < 0;
-    suiv.disabled = Chaine.cmpMois(s.annee, s.mois, limite.annee, limite.mois) > 0;
-
-    nav.appendChild(prec);
-    nav.appendChild(suiv);
-    barreEl.appendChild(etiquette);
-    barreEl.appendChild(nav);
+    barreEl.className = 'top';
+    barreEl.appendChild(Kit.ce('h1', null, 'Mes congés'));
   }
 
   function changerMois(delta) {
@@ -507,8 +547,16 @@
         'des autres. Revenez sur cet écran une fois le réseau revenu.'));
     }
 
-    corps.appendChild(panneauPoses());
-    corps.appendChild(panneauReserves());
+    /* REDESIGN 2A — L'ORDRE DE L'ÉCRAN CHANGE, ET IL RÉPOND À LA QUESTION
+       DANS L'ORDRE OÙ MARIA SE LA POSE :
+
+         §6.1  les deux gestes — poser, retirer
+         §6.2  ce qu'elle PEUT poser aujourd'hui, enfant par enfant
+         §6.3  ce qui EST posé
+
+       Avant, la liste des périodes ouvrait l'écran et les boutons étaient
+       tout en bas : il fallait défiler pour agir. */
+
 
     /* ======================================================================
        LOT 26 §26.2 — MES CONGÉS S'ALLÈGE.
@@ -538,12 +586,20 @@
     bPoser.disabled = enErreur.length > 0;
     corps.appendChild(bPoser);
 
-    corps.appendChild(Kit.ce('p', 'sb q centre',
-      'Un congé vaut pour ' + libelleContrats(fiches.length) + '.'));
+    /* §6.1 — la phrase du 2A ajoute quatre mots à celle du lot 26 : « vous
+       pouvez en décocher ». C'est la seule chose que Maria doit savoir AVANT
+       d'appuyer — que le congé vaut partout, et qu'elle garde la main. Une
+       explication lue après l'appui n'évite aucune erreur (§18.6). */
+    corps.appendChild(Kit.ce('p', 'pfin centre',
+      'Un congé vaut pour ' + libelleContrats(fiches.length) +
+      ' — vous pouvez en décocher.'));
 
     var bRetrait = Kit.bouton('btn nt', function () { feuilleRetrait(); });
     bRetrait.textContent = 'Retirer des congés';
     corps.appendChild(bRetrait);
+
+    corps.appendChild(panneauReserves());
+    corps.appendChild(panneauPoses());
   }
 
   function libelleContrats(n) {
@@ -570,7 +626,7 @@
      ligne par période, nominative, avec son décompte à droite. */
   function panneauPoses() {
     var p = Kit.ce('div');
-    p.appendChild(Kit.section('Posés en ' + Kit.libelleMois(vue.mois)));
+    p.appendChild(Kit.section('Vos périodes posées'));
 
     var illisible = vue.fiches.some(function (f) { return !f.erreur && f.imputations === null; });
     if (illisible) {
@@ -580,34 +636,81 @@
       return p;
     }
 
-    var groupes = grouperPeriodes();
-    var horaires = congesHoraires();
+    /* ARBITRAGE DU 2 SEPTEMBRE — UN REPLI PAR MOIS, LE PLUS RÉCENT EN
+       PREMIER. Le mois en cours est toujours là et toujours ouvert ; les
+       autres — à venir comme passés — n'apparaissent que s'ils portent un
+       congé, repliés, avec leur compte en valeur. Un congé posé pour
+       septembre se lit en août au-dessus du mois en cours ; un congé de mars
+       se retrouve en dessous, sans ouvrir le document de mars. */
+    var mois = moisAvecConges();
+    var total = 0;
+    mois.forEach(function (x) { total += x.groupes.length + x.horaires.length; });
 
-    if (!groupes.length && !horaires.length) {
+    if (!total) {
       var vide = Kit.ce('div', 'cd');
-      vide.appendChild(Kit.ce('div', 'sb q', 'Aucun congé posé ce mois-ci.'));
+      vide.appendChild(Kit.ce('div', 'sb q', 'Aucun congé posé.'));
       p.appendChild(vide);
       return p;
     }
 
-    var l = Kit.ce('div', 'cd pad0');
-    p.appendChild(l);
-    groupes.forEach(function (g) { ligneperiode(l, g); });
-    /* §21.3 — LA TRACE D'UN CONGÉ POSÉ À L'HEURE.
-       « ½ journée le 8 octobre — Léa : récupération · Noah : sans solde ». Une
-       ligne par JOUR, pas par contrat : Maria a posé un seul congé, elle doit
-       en lire un seul — mais l'issue de chaque enfant est nommée, parce
-       qu'elle diffère et que c'est tout l'objet du §21.2. */
-    horaires.forEach(function (h) { ligneHoraire(l, h); });
-    /* §26.2 — LA RÈGLE DU DÉCOMPTE NE SE RÉPÈTE PLUS ICI. Elle vit là où le
-       nombre est produit (le bloc vert de la pose) et sur l'encart RG-06 du
-       document. Ce qui RESTE ici, parce que c'est propre à CES périodes-là et
-       à personne d'autre : les jours fériés qu'elles contiennent, nommés. */
-    if (groupes.length) {
-      var f = phraseDecompteFeries(groupes);
-      if (f) p.appendChild(f);
-    }
+    mois.forEach(function (x) {
+      var courant = x.annee === vue.annee && x.mois === vue.mois;
+      var n = x.groupes.length + x.horaires.length;
+      var repli = Kit.fold(Kit.moisCapitale(x.annee, x.mois),
+        n ? (n + (n > 1 ? ' congés' : ' congé')) : 'aucun', { ouvert: courant });
+      repli.bloc.classList.add('mois-conges');
+      if (!n) {
+        repli.corps.appendChild(Kit.ce('div', 'sb q', 'Aucun congé posé ce mois-ci.'));
+      } else {
+        var l = repli.corps;
+        x.groupes.forEach(function (g) { ligneperiode(l, g, x); });
+        /* §21.3 — LA TRACE D'UN CONGÉ POSÉ À L'HEURE.
+           « ½ journée le 8 octobre — Léa : récupération · Noah : sans solde ».
+           Une ligne par JOUR, pas par contrat : Maria a posé un seul congé,
+           elle doit en lire un seul — mais l'issue de chaque enfant est
+           nommée, parce qu'elle diffère et que c'est tout l'objet du §21.2. */
+        x.horaires.forEach(function (h) { ligneHoraire(l, h); });
+        /* §26.2 — LA RÈGLE DU DÉCOMPTE NE SE RÉPÈTE PLUS ICI. Ce qui RESTE,
+           parce que c'est propre à CES périodes-là : les jours fériés
+           qu'elles contiennent, nommés. */
+        if (x.groupes.length) {
+          var f = phraseDecompteFeries(x.groupes);
+          if (f) repli.corps.appendChild(f);
+        }
+      }
+      p.appendChild(repli.bloc);
+    });
     return p;
+  }
+
+  /* Les mois de la fenêtre qui portent au moins un congé, plus le mois en
+     cours toujours, du plus récent au plus ancien. */
+  function moisAvecConges() {
+    var par = {};
+    function poser(annee, mois) {
+      var cle = annee + '-' + mois;
+      if (!par[cle]) par[cle] = { annee: annee, mois: mois };
+      return par[cle];
+    }
+    poser(vue.annee, vue.mois);
+    (vue.fiches || []).forEach(function (f) {
+      if (f.erreur) return;
+      (f.imputations || []).forEach(function (i) {
+        poser(Number(String(i.date_debut).slice(0, 4)), Number(String(i.date_debut).slice(5, 7)));
+      });
+      ((f.chaine && f.chaine.mois) || []).forEach(function (e) {
+        var ecarts = (e.resultat && e.resultat.ecartsDeclares) || [];
+        if (ecarts.some(function (x) { return x.evenement === 'conge_horaire'; })) poser(e.annee, e.mois);
+      });
+    });
+    return Object.keys(par).map(function (k) {
+      var x = par[k];
+      x.groupes = grouperPeriodes(x);
+      x.horaires = congesHorairesDuMois(x);
+      return x;
+    }).filter(function (x) {
+      return (x.annee === vue.annee && x.mois === vue.mois) || x.groupes.length || x.horaires.length;
+    }).sort(function (a, b) { return (b.annee * 12 + b.mois) - (a.annee * 12 + a.mois); });
   }
 
   /* Les congés à l'heure du mois affiché, regroupés par jour. Ils vivent sur
@@ -620,6 +723,31 @@
     conges_payes: 'congés payés',
     sans_solde: 'sans solde'
   };
+
+  /* Les congés à l'heure d'un AUTRE mois que celui affiché : lus dans le
+     résultat de la chaîne (`ecartsDeclares`, événement `conge_horaire`), sans
+     relire les journées. La moitié (matin / après-midi) n'y est pas : la
+     ligne dit la durée, comme pour une pose antérieure à la migration 020. */
+  function congesHorairesDuMois(m) {
+    if (m.annee === vue.annee && m.mois === vue.mois) return congesHoraires();
+    var par = {};
+    var ordre = [];
+    (vue.fiches || []).forEach(function (f) {
+      if (f.erreur || !f.chaine) return;
+      var e = global.App.moisDe(f.chaine, m.annee, m.mois);
+      var ecarts = (e && e.resultat && e.resultat.ecartsDeclares) || [];
+      ecarts.forEach(function (x) {
+        if (x.evenement !== 'conge_horaire') return;
+        var minutes = -(x.minutes || 0);
+        var cle = x.jour + '|' + minutes + '|';
+        if (!par[cle]) { par[cle] = { jour: x.jour, minutes: minutes, moitie: null, parts: [] }; ordre.push(cle); }
+        par[cle].parts.push({ contratId: f.contrat.id, prenom: f.contrat.prenom_enfant,
+          issue: x.imputeSur || 'recuperation' });
+      });
+    });
+    ordre.sort();
+    return ordre.map(function (k) { return par[k]; });
+  }
 
   function congesHoraires() {
     /* GROUPÉ PAR JOUR **ET PAR DURÉE**, pas par jour seul.
@@ -695,7 +823,11 @@
      diffère d'un contrat à l'autre, auquel cas la ligne le dit et le détail
      s'ouvre au toucher. Les bornes peuvent légitimement différer : un contrat
      qui démarre au milieu de la période n'en porte que la fin. */
-  function grouperPeriodes() {
+  /* `m` : le mois dont on veut les périodes — celles qui COMMENCENT ce
+     mois-là. Sans `m`, toutes les périodes de la fenêtre. Les congés sans
+     répartition enregistrée (lus dans le moteur) n'existent que pour le mois
+     affiché : la chaîne ne les porte que là. */
+  function grouperPeriodes(m) {
     var par = {};
     var ordre = [];
     function groupe(debut, fin) {
@@ -703,14 +835,20 @@
       if (!par[cle]) { par[cle] = { debut: debut, fin: fin, lignes: [] }; ordre.push(cle); }
       return par[cle];
     }
+    function duMois(iso) {
+      return !m || (Number(iso.slice(0, 4)) === m.annee && Number(iso.slice(5, 7)) === m.mois);
+    }
+    var moisAffiche = !m || (m.annee === vue.annee && m.mois === vue.mois);
 
     vue.fiches.forEach(function (f) {
       if (f.erreur) return;
       var couvertes = {};
       (f.imputations || []).forEach(function (i) {
+        if (!duMois(i.date_debut)) return;
         couvertes[i.date_debut + '|' + i.date_fin] = true;
-        groupe(i.date_debut, i.date_fin).lignes.push({ contrat: f.contrat, imputation: i });
+        groupe(i.date_debut, i.date_fin).lignes.push({ contrat: f.contrat, fiche: f, imputation: i });
       });
+      if (!moisAffiche) return;
 
       /* LES CONGÉS SANS RÉPARTITION ENREGISTRÉE ne doivent pas disparaître de
          la liste. Un congé posé avant que la ventilation n'existe, ou dont la
@@ -777,7 +915,8 @@
   }
 
 
-  function ligneperiode(l, groupe) {
+  function ligneperiode(l, groupe, m) {
+    m = m || { annee: vue.annee, mois: vue.mois };
     var ref = groupe.lignes[0].imputation;
     var uniforme = memeVentilation(groupe);
 
@@ -788,12 +927,12 @@
     /* La part d'un mois se calcule avec LES MÊMES samedis que le décompte
        total : deux règles différentes donneraient « 6 jours, dont 3 en août »
        sur une période qui en compte 5. */
-    var part = Chaine.partDuMois(Engine, ref, planning, vue.annee, vue.mois,
+    var part = Chaine.partDuMois(Engine, ref, planning, m.annee, m.mois,
       samedisDuGroupe(groupe));
 
     var textes = [];
     if (part !== ref.jours_ouvrables) {
-      textes.push('dont ' + Kit.jours(part) + ' en ' + Kit.libelleMois(vue.mois));
+      textes.push('dont ' + Kit.jours(part) + ' en ' + Kit.libelleMois(m.mois));
     }
     /* §7 — UNE PÉRIODE AFFICHÉE NOMME SES SAMEDIS COMPTÉS, comme sur le
        document. Une période sans samedi compté ne dit rien de plus : le
@@ -905,39 +1044,85 @@
      §7 tient : le reste du quota de samedis est visible HORS de la pose.
      Sans cela, Maria ne découvrirait combien il lui en reste qu'au moment de
      poser, c'est-à-dire trop tard pour arbitrer. */
+  /* REDESIGN 2A §6.2 — « CE QUE VOUS POUVEZ POSER AUJOURD'HUI ».
+
+     Une CARTE par enfant, plus une ligne dans une liste : la pastille, le
+     prénom, le compte de samedis, et les deux soldes l'un sous l'autre à
+     droite — congés payés au-dessus, récupération en dessous.
+
+     C'est la réponse au troisième reproche d'Adrien : « j'avais du mal à m'y
+     retrouver sur le solde exact de congés, de récup et autre. » Une ligne
+     qui écrivait « 5 j · 2 j (14h30) » d'un seul trait demandait de démêler
+     trois nombres ; deux valeurs empilées se lisent d'un coup.
+
+     LES DEUX SOLDES SONT SIGNÉS (arbitrage 4 du 28 août). La récupération
+     peut passer en négatif et s'affiche telle quelle, jamais bornée à zéro :
+     un compteur affiché à zéro alors qu'il vaut − 4 h 30 est un chiffre faux,
+     et depuis que la pose peut l'y faire descendre, ce n'est plus un cas de
+     reprise erronée mais un état ordinaire. */
   function panneauReserves() {
     var p = Kit.ce('div');
-    p.appendChild(Kit.section('Vos réserves'));
-    var l = Kit.ce('div', 'cd pad0');
-    p.appendChild(l);
+    p.appendChild(Kit.section('Ce que vous pouvez poser aujourd’hui'));
     vue.fiches.forEach(function (f) {
-      if (f.erreur) {
-        Kit.ligneLn(l, f.contrat.prenom_enfant, 'indisponible', { alerte: true });
-        return;
-      }
-      var cp = cpDe(f);
-      var cond = condDe(f);
-      /* ARBITRAGE 4 (§4.3) — LE SOLDE AFFICHÉ EST LE SOLDE SIGNÉ.
-
-         Cette ligne lisait `supDisponible`, qui borne à zéro : elle annonçait
-         « 0 j (0h00) » sur un compteur à − 4 h 30. Un compteur qu'on affiche à
-         zéro alors qu'il vaut − 4 h 30 est un chiffre faux — et depuis que la
-         pose peut le faire descendre, ce n'est plus un cas de reprise
-         manuelle erronée, c'est un état ordinaire. `supDisponible` reste ce
-         qu'une ventilation peut consommer sans dette ; `supSolde` est ce
-         qu'on montre (correction B5 du lot 17, portée ici). */
-      var solde = Kit.supSolde(f.entree && f.entree.compteurEntree);
-      var sup = Math.max(0, solde);
-      Kit.ligneLn(l, f.contrat.prenom_enfant,
-        Kit.joursCp(cp, mpjc(cond)) + ' · ' +
-          (solde < 0 ? '− ' + Kit.heures(-solde) : joursDeRecup(cond, sup)),
-        { sous: solde < 0
-            ? 'Récupération négative : vous devez ce temps, il se rattrapera ' +
-              'sur vos prochaines heures supplémentaires. ' + phraseQuotaSamedis(f)
-            : phraseQuotaSamedis(f),
-          alerte: solde < 0 || Kit.cpEstBas(cp, cond) });
+      p.appendChild(carteReserve(f));
     });
     return p;
+  }
+
+  function carteReserve(f) {
+    var c = Kit.ce('div', 'card');
+    var rang = Kit.ce('div', 'qui');
+
+    if (f.erreur) {
+      rang.appendChild(Kit.avatar(f.contrat, 'pt'));
+      var g0 = Kit.ce('div', 'gro');
+      g0.appendChild(Kit.ce('span', 'nm', f.contrat.prenom_enfant));
+      g0.appendChild(Kit.ce('span', 'dt', 'compteurs indisponibles'));
+      rang.appendChild(g0);
+      c.appendChild(rang);
+      return c;
+    }
+
+    rang.appendChild(Kit.avatar(f.contrat, 'pt'));
+    var g = Kit.ce('div', 'gro');
+    g.appendChild(Kit.ce('span', 'nm', f.contrat.prenom_enfant));
+    g.appendChild(Kit.ce('span', 'dt', phraseQuotaSamedis(f)));
+    rang.appendChild(g);
+
+    var cp = cpDe(f);
+    var cond = condDe(f);
+    var solde = Kit.supSolde(f.entree && f.entree.compteurEntree);
+    var sup = Math.max(0, solde);
+
+    var droite = Kit.ce('div');
+    droite.style.textAlign = 'right';
+    var lcp = Kit.ce('div', 'mt', Kit.joursCp(cp, mpjc(cond)));
+    var lsup = Kit.ce('div', 'dt',
+      solde < 0 ? '− ' + Kit.heures(-solde) : joursDeRecup(cond, sup));
+    if (solde < 0 || Kit.cpEstBas(cp, cond)) lsup.style.color = 'var(--wa)';
+    droite.appendChild(lcp);
+    droite.appendChild(lsup);
+    rang.appendChild(droite);
+    c.appendChild(rang);
+
+    /* Une récupération négative n'est pas une anomalie à cacher : elle se dit,
+       en toutes lettres, sous les chiffres. */
+    if (solde < 0) {
+      c.appendChild(Kit.ce('p', 'pfin',
+        'Récupération négative : vous devez ce temps, il se rattrapera sur vos ' +
+        'prochaines heures supplémentaires.'));
+    } else if (Kit.cpEstBas(cp, cond)) {
+      c.appendChild(Kit.ce('p', 'pfin',
+        'Réserve basse — un congé d’été passerait en partie sans solde.'));
+    }
+
+    var b = Kit.bouton('btn sm nt', function () {
+      global.App.aller('compteurs', { contratId: f.contrat.id });
+    });
+    b.textContent = 'Le détail de ses soldes';
+    b.style.margin = '11px 0 0';
+    c.appendChild(b);
+    return c;
   }
 
   /* §7 — « samedis comptés : 2 sur 5 cette année ». Le compte porte sur
@@ -1924,7 +2109,7 @@
     gr.appendChild(Kit.ce('span', 'nm', c.prenom_enfant));
     gr.appendChild(Kit.ce('span', 'dt', texteRepartition(p)));
     hd.appendChild(gr);
-    hd.appendChild(Kit.ce('span', 'ch', '›'));
+    hd.appendChild(Kit.ce('span', 'chev', '›'));
     kid.appendChild(hd);
 
     var adj = Kit.ce('div', 'adj');

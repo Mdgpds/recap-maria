@@ -312,7 +312,7 @@ function choixParLibelle(morceau) {
      clôture, son absence de tout document, et le comportement en échec sont
      tous rejoués à l'identique par la suite de ce fichier.
      ====================================================================== */
-  var pNote = parTexte(corps, '.fold', 'Mes notes');
+  var pNote = parTexte(corps, '.fold', 'Ses notes');
   assert(!!pNote, 'P1 : le repli de note est présent');
   assert(!!zoneNote(), 'P1 : la zone de texte est là');
   assert(zoneNote().getAttribute('placeholder').indexOf('Pour vous seule') !== -1,
@@ -373,7 +373,7 @@ function choixParLibelle(morceau) {
 
   /* A2 — modifiable après clôture. */
   await ouvrirEnfant();
-  var pNote2 = parTexte(corps, '.fold', 'Mes notes');
+  var pNote2 = parTexte(corps, '.fold', 'Ses notes');
   assert(!!pNote2, 'A2 : le panneau de note est toujours là sur un mois clôturé');
   assert(!!zoneNote() && zoneNote().disabled !== true,
     'A2 : la note reste MODIFIABLE après clôture — un mois clôturé fige des ' +
@@ -706,7 +706,7 @@ function choixParLibelle(morceau) {
   zp.value = 'Un texte qui ne partira pas.';
   zp.dispatchEvent(new dom.window.Event('blur'));
   await pause(250);
-  var pNoteP = parTexte(corps, '.fold', 'Mes notes');
+  var pNoteP = parTexte(corps, '.fold', 'Ses notes');
   assert(txt(pNoteP).indexOf('n’a pas été enregistrée') !== -1,
     'B.0-9 : l’échec est dit');
   assert(txt(pNoteP).indexOf('Votre texte est toujours là') !== -1,

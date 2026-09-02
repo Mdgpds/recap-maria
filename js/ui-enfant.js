@@ -113,14 +113,26 @@
       Kit.vider(ctx.corps);
       rendre(ctx.corps);
 
-      /* LOT 20 (§20.4 d) — ARRIVÉE DEPUIS L'ÉCRAN DE LA PÉRIODE. Toucher un
-         jour là-bas ouvre sa feuille ICI, dans le mois du jour : la feuille de
-         saisie vit à un seul endroit, et Maria voit l'effet de sa déclaration
-         sur le mois au moment où elle la fait. Le paramètre est ignoré si le
-         jour n'est pas (ou plus) dans une période. */
-      if (ctx.params.jour && !vue.lectureSeule && enFamiliarisation(ctx.params.jour)) {
-        feuilleFamiliarisation(ctx.params.jour);
-      }
+      /* ARRIVÉE AVEC UN JOUR À OUVRIR. Deux appelants, une seule porte.
+
+         LOT 20 (§20.4 d) — l'écran de la période : toucher un jour là-bas
+         ouvre sa feuille ICI, dans le mois du jour. La feuille de saisie vit à
+         un seul endroit, et Maria voit l'effet de sa déclaration sur le mois
+         au moment où elle la fait.
+
+         REDESIGN 2A (§3.2) — l'accueil : le bouton du deuxième étage d'une
+         carte ouvre la feuille du jour de CET enfant, pour AUJOURD'HUI. « Un
+         seul appui depuis l'ouverture de l'application » : Maria touche, la
+         feuille s'ouvre, et le calendrier de l'enfant est derrière — c'est là
+         qu'elle voudrait être de toute façon.
+
+         C'est `ouvrirJour` qui reçoit le jour, et non plus la seule feuille de
+         familiarisation : il sait déjà router vers elle quand le jour est dans
+         une période, vers la feuille courte d'un jour en congé, et vers la
+         proposition de réouverture sur un mois clôturé (lot 30 §30.2). Écrire
+         un second aiguillage ici aurait fait diverger les deux au premier
+         correctif. */
+      if (ctx.params.jour) ouvrirJour(ctx.params.jour);
     });
   }
 
@@ -328,75 +340,184 @@
     rendre(vue.corps);
   }
 
+  /* ------------------------------------------------------------------ */
+  /* REDESIGN 2A §4.1 — L'EN-TÊTE, TEINTÉ DE LA COULEUR DE L'ENFANT      */
+  /* ------------------------------------------------------------------ */
+
+  /* Flèche de retour, prénom en 20 px, « famille X » en dessous. RIEN D'AUTRE
+     de ce qui touche au mois : la navigation de mois descend DANS LE FLUX,
+     au-dessus du calendrier (§4.2).
+
+     C'était un reproche explicite d'Adrien : « On ne devrait pas pouvoir
+     changer de mois en haut à droite. » Deux flèches identiques à deux
+     endroits — l'une qui QUITTE l'écran, l'autre qui change de mois — se
+     confondent au pouce, et l'erreur coûte une page rechargée.
+
+     LE ⋯ RESTE, ET C'EST UN ÉCART ASSUMÉ. Le §4.1 énumère le contenu de la
+     barre et ne le mentionne pas ; le retirer supprimerait « Marquer
+     plusieurs jours d'un coup », une fonction entière que la spécification ne
+     demande nulle part de supprimer. Consulté le 2 septembre, Adrien ne sait
+     pas si Maria s'en sert : dans le doute, la fonction reste. */
   function barre(barreEl, contrat, m) {
     Kit.vider(barreEl);
-    barreEl.className = 'bar';
-    var bk = Kit.bouton('bk', function () { global.App.retour(); });
+    barreEl.className = 'top enfant';
+    teinterEnTete(barreEl, contrat);
+
+    var rang = Kit.ce('div', 'anh');
+    rang.style.margin = '0';
+
+    var bk = Kit.bouton('back', function () { global.App.retour(); });
     bk.textContent = '‹';
     bk.setAttribute('aria-label', 'Retour');
-    barreEl.appendChild(bk);
-    /* Lot 8 — la photo dans l'en-tête. Maria passe d'un enfant à l'autre
-       plusieurs fois par jour ; un titre en texte seul ne dit pas assez vite
-       chez qui on est.
-       PÉRIMÈTRE : `ui-enfant.js` ne figure pas dans les fichiers réservés au
-       lot 8, alors que le §8.5 demande la photo « en-tête de l'espace
-       enfant ». Défaut de la spécification, même nature que le §4.2 du lot 9 ;
-       tranché de la même façon, et signalé en restitution. */
-    barreEl.appendChild(Kit.avatar(contrat, 'pt'));
-    /* §25.2 — « Léa · août 2026 ». Le point médian remplace le tiret cadratin
-       de la maquette : à 320 px, le tiret et ses deux espaces coûtaient trois
-       caractères au prénom. L'ANNÉE reste, elle : la maquette ne montrait que
-       deux mois, l'application en montre douze en arrière et douze en avant,
-       et « Léa · août » sur un août de l'an dernier serait un piège. */
-    barreEl.appendChild(Kit.ce('span', 'ti',
-      contrat.prenom_enfant + ' · ' + Kit.libelleMoisAnnee(m.annee, m.mois)));
+    rang.appendChild(bk);
 
-    var nav = Kit.ce('div', 'nav');
-    var prec = Kit.bouton(null, function () { changerMois(-1); });
+    /* LA PASTILLE D'IDENTITÉ DISPARAÎT DE LA BARRE, et ce n'est pas une perte.
+       Le lot 8 l'y avait mise pour que Maria sache tout de suite chez quel
+       enfant elle est — « un titre en texte seul ne dit pas assez vite ». Le
+       2A répond mieux à la même question : c'est TOUT L'EN-TÊTE qui prend la
+       couleur de l'enfant, pas un rond de 26 px. Et le prénom reste écrit :
+       la couleur ne porte jamais le sens toute seule (V8-01). */
+    var g = Kit.ce('div');
+    g.style.flex = '1';
+    g.style.minWidth = '0';
+    var h = Kit.ce('h1', null, contrat.prenom_enfant);
+    h.style.fontSize = '20px';
+    h.style.margin = '0';
+    g.appendChild(h);
+    g.appendChild(Kit.ce('div', 'sub',
+      'famille ' + ((contrat.famille && contrat.famille.nom) || '—')));
+    rang.appendChild(g);
+    barreEl.appendChild(rang);
+
+    /* LOT 30 (§30.2) — sur un mois CLÔTURÉ d'un contrat en cours, le ⋯ reste :
+       la multi-sélection propose la réouverture au moment de valider, comme la
+       feuille du jour. Il n'apparaît pas sur un contrat rangé ni sur un mois à
+       venir : un bouton qui refuse est pire qu'un bouton absent, il laisse
+       croire à une panne. */
+    if (!vue || ((!vue.lectureSeule || vue.rouvrable) && !vue.aVenir && vue.entree)) {
+      var plus = Kit.bouton('back', function () { entrerSelection(); });
+      plus.textContent = '⋯';
+      plus.setAttribute('aria-label', 'Marquer plusieurs jours');
+      rang.appendChild(plus);
+    }
+  }
+
+  /* La teinte de l'enfant sur l'en-tête. C'est la SEULE exception à « pas de
+     couleur en dur » avec les états du calendrier, et le §3.3 l'écrit : ces
+     couleurs sont une donnée du contrat, pas un choix de style. Elles sont
+     lues dans les jetons `--id-*`, jamais écrites ici. */
+  function teinterEnTete(barreEl, contrat) {
+    var jeton = Kit.couleurIdentite(contrat && contrat.couleur).jeton;
+    barreEl.style.background =
+      'linear-gradient(155deg, var(--id-' + jeton + '-t), var(--id-' + jeton + '-x))';
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* REDESIGN 2A §4.2 — LA NAVIGATION DE MOIS, DANS LE FLUX              */
+  /* ------------------------------------------------------------------ */
+
+  /* Une ligne, et une seule : `‹  Août 2026  ›`, au-dessus du calendrier.
+     Les bornes sont celles d'avant : jamais avant le début du contrat, jamais
+     après sa fin, et jusqu'à MOIS_A_VENIR_VISIBLES au-delà du mois courant —
+     c'est ce qui rend consultable et retirable un congé posé d'avance (A13).
+     Un bouton qui ne mène nulle part est désactivé, pas silencieux. */
+  function navMois(m) {
+    var bloc = Kit.ce('div', 'navmois');
+
+    var prec = Kit.bouton('btn sm nt', function () { changerMois(-1); });
     prec.textContent = '‹';
     prec.setAttribute('aria-label', 'Mois précédent');
-    var suiv = Kit.bouton(null, function () { changerMois(1); });
+    var suiv = Kit.bouton('btn sm nt', function () { changerMois(1); });
     suiv.textContent = '›';
     suiv.setAttribute('aria-label', 'Mois suivant');
 
-    /* Bornes : jamais avant le début du contrat, jamais après sa fin. Au-delà
-       du mois courant, la navigation reste ouverte jusqu'à MOIS_A_VENIR_VISIBLES
-       — c'est ce qui rend consultable et retirable un congé posé d'avance
-       (A13). Un bouton qui ne mène nulle part est désactivé, pas silencieux. */
+    var bornes = bornesDeNavigation();
+    var p = Chaine.moisPrecedent(m.annee, m.mois);
+    var s = Chaine.moisSuivant(m.annee, m.mois);
+    prec.disabled = Chaine.cmpMois(p.annee, p.mois, bornes.debut.annee, bornes.debut.mois) < 0;
+    suiv.disabled = Chaine.cmpMois(s.annee, s.mois, bornes.limite.annee, bornes.limite.mois) > 0;
+
+    bloc.appendChild(prec);
+    bloc.appendChild(Kit.ce('div', 'navl', Kit.moisCapitale(m.annee, m.mois)));
+    bloc.appendChild(suiv);
+    return bloc;
+  }
+
+  function bornesDeNavigation() {
+    var contrat = vue.contrat;
     var debut = Chaine.moisDeDate(contrat.date_debut);
     var maintenant = global.App.moisCourant();
     var limite = { annee: maintenant.annee, mois: maintenant.mois };
-    for (var i = 0; i < MOIS_A_VENIR_VISIBLES; i++) limite = Chaine.moisSuivant(limite.annee, limite.mois);
+    for (var i = 0; i < MOIS_A_VENIR_VISIBLES; i++) {
+      limite = Chaine.moisSuivant(limite.annee, limite.mois);
+    }
     if (contrat.date_fin) {
       var f = Chaine.moisDeDate(contrat.date_fin);
       if (Chaine.cmpMois(f.annee, f.mois, limite.annee, limite.mois) < 0) limite = f;
     }
-    var p = Chaine.moisPrecedent(m.annee, m.mois);
-    var s = Chaine.moisSuivant(m.annee, m.mois);
-    prec.disabled = Chaine.cmpMois(p.annee, p.mois, debut.annee, debut.mois) < 0;
-    suiv.disabled = Chaine.cmpMois(s.annee, s.mois, limite.annee, limite.mois) > 0;
+    return { debut: debut, limite: limite };
+  }
 
-    nav.appendChild(prec);
-    nav.appendChild(suiv);
+  /* ------------------------------------------------------------------ */
+  /* REDESIGN 2A §4.3 — LE BANDEAU D'ÉTAT DU MOIS                        */
+  /* ------------------------------------------------------------------ */
 
-    /* §25.2 — LE ⋯ OUVRE LA MULTI-SÉLECTION. Elle vivait dans une barre
-       « Marquer plusieurs jours d'un coup » posée SOUS le calendrier, avec
-       son titre, son sous-titre et son bouton : quatre lignes pour un
-       raccourci. Le geste ne change pas d'un caractère — il change de porte.
+  /* Immédiatement sous la navigation, et il dit OÙ L'ON EST. Trois variantes,
+     et une seule est vraie à la fois.
 
-       Le bouton n'apparaît pas sur un mois clôturé, un contrat rangé ou un
-       mois à venir : un bouton qui refuse est pire qu'un bouton absent, il
-       laisse croire à une panne. */
-    /* LOT 30 (§30.2) — sur un mois CLÔTURÉ d'un contrat en cours, le ⋯
-       reste : la multi-sélection propose la réouverture au moment de
-       valider, comme la feuille du jour. */
-    if (!vue || ((!vue.lectureSeule || vue.rouvrable) && !vue.aVenir && vue.entree)) {
-      var plus = Kit.bouton(null, function () { entrerSelection(); });
-      plus.textContent = '⋯';
-      plus.setAttribute('aria-label', 'Marquer plusieurs jours');
-      nav.appendChild(plus);
+     C'est la réponse au deuxième reproche d'Adrien : « j'avais du mal à
+     rouvrir un mois et à retourner sur la vue où j'inscris les spécificités de
+     chaque jour ». Le geste existait ; il ne se voyait pas. */
+  function bandeauEtat() {
+    if (!vue.entree) return null;
+
+    /* MOIS ROUVERT — ambre : il y a quelque chose à finir.
+
+       LE BANDEAU EST CELUI DE `ui-reouverture.js`, PAS UN SECOND. Il porte
+       déjà tout ce que le §4.3 demande — la phrase, « Reclôturer <mois> »,
+       « Ajouter un motif » — plus deux choses que la maquette ignore et qui
+       comptent : la DATE de réouverture, et l'avertissement que le
+       récapitulatif était déjà parti chez la famille, qui devra recevoir la
+       version corrigée. En écrire un deuxième ici, c'était garantir qu'ils
+       divergeraient au premier correctif. */
+    if (Kit.moisRouvert(vue.entree.recap) && !vue.clos) {
+      return global.UiReouverture.bandeauMoisRouvert({
+        recap: vue.entree.recap,
+        /* `dateReouverture` rend une PROMESSE (elle lit les événements du
+           récapitulatif) : elle n'a pas sa place dans un rendu synchrone. Le
+           bandeau s'en passe — « Mois rouvert — à clôturer à nouveau ». */
+        contrat: vue.contrat,
+        annee: vue.annee,
+        mois: vue.mois,
+        recloturer: function () {
+          global.App.aller('document', {
+            contratId: vue.contrat.id, annee: vue.annee, mois: vue.mois
+          });
+        }
+      });
     }
-    barreEl.appendChild(nav);
+
+    /* MOIS CLÔTURÉ — neutre : rien à faire, et le dire clairement. */
+    if (vue.clos) {
+      var i = Kit.ce('div', 'enc i');
+      i.appendChild(Kit.ce('b', null, 'Mois clôturé'));
+      i.appendChild(document.createTextNode(
+        'Les journées ne se modifient pas. Le document est parti à la famille.'));
+      if (vue.rouvrable) {
+        var r = Kit.bouton('btn sm nt', function () {
+          proposerReouverture(null, null, 'bandeau');
+        });
+        r.textContent = 'Rouvrir';
+        i.appendChild(r);
+      }
+      return i;
+    }
+
+    /* MOIS OUVERT — neutre : ce qu'on attend de Maria, en une phrase. */
+    var o = Kit.ce('div', 'enc i',
+      'Touchez un jour pour déclarer ce qui sort de l’ordinaire. ' +
+      'Une journée normale n’a besoin de rien.');
+    return o;
   }
 
   /* La barre du mode sélection : le retour QUITTE le mode plutôt que l'écran,
@@ -463,8 +584,22 @@
       return;
     }
 
+    /* REDESIGN 2A §4.2 et §4.3 — L'ORDRE DE L'ÉCRAN.
+
+         la navigation de mois, dans le flux
+         le bandeau d'état, qui dit OÙ L'ON EST
+         les avertissements, s'il y en a
+         le calendrier
+
+       Le bandeau passe AVANT les avertissements : il répond à « où suis-je »,
+       eux à « qu'est-ce qui cloche ». On ne comprend les seconds qu'après
+       avoir lu le premier. */
+    corps.appendChild(navMois({ annee: vue.annee, mois: vue.mois }));
+    var bandeau = bandeauEtat();
+    if (bandeau) corps.appendChild(bandeau);
     rendreEncarts(corps);
     corps.appendChild(panneauCalendrier());
+    corps.appendChild(legendeCalendrier());
 
     if (!vue.entree) {
       corps.appendChild(Kit.ce('p', 'vide',
@@ -1165,6 +1300,16 @@
        aurait laissé « 5 h 00 » sans explication à l'écran, ce qui est le
        problème qu'on corrige. Les mois qui n'ont que des congés restent
        fermés — il n'y a alors pas de chiffre surprenant à justifier. */
+    /* §4.6 — « Journées à part » est le TROISIÈME repli : FERMÉ par défaut,
+       comme les trois derniers. Les deux premiers — la familiarisation quand
+       elle court, et « Le mois » — sont ouverts : ce sont eux qu'on vient
+       lire.
+
+       UNE EXCEPTION, ET ELLE VIENT DU LOT 28 : quand un écart d'horaire a
+       BOUGÉ LE TOTAL du mois, le repli s'ouvre d'office. Un chiffre qui a
+       changé sans que rien ne l'explique est exactement le défaut que ce
+       repli corrige — et « fermé par défaut » décrit le défaut, pas une
+       interdiction de s'ouvrir quand il y a quelque chose à dire. */
     var f = Kit.fold('Journées à part', String(nb),
       { ouvert: (r.ecartsDeclares || []).length > 0 });
     var l = f.corps;
@@ -1298,7 +1443,11 @@
     var sup = Kit.supSolde(cs);
     var enJours = Chaine.reservesEnJours(cond(), cs);
 
-    var f = Kit.fold('Réserves',
+    /* REDESIGN 2A §4.6.4 — « SES réserves », pas « Réserves ». Sur l'espace
+       d'un enfant, tout ce qui est listé est LE SIEN : ses journées à part,
+       ses réserves, ses notes. Le possessif dit à qui appartient ce qu'on
+       lit — un détail, jusqu'au jour où Maria compare deux enfants. */
+    var f = Kit.fold('Ses réserves',
       (cp < 0 ? '− ' + Kit.joursCp(-cp, parJour) : Kit.joursCp(cp, parJour)) +
       ' · ' + (sup < 0 ? '− ' + Kit.heures(-sup) : Kit.heures(sup)));
     var l = f.corps;
@@ -1343,7 +1492,9 @@
   function replisNotes() {
     var c = vue.contrat;
     var texte = (vue.note && vue.note.texte) || '';
-    var f = Kit.fold('Mes notes', texte ? '1' : '—');
+    /* §4.6.5 — « Ses notes ». Elles restent POUR MARIA SEULE : le repli le
+       dit, et le document ne les porte jamais. */
+    var f = Kit.fold('Ses notes', texte ? '1' : '—');
 
     var zone = document.createElement('textarea');
     /* `note-mois` est le REPÈRE STABLE de ce champ — la feuille de style et
@@ -1427,6 +1578,8 @@
      C'est le même détail que l'écran de la période, ramené là où Maria
      travaille : pendant l'adaptation, l'espace enfant EST l'écran du jour. */
   function replisFamiliarisation(fam) {
+    /* §4.6.1 — LE PREMIER REPLI QUAND LA PÉRIODE COURT, ET IL EST OUVERT :
+       pendant l'adaptation, c'est LUI le mois. */
     var f = Kit.fold('Familiarisation',
       Kit.heures(fam.minutesDeclarees) + ' déclarées', { ouvert: true });
     var l = f.corps;
@@ -1459,6 +1612,45 @@
 
   /* --- 1. Calendrier ------------------------------------------------- */
 
+  /* REDESIGN 2A §4.4 — LA LÉGENDE, SOUS LE CALENDRIER.
+
+     Elle nomme les états, et elle ne montre QUE ceux que le mois affiché
+     porte réellement : une légende qui explique une couleur absente est une
+     ligne de plus à lire pour rien. La journée de garde n'y figure pas —
+     c'est la case blanche, l'état par défaut, et l'expliquer reviendrait à
+     expliquer l'absence de couleur.
+
+     La pastille est une FORME colorée, le mot est écrit à côté : la couleur
+     ne porte jamais le sens toute seule (V8-01). */
+  var ETATS_LEGENDE = [
+    { classe: 'cg', mot: 'congé' },
+    { classe: 'ab', mot: 'absence' },
+    { classe: 'ec', mot: 'départ avant l’heure' },
+    { classe: 'fa', mot: 'familiarisation' },
+    { classe: 'nt', mot: 'non travaillée' },
+    { classe: 'fe', mot: 'férié' }
+  ];
+
+  function legendeCalendrier() {
+    /* On lit les classes RÉELLEMENT posées sur le mois plutôt que de rejouer
+       la logique de `cellule` : deux fois la même règle, c'est deux fois
+       l'occasion de diverger. */
+    var presents = {};
+    (vue.classesDuMois || []).forEach(function (c) { presents[c] = true; });
+
+    var bloc = Kit.ce('div', 'leg');
+    var n = 0;
+    ETATS_LEGENDE.forEach(function (e) {
+      if (!presents[e.classe]) return;
+      n++;
+      var s = Kit.ce('span');
+      s.appendChild(Kit.ce('i', e.classe));
+      s.appendChild(document.createTextNode(e.mot));
+      bloc.appendChild(s);
+    });
+    return n ? bloc : Kit.ce('div');
+  }
+
   function panneauCalendrier() {
     var table = Kit.ce('table', 'cal');
 
@@ -1472,12 +1664,18 @@
 
     var jours = Engine.joursDuMois(vue.annee, vue.mois);
     var planning = planningDuMois();
+    /* La légende lit CE QUI A ÉTÉ POSÉ, pas ce qu'elle croit devoir l'être. */
+    vue.classesDuMois = [];
     var tr = Kit.ce('tr');
     var col = Engine.jourSemaine(jours[0]);
     for (var v = 1; v < col; v++) tr.appendChild(cellVide());
 
     jours.forEach(function (d, index) {
-      tr.appendChild(cellule(d, planning));
+      var td = cellule(d, planning);
+      String(td.className || '').split(/\s+/).forEach(function (c) {
+        if (c && vue.classesDuMois.indexOf(c) === -1) vue.classesDuMois.push(c);
+      });
+      tr.appendChild(td);
       col++;
       if (col > 7 && index < jours.length - 1) {
         table.appendChild(tr);
@@ -1765,8 +1963,8 @@
       (d > vue.aujourdhui ? ' futur' : '') +
       (d === vue.aujourdhui ? ' auj' : '') +
       (vue.lectureSeule && !vue.rouvrable ? ' no' : ''));
-    td.appendChild(Kit.ce('div', 'num', String(jour)));
-    td.appendChild(Kit.ce('div', 'mini', mini));
+    td.appendChild(Kit.ce('div', 'n num', String(jour)));
+    td.appendChild(Kit.ce('div', 'm mini', mini));
     if (d === vue.aujourdhui) td.setAttribute('aria-current', 'date');
     /* §30.2 — un mois clôturé reste touchable : le toucher propose de le
        rouvrir. */
@@ -1808,7 +2006,7 @@
     var fam = enFamiliarisation(d);
     if (fam && !horsBornes && !horsPlanning) {
       var etatFam = vue.famJours[d];
-      classe = 'ok';
+      classe = 'fa';
       /* ARRIVÉE PUIS DÉPART — une arrivée enregistrée sans départ est une
          journée « en cours » : elle GARDE l'orange, il manque le départ et
          l'application a toujours quelque chose à réclamer. Rien n'est payé :
@@ -1821,15 +2019,34 @@
         !etatFam.declare && (d <= vue.aujourdhui || enCours));
       return td0;
     }
-    if (horsBornes) { classe = 'we no'; }
+    /* REDESIGN 2A §4.4 — ON NE COLORE QUE LES EXCEPTIONS.
+
+       Le lot 24 colorait SEPT états, dont la journée de garde et la fin de
+       semaine. Sur un mois entier, tout était teinté et plus rien ne
+       ressortait. Le 2A laisse la journée ordinaire BLANCHE : c'est ce qui
+       rend un congé ou une absence lisibles d'un coup d'œil.
+
+       C'est aussi ce qui a permis de mettre le CONGÉ EN VERT (arbitrage du
+       1er septembre) : le vert était pris par la journée de garde, il ne
+       l'est plus.
+
+       Deux états entrent, que l'application n'avait pas : `ec` (un départ
+       avant l'heure — bleu) et `fa` (familiarisation — prune). */
+    var ecart = (vue.journees || {})[d] || {};
+    if (horsBornes) { classe = 'no'; }
     else if (type === 'ferie') { classe = 'fe no'; mini = 'férié'; }
-    else if (horsPlanning) { classe = 'we no'; }
+    else if (horsPlanning) { classe = 'no'; }
     else if (type === 'conge_maria') { classe = 'cg'; mini = 'congé'; touchable = true; }
     else if (type === 'sans_solde') { classe = 'cg'; mini = 'ss solde'; touchable = true; }
     else if (type === 'hors_planning') { classe = 'nt'; mini = 'non trav.'; touchable = true; }
-    else if (type === 'familiarisation') { classe = 'ok'; mini = 'familia.'; touchable = true; }
+    else if (type === 'familiarisation') { classe = 'fa'; mini = 'familia.'; touchable = true; }
     else if (type === 'absence_enfant') { classe = 'ab'; mini = 'abs.'; touchable = true; }
-    else { classe = 'ok'; touchable = true; }
+    else if (ecart.ecart_evenement === 'liberation_anticipee' && ecart.ecart_heure_reelle) {
+      classe = 'ec';
+      mini = String(ecart.ecart_heure_reelle).slice(0, 5).replace(':', 'h');
+      touchable = true;
+    }
+    else { classe = ''; touchable = true; }
 
     /* Un congé DÉJÀ POSÉ dans le futur reste touchable : Maria doit pouvoir le
        retirer (correction A13 du lot 6). C'est la journée ORDINAIRE à venir
@@ -1854,8 +2071,8 @@
       (aVenir ? ' futur' : '') +
       (d === vue.aujourdhui ? ' auj' : '') +
       (touchable && vue.lectureSeule && !vue.rouvrable ? ' no' : ''));
-    td.appendChild(Kit.ce('div', 'num', String(jour)));
-    if (mini) td.appendChild(Kit.ce('div', 'mini', mini));
+    td.appendChild(Kit.ce('div', 'n num', String(jour)));
+    if (mini) td.appendChild(Kit.ce('div', 'm mini', mini));
     if (annotee || ajustee || congePose) {
       var reperes = Kit.ce('div', 'reperes');
       if (annotee) reperes.appendChild(Kit.ce('span', 'rp note', '•'));
@@ -1982,7 +2199,12 @@
   /* LOT 30 (§30.2) — la feuille courte, puis le geste qui continue. Après la
      réouverture, l'écran est rechargé (le mois a changé d'état) et la feuille
      du jour s'ouvre d'elle-même sur le même jour. */
-  function proposerReouverture(d, apresReouverture) {
+  /* `contexte` vaut 'bandeau' quand la demande vient du bandeau d'etat
+     (§4.3) : ni un jour touche, ni une selection en cours, juste « Rouvrir ».
+     Sans lui, la feuille demandait « Le rouvrir pour marquer ces journees ? »
+     alors qu'aucune journee n'est selectionnee — une question qui parle de
+     quelque chose qui n'existe pas. */
+  function proposerReouverture(d, apresReouverture, contexte) {
     var c = vue.contrat;
     var m = { annee: vue.annee, mois: vue.mois };
     if (!vue.entree || !vue.entree.recap) {
@@ -1994,8 +2216,12 @@
       titre: 'Ce mois est clôturé',
       question: d
         ? 'Le rouvrir pour corriger le ' + Kit.jourLong(d).toLowerCase() + ' ?'
-        : 'Le rouvrir pour marquer ces journées ?',
-      bouton: d ? 'Rouvrir et corriger ce jour' : 'Rouvrir et marquer ces journées',
+        : (contexte === 'bandeau'
+          ? 'Le rouvrir pour corriger ?'
+          : 'Le rouvrir pour marquer ces journées ?'),
+      bouton: d
+        ? 'Rouvrir et corriger ce jour'
+        : (contexte === 'bandeau' ? 'Rouvrir pour corriger' : 'Rouvrir et marquer ces journées'),
       motif: null,
       continuer: function () {
         return global.App.rafraichir().then(function () {

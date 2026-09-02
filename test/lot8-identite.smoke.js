@@ -294,17 +294,30 @@ async function ouvrirFiche(id) {
   console.log('\n--- A9 : la barre à quatre onglets ---');
   var onglets = tabbar.querySelectorAll('button');
   assert(onglets.length === 4, 'A9 : quatre onglets (obtenu ' + onglets.length + ')');
-  assert(txt(onglets[0]).indexOf('Accueil') !== -1, 'A9 : Accueil en premier');
-  assert(txt(onglets[1]).indexOf('Historique') !== -1, 'A9 : Historique en deuxième');
-  assert(txt(onglets[2]).indexOf('Mes congés') !== -1, 'A9 : Mes congés');
-  assert(txt(onglets[3]).indexOf('Menu') !== -1, 'A9 : Menu');
+  /* REDESIGN 2A §2.1 — L'ORDRE ET LES NOMS CHANGENT.
+     « Accueil » devient « Mes enfants », « Historique » cede sa place a
+     « Documents » et passe en troisieme, « Conges » remonte en deuxieme.
+     L'onglet ne classe plus par DATE mais par ce qu'on vient y chercher. */
+  assert(txt(onglets[0]).indexOf('Mes enfants') !== -1, 'A9 : Mes enfants en premier');
+  assert(txt(onglets[1]).indexOf('Congés') !== -1, 'A9 : Congés en deuxième');
+  assert(txt(onglets[2]).indexOf('Documents') !== -1, 'A9 : Documents en troisième');
+  assert(txt(onglets[3]).indexOf('Menu') !== -1, 'A9 : Menu en quatrième');
+  assert(txt(onglets[1]).indexOf('Historique') === -1 && txt(onglets[2]).indexOf('Historique') === -1,
+    'A9 : plus aucun onglet ne s’appelle « Historique »');
   /* La troncature ne se mesure pas dans jsdom, qui ne fait pas de mise en
      page. Ce qui SE vérifie ici, c'est la règle qui l'empêche : aucune
      étiquette ne doit pouvoir être coupée. « Mes cong… » serait pire que rien. */
   var css = fs.readFileSync(path.join(racine, 'css', 'style.css'), 'utf8');
-  var bloc = css.slice(css.indexOf('.tabbar button {'), css.indexOf('.tabbar button .i'));
-  assert(bloc.indexOf('white-space: nowrap') !== -1,
-    'A9 : les étiquettes ne se coupent pas en deux lignes');
+  /* La barre du 2A s'appelle `.tabs` et pose ses etiquettes en colonne sous
+     l'icone : chaque onglet est un `flex-direction: column`, l'etiquette a
+     toute la largeur de sa colonne et ne peut pas etre coupee en deux par un
+     retour a la ligne au milieu d'un mot. Ce qui se verifie ici, c'est la
+     regle qui le garantit, et la zone tactile de 44 px du §10.4. */
+  var bloc = css.slice(css.indexOf('.tabs button {'), css.indexOf('.tabs button .ic'));
+  assert(bloc.indexOf('flex-direction: column') !== -1,
+    'A9 : chaque onglet empile son icone et son etiquette');
+  assert(/min-height:\s*4[4-9]px|min-height:\s*[5-9]\dpx/.test(bloc),
+    'A9 : la zone tactile d’un onglet fait au moins 44 px (§10.4)');
   assert(bloc.indexOf('text-overflow') === -1 && bloc.indexOf('overflow: hidden') === -1,
     'A9 : aucune troncature par points de suspension');
 
@@ -640,8 +653,22 @@ async function ouvrirFiche(id) {
   });
   assert(reglesIdentite.every(function (l) { return l.indexOf('cal') === -1; }),
     'A6 : aucune règle de couleur d’identité ne cible le calendrier');
-  /* La pastille d'identité, elle, est bien présente dans l'en-tête. */
-  assert(!!barre.querySelector('.av'), 'l’en-tête de l’espace enfant porte la pastille');
+  /* REDESIGN 2A §4.1 — L'IDENTITE DE L'ENFANT DANS L'EN-TETE DE SON ESPACE.
+
+     La pastille de 26 px cede la place a la TEINTE DE L'EN-TETE ENTIER. La
+     question a laquelle le lot 8 repondait — « chez quel enfant suis-je ? » —
+     trouve une reponse plus forte, pas plus faible : c'est toute la barre qui
+     prend la couleur, pas un rond.
+
+     L'exigence de FOND est verifiee plus fermement qu'avant : la teinte vient
+     des JETONS `--id-*`, jamais d'une couleur libre (V8-31), et le prenom
+     reste ecrit a cote — la couleur ne porte jamais le sens toute seule. */
+  assert(/var\(--id-(vert|bleu|prune|terracotta|ocre|ardoise|neutre)-/.test(
+    barre.style.background || ''),
+    'l’en-tête de l’espace enfant est teinté de la couleur de l’enfant, ' +
+    'par ses jetons (obtenu « ' + (barre.style.background || '') + ' »)');
+  assert(txt(barre).indexOf(LEA.prenom_enfant) !== -1,
+    'et le prénom y est ÉCRIT — la couleur ne porte jamais le sens seule');
 
   /* ==================================================================== */
   /* A7 — Aucune photo sur un document transmis                           */
@@ -667,12 +694,13 @@ async function ouvrirFiche(id) {
   window.App.invalider();
   window.App.aller('accueil', {}, true);
   await pause(300);
-  /* LOT 25 §25.1 — la grande carte `.big` est devenue la carte `.cd` du
-     socle. La photo et la couleur d'identité sont exigées à l'identique, sur
-     le composant qui la remplace. */
-  assert(corps.querySelectorAll('.cd .av img').length >= 1,
+  /* LOT 25 §25.1 puis REDESIGN 2A §3.2 — la grande carte `.big` est devenue
+     la carte `.cd`, puis la carte a trois etages `.cart3`. La photo et la
+     couleur d'identite sont exigees a l'identique, sur le composant qui la
+     remplace : le PREMIER etage, celui de l'identite. */
+  assert(corps.querySelectorAll('.cart3 .etg1 .av img').length >= 1,
     'la photo apparaît sur la carte d’accueil');
-  assert(!!corps.querySelector('.cd .av.id-prune, .cd .av.id-bleu'),
+  assert(!!corps.querySelector('.cart3 .etg1 .av.id-prune, .cart3 .etg1 .av.id-bleu'),
     'les cartes portent la couleur de l’enfant');
 
   /* ==================================================================== */

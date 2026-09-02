@@ -404,7 +404,7 @@ var sheet = document.getElementById('sheet');
   window.App.aller('enfant', { contratId: 'c-alpha', annee: 2026, mois: 3 }, true);
   await pause(400);
 
-  var pRes = parTexte(corps, '.fold', 'Réserves');
+  var pRes = parTexte(corps, '.fold', 'Ses réserves');
   assert(!!pRes, 'le repli des réserves est là');
   assert(txt(pRes).indexOf('0h00') === -1,
     'B5 : il n’affiche plus « 0h00 » sur un compteur négatif');

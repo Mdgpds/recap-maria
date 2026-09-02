@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="icones/icone-192.png">
   <link rel="icon" href="icones/icone-192.png">
 
-  <link rel="stylesheet" href="css/style.css?v=lot31-2">
+  <link rel="stylesheet" href="css/style.css?v=redesign-2a">
 </head>
 <body>
 
@@ -61,21 +61,34 @@
          Les SVG sont EMBARQUÉS dans la page : aucune requête, aucune police
          d'icônes, rien à charger. Ils héritent de `currentColor`, donc l'état
          actif les colore sans règle supplémentaire. -->
-    <nav id="tabbar" class="tabbar" hidden>
-      <button type="button" data-onglet="accueil"><span class="i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.2 12 4l9 7.2"/><path d="M5.5 9.8V20h13V9.8"/></svg></span>Accueil</button>
-      <!-- Lot 8 : l'Historique devient un onglet racine. Il prend la deuxième
-           position dans l'ordre de LECTURE — c'est le deuxième geste de Maria
-           après consulter son mois — et absorbe le récapitulatif de période et
-           les anciens contrats. La rubrique « Consulter » disparaît du Menu. -->
-      <button type="button" data-onglet="historique"><span class="i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.6V12l3 2.2"/></svg></span>Historique</button>
-      <button type="button" data-onglet="conges"><span class="i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 13.6A8.2 8.2 0 1 1 10.4 3.8a6.6 6.6 0 0 0 9.8 9.8z"/></svg></span>Mes congés</button>
-      <button type="button" data-onglet="menu"><span class="i" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></span>Menu</button>
+    <!-- LA BARRE DES QUATRE ONGLETS (§2.1) — dans cet ordre :
+         Mes enfants · Congés · Documents · Menu.
+
+         L'ordre et les noms viennent de la maquette 2A. « Historique »
+         disparaît : ce que Maria y cherchait — ses mois passés, ses documents,
+         ses récapitulatifs de période — vit désormais sous « Documents », qui
+         dit ce qu'on y trouve plutôt que quand ça s'est passé.
+
+         LES ICÔNES RESTENT DES SVG EMBARQUÉS. La maquette dessine ses onglets
+         avec des caractères Unicode (◍ ☾ ▤ •••) : ils ne s'affichent pas
+         pareil d'un téléphone à l'autre — certains les rendent en emoji
+         couleur, d'autres par un rectangle vide. C'est le défaut corrigé au
+         lot 22, et le reprendre serait une régression. Les SVG héritent de
+         `currentColor`, donc l'état actif les colore sans règle de plus. -->
+    <nav id="tabbar" class="tabs" hidden>
+      <button type="button" data-onglet="accueil"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.1"/></svg></span>Mes enfants</button>
+      <button type="button" data-onglet="conges"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.2 13.6A8.2 8.2 0 1 1 10.4 3.8a6.6 6.6 0 0 0 9.8 9.8z"/></svg></span>Congés</button>
+      <button type="button" data-onglet="docs"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.6" y="3.6" width="14.8" height="16.8" rx="2.2"/><path d="M8.2 8.4h7.6M8.2 12h7.6M8.2 15.6h4.6"/></svg></span>Documents</button>
+      <button type="button" data-onglet="menu"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></span>Menu</button>
     </nav>
   </section>
 
   <!-- Feuille en bas d'écran (saisie d'une journée, formulaires) -------- -->
-  <div id="sheetwrap" class="sheetwrap" hidden>
-    <div id="sheet" class="sheet" role="dialog" aria-modal="true"></div>
+  <!-- REDESIGN 2A §5 — LA FEUILLE QUI MONTE DU BAS.
+       Les classes viennent du socle (`sh` / `shb`) ; les identifiants ne
+       changent pas — c'est par eux que `Kit.ouvrirFeuille` la trouve. -->
+  <div id="sheetwrap" class="sh" hidden>
+    <div id="sheet" class="shb" role="dialog" aria-modal="true"></div>
   </div>
 
   <!-- Message éphémère -------------------------------------------------- -->
@@ -85,37 +98,37 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!-- Configuration (URL + clé publique) -------------------------------- -->
-  <script src="config.js?v=lot31-2"></script>
+  <script src="config.js?v=redesign-2a"></script>
 
   <!-- Traduction des échecs en français --------------------------------- -->
-  <script src="js/messages.js?v=lot31-2"></script>
+  <script src="js/messages.js?v=redesign-2a"></script>
 
   <!-- Modules PURS du lot 1 — NON MODIFIÉS par ce lot -------------------- -->
-  <script src="js/feries.js?v=lot31-2"></script>
-  <script src="js/format.js?v=lot31-2"></script>
-  <script src="js/engine.js?v=lot31-2"></script>
+  <script src="js/feries.js?v=redesign-2a"></script>
+  <script src="js/format.js?v=redesign-2a"></script>
+  <script src="js/engine.js?v=redesign-2a"></script>
 
   <!-- Accès aux données, puis chaîne des mois (orchestration partagée) --- -->
-  <script src="js/db.js?v=lot31-2"></script>
-  <script src="js/chaine-mois.js?v=lot31-2"></script>
+  <script src="js/db.js?v=redesign-2a"></script>
+  <script src="js/chaine-mois.js?v=redesign-2a"></script>
 
   <!-- Boîte à outils d'interface (aucun calcul métier) ------------------- -->
-  <script src="js/ui-kit.js?v=lot31-2"></script>
+  <script src="js/ui-kit.js?v=redesign-2a"></script>
 
   <!-- Écrans (lot 6) ---------------------------------------------------- -->
-  <script src="js/ui-reouverture.js?v=lot31-2"></script>
-  <script src="js/ui-accueil.js?v=lot31-2"></script>
-  <script src="js/ui-enfant.js?v=lot31-2"></script>
-  <script src="js/ui-document.js?v=lot31-2"></script>
-  <script src="js/ui-conges.js?v=lot31-2"></script>
-  <script src="js/ui-historique.js?v=lot31-2"></script>
-  <script src="js/ui-contrat.js?v=lot31-2"></script>
+  <script src="js/ui-reouverture.js?v=redesign-2a"></script>
+  <script src="js/ui-accueil.js?v=redesign-2a"></script>
+  <script src="js/ui-enfant.js?v=redesign-2a"></script>
+  <script src="js/ui-document.js?v=redesign-2a"></script>
+  <script src="js/ui-conges.js?v=redesign-2a"></script>
+  <script src="js/ui-historique.js?v=redesign-2a"></script>
+  <script src="js/ui-contrat.js?v=redesign-2a"></script>
   <!-- Lot 20 — l'écran de la période de familiarisation (§20.4 d). Après
        ui-contrat.js, qui est son point d'entrée. -->
-  <script src="js/ui-familiarisation.js?v=lot31-2"></script>
-  <script src="js/ui-menu.js?v=lot31-2"></script>
-  <script src="js/ui-periode.js?v=lot31-2"></script>
+  <script src="js/ui-familiarisation.js?v=redesign-2a"></script>
+  <script src="js/ui-menu.js?v=redesign-2a"></script>
+  <script src="js/ui-periode.js?v=redesign-2a"></script>
 
-  <script src="js/app.js?v=lot31-2"></script>
+  <script src="js/app.js?v=redesign-2a"></script>
 </body>
 </html>

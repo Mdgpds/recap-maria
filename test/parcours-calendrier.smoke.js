@@ -117,17 +117,40 @@ function fondGagnant(css, doc, el) {
 
 /* Un calendrier de test, avec une case par état. Les classes sont exactement
    celles que `js/ui-enfant.js` pose : `ok`, `cg`, `ab`, `fe`, `nt`, `we`. */
+/* REDESIGN 2A — LES ETATS CHANGENT, ET C'EST VOULU.
+
+   Au lot 31, SEPT etats etaient colores, dont `ok` (journee de garde) et `we`
+   (fin de semaine). La maquette 2A ne colore QUE LES EXCEPTIONS : une journee
+   de garde ordinaire est une case blanche, et c'est ce qui rend les conges et
+   les absences lisibles d'un coup d'oeil sur un mois entier.
+
+   `ok` quitte donc cette liste — ce n'est pas un etat perdu, c'est l'etat par
+   defaut. Et `ec` (depart avant l'heure) et `fa` (familiarisation) y entrent :
+   la maquette leur donne une couleur, l'application n'en avait pas.
+
+   C'est aussi ce qui a permis de mettre le CONGE EN VERT (arbitrage d'Adrien
+   du 1er septembre) : le vert etait pris par la journee de garde, il ne l'est
+   plus. */
 var ETATS = [
   { classe: 'cg', quoi: 'congé de Maria' },
   { classe: 'ab', quoi: 'absence de l’enfant' },
   { classe: 'fe', quoi: 'jour férié' },
-  { classe: 'nt', quoi: 'journée non travaillée' },
-  { classe: 'ok', quoi: 'journée de garde' }
+  { classe: 'ec', quoi: 'départ avant l’heure' },
+  { classe: 'fa', quoi: 'familiarisation' },
+  { classe: 'nt', quoi: 'journée non travaillée' }
 ];
 
+/* Chaque etat est monte DEUX FOIS : tel quel, et avec `futur` — la classe
+   que `ui-enfant.js` ajoute a toute journee a venir. Une familiarisation
+   court par definition sur des jours a venir, un conge se pose d'avance :
+   la couleur d'un etat doit survivre a `futur`. C'est la reserve R1 de la
+   relecture du 1er septembre : la regle `td.futur:not(...)` datait d'avant le
+   2A, `fa` et `ec` n'y figuraient pas, et une familiarisation planifiee
+   s'affichait coupee en deux — prune jusqu'a aujourd'hui, blanche ensuite. */
 function monter(css) {
   var cases = ETATS.map(function (e) {
-    return '<td class="' + e.classe + '" id="c-' + e.classe + '"><div class="num">15</div></td>';
+    return '<td class="' + e.classe + '" id="c-' + e.classe + '"><div class="num">15</div></td>' +
+           '<td class="' + e.classe + ' futur" id="c-' + e.classe + '-futur"><div class="num">25</div></td>';
   }).join('');
   var dom = new JSDOM('<!doctype html><html><head><style>' + css + '</style></head>' +
     '<body><table class="cal"><tr>' + cases + '</tr></table></body></html>');
@@ -139,8 +162,9 @@ function mesurer(cssBrut) {
   var doc = monter(css);
   return ETATS.map(function (e) {
     var el = doc.getElementById('c-' + e.classe);
-    var g = fondGagnant(css, doc, el);
-    return { etat: e, gagnante: g };
+    var elFutur = doc.getElementById('c-' + e.classe + '-futur');
+    return { etat: e, gagnante: fondGagnant(css, doc, el),
+             gagnanteFutur: fondGagnant(css, doc, elFutur) };
   });
 }
 
@@ -148,7 +172,19 @@ function mesurer(cssBrut) {
 /* 1. La feuille d'AUJOURD'HUI : chaque état gagne, et aucun n'est blanc     */
 /* ------------------------------------------------------------------------ */
 
-var BLANC = '#ffffff';
+/* Le blanc de `table.cal td`. La maquette 2A l'ecrit `#fff` la ou le lot 24
+   ecrivait `#ffffff` : les deux notations designent la meme couleur, et un
+   test qui n'en connait qu'une se met a mentir des que le jeton est reecrit.
+   C'est arrive ici meme. */
+/* Comparaison EXACTE apres normalisation de la forme courte : `#fff8e1`
+   n'est pas du blanc, et une recherche par sous-chaine l'aurait pris pour
+   tel (remarque Rm2 de la relecture). */
+function couleurNormalisee(v) {
+  var s = String(v).trim().toLowerCase();
+  var m = s.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/);
+  return m ? '#' + m[1] + m[1] + m[2] + m[2] + m[3] + m[3] : s;
+}
+function estBlanc(v) { return couleurNormalisee(v) === '#ffffff'; }
 var cssActuel = fs.readFileSync(path.join(racine, 'css', 'style.css'), 'utf8');
 
 console.log('\n--- §2 : la couleur d’état l’emporte sur la règle de base ---');
@@ -159,18 +195,49 @@ mesurer(cssActuel).forEach(function (r) {
   if (!g) return;
   assert(g.sel.indexOf('.' + r.etat.classe) !== -1,
     r.etat.quoi + ' : la règle gagnante est bien celle de l’état (' + g.sel + ')');
-  assert(g.fond.toLowerCase().indexOf(BLANC) === -1,
+  assert(!estBlanc(g.fond),
     r.etat.quoi + ' : le fond n’est pas blanc (' + g.fond + ')');
+});
+
+console.log('\n--- §2 (R1) : un état À VENIR garde sa couleur ---');
+
+mesurer(cssActuel).forEach(function (r) {
+  var g = r.gagnanteFutur;
+  assert(!!g, 'un fond est déclaré pour ' + r.etat.quoi + ' à venir');
+  if (!g) return;
+  assert(g.sel.indexOf('.' + r.etat.classe) !== -1 && g.sel.indexOf('.futur') === -1,
+    r.etat.quoi + ' À VENIR : c’est la règle de l’état qui gagne, pas celle du futur (' + g.sel + ')');
+  assert(!estBlanc(g.fond),
+    r.etat.quoi + ' À VENIR : le fond n’est pas blanc (' + g.fond + ')');
 });
 
 /* La correction ne devait PAS passer par `!important` : le §2 le dit, et un
    `!important` sur un fond de calendrier gagnerait aussi contre la prochaine
    règle légitime — un thème sombre, un état ajouté. */
-var sansCommentaires = cssActuel.replace(/\/\*[\s\S]*?\*\//g, ' ');
-var zoneCal = sansCommentaires.slice(sansCommentaires.indexOf('table.cal {'),
-                                     sansCommentaires.indexOf('.lg {'));
-assert(zoneCal.length > 0 && zoneCal.indexOf('!important') === -1,
-  'aucun !important n’a été ajouté dans le bloc du calendrier');
+/* Le controle porte sur TOUTES les regles dont le selecteur contient
+   `table.cal`, ou qu'elles soient dans la feuille. Il n'y a plus de borne :
+   une borne qui glisse rend le controle muet en le laissant vert (c'est ce
+   qui etait arrive avec `.lg {`, puis a nouveau avec `.leg {` qui refermait
+   la tranche avant les regles heritees — reserve R2 de la relecture). Le
+   nombre de regles trouvees est lui-meme controle : un balayage qui ne
+   trouve rien ne prouve rien. */
+function reglesCalendrier(css) {
+  var sans = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  var re = /([^{}]+)\{([^{}]*)\}/g, m, out = [];
+  while ((m = re.exec(sans))) {
+    var sel = m[1].trim();
+    if (sel.charAt(0) === '@') continue;
+    if (sel.indexOf('table.cal') !== -1) out.push({ sel: sel, decls: m[2] });
+  }
+  return out;
+}
+var reglesCal = reglesCalendrier(cssActuel);
+assert(reglesCal.length >= 25,
+  'le balayage trouve bien les règles du calendrier, où qu’elles soient (' + reglesCal.length + ')');
+var avecImportant = reglesCal.filter(function (r) { return r.decls.indexOf('!important') !== -1; });
+assert(avecImportant.length === 0,
+  'aucun !important sur aucune règle du calendrier (' +
+  avecImportant.map(function (r) { return r.sel; }).join(' ; ') + ')');
 
 /* ------------------------------------------------------------------------ */
 /* 2. LA PREUVE QUE LE TEST MORD : on lui rend le défaut, il doit crier      */
@@ -186,7 +253,7 @@ assert(zoneCal.length > 0 && zoneCal.indexOf('!important') === -1,
 console.log('\n--- on remet le défaut : la mesure doit s’effondrer ---');
 
 var cssAvecLeDefaut = cssActuel.replace(
-  /table\.cal td\.(ok|ab|fe|cg|we|nt|warn)\b/g, 'td.$1');
+  /table\.cal td\.(ab|cg|fe|ec|fa|nt)\b/g, 'td.$1');
 
 assert(cssAvecLeDefaut !== cssActuel,
   'la mutation a bien retiré la requalification (sinon le contrôle serait vide)');
@@ -201,10 +268,25 @@ assert(perdants.length === ETATS.length,
 
 mesurer(cssAvecLeDefaut).forEach(function (r) {
   if (!r.gagnante) return;
-  assert(r.gagnante.fond.toLowerCase().indexOf(BLANC) !== -1,
+  assert(estBlanc(r.gagnante.fond),
     r.etat.quoi + ' : et le fond qui gagnait était bien LE BLANC de ' +
     '`table.cal td` (' + r.gagnante.fond + ')');
 });
+
+/* Et la preuve que la mesure « à venir » mord elle aussi : on retire UN état
+   de la liste d'exceptions de la règle du futur — exactement l'oubli de R1 —
+   et cet état, et lui seul, doit perdre sa couleur une fois à venir. */
+
+console.log('\n--- on oublie un état dans la règle du futur : lui seul doit perdre ---');
+
+var cssSansFa = cssActuel.replace(':not(.fa)', '');
+assert(cssSansFa !== cssActuel, 'la mutation a bien retiré `:not(.fa)` de la règle du futur');
+var perdantsFutur = mesurer(cssSansFa).filter(function (r) {
+  return !r.gagnanteFutur || r.gagnanteFutur.sel.indexOf('.futur') !== -1;
+});
+assert(perdantsFutur.length === 1 && perdantsFutur[0].etat.classe === 'fa',
+  'seule la familiarisation à venir redevient blanche (' +
+  perdantsFutur.map(function (p) { return p.etat.classe; }).join(', ') + ')');
 
 /* ------------------------------------------------------------------------ */
 

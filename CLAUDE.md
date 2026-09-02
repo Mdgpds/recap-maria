@@ -244,14 +244,25 @@ Deux règles de schéma :
 ```bash
 node test/run.js      # moteur, chaîne des mois, messages, couche données
 npm run test:ui       # tests de fumée d'interface (jsdom, index.html réel)
+npm run mesures       # mise en page à 390 px dans un VRAI navigateur (Playwright)
 ```
 
-**Décomptes de référence au 1er septembre 2026 (`main` = `02dbd46`) :**
+**Décomptes de référence au 2 septembre 2026 (branche `feat/redesign-2a`) :**
 
 | Suite | Assertions | Échecs |
 |---|---|---|
-| `node test/run.js` | **270** | 0 |
-| `npm run test:ui` | **1976** | 0 |
+| `node test/run.js` | **271** | 0 |
+| `npm run test:ui` | **2185** | 0 |
+
+(Avant le redesign 2A, `main` = `02dbd46` : 270 et 1976.)
+
+**`npm run mesures` n'est pas dans `test:ui`** : il a besoin de Playwright et
+d'un Chromium (`npm i -D playwright && npx playwright install chromium`, ou
+`PLAYWRIGHT_CHROMIUM=/chemin/chromium`). Il parcourt sept écrans à 390 × 780,
+tactile, sur un décor fictif servi par `test/fixtures/faux-supabase-390.js`, et
+sort en code 1 au premier débordement, contrôle rogné ou zone tactile sous
+44 px. C'est la seule mesure de mise en page du dépôt — jsdom ne met pas en
+page. `CAPTURES=/un/dossier` enregistre une capture par écran.
 
 Les deux tournent en CI (`.github/workflows/ci.yml`) sur chaque push vers
 `main` et chaque pull request, après un `node --check` de tous les fichiers
