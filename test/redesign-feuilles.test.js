@@ -69,6 +69,42 @@ assert(/height:\s*44px/.test(blocPoignee),
   '§10.4 : sa zone tactile fait 44 px (obtenu ' + blocPoignee.replace(/\s+/g, ' ') + ')');
 
 /* ------------------------------------------------------------------------ */
+/* §5 — LA FEUILLE SE VOIT QUAND ELLE EST OUVERTE                            */
+/* ------------------------------------------------------------------------ */
+
+/* Le 2 septembre, en production : « le bouton Poser des congés ne
+   fonctionne pas ». Il fonctionnait — la feuille s'ouvrait, `hidden` passait
+   à false, la suite de fumée la lisait et cliquait dedans. Mais la feuille
+   était INVISIBLE : `.sh` de la maquette est `display:none`, montrée par une
+   classe `.open` que `Kit.ouvrirFeuille` ne pose jamais. Toutes les feuilles
+   de l'application — déclarer une journée, poser un congé, tout — sont
+   restées invisibles pendant une matinée. jsdom ne met pas en page, et aucun
+   test ne regardait ce que la feuille de style FAIT de `#sheetwrap` une fois
+   `hidden` retiré. Celui-ci le regarde. */
+
+console.log('\n--- §5 : une feuille ouverte est VISIBLE, pas seulement « non cachée » ---');
+
+var JSDOM = require('jsdom').JSDOM;
+function displayDuVoile(css, hidden) {
+  var dom = new JSDOM('<!doctype html><html><head><style>' + css + '</style></head>' +
+    '<body><div id="sheetwrap" class="sh"' + (hidden ? ' hidden' : '') +
+    '><div id="sheet" class="shb"></div></div></body></html>');
+  var w = dom.window;
+  return w.getComputedStyle(w.document.getElementById('sheetwrap')).display;
+}
+assert(displayDuVoile(CSS, false) !== 'none',
+  '§5 : `#sheetwrap` sans `hidden` est affiché par la feuille de style (obtenu ' +
+  displayDuVoile(CSS, false) + ')');
+assert(displayDuVoile(CSS, true) === 'none',
+  '§5 : et avec `hidden`, il est caché (obtenu ' + displayDuVoile(CSS, true) + ')');
+/* La mutation qui remet le défaut de la maquette : `.sh` en `display:none`
+   au repos. La mesure doit crier. */
+var cssDefautMaquette = CSS.replace(/(\.sh \{[^}]*?)display:\s*flex/, '$1display: none');
+assert(cssDefautMaquette !== CSS, '§5 : la mutation a bien remis `display:none` sur `.sh`');
+assert(displayDuVoile(cssDefautMaquette, false) === 'none',
+  '§5 : avec le défaut de la maquette, la feuille ouverte serait invisible — et le test le voit');
+
+/* ------------------------------------------------------------------------ */
 /* §5 — le choix se fait par des choix cochables, jamais par une liste        */
 /* ------------------------------------------------------------------------ */
 
