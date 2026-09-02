@@ -53,10 +53,26 @@ const serveur = http.createServer((req, res) => {
 
 const FAUX = fs.readFileSync(path.join(__dirname, 'fixtures', 'faux-supabase-390.js'), 'utf8');
 
+/* Sept écrans, puis DEUX FEUILLES : la pose d'un congé (depuis Congés) et la
+   journée du 21 août (depuis l'espace enfant). Le troisième élément ouvre la
+   feuille une fois l'écran rendu ; la mesure exige alors que `#sheetwrap`
+   soit réellement VISIBLE et occupe l'écran. Le 2 septembre, toutes les
+   feuilles de l'application étaient invisibles en production — `display:none`
+   au repos, montré par une classe que personne ne posait — et cette mesure
+   n'ouvrait aucune feuille. Elle en ouvre deux maintenant. */
 const ECRANS = [
   ['accueil', {}], ['conges', {}], ['docs', {}], ['menu', {}],
   ['enfant', { contratId: 'c1', annee: 2026, mois: 8 }],
-  ['cloture', {}], ['moisPasse', { annee: 2026, mois: 7 }]
+  ['cloture', {}], ['moisPasse', { annee: 2026, mois: 7 }],
+  ['conges', {}, { feuille: 'pose', ouvrir: () => {
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
+    if (b) b.click(); return !!b;
+  } }],
+  ['enfant', { contratId: 'c1', annee: 2026, mois: 8 }, { feuille: 'journee', ouvrir: () => {
+    const td = [...document.querySelectorAll('table.cal td')].find(t => t.querySelector('.num') &&
+      t.querySelector('.num').textContent.trim() === '20' && t.getAttribute('role') === 'button');
+    if (td) td.click(); return !!td;
+  } }]
 ];
 
 (async () => {
@@ -70,10 +86,31 @@ const ECRANS = [
   await page.goto('http://localhost:8098/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
 
-  let total = { deb: 0, rog: 0, pet: 0 };
-  for (const [ecran, params] of ECRANS) {
+  let total = { deb: 0, rog: 0, pet: 0, feuilles: 0 };
+  for (const [ecran, params, extra] of ECRANS) {
+    await page.evaluate(() => { if (window.Kit && window.Kit.fermerFeuille) window.Kit.fermerFeuille(); });
     await page.evaluate(([e, p]) => window.App && window.App.aller(e, p, true), [ecran, params]);
     await page.waitForTimeout(700);
+    let nom = ecran;
+    if (extra && extra.feuille) {
+      nom = ecran + ' → feuille ' + extra.feuille;
+      const trouve = await page.evaluate(extra.ouvrir);
+      await page.waitForTimeout(700);
+      const f = await page.evaluate(() => {
+        const w = document.getElementById('sheetwrap'), s = document.getElementById('sheet');
+        const rw = w.getBoundingClientRect(), rs = s.getBoundingClientRect();
+        return { hidden: w.hidden, display: getComputedStyle(w).display,
+          voile: [Math.round(rw.width), Math.round(rw.height)],
+          feuille: [Math.round(rs.width), Math.round(rs.height)],
+          texte: s.textContent.replace(/\s+/g, ' ').trim().slice(0, 40) };
+      });
+      const visible = trouve && !f.hidden && f.display !== 'none' &&
+        f.voile[0] >= 390 && f.voile[1] >= 780 && f.feuille[1] >= 200;
+      console.log('\n=== ' + nom + ' === ' + (visible ? 'VISIBLE' : 'INVISIBLE') +
+        ' — voile ' + f.voile.join('×') + ', feuille ' + f.feuille.join('×') +
+        ', display ' + f.display + ' — « ' + f.texte + ' »');
+      if (!visible) total.feuilles++;
+    }
     const r = await page.evaluate(() => {
       const out = { largeur: document.documentElement.scrollWidth,
         deb: [], rog: [], pet: [] };
@@ -112,17 +149,18 @@ const ECRANS = [
       return out;
     });
     total.deb += r.deb.length; total.rog += r.rog.length; total.pet += r.pet.length;
-    console.log('\n=== ' + ecran + ' === largeur ' + r.largeur + ' px');
+    console.log((extra ? '' : '\n=== ' + nom + ' === ') + 'largeur ' + r.largeur + ' px');
     console.log('  débordements : ' + (r.deb.length || 'aucun'));
     r.deb.slice(0, 6).forEach(x => console.log('     ' + x));
     console.log('  rognés       : ' + (r.rog.length || 'aucun'));
     r.rog.slice(0, 6).forEach(x => console.log('     ' + x));
     console.log('  < 44 px      : ' + (r.pet.length || 'aucune'));
     r.pet.slice(0, 8).forEach(x => console.log('     ' + x));
-    if (process.env.CAPTURES) await page.screenshot({ path: path.join(process.env.CAPTURES, '390-' + ecran + '.png') });
+    if (process.env.CAPTURES) await page.screenshot({ path: path.join(process.env.CAPTURES,
+      '390-' + ecran + (extra ? '-feuille-' + extra.feuille : '') + '.png') });
   }
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
-    ', zones < 44 px ' + total.pet);
+    ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles);
   await nav.close(); serveur.close();
-  if (total.deb + total.rog + total.pet > 0) process.exit(1);
+  if (total.deb + total.rog + total.pet + total.feuilles > 0) process.exit(1);
 })();
