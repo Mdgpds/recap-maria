@@ -364,6 +364,13 @@ async function ouvrirAccueil() {
     txt(tuiles[0]).slice(0, 60) + ' »)');
   assert(aFaire().length === 1,
     'P1 : un seul mois en retard, une seule alerte (obtenu ' + aFaire().length + ')');
+  /* ARBITRAGE DU 2 SEPTEMBRE — un mois échu non clôturé rend le bouton du
+     pied ACTIF, même le 11. */
+  var boutonCloreP1 = Array.prototype.filter.call(document.querySelectorAll('button'), function (b) {
+    return /^Clôturer le mois d/.test(b.textContent.trim());
+  })[0];
+  assert(boutonCloreP1 && !boutonCloreP1.disabled,
+    'A1 : le 11, avec juillet en retard, le bouton du pied est ACTIF');
 
   /* ==================================================================== */
   /* P2 — Le 26, tout à jour sauf août                                    */
@@ -397,10 +404,28 @@ async function ouvrirAccueil() {
   assert(aFaire().length === 0,
     'P2bis : et AUCUNE alerte ne l’évoque — un mois en cours n’a rien à ' +
     'réclamer (obtenu ' + aFaire().length + ')');
+  /* ARBITRAGE DU 2 SEPTEMBRE — le bouton du pied suit la MÊME frontière :
+     gris tant qu'il n'y a rien à clôturer, avec une phrase qui dit pourquoi ;
+     actif à partir du 25, ou dès qu'un mois échu n'est pas clôturé. */
+  var boutonClore = Array.prototype.filter.call(document.querySelectorAll('button'), function (b) {
+    return /^Clôturer le mois d/.test(b.textContent.trim());
+  })[0];
+  assert(!!boutonClore, 'A1 : le bouton « Clôturer le mois de … » est en pied d’accueil');
+  assert(boutonClore && boutonClore.disabled,
+    'A1 : le 24, sans retard, le bouton est GRIS');
+  assert(document.body.textContent.indexOf('Rien à clôturer pour l’instant') !== -1,
+    'A1 : et une phrase dit pourquoi');
   scene.aujourdhui = '2026-08-25';
   await ouvrirAccueil();
   assert(!!aFaireParTexte('Août à clôturer pour Alix'),
     'P2bis : le 25, il l’est — la bascule est bien au 25');
+  boutonClore = Array.prototype.filter.call(document.querySelectorAll('button'), function (b) {
+    return /^Clôturer le mois d/.test(b.textContent.trim());
+  })[0];
+  assert(boutonClore && !boutonClore.disabled,
+    'A1 : le 25, le bouton redevient ACTIF');
+  assert(document.body.textContent.indexOf('Rien à clôturer pour l’instant') === -1,
+    'A1 : et la phrase disparaît');
 
   /* ==================================================================== */
   /* P3 — Tout est clôturé                                                */

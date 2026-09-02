@@ -637,19 +637,34 @@
     corps.appendChild(poser);
 
     /* « Clôturer le mois de <mois> » mène au PARCOURS GUIDÉ, et pas à l'écran
-       de clôture du §7.2 que le commit 7 ajoute dans l'onglet Documents. Les
-       deux ne font pas le même travail : l'écran du §7.2 ne connaît que le
-       mois en cours, le parcours guidé passe en revue les mois EN RETARD de
-       chaque contrat, un par un, avec une décision par écran. Router ce bouton
-       vers le §7.2 ferait disparaître le seul chemin qui rattrape un retard.
-       Les deux chemins coexistent donc, et c'est une question posée à Adrien,
-       pas une règle tranchée ici. */
+       de clôture du §7.2 : l'écran du §7.2 ne connaît que le mois en cours,
+       le parcours guidé passe en revue les mois EN RETARD de chaque contrat,
+       un par un, avec une décision par écran.
+
+       ARBITRAGE D'ADRIEN DU 2 SEPTEMBRE — LE BOUTON EST GRISÉ TANT QU'IL N'Y A
+       RIEN À CLÔTURER. Il redevient actif « à partir du 25 du mois, et le
+       temps qu'un mois arrivé à son terme n'a pas été clôturé ». C'est
+       exactement ce que `moisACloturer` sait déjà : la garde V8-03 fait
+       entrer le mois courant à partir du 25, et `retards` porte les mois
+       échus non clôturés. Le bouton ne se met donc pas à juger — il regarde
+       si la liste est vide. Une phrase dit pourquoi il est gris : un bouton
+       inactif et muet est une impasse (§7.2). */
+    var aCloturer = moisACloturer(fiches, m);
     var clore = Kit.bouton('btn nt', function () {
-      global.App.aller('finDeMois', { liste: moisACloturer(fiches, m) });
+      global.App.aller('finDeMois', { liste: aCloturer });
     });
     clore.textContent = 'Clôturer le mois de ' +
       Kit.moisCapitale(m.annee, m.mois).split(' ')[0].toLowerCase();
+    if (!aCloturer.length) {
+      clore.disabled = true;
+      clore.setAttribute('aria-disabled', 'true');
+    }
     corps.appendChild(clore);
+    if (!aCloturer.length) {
+      corps.appendChild(Kit.ce('p', 'pfin',
+        'Rien à clôturer pour l’instant : un mois se clôture à partir du 25, ' +
+        'ou dès qu’il est terminé.'));
+    }
   }
 
   /* Les mois que la clôture doit passer en revue : les retards de chaque

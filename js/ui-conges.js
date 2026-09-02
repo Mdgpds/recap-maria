@@ -139,6 +139,10 @@
             avenants: r[3],
             samedis: r[4],
             entree: global.App.moisDe(r[0], m.annee, m.mois),
+            /* La chaîne entière : l'historique des congés à l'heure des autres
+               mois se lit dans ses résultats (`ecartsDeclares`), sans relire
+               les journées de chaque mois. */
+            chaine: r[0],
             journees: r[1],
             /* `null` — et non `[]` — quand la lecture échoue : l'écran doit
                pouvoir dire « je n'ai pas pu lire vos périodes » au lieu de
@@ -471,10 +475,17 @@
      L'état `vue.annee` / `vue.mois` reste : il donne son mois par défaut à la
      feuille de pose, et c'est lui qui définit l'année de référence du quota
      de samedis. Il n'a simplement plus de commande à l'écran. */
-  /* La fenêtre de lecture des périodes posées : du 1er du mois affiché à
-     douze mois plus tard. `MOIS_POSE_A_VENIR` est l'horizon de la feuille de
-     pose ; les deux doivent rester égaux, sans quoi on pourrait poser un
-     congé qu'on ne verrait pas. */
+  /* La fenêtre de lecture des périodes posées : du DÉBUT DU CONTRAT à douze
+     mois après le mois en cours. `MOIS_POSE_A_VENIR` est l'horizon de la
+     feuille de pose ; les deux doivent rester égaux, sans quoi on pourrait
+     poser un congé qu'on ne verrait pas.
+
+     ARBITRAGE D'ADRIEN DU 2 SEPTEMBRE — la liste remonte dans le passé. Le
+     commit 6 s'y refusait (« un congé échu se lit sur le document de son
+     mois ») ; Adrien veut un historique mois par mois, le plus récent en
+     premier, chaque mois derrière un repli. Un repli fermé ne coûte rien à
+     lire, et Maria retrouve un congé de mars sans ouvrir le document de
+     mars. */
   var MOIS_POSE_A_VENIR = 12;
 
   /* Contrôle de CAPACITÉ, pas rattrapage d'erreur — c'est la règle du fichier
@@ -487,17 +498,19 @@
     if (typeof global.DB.listImputations !== 'function') {
       return global.DB.listImputationsPourMois(c.id, m.annee, m.mois);
     }
-    var f = fenetrePeriodes(m);
+    var f = fenetrePeriodes(m, c);
     return global.DB.listImputations(c.id, f.debut, f.fin);
   }
 
-  function fenetrePeriodes(m) {
+  function fenetrePeriodes(m, contrat) {
     var fin = { annee: m.annee, mois: m.mois };
     for (var i = 0; i < MOIS_POSE_A_VENIR; i++) {
       fin = Chaine.moisSuivant(fin.annee, fin.mois);
     }
+    var debutContrat = contrat && contrat.date_debut ? String(contrat.date_debut).slice(0, 10) : null;
+    var debutMois = Kit.iso(m.annee, m.mois, 1);
     return {
-      debut: Kit.iso(m.annee, m.mois, 1),
+      debut: debutContrat && debutContrat < debutMois ? debutContrat : debutMois,
       fin: Kit.iso(fin.annee, fin.mois, Kit.nbJoursDansMois(fin.annee, fin.mois))
     };
   }
@@ -623,34 +636,81 @@
       return p;
     }
 
-    var groupes = grouperPeriodes();
-    var horaires = congesHoraires();
+    /* ARBITRAGE DU 2 SEPTEMBRE — UN REPLI PAR MOIS, LE PLUS RÉCENT EN
+       PREMIER. Le mois en cours est toujours là et toujours ouvert ; les
+       autres — à venir comme passés — n'apparaissent que s'ils portent un
+       congé, repliés, avec leur compte en valeur. Un congé posé pour
+       septembre se lit en août au-dessus du mois en cours ; un congé de mars
+       se retrouve en dessous, sans ouvrir le document de mars. */
+    var mois = moisAvecConges();
+    var total = 0;
+    mois.forEach(function (x) { total += x.groupes.length + x.horaires.length; });
 
-    if (!groupes.length && !horaires.length) {
+    if (!total) {
       var vide = Kit.ce('div', 'cd');
       vide.appendChild(Kit.ce('div', 'sb q', 'Aucun congé posé.'));
       p.appendChild(vide);
       return p;
     }
 
-    var l = Kit.ce('div', 'cd pad0');
-    p.appendChild(l);
-    groupes.forEach(function (g) { ligneperiode(l, g); });
-    /* §21.3 — LA TRACE D'UN CONGÉ POSÉ À L'HEURE.
-       « ½ journée le 8 octobre — Léa : récupération · Noah : sans solde ». Une
-       ligne par JOUR, pas par contrat : Maria a posé un seul congé, elle doit
-       en lire un seul — mais l'issue de chaque enfant est nommée, parce
-       qu'elle diffère et que c'est tout l'objet du §21.2. */
-    horaires.forEach(function (h) { ligneHoraire(l, h); });
-    /* §26.2 — LA RÈGLE DU DÉCOMPTE NE SE RÉPÈTE PLUS ICI. Elle vit là où le
-       nombre est produit (le bloc vert de la pose) et sur l'encart RG-06 du
-       document. Ce qui RESTE ici, parce que c'est propre à CES périodes-là et
-       à personne d'autre : les jours fériés qu'elles contiennent, nommés. */
-    if (groupes.length) {
-      var f = phraseDecompteFeries(groupes);
-      if (f) p.appendChild(f);
-    }
+    mois.forEach(function (x) {
+      var courant = x.annee === vue.annee && x.mois === vue.mois;
+      var n = x.groupes.length + x.horaires.length;
+      var repli = Kit.fold(Kit.moisCapitale(x.annee, x.mois),
+        n ? (n + (n > 1 ? ' congés' : ' congé')) : 'aucun', { ouvert: courant });
+      repli.bloc.classList.add('mois-conges');
+      if (!n) {
+        repli.corps.appendChild(Kit.ce('div', 'sb q', 'Aucun congé posé ce mois-ci.'));
+      } else {
+        var l = repli.corps;
+        x.groupes.forEach(function (g) { ligneperiode(l, g, x); });
+        /* §21.3 — LA TRACE D'UN CONGÉ POSÉ À L'HEURE.
+           « ½ journée le 8 octobre — Léa : récupération · Noah : sans solde ».
+           Une ligne par JOUR, pas par contrat : Maria a posé un seul congé,
+           elle doit en lire un seul — mais l'issue de chaque enfant est
+           nommée, parce qu'elle diffère et que c'est tout l'objet du §21.2. */
+        x.horaires.forEach(function (h) { ligneHoraire(l, h); });
+        /* §26.2 — LA RÈGLE DU DÉCOMPTE NE SE RÉPÈTE PLUS ICI. Ce qui RESTE,
+           parce que c'est propre à CES périodes-là : les jours fériés
+           qu'elles contiennent, nommés. */
+        if (x.groupes.length) {
+          var f = phraseDecompteFeries(x.groupes);
+          if (f) repli.corps.appendChild(f);
+        }
+      }
+      p.appendChild(repli.bloc);
+    });
     return p;
+  }
+
+  /* Les mois de la fenêtre qui portent au moins un congé, plus le mois en
+     cours toujours, du plus récent au plus ancien. */
+  function moisAvecConges() {
+    var par = {};
+    function poser(annee, mois) {
+      var cle = annee + '-' + mois;
+      if (!par[cle]) par[cle] = { annee: annee, mois: mois };
+      return par[cle];
+    }
+    poser(vue.annee, vue.mois);
+    (vue.fiches || []).forEach(function (f) {
+      if (f.erreur) return;
+      (f.imputations || []).forEach(function (i) {
+        poser(Number(String(i.date_debut).slice(0, 4)), Number(String(i.date_debut).slice(5, 7)));
+      });
+      ((f.chaine && f.chaine.mois) || []).forEach(function (e) {
+        var ecarts = (e.resultat && e.resultat.ecartsDeclares) || [];
+        if (ecarts.some(function (x) { return x.evenement === 'conge_horaire'; })) poser(e.annee, e.mois);
+      });
+    });
+    return Object.keys(par).map(function (k) {
+      var x = par[k];
+      x.groupes = grouperPeriodes(x);
+      x.horaires = congesHorairesDuMois(x);
+      return x;
+    }).filter(function (x) {
+      return (x.annee === vue.annee && x.mois === vue.mois) || x.groupes.length || x.horaires.length;
+    }).sort(function (a, b) { return (b.annee * 12 + b.mois) - (a.annee * 12 + a.mois); });
   }
 
   /* Les congés à l'heure du mois affiché, regroupés par jour. Ils vivent sur
@@ -663,6 +723,31 @@
     conges_payes: 'congés payés',
     sans_solde: 'sans solde'
   };
+
+  /* Les congés à l'heure d'un AUTRE mois que celui affiché : lus dans le
+     résultat de la chaîne (`ecartsDeclares`, événement `conge_horaire`), sans
+     relire les journées. La moitié (matin / après-midi) n'y est pas : la
+     ligne dit la durée, comme pour une pose antérieure à la migration 020. */
+  function congesHorairesDuMois(m) {
+    if (m.annee === vue.annee && m.mois === vue.mois) return congesHoraires();
+    var par = {};
+    var ordre = [];
+    (vue.fiches || []).forEach(function (f) {
+      if (f.erreur || !f.chaine) return;
+      var e = global.App.moisDe(f.chaine, m.annee, m.mois);
+      var ecarts = (e && e.resultat && e.resultat.ecartsDeclares) || [];
+      ecarts.forEach(function (x) {
+        if (x.evenement !== 'conge_horaire') return;
+        var minutes = -(x.minutes || 0);
+        var cle = x.jour + '|' + minutes + '|';
+        if (!par[cle]) { par[cle] = { jour: x.jour, minutes: minutes, moitie: null, parts: [] }; ordre.push(cle); }
+        par[cle].parts.push({ contratId: f.contrat.id, prenom: f.contrat.prenom_enfant,
+          issue: x.imputeSur || 'recuperation' });
+      });
+    });
+    ordre.sort();
+    return ordre.map(function (k) { return par[k]; });
+  }
 
   function congesHoraires() {
     /* GROUPÉ PAR JOUR **ET PAR DURÉE**, pas par jour seul.
@@ -738,7 +823,11 @@
      diffère d'un contrat à l'autre, auquel cas la ligne le dit et le détail
      s'ouvre au toucher. Les bornes peuvent légitimement différer : un contrat
      qui démarre au milieu de la période n'en porte que la fin. */
-  function grouperPeriodes() {
+  /* `m` : le mois dont on veut les périodes — celles qui COMMENCENT ce
+     mois-là. Sans `m`, toutes les périodes de la fenêtre. Les congés sans
+     répartition enregistrée (lus dans le moteur) n'existent que pour le mois
+     affiché : la chaîne ne les porte que là. */
+  function grouperPeriodes(m) {
     var par = {};
     var ordre = [];
     function groupe(debut, fin) {
@@ -746,14 +835,20 @@
       if (!par[cle]) { par[cle] = { debut: debut, fin: fin, lignes: [] }; ordre.push(cle); }
       return par[cle];
     }
+    function duMois(iso) {
+      return !m || (Number(iso.slice(0, 4)) === m.annee && Number(iso.slice(5, 7)) === m.mois);
+    }
+    var moisAffiche = !m || (m.annee === vue.annee && m.mois === vue.mois);
 
     vue.fiches.forEach(function (f) {
       if (f.erreur) return;
       var couvertes = {};
       (f.imputations || []).forEach(function (i) {
+        if (!duMois(i.date_debut)) return;
         couvertes[i.date_debut + '|' + i.date_fin] = true;
-        groupe(i.date_debut, i.date_fin).lignes.push({ contrat: f.contrat, imputation: i });
+        groupe(i.date_debut, i.date_fin).lignes.push({ contrat: f.contrat, fiche: f, imputation: i });
       });
+      if (!moisAffiche) return;
 
       /* LES CONGÉS SANS RÉPARTITION ENREGISTRÉE ne doivent pas disparaître de
          la liste. Un congé posé avant que la ventilation n'existe, ou dont la
@@ -820,7 +915,8 @@
   }
 
 
-  function ligneperiode(l, groupe) {
+  function ligneperiode(l, groupe, m) {
+    m = m || { annee: vue.annee, mois: vue.mois };
     var ref = groupe.lignes[0].imputation;
     var uniforme = memeVentilation(groupe);
 
@@ -831,12 +927,12 @@
     /* La part d'un mois se calcule avec LES MÊMES samedis que le décompte
        total : deux règles différentes donneraient « 6 jours, dont 3 en août »
        sur une période qui en compte 5. */
-    var part = Chaine.partDuMois(Engine, ref, planning, vue.annee, vue.mois,
+    var part = Chaine.partDuMois(Engine, ref, planning, m.annee, m.mois,
       samedisDuGroupe(groupe));
 
     var textes = [];
     if (part !== ref.jours_ouvrables) {
-      textes.push('dont ' + Kit.jours(part) + ' en ' + Kit.libelleMois(vue.mois));
+      textes.push('dont ' + Kit.jours(part) + ' en ' + Kit.libelleMois(m.mois));
     }
     /* §7 — UNE PÉRIODE AFFICHÉE NOMME SES SAMEDIS COMPTÉS, comme sur le
        document. Une période sans samedi compté ne dit rien de plus : le

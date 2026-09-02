@@ -37,15 +37,35 @@
     { id: 'j5', contrat_id: 'c1', jour: '2026-08-19', type: 'conge_maria' },
     { id: 'j6', contrat_id: 'c2', jour: '2026-08-17', type: 'conge_maria' },
     { id: 'j7', contrat_id: 'c2', jour: '2026-08-18', type: 'conge_maria' },
-    { id: 'j8', contrat_id: 'c2', jour: '2026-08-19', type: 'conge_maria' }
+    { id: 'j8', contrat_id: 'c2', jour: '2026-08-19', type: 'conge_maria' },
+    /* Un congé posé D'AVANCE (septembre) et un congé PASSÉ (juin) : c'est ce
+       qui remplit l'historique mois par mois de l'onglet Congés. */
+    { id: 'j9', contrat_id: 'c1', jour: '2026-09-14', type: 'conge_maria' },
+    { id: 'j10', contrat_id: 'c1', jour: '2026-09-15', type: 'conge_maria' },
+    { id: 'j11', contrat_id: 'c2', jour: '2026-09-14', type: 'conge_maria' },
+    { id: 'j12', contrat_id: 'c2', jour: '2026-09-15', type: 'conge_maria' },
+    { id: 'j13', contrat_id: 'c1', jour: '2026-06-08', type: 'conge_maria' },
+    { id: 'j14', contrat_id: 'c2', jour: '2026-06-08', type: 'conge_maria' }
   ];
   var IMPUTATIONS = [
     { id: 'i1', contrat_id: 'c1', date_debut: '2026-08-17', date_fin: '2026-08-19',
-      jours_decomptes: 3, jours_sur_cp: 3, jours_sur_sup: 0, jours_sans_solde: 0,
+      jours_ouvrables: 3, jours_sur_cp: 3, jours_sur_sup: 0, jours_sans_solde: 0,
       minutes_sur_cp: 1620, minutes_sur_sup: 0 },
     { id: 'i2', contrat_id: 'c2', date_debut: '2026-08-17', date_fin: '2026-08-19',
-      jours_decomptes: 3, jours_sur_cp: 3, jours_sur_sup: 0, jours_sans_solde: 0,
-      minutes_sur_cp: 1620, minutes_sur_sup: 0 }
+      jours_ouvrables: 3, jours_sur_cp: 3, jours_sur_sup: 0, jours_sans_solde: 0,
+      minutes_sur_cp: 1620, minutes_sur_sup: 0 },
+    { id: 'i3', contrat_id: 'c1', date_debut: '2026-09-14', date_fin: '2026-09-15',
+      jours_ouvrables: 2, jours_sur_cp: 2, jours_sur_sup: 0, jours_sans_solde: 0,
+      minutes_sur_cp: 1080, minutes_sur_sup: 0 },
+    { id: 'i4', contrat_id: 'c2', date_debut: '2026-09-14', date_fin: '2026-09-15',
+      jours_ouvrables: 2, jours_sur_cp: 2, jours_sur_sup: 0, jours_sans_solde: 0,
+      minutes_sur_cp: 1080, minutes_sur_sup: 0 },
+    { id: 'i5', contrat_id: 'c1', date_debut: '2026-06-08', date_fin: '2026-06-08',
+      jours_ouvrables: 1, jours_sur_cp: 1, jours_sur_sup: 0, jours_sans_solde: 0,
+      minutes_sur_cp: 540, minutes_sur_sup: 0 },
+    { id: 'i6', contrat_id: 'c2', date_debut: '2026-06-08', date_fin: '2026-06-08',
+      jours_ouvrables: 1, jours_sur_cp: 1, jours_sur_sup: 0, jours_sans_solde: 0,
+      minutes_sur_cp: 540, minutes_sur_sup: 0 }
   ];
   var RECAPS = [
     { id: 'r1', contrat_id: 'c1', annee: 2026, mois: 7, statut: 'fige',

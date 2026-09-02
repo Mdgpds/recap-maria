@@ -252,7 +252,7 @@ npm run mesures       # mise en page à 390 px dans un VRAI navigateur (Playwrig
 | Suite | Assertions | Échecs |
 |---|---|---|
 | `node test/run.js` | **271** | 0 |
-| `npm run test:ui` | **2173** | 0 |
+| `npm run test:ui` | **2185** | 0 |
 
 (Avant le redesign 2A, `main` = `02dbd46` : 270 et 1976.)
 

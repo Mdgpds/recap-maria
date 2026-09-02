@@ -356,7 +356,8 @@
      LE ⋯ RESTE, ET C'EST UN ÉCART ASSUMÉ. Le §4.1 énumère le contenu de la
      barre et ne le mentionne pas ; le retirer supprimerait « Marquer
      plusieurs jours d'un coup », une fonction entière que la spécification ne
-     demande nulle part de supprimer. Signalé à Adrien, pas tranché ici. */
+     demande nulle part de supprimer. Consulté le 2 septembre, Adrien ne sait
+     pas si Maria s'en sert : dans le doute, la fonction reste. */
   function barre(barreEl, contrat, m) {
     Kit.vider(barreEl);
     barreEl.className = 'top enfant';
