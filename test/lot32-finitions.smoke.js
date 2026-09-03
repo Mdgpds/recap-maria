@@ -234,6 +234,38 @@ function aller(ecran, params) {
   assert(!!boutonExact(corps, 'Ranger ce contrat'), '§3 : « Ranger ce contrat » reste');
 
   /* ==================================================================== */
+  /* §4 — LA PÉRIODE (« Sur une période », onglet Documents)              */
+  /* ==================================================================== */
+  console.log('\n--- §4 : la période ---');
+  await aller('periode', {});
+  await pause(500);
+  barreSlim('Sur une période');
+  aucunHerite(corps, 'la période');
+  egal(corps.querySelectorAll('select').length - corps.querySelectorAll('.dates select').length, 0,
+    '§4 : hors les dates, plus aucune liste déroulante — le choix du contrat est cochable');
+  var chContrats = corps.querySelectorAll('.ch');
+  egal(chContrats.length, 3, '§4 : un choix cochable par contrat, plus « Tous les contrats »');
+  assert(chContrats[0].classList.contains('on') && txt(chContrats[0]).indexOf('Tous les contrats') !== -1,
+    '§4 : « Tous les contrats » est le choix par défaut');
+  assert(!!boutonExact(corps, 'Ce mois-ci') && !!boutonExact(corps, 'Cette année de bilan') &&
+    !!boutonExact(corps, 'Toute la durée d’un contrat'), '§4 : les trois raccourcis restent');
+  egal(corps.querySelectorAll('.fld .dates').length, 2, '§4 : les deux dates restent');
+  boutonExact(corps, 'Ce mois-ci').click();
+  await pause(900);
+  var cartes = corps.querySelectorAll('#resultats-periode .cd');
+  assert(cartes.length >= 2, '§4 : les résultats sont des cartes du socle (' + cartes.length + ')');
+  assert(corps.querySelectorAll('#resultats-periode .ln').length >= 6, '§4 : et leurs valeurs des lignes `ln`');
+  assert(!!corps.querySelector('#resultats-periode .ln.tot'), '§4 : le total est une `ln.tot`');
+  var totalAffiche = txt(corps.querySelector('#resultats-periode .ln.tot b'));
+  /* Le montant est rejoué par le moteur : la vue d'ensemble additionne les
+     agrégats de la chaîne (`Chaine.totaliserAgregats`), jamais un chiffre
+     écrit en dur. */
+  var PER = fs.readFileSync(path.join(racine, 'js', 'ui-periode.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ');
+  assert(/totaliserAgregats/.test(PER) && !/\d{3,}\s*\*\s*\d/.test(PER),
+    '§4 : les montants viennent de la chaîne et du moteur (total affiché « ' + totalAffiche + ' »)');
+  aucunHerite(corps, 'les résultats de la période');
+
+  /* ==================================================================== */
   console.log('\n' + (echecs ? echecs + ' échec(s)' : 'lot 32 : tout est vert'));
   process.exit(echecs ? 1 : 0);
 }());

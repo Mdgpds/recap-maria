@@ -67,6 +67,11 @@ const ECRANS = [
   /* LOT 32 — les écrans restants passent sous la même mesure. */
   ['fiche', { contratId: 'c1' }],
   ['fiche', { contratId: 'c1', section: 'fin' }],
+  ['periode', {}],
+  ['periode', {}, { resultats: true, ouvrir: () => {
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Ce mois-ci');
+    if (b) b.click(); return !!b;
+  } }],
   ['conges', {}, { feuille: 'pose', ouvrir: () => {
     const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
     if (b) b.click(); return !!b;
@@ -95,6 +100,11 @@ const ECRANS = [
     await page.evaluate(([e, p]) => window.App && window.App.aller(e, p, true), [ecran, params]);
     await page.waitForTimeout(700);
     let nom = ecran;
+    if (extra && extra.resultats) {
+      nom = ecran + ' → résultats';
+      await page.evaluate(extra.ouvrir);
+      await page.waitForTimeout(1200);
+    }
     if (extra && extra.feuille) {
       nom = ecran + ' → feuille ' + extra.feuille;
       const trouve = await page.evaluate(extra.ouvrir);
@@ -152,7 +162,7 @@ const ECRANS = [
       return out;
     });
     total.deb += r.deb.length; total.rog += r.rog.length; total.pet += r.pet.length;
-    console.log((extra ? '' : '\n=== ' + nom + ' === ') + 'largeur ' + r.largeur + ' px');
+    console.log((extra && extra.feuille ? '' : '\n=== ' + nom + ' === ') + 'largeur ' + r.largeur + ' px');
     console.log('  débordements : ' + (r.deb.length || 'aucun'));
     r.deb.slice(0, 6).forEach(x => console.log('     ' + x));
     console.log('  rognés       : ' + (r.rog.length || 'aucun'));
@@ -161,7 +171,7 @@ const ECRANS = [
     r.pet.slice(0, 8).forEach(x => console.log('     ' + x));
     if (process.env.CAPTURES) await page.screenshot({ path: path.join(process.env.CAPTURES,
       '390-' + ecran + (params && params.section ? '-' + params.section : '') +
-      (extra ? '-feuille-' + extra.feuille : '') + '.png') });
+      (extra && extra.feuille ? '-feuille-' + extra.feuille : '') + (extra && extra.resultats ? '-resultats' : '') + '.png') });
   }
   /* ------------------------------------------------------------------
      LOT 32 — LES CONTRÔLES DE VALEUR CALCULÉE.
