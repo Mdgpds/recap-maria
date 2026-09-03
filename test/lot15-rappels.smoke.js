@@ -728,7 +728,9 @@ var moisPrecedent = corpsMoisPrecedent
   /* P4 — le garde « rien à clôturer ». Il ne peut pas s'exécuter ici (il
      interroge la base), mais on vérifie qu'il est bien AVANT tout envoi :
      l'ordre est toute la garantie. */
-  var iGarde = SRC_FN.indexOf('if (nb === 0)');
+  /* LOT 32 §9.3 — le garde tient compte de ce que Maria a demandé : rien à
+     clôturer ET rien à déclarer, rien ne part. */
+  var iGarde = SRC_FN.indexOf('nb === 0) && journees === 0');
   var iEnvoi = SRC_FN.indexOf('sendNotification');
   assert(iGarde !== -1, 'P4 : le garde « rien à clôturer » existe');
   assert(iGarde < iEnvoi && iEnvoi !== -1,

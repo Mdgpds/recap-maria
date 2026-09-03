@@ -483,6 +483,51 @@ function aller(ecran, params) {
   delete window.Notification;
 
   /* ==================================================================== */
+  /* §10 — LES RAPPELS, CÔTÉ SERVEUR : PRÉPARÉ, NON DÉPLOYÉ               */
+  /* ==================================================================== */
+  console.log('\n--- §10 : le serveur, préparé ---');
+  var FN = fs.readFileSync(path.join(racine, 'supabase', 'functions', 'rappels-cloture', 'index.ts'), 'utf8');
+  var migrations = fs.readdirSync(path.join(racine, 'supabase', 'migrations')).filter(function (f) { return /\.sql$/.test(f); }).sort();
+  var numeros = migrations.map(function (f) { return Number(f.slice(0, 3)); });
+  egal(numeros[numeros.length - 1], 21, '§10 : la migration 021 est la dernière');
+  assert(numeros.every(function (n, i) { return n === i + 1; }), '§10 : la suite 001 → 021 est continue, sans trou ni doublon');
+  assert(migrations[migrations.length - 1] === '021_rappels.sql', '§10 : elle s’appelle 021_rappels.sql');
+  var M021 = fs.readFileSync(path.join(racine, 'supabase', 'migrations', '021_rappels.sql'), 'utf8');
+  assert(/add column if not exists quoi/.test(M021), '§10 : elle ajoute `quoi` à preference_rappel');
+  assert(!/using \(true\)/.test(M021.replace(/--[^\n]*/g, '')), '§10 : jamais de `using (true)`');
+  assert(/revoke all on public\.abonnement_push/.test(M021) && /create policy abonnement_push_delete/.test(M021),
+    '§10 : `revoke all` puis des policies explicites par opération');
+  assert(!/create table/.test(M021), '§10 : elle remet d’aplomb, elle ne duplique pas la table');
+  assert(fs.existsSync(path.join(racine, 'supabase', 'controles', 'rappels-planification.sql')),
+    '§10 : le SQL de planification pg_cron est livré à part, prêt à coller');
+  var PLAN = fs.readFileSync(path.join(racine, 'supabase', 'controles', 'rappels-planification.sql'), 'utf8');
+  assert(/<URL-DE-LA-FONCTION>/.test(PLAN) && /<RAPPELS_SECRET>/.test(PLAN),
+    '§10 : et il ne contient que des emplacements — aucune valeur');
+  assert(/x-rappels-secret/.test(FN) && /status: 401/.test(FN) && /!SECRET_APPEL/.test(FN),
+    '§10 : la fonction refuse tout appel sans le secret, et refuse tout tant que le secret n’est pas posé');
+  assert(/\.select\('owner, actif, jour_du_mois, heure, chaque_jour_ensuite, quoi, dernier_envoi_le'\)/.test(FN),
+    '§10 : la fonction lit `quoi`');
+  assert(/journeesADeclarer\(/.test(FN) && /minutes_reelles > 0/.test(FN),
+    '§10 : les journées non déclarées comptent celles sans minutes réelles — une arrivée seule ne paie rien');
+  var FN_CODE = FN.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, '');
+  assert(!/prenom_enfant|famille/.test(FN_CODE.slice(FN_CODE.indexOf('Deno.serve'))),
+    '§9.4 : la fonction ne lit ni prénom ni famille pour construire le rappel');
+  /* Les fériés du serveur sont ceux de js/feries.js, sur cinq ans. */
+  var blocFeries = FN.slice(FN.indexOf('/* FERIES-DEBUT'), FN.indexOf('/* FERIES-FIN */'));
+  var sansTypes = require('node:module').stripTypeScriptTypes;
+  var feriesServeur = new Function('annee',
+    sansTypes(blocFeries.replace(/\/\* FERIES-DEBUT[^\n]*\n/, '')) +
+    'function versMs(iso) { var p = iso.split(\'-\'); return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }' +
+    'function versIso(ms) { var d = new Date(ms); return d.getUTCFullYear() + \'-\' + String(d.getUTCMonth() + 1).padStart(2, \'0\') + \'-\' + String(d.getUTCDate()).padStart(2, \'0\'); }' +
+    'return joursFeriesFrance(annee).slice().sort();');
+  [2026, 2027, 2028, 2029, 2030].forEach(function (an) {
+    egal(feriesServeur(an).join(','), window.Feries.joursFeriesFrance(an).join(','),
+      '§10 : les fériés ' + an + ' du serveur sont ceux de js/feries.js');
+  });
+  assert(fs.existsSync(path.join(racine, 'supabase', 'functions', 'rappels-cloture', 'DEPLOIEMENT.md')),
+    '§10 : la marche à suivre numérotée est livrée avec la fonction');
+
+  /* ==================================================================== */
   console.log('\n' + (echecs ? echecs + ' échec(s)' : 'lot 32 : tout est vert'));
   process.exit(echecs ? 1 : 0);
 }());

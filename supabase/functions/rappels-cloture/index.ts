@@ -116,7 +116,7 @@ Deno.serve(async (requete: Request) => {
      répète les jours suivants. */
   const { data: preferences, error: errPref } = await client
     .from('preference_rappel')
-    .select('owner, actif, jour_du_mois, heure, chaque_jour_ensuite, dernier_envoi_le')
+    .select('owner, actif, jour_du_mois, heure, chaque_jour_ensuite, quoi, dernier_envoi_le')
     .eq('actif', true);
   if (errPref) return new Response(JSON.stringify({ erreur: errPref.message }), { status: 500 });
 
@@ -140,7 +140,15 @@ Deno.serve(async (requete: Request) => {
        jour où il compte vraiment il ne sera plus lu. */
     const compte = await moisAClôturer(client, pref.owner, now);
     const nb = compte.total;
-    if (nb === 0) { ignorees++; continue; }
+    /* LOT 32 §9.3 — CE QUE MARIA A DEMANDÉ : le mois à clôturer, les journées
+       non déclarées, ou les deux. Les journées se comptent sur le mois qui
+       vient de se terminer. Rien à dire = rien n'est envoyé. */
+    const quoi = String(pref.quoi || 'les_deux');
+    const veutCloture = quoi === 'cloture' || quoi === 'les_deux';
+    const veutJournees = quoi === 'journees' || quoi === 'les_deux';
+    const termine = moisPrecedent(now.annee, now.mois);
+    const journees = veutJournees ? await journeesADeclarer(client, pref.owner, termine, now.iso) : 0;
+    if ((!veutCloture || nb === 0) && journees === 0) { ignorees++; continue; }
 
     /* CORRECTIF B9 DE LA RELECTURE PR9 — TRENTE ET UN JOURS DE SILENCE.
 
@@ -183,10 +191,12 @@ Deno.serve(async (requete: Request) => {
        ENDROITS — le test de fumée compare les deux fonctions sur les mêmes
        entrées. LOT 32 §9.4 : jamais de prénom ni de nom de famille. */
     const corps = texteDuRappel({
-      quoi: 'cloture',
-      moisNonClotures: nb === 1 ? ['ce mois'] : [String(nb) + ' mois'],
-      journees: 0, moisTermine: ''
+      quoi,
+      moisTermine: libelleMois(termine, now.annee),
+      journees,
+      moisNonClotures: compte.mois.map((m) => libelleMois(m, now.annee))
     });
+    if (!corps) { ignorees++; continue; }
     const charge = JSON.stringify({ titre: 'Récap', corps });
 
     let envoyeesPourCePref = 0;
@@ -269,13 +279,13 @@ async function moisAClôturer(
   client: ReturnType<typeof createClient>,
   owner: string,
   now: { annee: number; mois: number; jour: number }
-): Promise<{ total: number; retards: number }> {
+): Promise<{ total: number; retards: number; mois: { annee: number; mois: number }[] }> {
   const { data: contrats } = await client
     .from('contrat')
     .select('id, date_debut, date_fin')
     .eq('owner', owner)
     .eq('archive', false);
-  if (!contrats?.length) return { total: 0, retards: 0 };
+  if (!contrats?.length) return { total: 0, retards: 0, mois: [] };
 
   const { data: recaps } = await client
     .from('recap_mensuel')
@@ -302,6 +312,9 @@ async function moisAClôturer(
      un oubli, c'est autre chose, et un rappel n'y changera rien. */
   let compte = 0;
   let retards = 0;
+  /* LOT 32 §9.4 — les MOIS concernés, du plus ancien au plus récent, pour
+     les nommer dans le rappel (« juin et juillet »). Jamais l'enfant. */
+  const moisNommes: { annee: number; mois: number }[] = [];
   const debut = now.jour >= JOUR_BASCULE_CLOTURE
     ? { annee: now.annee, mois: now.mois }
     : moisPrecedent(now.annee, now.mois);
@@ -313,15 +326,145 @@ async function moisAClôturer(
        distinction qui permet de rappeler un retard sans attendre le jour
        réglé, tout en n'insistant pas sur le mois qu'on vient d'entamer. */
     const enRetard = curseur.annee * 12 + curseur.mois < now.annee * 12 + now.mois;
+    let ceMois = false;
     for (const c of contrats) {
       if (c.date_debut > dernier) continue;
       if (c.date_fin && c.date_fin < premier) continue;
       if (!figes.has(`${c.id}|${curseur.annee}-${curseur.mois}`)) {
         compte++;
+        ceMois = true;
         if (enRetard) retards++;
       }
     }
+    if (ceMois) moisNommes.unshift({ annee: curseur.annee, mois: curseur.mois });
     curseur = moisPrecedent(curseur.annee, curseur.mois);
   }
-  return { total: compte, retards: retards };
+  return { total: compte, retards: retards, mois: moisNommes };
 }
+
+/* Le nom d'un mois, en français, avec l'année seulement si ce n'est pas
+   celle en cours : « juillet », « décembre 2025 ». */
+const NOMS_MOIS = ['', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+function libelleMois(m: { annee: number; mois: number }, anneeCourante: number): string {
+  return NOMS_MOIS[m.mois] + (m.annee === anneeCourante ? '' : ' ' + m.annee);
+}
+
+/* ============================================================================
+   LOT 32 §9.3 — LES JOURNÉES NON DÉCLARÉES du mois qui vient de se terminer.
+
+   Une journée de familiarisation est « à déclarer » quand elle tombe dans une
+   période de familiarisation, un jour du planning du contrat, hors férié,
+   passée, et qu'aucune ligne `journee` ne porte de minutes réelles pour ce
+   jour : c'est la définition de `js/ui-familiarisation.js` (un jour passé
+   sans déclaration ne sera payé pour rien), et celle de la pastille de
+   l'accueil. Une ARRIVÉE SEULE (départ non enregistré, `minutes_reelles`
+   null) compte comme non déclarée : rien n'est payé tant que le départ n'est
+   pas là.
+
+   ON NE RECALCULE AUCUN MONTANT ICI : on compte des jours, on n'additionne
+   rien. Les fériés sont ceux de `js/feries.js`, recopiés — impossible de
+   partager du code entre le navigateur et Deno — et le test de fumée
+   compare les deux listes.
+   ========================================================================= */
+async function journeesADeclarer(
+  client: ReturnType<typeof createClient>,
+  owner: string,
+  m: { annee: number; mois: number },
+  aujourdhuiIso: string
+): Promise<number> {
+  const premier = `${m.annee}-${String(m.mois).padStart(2, '0')}-01`;
+  const dernier = `${m.annee}-${String(m.mois).padStart(2, '0')}-${dernierJourDuMois(m.annee, m.mois)}`;
+
+  const { data: periodes } = await client
+    .from('periode_familiarisation')
+    .select('contrat_id, date_debut, date_fin')
+    .eq('owner', owner)
+    .lte('date_debut', dernier)
+    .gte('date_fin', premier);
+  if (!periodes?.length) return 0;
+
+  const contratIds = [...new Set(periodes.map((p) => p.contrat_id))];
+  const { data: contrats } = await client
+    .from('contrat')
+    .select('id, archive')
+    .in('id', contratIds)
+    .eq('archive', false);
+  const actifs = new Set((contrats ?? []).map((c) => c.id));
+
+  const { data: avenants } = await client
+    .from('avenant_contrat')
+    .select('contrat_id, date_effet, jours_planning')
+    .in('contrat_id', contratIds)
+    .lte('date_effet', dernier)
+    .order('date_effet', { ascending: true });
+
+  const { data: journees } = await client
+    .from('journee')
+    .select('contrat_id, jour, minutes_reelles')
+    .in('contrat_id', contratIds)
+    .gte('jour', premier)
+    .lte('jour', dernier);
+  const declarees = new Set((journees ?? [])
+    .filter((j) => j.minutes_reelles != null && j.minutes_reelles > 0)
+    .map((j) => `${j.contrat_id}|${j.jour}`));
+
+  const feries = new Set(joursFeriesFrance(m.annee));
+  let n = 0;
+  for (const p of periodes) {
+    if (!actifs.has(p.contrat_id)) continue;
+    /* Le planning en vigueur : le dernier avenant dont la date d'effet
+       précède le jour. Sans avenant, aucun jour n'est au planning. */
+    const siens = (avenants ?? []).filter((a) => a.contrat_id === p.contrat_id);
+    for (let d = versMs(p.date_debut < premier ? premier : p.date_debut);
+         d <= versMs(p.date_fin > dernier ? dernier : p.date_fin); d += 86400000) {
+      const iso = versIso(d);
+      if (iso >= aujourdhuiIso) continue;               // on ne réclame pas l'avenir
+      if (feries.has(iso)) continue;
+      const enVigueur = siens.filter((a) => a.date_effet <= iso).pop();
+      if (!enVigueur) continue;
+      const planning: number[] = enVigueur.jours_planning ?? [];
+      if (!planning.includes(jourSemaine(iso))) continue;
+      if (declarees.has(`${p.contrat_id}|${iso}`)) continue;
+      n++;
+    }
+  }
+  return n;
+}
+
+function versMs(iso: string): number {
+  const p = iso.split('-');
+  return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+}
+function versIso(ms: number): string {
+  const d = new Date(ms);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getUTCDate()).padStart(2, '0');
+}
+/* 1 = lundi … 7 = dimanche, comme `Engine.jourSemaine`. */
+function jourSemaine(iso: string): number {
+  const d = new Date(versMs(iso)).getUTCDay();
+  return d === 0 ? 7 : d;
+}
+
+/* FERIES-DEBUT — copie de `js/feries.js` (France métropolitaine). */
+function paques(annee: number): string {
+  const a = annee % 19, b = Math.floor(annee / 100), c = annee % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mois = Math.floor((h + l - 7 * mm + 114) / 31);
+  const jour = ((h + l - 7 * mm + 114) % 31) + 1;
+  return annee + '-' + String(mois).padStart(2, '0') + '-' + String(jour).padStart(2, '0');
+}
+function plusJours(iso: string, n: number): string { return versIso(versMs(iso) + n * 86400000); }
+function joursFeriesFrance(annee: number): string[] {
+  const p = paques(annee);
+  return [
+    annee + '-01-01', plusJours(p, 1), annee + '-05-01', annee + '-05-08',
+    plusJours(p, 39), plusJours(p, 50), annee + '-07-14', annee + '-08-15',
+    annee + '-11-01', annee + '-11-11', annee + '-12-25'
+  ];
+}
+/* FERIES-FIN */
