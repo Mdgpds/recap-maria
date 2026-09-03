@@ -1518,7 +1518,14 @@
     return {
       format: format,
       /* --- chemin « journées » --- */
-      debut: auj, fin: auj,
+      /* LOT 32 §8 — LA POSE SE FAIT AU CALENDRIER : on touche le premier
+         jour, puis le dernier. `bornes` porte la sélection en cours (une ou
+         deux dates) ; `debut` / `fin` ne sont posés QUE lorsque les deux
+         bornes sont là — c'est eux que lit toute la suite du parcours, qui
+         ne change pas d'une ligne. `moisCal` est le mois affiché. */
+      debut: null, fin: null,
+      bornes: { debut: null, fin: null },
+      moisCal: null,
       plans: [],
       ouvert: null,        // l'enfant dont le repli est ouvert
       ajustes: {},         // les contrats dont Maria a touché la répartition
@@ -1575,7 +1582,11 @@
         /* La date déjà choisie survit au changement de format : c'est la
            même absence qu'on décrit autrement. */
         etat.debut = parcours.debut; etat.fin = parcours.fin;
-        etat.jour = parcours.format === 'journees' ? parcours.debut : parcours.jour;
+        etat.bornes = parcours.format === 'journees'
+          ? parcours.bornes
+          : { debut: parcours.jour, fin: parcours.jour };
+        etat.moisCal = parcours.moisCal;
+        etat.jour = parcours.format === 'journees' ? (parcours.debut || parcours.jour) : parcours.jour;
         parcours = etat;
         dessiner();
       });
@@ -1611,35 +1622,181 @@
   /* ------------------------------------------------------------------ */
 
   function dessinerJournees(zone, bouton) {
+    /* ================================================================
+       LOT 32 §8 — LA POSE D'UN CONGÉ SE FAIT AU CALENDRIER.
+
+       « On touche le premier jour, puis le dernier. C'est tout. »
+
+       Le redesign avait repris l'HABILLAGE (`td.selb`, `td.dans` dans la
+       feuille de style) sans le comportement : aucune ligne ne posait ces
+       classes, et deux champs « Du » / « Au » faisaient encore le travail.
+       Ils disparaissent au profit du calendrier du mois, avec sa navigation
+       `‹ mois ›`.
+
+       Le geste :
+       - premier appui : la journée devient une borne (`selb`), la phrase
+         passe à « Touchez maintenant le dernier jour » ;
+       - deuxième appui : la seconde borne se pose, les jours entre les deux
+         prennent `dans`, le décompte s'affiche ;
+       - le même jour deux fois : une période d'une seule journée — le cas le
+         plus fréquent ;
+       - un appui AVANT la première borne : la plage se retourne, le jour
+         touché devient le début — c'était déjà le comportement des deux
+         champs de date, il se conserve ;
+       - un troisième appui : une nouvelle sélection repart de ce jour.
+       Tant que les deux bornes ne sont pas posées, le bouton est inactif et
+       la phrase dit ce qu'on attend.
+
+       LA SUITE DU PARCOURS EST INTACTE : dès que les deux bornes sont là,
+       `parcours.debut` / `parcours.fin` prennent leurs valeurs et
+       `recharger()` enchaîne exactement comme avant — décompte du moteur
+       (`Engine.decompterJoursOuvrables`, dans `preparerVentilations`),
+       samedis, « Pour qui », répartition. Rien d'autre ne change.
+       ================================================================ */
     var maintenant = global.App.moisCourant();
-    var bornes = { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 };
-    var du = Kit.champDate('Du', parcours.debut, bornes);
-    var au = Kit.champDate('Au', parcours.fin, bornes);
-    zone.appendChild(du.bloc);
-    zone.appendChild(au.bloc);
+    var bornesNav = { anneeMin: maintenant.annee - 2, anneeMax: maintenant.annee + 2 };
+    if (!parcours.bornes) parcours.bornes = { debut: null, fin: null };
+    if (!parcours.moisCal) {
+      var origine = parcours.bornes.debut ? Chaine.moisDeDate(parcours.bornes.debut)
+        : { annee: vue.annee, mois: vue.mois };
+      parcours.moisCal = { annee: origine.annee, mois: origine.mois };
+    }
+
+    var phrase = Kit.ce('div', 's');
+    zone.appendChild(phrase);
+
+    var nav = Kit.ce('div', 'navmois');
+    var bPrec = Kit.bouton('btn sm nt', function () { deplacerMois(-1); });
+    bPrec.textContent = '‹';
+    bPrec.setAttribute('aria-label', 'Mois précédent');
+    var navl = Kit.ce('div', 'navl');
+    var bSuiv = Kit.bouton('btn sm nt', function () { deplacerMois(1); });
+    bSuiv.textContent = '›';
+    bSuiv.setAttribute('aria-label', 'Mois suivant');
+    nav.appendChild(bPrec); nav.appendChild(navl); nav.appendChild(bSuiv);
+    zone.appendChild(nav);
+
+    var zoneCal = Kit.ce('div', 'cal-pose');
+    zone.appendChild(zoneCal);
+
+    /* La légende nomme les trois états que ce calendrier peut prendre : la
+       couleur ne porte jamais le sens toute seule (V8-01). */
+    var leg = Kit.ce('div', 'leg');
+    [['selb', 'bornes choisies'], ['dans', 'jours de la période'], ['fe', 'férié, non décompté']]
+      .forEach(function (e) {
+        var sp = Kit.ce('span');
+        sp.appendChild(Kit.ce('i', 'leg-' + e[0]));
+        sp.appendChild(document.createTextNode(e[1]));
+        leg.appendChild(sp);
+      });
+    zone.appendChild(leg);
+
+    var encart = Kit.ce('div');
+    zone.appendChild(encart);
 
     var suite = Kit.ce('div');
     zone.appendChild(suite);
 
-    du.bloc.addEventListener('change', function () {
-      parcours.debut = du.valeur();
-      /* Le « Au » SUIT le « Du » quand il le dépasse (maquette) : une plage
-         inversée n'est pas une erreur à signaler, c'est une plage qu'on
-         vient de déplacer. */
-      if (parcours.fin < parcours.debut) {
-        parcours.fin = parcours.debut;
-        au.poser(parcours.fin);
+    function deplacerMois(delta) {
+      var m = parcours.moisCal.mois + delta, a = parcours.moisCal.annee;
+      if (m < 1) { m = 12; a--; }
+      if (m > 12) { m = 1; a++; }
+      if (a < bornesNav.anneeMin || a > bornesNav.anneeMax) return;
+      parcours.moisCal = { annee: a, mois: m };
+      dessinerCalendrier();
+    }
+
+    function toucher(d) {
+      var b = parcours.bornes;
+      if (!b.debut || (b.debut && b.fin)) { b.debut = d; b.fin = null; }
+      else if (d < b.debut) { b.fin = b.debut; b.debut = d; }
+      else { b.fin = d; }
+      dessinerCalendrier();
+      dire();
+    }
+
+    function dessinerCalendrier() {
+      var a = parcours.moisCal.annee, m = parcours.moisCal.mois;
+      navl.textContent = Kit.moisCapitale(a, m);
+      bPrec.disabled = (a === bornesNav.anneeMin && m === 1);
+      bSuiv.disabled = (a === bornesNav.anneeMax && m === 12);
+      Kit.vider(zoneCal);
+      var table = Kit.ce('table', 'cal');
+      var thead = Kit.ce('tr');
+      ['L', 'M', 'M', 'J', 'V', 'S', 'D'].forEach(function (j, i) {
+        var th = Kit.ce('th', null, j);
+        th.setAttribute('aria-label', Kit.JOURS_SEMAINE[i + 1]);
+        thead.appendChild(th);
+      });
+      table.appendChild(thead);
+      var jours = Engine.joursDuMois(a, m);
+      var auj = global.App.aujourdhui();
+      var b = parcours.bornes;
+      var tr = Kit.ce('tr');
+      var col = Engine.jourSemaine(jours[0]);
+      for (var v = 1; v < col; v++) tr.appendChild(Kit.ce('td', 'we no'));
+      jours.forEach(function (d, index) {
+        var classes = [];
+        /* Les fériés gardent leur état `fe` : jamais décomptés (RG-06). */
+        if (Feries.estJourFerie(d)) classes.push('fe');
+        if (d === b.debut || d === b.fin) classes.push('selb');
+        else if (b.debut && b.fin && d > b.debut && d < b.fin) classes.push('dans');
+        if (d === auj) classes.push('auj');
+        var td = Kit.ce('td', classes.join(' ') || null);
+        td.setAttribute('data-jour', d);
+        td.setAttribute('role', 'button');
+        td.setAttribute('tabindex', '0');
+        td.setAttribute('aria-pressed', classes.indexOf('selb') !== -1 ? 'true' : 'false');
+        td.setAttribute('aria-label', Kit.jourLong(d) +
+          (classes.indexOf('fe') !== -1 ? ' — férié, non décompté' : ''));
+        td.appendChild(Kit.ce('span', 'n', String(Number(d.slice(8, 10)))));
+        td.addEventListener('click', function () { toucher(d); });
+        td.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toucher(d); }
+        });
+        tr.appendChild(td);
+        col++;
+        if (col > 7 && index < jours.length - 1) {
+          table.appendChild(tr);
+          tr = Kit.ce('tr');
+          col = 1;
+        }
+      });
+      while (col <= 7) { tr.appendChild(Kit.ce('td', 'we no')); col++; }
+      table.appendChild(tr);
+      zoneCal.appendChild(table);
+    }
+
+    /* La phrase et l'encart disent où en est le geste ; le bouton ne
+       s'active que quand les deux bornes sont là. */
+    function dire() {
+      var b = parcours.bornes;
+      Kit.vider(encart);
+      if (!b.debut) {
+        phrase.textContent = 'Touchez le premier jour de votre congé.';
+        encart.appendChild(Kit.enc('i', null, 'Aucun jour choisi pour l’instant.'));
+        parcours.debut = null; parcours.fin = null; parcours.plans = [];
+        Kit.vider(suite);
+        bouton.disabled = true;
+        bouton.textContent = 'Poser';
+        return;
       }
-      recharger();
-    });
-    au.bloc.addEventListener('change', function () {
-      parcours.fin = au.valeur();
-      if (parcours.fin < parcours.debut) {
-        parcours.debut = parcours.fin;
-        du.poser(parcours.debut);
+      if (!b.fin) {
+        phrase.textContent = 'Touchez maintenant le dernier jour.';
+        encart.appendChild(Kit.enc('i', null,
+          'Début ' + Kit.jourLong(b.debut).toLowerCase() + '. Touchez le dernier jour, ' +
+          'ou le même pour une seule journée.'));
+        parcours.debut = null; parcours.fin = null; parcours.plans = [];
+        Kit.vider(suite);
+        bouton.disabled = true;
+        bouton.textContent = 'Poser';
+        return;
       }
+      phrase.textContent = 'Vous pouvez encore changer les bornes : touchez un jour pour recommencer.';
+      parcours.debut = b.debut;
+      parcours.fin = b.fin;
       recharger();
-    });
+    }
 
     /* CHANGER DE DATES RECHARGE TOUT : les conditions du mois visé, les
        journées déjà saisies sur la période, et le quota de samedis réel.
@@ -1675,7 +1832,8 @@
       });
     }
 
-    recharger();
+    dessinerCalendrier();
+    dire();
   }
 
   /* Les plans de ventilation, recalculés pour les dates courantes. Reprend

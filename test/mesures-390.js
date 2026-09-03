@@ -77,6 +77,21 @@ const ECRANS = [
     const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
     if (b) b.click(); return !!b;
   } }],
+  /* LOT 32 §8 — la même feuille, deux bornes posées au calendrier : le
+     décompte, les samedis et « Pour qui » sont alors à l'écran. */
+  ['conges', {}, { feuille: 'pose-bornes', ouvrir: () => {
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
+    if (!b) return false;
+    b.click();
+    const suiv = document.querySelector('#sheet button[aria-label="Mois suivant"]');
+    if (!suiv) return false;
+    suiv.click();
+    const t1 = document.querySelector('#sheet td[data-jour="2026-09-21"]');
+    const t2 = document.querySelector('#sheet td[data-jour="2026-09-24"]');
+    if (!t1 || !t2) return false;
+    t1.click(); t2.click();
+    return true;
+  } }],
   /* LOT 32 §6 — la réouverture est une feuille : elle s'ouvre depuis le
      document d'un mois clôturé, et sa visibilité se mesure comme les autres. */
   ['document', { contratId: 'c1', annee: 2026, mois: 7 }, { feuille: 'rouvrir', ouvrir: () => {
@@ -246,6 +261,50 @@ const ECRANS = [
      puis on réduit la fenêtre de la hauteur d'un clavier d'iPhone (≈ 336 pt)
      et on vérifie que le bouton reste atteignable — visible, ou amené dans
      la fenêtre en faisant défiler le conteneur. */
+  /* §8 — LES COULEURS DE `selb` ET DE `dans`, EN VALEUR CALCULÉE. Leur
+     présence dans le CSS ne prouve rien : c'est précisément ce qui a manqué
+     au redesign. On ouvre la pose, on touche deux jours, et on lit ce que le
+     navigateur peint — contre les jetons `--ac` et `--dansf` lus au même
+     endroit. */
+  console.log('\n=== §8 — la pose au calendrier, en valeur calculée ===');
+  await aller('conges', {});
+  const p8 = await page.evaluate(async () => {
+    const attendre = (ms) => new Promise(r => setTimeout(r, ms));
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
+    b.click(); await attendre(300);
+    document.querySelector('#sheet button[aria-label="Mois suivant"]').click();
+    await attendre(100);
+    const cs = getComputedStyle(document.documentElement);
+    const jeton = (n) => { const d = document.createElement('div'); d.style.background = cs.getPropertyValue(n).trim();
+      document.body.appendChild(d); const v = getComputedStyle(d).backgroundColor; d.remove(); return v; };
+    const out = { ac: jeton('--ac'), dansf: jeton('--dansf'), ln2: jeton('--ln2') };
+    const btn = document.querySelector('#sheet .stick button');
+    out.inactifAvant = btn.disabled;
+    document.querySelector('#sheet td[data-jour="2026-09-21"]').click(); await attendre(100);
+    out.inactifUneBorne = btn.disabled;
+    out.selb1 = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-09-21"]')).backgroundColor;
+    document.querySelector('#sheet td[data-jour="2026-09-24"]').click(); await attendre(900);
+    out.selb2 = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-09-24"]')).backgroundColor;
+    out.dans = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-09-22"]')).backgroundColor;
+    out.horsPlage = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-09-25"]')).backgroundColor;
+    out.actifDeux = !btn.disabled;
+    out.decompte = (document.querySelector('#sheet .res .big2') || {}).textContent || '';
+    document.querySelector('#sheet button[aria-label="Mois suivant"]').click();
+    document.querySelector('#sheet button[aria-label="Mois suivant"]').click(); await attendre(100);
+    out.ferie = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-11-11"]')).backgroundColor;
+    return out;
+  });
+  controle('§8 le bouton est inactif sans borne', p8.inactifAvant);
+  controle('§8 le bouton reste inactif avec une seule borne', p8.inactifUneBorne);
+  controle('§8 la première borne est peinte en `--ac`', p8.selb1 === p8.ac, p8.selb1 + ' / ' + p8.ac);
+  controle('§8 la seconde borne est peinte en `--ac`', p8.selb2 === p8.ac, p8.selb2);
+  controle('§8 un jour entre les bornes est peint en `--dansf`', p8.dans === p8.dansf, p8.dans + ' / ' + p8.dansf);
+  controle('§8 un jour hors plage n’est ni l’un ni l’autre', p8.horsPlage !== p8.ac && p8.horsPlage !== p8.dansf, p8.horsPlage);
+  controle('§8 un férié est peint en `--ln2` (état `fe`)', p8.ferie === p8.ln2, p8.ferie);
+  controle('§8 les deux bornes posées, le bouton s’active', p8.actifDeux);
+  controle('§8 le décompte est affiché (« 4 j ouvrables »)', /4/.test(p8.decompte), p8.decompte);
+  await page.evaluate(() => window.Kit.fermerFeuille());
+
   console.log('\n=== §7 — la connexion ===');
   await page.evaluate(() => { if (window.Kit && window.Kit.fermerFeuille) window.Kit.fermerFeuille(); });
   const mesureLogin = async (etiquette) => page.evaluate((etq) => {

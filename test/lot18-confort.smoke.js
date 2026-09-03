@@ -62,6 +62,25 @@ function boutonExact(racineEl, libelle) {
 }
 /* Pose une date dans un `Kit.champDate` : mois et année d'abord (ils
    reconstruisent la liste des jours), le jour ensuite. */
+/* LOT 32 §8 — LA POSE SE FAIT AU CALENDRIER : on touche le premier jour,
+   puis le dernier. Le calendrier de la feuille de pose porte un mois à la
+   fois ; on navigue avec « ‹ » / « › » jusqu'au mois du jour voulu, puis on
+   touche la case. Deux appuis posent une plage ; le même jour deux fois pose
+   une journée seule. */
+async function toucherJour(iso) {
+  for (var i = 0; i < 60; i++) {
+    var td = sheet.querySelector('.cal-pose td[data-jour="' + iso + '"]');
+    if (td) { td.click(); await pause(60); return; }
+    var affiche = txt(sheet.querySelector('.navl')).trim().toLowerCase().split(' ');
+    var cle = Number(affiche[1]) * 12 + window.Kit.MOIS.indexOf(affiche[0]);
+    var cible = Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7));
+    if (cle === cible) throw new Error('jour absent du calendrier : ' + iso);
+    sheet.querySelector(cible > cle
+      ? 'button[aria-label="Mois suivant"]' : 'button[aria-label="Mois précédent"]').click();
+    await pause(30);
+  }
+  throw new Error('mois introuvable : ' + iso);
+}
 function poserDate(boite, iso) {
   var sels = boite.querySelectorAll('select');
   var an = iso.slice(0, 4), mo = String(Number(iso.slice(5, 7))), jo = String(Number(iso.slice(8, 10)));
@@ -533,10 +552,11 @@ function entrerSelection() {
   await pause(200);
   /* Du 1er au 5 juin : la période contient le 3, jour de familiarisation
      saisi à la main. C'est lui qui doit déclencher la garde du §18.4. */
-  var boites = sheet.querySelectorAll('.fld .dates');
-  assert(boites.length >= 2, '§26.1 : l’écran de pose porte un début et une fin');
-  poserDate(boites[0], '2026-06-01');
-  poserDate(boites[1], '2026-06-05');
+  /* LOT 32 §8 — les dates se choisissent AU CALENDRIER : on touche le
+     premier jour, puis le dernier. */
+  assert(!!sheet.querySelector('.cal-pose table.cal'), '§26.1 : l’écran de pose porte le calendrier du mois');
+  await toucherJour('2026-06-01');
+  await toucherJour('2026-06-05');
   await pause(600);
 
   assert(!boutonExact(sheet, 'Tout sur mes congés payés') &&

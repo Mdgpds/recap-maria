@@ -409,6 +409,14 @@ table.cal td .rep { position: absolute; bottom: 3px; right: 5px; font-size: 9px;
   margin-right: 5px; vertical-align: -1px; border: 1px solid var(--ln);
 }
 .navmois { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
+/* LOT 32 §8 — le calendrier de la pose et sa légende : les trois états que
+   ce calendrier peut prendre, dans les mêmes jetons que les cases. */
+.navmois .btn.sm { margin: 0; min-width: 44px; min-height: 44px; flex: none; }
+.cal-pose table.cal { margin-bottom: 2px; }
+.leg i.leg-selb { background: var(--ac); border-color: var(--ac); }
+.leg i.leg-dans { background: var(--dansf); border-color: var(--dansl); }
+.leg i.leg-fe { background: var(--ln2); border-color: var(--ln2); }
+.pose .leg { margin-bottom: 12px; }
 .navl { flex: 1; text-align: center; font-weight: 700; font-size: 16px; }
 .synth { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 2px 4px; }
 

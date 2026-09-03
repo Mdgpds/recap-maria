@@ -373,6 +373,84 @@ function aller(ecran, params) {
     '§7 : aucune adresse ni mot de passe dans le code de connexion');
 
   /* ==================================================================== */
+  /* §8 — LA POSE D'UN CONGÉ SE FAIT AU CALENDRIER                        */
+  /* ==================================================================== */
+  console.log('\n--- §8 : la pose au calendrier ---');
+  await aller('conges', {});
+  await pause(500);
+  boutonExact(corps, 'Poser des congés').click();
+  await pause(400);
+  var sheetP = document.getElementById('sheet');
+  var bPoser = sheetP.querySelector('.stick button');
+  function bornes() { return Array.prototype.map.call(sheetP.querySelectorAll('.cal-pose td.selb'), function (t) { return t.getAttribute('data-jour'); }); }
+  function dans() { return Array.prototype.map.call(sheetP.querySelectorAll('.cal-pose td.dans'), function (t) { return t.getAttribute('data-jour'); }); }
+  async function toucher(iso) {
+    for (var i = 0; i < 60; i++) {
+      var td = sheetP.querySelector('.cal-pose td[data-jour="' + iso + '"]');
+      if (td) { td.click(); await pause(60); return; }
+      var aff = txt(sheetP.querySelector('.navl')).trim().toLowerCase().split(' ');
+      var cle = Number(aff[1]) * 12 + window.Kit.MOIS.indexOf(aff[0]);
+      var cible = Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7));
+      sheetP.querySelector(cible > cle ? 'button[aria-label="Mois suivant"]' : 'button[aria-label="Mois précédent"]').click();
+      await pause(30);
+    }
+  }
+  assert(!!sheetP.querySelector('.cal-pose table.cal'), '§8 : le chemin « journées » montre un calendrier du mois');
+  egal(sheetP.querySelectorAll('.fld .dates').length, 0, '§8 : les deux champs « Du » / « Au » ont disparu');
+  assert(!!sheetP.querySelector('button[aria-label="Mois précédent"]') && !!sheetP.querySelector('button[aria-label="Mois suivant"]'),
+    '§8 : avec sa navigation ‹ mois ›');
+  contient(sheetP, 'Touchez le premier jour de votre congé', '§8 : la phrase demande le premier jour');
+  egal(bPoser.disabled, true, '§8 : le bouton est inactif tant qu’aucune borne n’est posée');
+  /* Le décor porte déjà un congé les 14 et 15 septembre : la plage de ce
+     contrôle est prise plus loin dans le mois, sur des jours libres. */
+  await toucher('2026-09-21');
+  egal(bornes().join(','), '2026-09-21', '§8 : premier appui — le 21 septembre devient une borne (`selb`)');
+  contient(sheetP, 'Touchez maintenant le dernier jour', '§8 : la phrase demande maintenant le dernier jour');
+  egal(bPoser.disabled, true, '§8 : le bouton reste inactif avec une seule borne');
+  await toucher('2026-09-24');
+  await pause(700);
+  egal(bornes().join(','), '2026-09-21,2026-09-24', '§8 : deuxième appui — la seconde borne se pose');
+  egal(dans().join(','), '2026-09-22,2026-09-23', '§8 : les jours entre les deux prennent `dans`');
+  var attendu = window.Engine.decompterJoursOuvrables('2026-09-21', '2026-09-24', [1, 2, 3, 4, 5], []);
+  var gros = txt(sheetP.querySelector('.res .big2'));
+  contient(sheetP.querySelector('.res'), attendu + ' j ouvrables', '§8 : le décompte affiché est celui du moteur (' + attendu + ') — obtenu « ' + gros + ' »');
+  contient(sheetP.querySelector('.res .sub'), '21 septembre', '§8 : les bornes sont écrites en toutes lettres');
+  egal(bPoser.disabled, false, '§8 : les deux bornes posées, le bouton s’active');
+  /* Un appui avant la première borne retourne la plage. */
+  await toucher('2026-09-28');
+  egal(bornes().join(','), '2026-09-28', '§8 : un troisième appui recommence une sélection depuis ce jour');
+  await toucher('2026-09-25');
+  egal(bornes().join(','), '2026-09-25,2026-09-28', '§8 : un appui AVANT la borne retourne la plage — le jour touché devient le début');
+  /* Le même jour deux fois : une seule journée. */
+  await toucher('2026-09-29');
+  await toucher('2026-09-29');
+  await pause(700);
+  egal(bornes().join(','), '2026-09-29', '§8 : le même jour deux fois pose une période d’une seule journée');
+  egal(dans().length, 0, '§8 : … sans aucun jour intermédiaire');
+  egal(bPoser.disabled, false, '§8 : et le bouton est actif');
+  contient(sheetP.querySelector('.res'), '1 j ouvrable', '§8 : le décompte dit une journée');
+  /* Le décompte vient du moteur, jamais d'un comptage refait à l'écran :
+     le code de la pose ne recompte pas les jours entre les bornes. */
+  var CONGES = fs.readFileSync(path.join(racine, 'js', 'ui-conges.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ');
+  var blocPose = CONGES.slice(CONGES.indexOf('function dessinerJournees'), CONGES.indexOf('function preparerPlans'));
+  assert(!/decompterJoursOuvrables|getDay\(|jourSemaine\([^)]*\)\s*!==?\s*[07]/.test(blocPose),
+    '§8 : la sélection ne compte aucun jour elle-même — le décompte reste celui de preparerVentilations (moteur)');
+  /* Les fériés gardent `fe`. */
+  await toucher('2026-11-11');
+  assert(!!sheetP.querySelector('.cal-pose td[data-jour="2026-11-11"].fe'), '§8 : le 11 novembre garde son état `fe` (férié)');
+  await toucher('2026-11-11');
+  await pause(700);
+  contient(sheetP, 'Aucun jour ouvrable', '§8 : un férié seul ne décompte rien (RG-06) — l’écran le dit');
+  egal(bPoser.disabled, true, '§8 : et rien ne se pose sur un férié seul');
+  /* Le chemin « durée libre » garde le sien, sans raccourci. */
+  var segLibre = Array.prototype.filter.call(sheetP.querySelectorAll('.seg button'), function (b) { return txt(b).trim() === 'Durée libre'; })[0];
+  segLibre.click();
+  await pause(400);
+  egal(sheetP.querySelectorAll('.cal-pose').length, 0, '§8 : « Durée libre » garde son propre parcours, sans calendrier de bornes');
+  absent(sheetP, '30 min', '§8 : et sans raccourci de durée (lot 31, point 4)');
+  window.Kit.fermerFeuille();
+
+  /* ==================================================================== */
   console.log('\n' + (echecs ? echecs + ' échec(s)' : 'lot 32 : tout est vert'));
   process.exit(echecs ? 1 : 0);
 }());

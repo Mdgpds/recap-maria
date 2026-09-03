@@ -300,12 +300,38 @@ function poserDate(bloc, iso) {
    de feuille de format, plus d'étape des dates, plus d'étape des samedis :
    un seul écran, qui CHARGE avant d'annoncer (conditions du mois visé,
    journées déjà saisies, quota réel des samedis). D'où l'attente. */
+/* LOT 32 §8 — LA POSE SE FAIT AU CALENDRIER : on touche le premier jour,
+   puis le dernier. Le calendrier de la feuille de pose porte un mois à la
+   fois ; on navigue avec « ‹ » / « › » jusqu'au mois du jour voulu, puis on
+   touche la case. Deux appuis posent une plage ; le même jour deux fois pose
+   une journée seule. */
+async function toucherJour(iso) {
+  for (var i = 0; i < 60; i++) {
+    var td = sheet.querySelector('.cal-pose td[data-jour="' + iso + '"]');
+    if (td) { td.click(); await pause(60); return; }
+    var affiche = txt(sheet.querySelector('.navl')).trim().toLowerCase().split(' ');
+    var cle = Number(affiche[1]) * 12 + window.Kit.MOIS.indexOf(affiche[0]);
+    var cible = Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7));
+    if (cle === cible) throw new Error('jour absent du calendrier : ' + iso);
+    sheet.querySelector(cible > cle
+      ? 'button[aria-label="Mois suivant"]' : 'button[aria-label="Mois précédent"]').click();
+    await pause(30);
+  }
+  throw new Error('mois introuvable : ' + iso);
+}
+async function choisirPlage(debut, fin) {
+  await toucherJour(debut);
+  await toucherJour(fin || debut);
+}
+function bornesChoisies() {
+  return Array.prototype.map.call(sheet.querySelectorAll('.cal-pose td.selb'), function (td) {
+    return td.getAttribute('data-jour');
+  });
+}
 async function ouvrirPose(debut, fin) {
   boutonExact(corps, 'Poser des congés').click();
   await pause(200);
-  var ch = champsDates();
-  poserDate(ch.du, debut);
-  poserDate(ch.au, fin || debut);
+  await choisirPlage(debut, fin);
   await pause(500);
 }
 
