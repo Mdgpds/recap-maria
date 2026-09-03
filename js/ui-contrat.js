@@ -70,7 +70,10 @@
   /* ------------------------------------------------------------------ */
 
   function ecranFiche(ctx, contrat) {
-    global.App.barreRetour(ctx.barre, 'Contrat — ' + contrat.prenom_enfant, {
+    /* LOT 32 §3 — l'en-tête du socle, et le titre de la spécification. Le
+       prénom reste sur la carte d'identité, juste dessous ; le statut garde
+       sa place à droite. */
+    global.App.barreSlim(ctx.barre, 'Contrat, horaires et rémunération', {
       droite: contrat.archive ? 'rangé' : libelleStatut(contrat.statut)
     });
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture du contrat…'));
@@ -131,6 +134,9 @@
          se modifie plus. Elle reste une carte, en lecture, et les valeurs
          détaillées restent affichées dessous — c'est le seul écran d'où elles
          se lisent encore. */
+      /* LOT 32 §3 — quatre sections `.ttl` : l'enfant, les horaires, la
+         rémunération, les avenants. Le contenu de chacune est celui d'hier. */
+      corps.appendChild(Kit.ttl('L’enfant'));
       var identite = [];
       if (contrat.famille && contrat.famille.nom) identite.push('famille ' + contrat.famille.nom);
       identite.push('depuis le ' + Kit.dateLongue(contrat.date_debut));
@@ -204,7 +210,7 @@
 
            Trois choses, et trois seulement : ce que le bandeau promet, ses
            mois, et ses soldes de fin de contrat. */
-        corps.appendChild(Kit.note('Contrat terminé — ' + periodeDuContrat(contrat),
+        corps.appendChild(Kit.enc('i', 'Contrat terminé — ' + periodeDuContrat(contrat),
           'Aucune journée n’est modifiable, et aucun montant ne bougera plus. ' +
           'Tout son historique reste consultable ci-dessous.'));
 
@@ -780,7 +786,7 @@
           corps.appendChild(bNouvelle);
         }).catch(function (e) {
           corps.removeChild(attente);
-          corps.appendChild(Kit.warnbox('Familles indisponibles',
+          corps.appendChild(Kit.enc('w', 'Familles indisponibles',
             ' ' + Kit.messageErreur(e) + ' Rien n’a été modifié.'));
         });
       });
@@ -938,9 +944,12 @@
       function (v) { return v == null ? 'inconnu' : Kit.eur(v); }, 'argent']
   ];
 
+  /* LOT 32 §3 — les titres de section de la spécification : « Les horaires »
+     et « La rémunération ». Les congés gardent leur bloc : son contenu (jours
+     par jour de congé, samedis comptés) ne disparaît pas. */
   var BLOCS_CONDITIONS = [
-    ['temps', 'Le temps'],
-    ['argent', 'L’argent'],
+    ['temps', 'Les horaires'],
+    ['argent', 'La rémunération'],
     ['conges', 'Les congés']
   ];
 
@@ -1043,12 +1052,10 @@
     var m = global.App.moisCourant();
     var enVigueur = Engine.conditionsApplicables(tries, m.annee, m.mois);
 
-    bloc.appendChild(Kit.section('Conditions'));
-
     if (!tries.length) {
       /* Sans aucun avenant, aucun mois ne se calcule : le moteur refuse
          plutôt que de deviner. On le dit, et on propose le geste. */
-      bloc.appendChild(Kit.warnbox('Aucune condition enregistrée',
+      bloc.appendChild(Kit.enc('w', 'Aucune condition enregistrée',
         'Tant qu’aucune condition n’est posée, aucun mois de ce contrat ne peut être ' +
         'calculé ni clôturé.'));
       if (!contrat.archive) bloc.appendChild(boutonAvenant(contrat, tries, recaps));
@@ -1063,7 +1070,7 @@
     if (aVenir.length) {
       var suivant = aVenir[0];
       var chgts = differences(enVigueur, suivant);
-      var bandeau = Kit.note('Avenant n° ' + suivant.numero + ' à venir — au ' +
+      var bandeau = Kit.enc('i', 'Avenant n° ' + suivant.numero + ' à venir — au ' +
         Kit.dateLongue(suivant.date_effet),
         chgts.length
           ? 'Il changera : ' + chgts.map(function (d) {
@@ -1075,7 +1082,7 @@
     }
 
     if (!enVigueur) {
-      bloc.appendChild(Kit.warnbox('Aucune condition applicable aujourd’hui',
+      bloc.appendChild(Kit.enc('w', 'Aucune condition applicable aujourd’hui',
         'Le premier avenant de ce contrat prend effet le ' +
         Kit.dateLongue(tries[0].date_effet) + '. Les mois d’avant ne peuvent pas être calculés.'));
       if (!contrat.archive) bloc.appendChild(boutonAvenant(contrat, tries, recaps));
@@ -1103,7 +1110,7 @@
     BLOCS_CONDITIONS.forEach(function (groupe) {
       var lignes = REGLAGES_LISIBLES.filter(function (r) { return r[3] === groupe[0]; });
       if (!lignes.length) return;
-      bloc.appendChild(Kit.section(groupe[1]));
+      bloc.appendChild(Kit.ttl(groupe[1]));
       var carte = Kit.ce('div', 'cd pad0');
       lignes.forEach(function (r) {
         Kit.ligneLn(carte, r[1], r[2](enVigueur[r[0]]));
@@ -1162,11 +1169,15 @@
       ' · avenant n° ' + enVigueur.numero +
       (enVigueur.reconstitue ? ' (reconstitué)' : '')));
     if (enVigueur.brut_mensuel_centimes == null) {
-      bloc.appendChild(Kit.warnbox('Aucune rémunération connue',
+      bloc.appendChild(Kit.enc('w', 'Aucune rémunération connue',
         'Tant que le brut et le net ne sont pas renseignés, les montants de ce contrat ' +
         'restent à zéro et ses mois ne peuvent pas être clôturés.'));
     }
 
+    /* LOT 32 §3 — « Les avenants » : la frise s'ouvre d'ici. Le numéro d'un
+       avenant est une identité, pas un rang (§11.7) : la liste se trie par
+       `date_effet`, et les numéros peuvent ne pas se suivre. */
+    bloc.appendChild(Kit.ttl('Les avenants'));
     var bFrise = Kit.bouton('btn nt', function () { feuilleFrise(contrat, tries, recaps); });
     bFrise.textContent = 'Voir l’historique des conditions';
     bloc.appendChild(bFrise);
@@ -1189,7 +1200,7 @@
 
   function refusFauteDeRecaps(recaps) {
     var e = recaps && recaps.erreur;
-    return Kit.warnbox('Impossible de vérifier les mois déjà clôturés',
+    return Kit.enc('w', 'Impossible de vérifier les mois déjà clôturés',
       ' ' + (e ? Kit.messageErreur(e) : 'La lecture n’a pas abouti.') +
       ' Tant que cette vérification échoue, aucun avenant ne peut être posé, ' +
       'corrigé ni supprimé : il pourrait tomber sur un mois déjà remis à une ' +
@@ -1229,17 +1240,19 @@
         for (var i = tries.length - 1; i >= 0; i--) {
           (function (a, precedent) {
             var suivant = tries[i + 1] || null;
-            var carte = Kit.ce('div', 'card');
+            /* LOT 32 §3 — une carte du socle par avenant : son numéro, son
+               état en pastille `pill`, ses bornes, ce qui change en `ln`. */
+            var carte = Kit.ce('div', 'cd');
             var ligne = Kit.ce('div', 'row');
             ligne.appendChild(Kit.ce('span', 'nm', 'Avenant n° ' + a.numero));
             /* Le mot est dit en toutes lettres, jamais la couleur seule
-               (V8-01). La classe, elle, reste un identifiant simple : un nom
-               de classe avec un espace et un accent ne s'applique pas. */
+               (V8-01). */
             var etat = enVigueur && a.id === enVigueur.id ? 'en vigueur'
               : (!enVigueur || a.date_effet > enVigueur.date_effet) ? 'à venir' : 'passé';
-            var jeton = etat === 'en vigueur' ? 'vigueur'
-              : etat === 'à venir' ? 'avenir' : 'passe';
-            ligne.appendChild(Kit.ce('span', 'pastille p-' + jeton, etat));
+            var jeton = etat === 'en vigueur' ? '' : etat === 'à venir' ? 'b' : 'g';
+            var pastille = Kit.pill(jeton, etat);
+            pastille.style.marginLeft = 'auto';
+            ligne.appendChild(pastille);
             carte.appendChild(ligne);
 
             /* Les BORNES de la période, pas seulement sa date de début : « du
@@ -1253,7 +1266,7 @@
 
             if (a.reconstitue) {
               /* « On ne fait pas passer une reconstitution pour un fait. » */
-              carte.appendChild(Kit.note('Conditions reconstituées',
+              carte.appendChild(Kit.enc('i', 'Conditions reconstituées',
                 'L’application n’a pas connu ces conditions au moment où elles ont pris ' +
                 'effet : elle les a reconstituées à partir des valeurs courantes du contrat. ' +
                 'Corrigez-les si vous avez le contrat signé.'));
@@ -1265,9 +1278,9 @@
             } else if (!chgts.length) {
               carte.appendChild(Kit.ce('div', 'sb q', 'Aucun réglage modifié.'));
             } else {
-              var liste = Kit.lines(carte);
+              var liste = carte;
               chgts.forEach(function (d) {
-                Kit.ligne(liste, d.libelle, d.avant + ' → ' + d.apres);
+                Kit.ligneLn(liste, d.libelle, d.avant + ' → ' + d.apres);
               });
             }
 
@@ -1345,7 +1358,7 @@
           /* LOT 30 (§30.3) — PLUS DE REFUS SEC. La feuille s'ouvre ; à la
              validation, l'application NOMME les mois à rouvrir, propose de
              le faire, et poursuit. Ici on le dit d'avance. */
-          corps.appendChild(Kit.note(
+          corps.appendChild(Kit.enc('i', 
             'Cet avenant sert à des mois déjà clôturés',
             listeMois(bloquants) + '. Le corriger les rouvrira : à la validation, ' +
             'l’application vous le proposera, puis enregistrera l’avenant. Chaque ' +
@@ -1404,19 +1417,19 @@
           var precedent = conditionsAvant(tries, date.valeur(), existant);
           var chgts = differences(precedent, conditions.valeurs());
           if (!precedent) {
-            apercu.appendChild(Kit.note('Premières conditions de ce contrat',
+            apercu.appendChild(Kit.enc('i', 'Premières conditions de ce contrat',
               'Il n’y a rien avant : ces conditions valent depuis l’ouverture du contrat.'));
             return;
           }
           if (!chgts.length) {
-            apercu.appendChild(Kit.note('Rien ne change',
+            apercu.appendChild(Kit.enc('i', 'Rien ne change',
               'Ces conditions sont identiques aux précédentes. Un avenant qui ne change ' +
               'rien n’est pas une erreur, mais il n’aura aucun effet sur vos calculs.'));
             return;
           }
-          var pane = Kit.pane('Ce que change cet avenant');
-          var l = Kit.lines(pane);
-          chgts.forEach(function (d) { Kit.ligne(l, d.libelle, d.avant + ' → ' + d.apres); });
+          var pane = Kit.carte('Ce que change cet avenant');
+          var l = pane;
+          chgts.forEach(function (d) { Kit.ligneLn(l, d.libelle, d.avant + ' → ' + d.apres); });
           apercu.appendChild(pane);
           /* L'effet CHIFFRÉ sur le premier mois concerné, rejoué par le
              moteur (§17.4, et B.0-5 : aucun chiffre écrit en dur). */
@@ -1427,7 +1440,7 @@
               if (!apercu.isConnected && apercu.parentNode === null) return;
               var att = apercu.querySelector('.attente');
               if (att) att.parentNode.removeChild(att);
-              apercu.appendChild(Kit.note('Effet sur ' + Kit.libelleMois(mm.mois) + ' ' + mm.annee, texte));
+              apercu.appendChild(Kit.enc('i', 'Effet sur ' + Kit.libelleMois(mm.mois) + ' ' + mm.annee, texte));
             })
             .catch(function (e) {
               var att = apercu.querySelector('.attente');
@@ -1435,7 +1448,7 @@
               /* Un effet non chiffrable ne bloque pas l'avenant — mais il ne
                  se tait pas non plus : un encart absent se lirait comme
                  « aucun effet ». */
-              apercu.appendChild(Kit.warnbox('Effet non calculable',
+              apercu.appendChild(Kit.enc('w', 'Effet non calculable',
                 Kit.messageErreur(e) + ' L’avenant reste enregistrable.'));
             });
         }
@@ -1607,7 +1620,7 @@
         if (bloquants.length) {
           /* LOT 30 (§30.3) — plus de refus sec : on nomme, on propose, on
              poursuit. */
-          corps.appendChild(Kit.note('Cet avenant sert à des mois déjà clôturés',
+          corps.appendChild(Kit.enc('i', 'Cet avenant sert à des mois déjà clôturés',
             listeMois(bloquants) + '. Le supprimer les rouvrira : l’application vous ' +
             'le proposera, puis supprimera l’avenant.'));
         }
@@ -1619,9 +1632,9 @@
               'incalculables.'));
         var chgts = differences(precedent, avenant);
         if (chgts.length) {
-          var pane = Kit.pane('Ce qui revient en arrière');
-          var l = Kit.lines(pane);
-          chgts.forEach(function (d) { Kit.ligne(l, d.libelle, d.apres + ' → ' + d.avant); });
+          var pane = Kit.carte('Ce qui revient en arrière');
+          var l = pane;
+          chgts.forEach(function (d) { Kit.ligneLn(l, d.libelle, d.apres + ' → ' + d.avant); });
           corps.appendChild(pane);
         }
         corps.appendChild(Kit.ce('p', 'sb q',
@@ -1683,22 +1696,12 @@
      sous-titre part sur « Chargement… » et est levé par CELUI QUI SAIT le
      lever — jamais repéré par sa position dans la liste (correction §16.4). */
   function ligneFamiliarisation(contrat) {
-    var ligne = Kit.ce('div', 'menu');
-    var tx = Kit.ce('div');
-    tx.appendChild(Kit.ce('div', null, 'Familiarisation'));
-    var sous = Kit.ce('div', 'd', 'Chargement…');
-    tx.appendChild(sous);
-    ligne.appendChild(tx);
-    ligne.appendChild(Kit.ce('span', 'ar', '›'));
-    ligne.setAttribute('role', 'button');
-    ligne.setAttribute('tabindex', '0');
-    function ouvrir() {
+    /* LOT 32 §3 — la ligne de menu héritée devient la carte cliquable du
+       socle : un vrai bouton, atteignable au clavier, même contenu. */
+    var ligne = Kit.carteTap('Familiarisation', 'Chargement…', function () {
       global.App.aller('familiarisation', { contratId: contrat.id });
-    }
-    ligne.addEventListener('click', ouvrir);
-    ligne.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrir(); }
     });
+    var sous = ligne.querySelector('.d');
 
     global.DB.listPeriodesFamiliarisationContrat(contrat.id).then(function (l) {
       var p = (l || [])[0];
@@ -1743,10 +1746,10 @@
   /* ------------------------------------------------------------------ */
 
   function ecranFinContrat(ctx, contrat) {
-    global.App.barreRetour(ctx.barre, 'Fin du contrat — ' + contrat.prenom_enfant, { fermer: true });
+    global.App.barreSlim(ctx.barre, 'Fin du contrat — ' + contrat.prenom_enfant, { fermer: true });
     var corps = ctx.corps;
 
-    corps.appendChild(Kit.note('Rien n’est supprimé',
+    corps.appendChild(Kit.enc('i', 'Rien n’est supprimé',
       /* LOT 24 (§24.5) — le renvoi fantôme est corrigé : « Anciens contrats »
          a quitté le Menu au lot 8 ; les contrats terminés vivent sur la page
          « Mes enfants », section « Contrats terminés ». */
@@ -1779,14 +1782,14 @@
       global.App.recapsDuMois(m.annee, m.mois).then(function (parId) {
         Kit.vider(alerteMois);
         if (global.App.estClos(parId, contrat.id)) return;
-        alerteMois.appendChild(Kit.warnbox(
+        alerteMois.appendChild(Kit.enc('w', 
           'Le mois de ' + Kit.libelleMois(m.mois) + ' n’est pas encore clôturé',
           'Clôturez-le avant de ranger le contrat : une fois le contrat rangé, ' +
           'ce mois n’aura jamais de récapitulatif.'));
       }).catch(function (e) {
         Kit.vider(alerteMois);
         /* B.0-9 : on ne se tait pas sur ce qu'on n'a pas pu lire. */
-        alerteMois.appendChild(Kit.warnbox(
+        alerteMois.appendChild(Kit.enc('w', 
           'Impossible de savoir si le mois de ' + Kit.libelleMois(m.mois) + ' est clôturé',
           ' ' + Kit.messageErreur(e) + ' Vérifiez-le avant de ranger le contrat.'));
       });
@@ -1811,7 +1814,7 @@
   function afficherSoldes(zone, contrat, dateFin) {
     Kit.vider(zone);
     if (dateFin < contrat.date_debut) {
-      zone.appendChild(Kit.warnbox('Date impossible',
+      zone.appendChild(Kit.enc('w', 'Date impossible',
         'Le dernier jour de garde ne peut pas précéder le début du contrat.'));
       return;
     }
@@ -1853,12 +1856,12 @@
       var parJour = (conditions && conditions.minutes_par_jour_conge) || 0;
       var brut = conditions ? conditions.brut_mensuel_centimes : null;
 
-      var p = Kit.pane('Soldes au ' + Kit.dateLongue(dateFin));
-      var l = Kit.lines(p);
+      var p = Kit.carte('Soldes au ' + Kit.dateLongue(dateFin));
+      var l = p;
       /* §17.8 — les congés payés d'abord, comme partout ailleurs. */
-      Kit.ligne(l, 'Congés payés restants',
+      Kit.ligneLn(l, 'Congés payés restants',
         cp < 0 ? '− ' + Kit.joursCp(-cp, parJour) : Kit.joursCp(cp, parJour));
-      Kit.ligne(l, 'Récupération restante',
+      Kit.ligneLn(l, 'Récupération restante',
         minutes < 0 ? '− ' + Kit.heures(-minutes) : Kit.heures(minutes));
       zone.appendChild(p);
 
@@ -1886,24 +1889,24 @@
 
       if (solde.chiffrable) {
         /* RG-13, la formule validée par le cas T6 du moteur. */
-        Kit.ligne(l, 'Heures supplémentaires, majorées de ' + libelleMajoration(),
+        Kit.ligneLn(l, 'Heures supplémentaires, majorées de ' + libelleMajoration(),
           Kit.eur(solde.montantSupCentimes));
       }
 
-      var pi = Kit.pane('Indemnité de rupture');
-      var li = Kit.lines(pi);
-      Kit.ligne(li, 'Ancienneté', libelleAnciennete(ind.ancienneteMois));
+      var pi = Kit.carte('Indemnité de rupture');
+      var li = pi;
+      Kit.ligneLn(li, 'Ancienneté', libelleAnciennete(ind.ancienneteMois));
       if (!ind.due) {
         /* « En dessous de neuf mois, l'écran dit qu'aucune indemnité n'est due
            ET POURQUOI. » Un zéro sans motif se lit comme une panne. */
-        pi.appendChild(Kit.note('Aucune indemnité n’est due',
+        pi.appendChild(Kit.enc('i', 'Aucune indemnité n’est due',
           ind.motif === 'ANCIENNETE_INSUFFISANTE'
             ? 'L’indemnité de rupture est due à partir de neuf mois d’ancienneté. ' +
               'Ce contrat en compte ' + libelleAnciennete(ind.ancienneteMois) + '.'
             : 'Les dates du contrat sont incomplètes : l’ancienneté ne peut pas être établie.'));
       } else {
-        Kit.ligne(li, 'Total des salaires bruts', Kit.eur(ind.totalBrutCentimes));
-        Kit.ligne(li, 'Indemnité — 1/80ᵉ', Kit.eur(ind.indemniteCentimes), { total: true });
+        Kit.ligneLn(li, 'Total des salaires bruts', Kit.eur(ind.totalBrutCentimes));
+        Kit.ligneLn(li, 'Indemnité — 1/80ᵉ', Kit.eur(ind.indemniteCentimes), { total: true });
         pi.appendChild(Kit.ce('div', 'sb q',
           'Hors indemnités d’entretien. Calculée sur ' + libellePeriodes(avenants) +
           ', du ' + Kit.dateLongue(contrat.date_debut) + ' au ' + Kit.dateLongue(dateFin) + '.'));
@@ -1917,16 +1920,16 @@
 
       /* --- LE CHIFFRE QUE MARIA ANNONCE AUX PARENTS ------------------ */
       if (solde.chiffrable) {
-        var pt = Kit.pane('À régler en plus du dernier mois');
-        var lt = Kit.lines(pt);
-        Kit.ligne(lt, 'Total', Kit.eur(solde.totalARegler), { total: true });
+        var pt = Kit.carte('À régler en plus du dernier mois');
+        var lt = pt;
+        Kit.ligneLn(lt, 'Total', Kit.eur(solde.totalARegler), { total: true });
         pt.appendChild(Kit.ce('div', 'sb q',
           'Le montant des congés payés restants n’y figure PAS : sa base de calcul n’est ' +
           'pas tranchée, et l’inventer donnerait un total faux et crédible. ' +
           'Ces ' + Kit.joursCp(Math.max(0, cp), parJour) + ' sont à régler en plus.'));
         zone.appendChild(pt);
       } else {
-        zone.appendChild(Kit.warnbox('Montants non chiffrables',
+        zone.appendChild(Kit.enc('w', 'Montants non chiffrables',
           'Aucune rémunération n’est connue pour ' + Kit.libelleMoisAnnee(m.annee, m.mois) +
           ' : ni les heures supplémentaires ni le total ne peuvent être calculés.'));
       }
@@ -1937,13 +1940,13 @@
            Tant qu'elle n'a pas répondu, on SIGNALE — déduire d'office
            reviendrait à trancher à sa place, sur un chiffre qui part chez une
            famille. */
-        zone.appendChild(Kit.warnbox('Votre compteur de récupération est négatif',
+        zone.appendChild(Kit.enc('w', 'Votre compteur de récupération est négatif',
           'Il manque ' + Kit.heures(solde.minutesDues) + ' à ' + contrat.prenom_enfant + '. ' +
           'Ce temps n’est PAS déduit du total ci-dessus : la règle n’est pas tranchée. ' +
           'Voyez avec la famille.'));
       }
 
-      zone.appendChild(Kit.note('À la fin du contrat',
+      zone.appendChild(Kit.enc('i', 'À la fin du contrat',
         'Les congés payés restants sont payés sans majoration ; les heures supplémentaires ' +
         'sont payées avec une majoration de ' + libelleMajoration() + '. ' +
         'Notez ces chiffres, rien n’est enregistré.'));
@@ -1953,14 +1956,14 @@
            sont provisoires tant que le mois n'est pas clôturé. L'avertissement
            qui empêche d'oublier, lui, est en haut de l'écran (§18.6) et ne
            dépend pas de ce bouton. */
-        zone.appendChild(Kit.warnbox(
+        zone.appendChild(Kit.enc('w', 
           'Le mois de ' + Kit.libelleMois(m.mois) + ' n’est pas encore clôturé',
           'Clôturez-le avant de ranger le contrat : ces soldes resteront provisoires ' +
           'tant qu’il ne l’est pas.'));
       }
     }).catch(function (e) {
       Kit.vider(zone);
-      zone.appendChild(Kit.warnbox('Calcul impossible', Kit.messageErreur(e)));
+      zone.appendChild(Kit.enc('w', 'Calcul impossible', Kit.messageErreur(e)));
     });
   }
 
@@ -2012,16 +2015,16 @@
             return n + Chaine.brutDuCentimes(e.resultat);
           }, 0);
 
-          var carte = Kit.ce('div', 'card');
+          var carte = Kit.ce('div', 'cd');
           carte.appendChild(Kit.ce('div', 'nm', 'Avenant n° ' + a.numero +
             (a.reconstitue ? ' (reconstitué)' : '')));
           carte.appendChild(Kit.ce('div', 'sb',
             'À partir du ' + Kit.dateLongue(a.date_effet) + ' · ' +
             duPeriode.length + ' mois'));
-          var l = Kit.lines(carte);
-          Kit.ligne(l, 'Brut mensuel au contrat',
+          var l = carte;
+          Kit.ligneLn(l, 'Brut mensuel au contrat',
             a.brut_mensuel_centimes == null ? 'inconnu' : Kit.eur(a.brut_mensuel_centimes));
-          Kit.ligne(l, 'Bruts réellement dus sur la période', Kit.eur(total), { total: true });
+          Kit.ligneLn(l, 'Bruts réellement dus sur la période', Kit.eur(total), { total: true });
           /* Les mois qui S'ÉCARTENT du brut contractuel sont nommés : ce sont
              eux qu'on vient vérifier quand un total surprend. */
           var ecarts = duPeriode.filter(function (e) {
@@ -2032,9 +2035,9 @@
             det.appendChild(Kit.ce('summary', null,
               ecarts.length + (ecarts.length > 1 ? ' mois s’écartent' : ' mois s’écarte') +
               ' du brut prévu'));
-            var ld = Kit.lines(det);
+            var ld = det;
             ecarts.forEach(function (e) {
-              Kit.ligne(ld, Kit.libelleMoisAnnee(e.annee, e.mois),
+              Kit.ligneLn(ld, Kit.libelleMoisAnnee(e.annee, e.mois),
                 Kit.eur(e.resultat.brutDuCentimes || 0) + raisonEcartBrut(e.resultat));
             });
             det.appendChild(Kit.ce('div', 'sb q',
@@ -2044,17 +2047,17 @@
           corps.appendChild(carte);
         });
 
-        var pane = Kit.pane('Total');
-        var lt = Kit.lines(pane);
-        Kit.ligne(lt, 'Salaires bruts', Kit.eur(ind.totalBrutCentimes));
-        Kit.ligne(lt, 'Ancienneté', libelleAnciennete(ind.ancienneteMois));
-        Kit.ligne(lt, 'Indemnité — 1/80ᵉ', Kit.eur(ind.indemniteCentimes), { total: true });
+        var pane = Kit.carte('Total');
+        var lt = pane;
+        Kit.ligneLn(lt, 'Salaires bruts', Kit.eur(ind.totalBrutCentimes));
+        Kit.ligneLn(lt, 'Ancienneté', libelleAnciennete(ind.ancienneteMois));
+        Kit.ligneLn(lt, 'Indemnité — 1/80ᵉ', Kit.eur(ind.indemniteCentimes), { total: true });
         corps.appendChild(pane);
 
         /* Le point d'assiette non tranché, dit à l'écran comme le demande le
            §17.8 : tant que Maria n'a pas répondu, les indemnités de congés
            payés versées N'ENTRENT PAS dans le total. */
-        corps.appendChild(Kit.note('Un point reste à confirmer',
+        corps.appendChild(Kit.enc('i', 'Un point reste à confirmer',
           'Les indemnités de congés payés versées n’entrent PAS dans ce total de bruts. ' +
           'Si votre convention dit le contraire, ce montant sera à revoir.'));
       });
@@ -2103,7 +2106,7 @@
              reclôture montrera les écarts (décision d'Adrien, 26 août : un
              contrat rangé peut reclôturer un mois rouvert). */
           var r0 = closDuMois[0];
-          corps.appendChild(Kit.warnbox(
+          corps.appendChild(Kit.enc('w', 
             'Le récapitulatif ' + Kit.deMoisAnnee(r0.annee, r0.mois) + ' est déjà clôturé',
             'Il a été calculé sans cette date de fin et ne sera pas recalculé tant qu’il reste ' +
             'clôturé. Rouvrez-le pour que la date de fin y entre, puis clôturez-le à nouveau ' +
@@ -2139,7 +2142,7 @@
             'Ou ranger sans rouvrir : le document remis fait foi tel quel, et seuls les ' +
             'récapitulatifs de période tiendront compte de la date de fin.'));
         }
-        corps.appendChild(Kit.warnbox('Avez-vous noté les deux soldes ?',
+        corps.appendChild(Kit.enc('w', 'Avez-vous noté les deux soldes ?',
           'Congés payés restants (payés sans majoration) et heures supplémentaires ' +
           '(payées avec ' + libelleMajoration() + ' de majoration). Ils restent consultables ' +
           'après le rangement, mais c’est le moment de les relever.'));

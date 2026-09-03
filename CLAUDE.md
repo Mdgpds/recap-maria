@@ -216,11 +216,25 @@ ouverture l'installe, la seconde le sert.
 
 ---
 
+### Les rappels (lot 32)
+
+L'écran des rappels a **trois états** et n'en affiche qu'un : non configuré
+(`VAPID_PUBLIC_KEY` vide dans `config.js`), configuré non autorisé (clé
+présente, permission ou abonnement manquant), actif (clé, permission et un
+abonnement **enregistré en base**). L'inscription se fait au geste de Maria,
+jamais au chargement. Le texte du rappel — `texteDuRappel` — est **dupliqué**
+dans `js/ui-menu.js` et `supabase/functions/rappels-cloture/index.ts` entre
+les repères `TEXTE-RAPPEL-DEBUT` / `FIN` ; `test/lot15-rappels.smoke.js` exécute
+les deux et les compare. Jamais de prénom ni de nom de famille dans une
+notification.
+
 ## 8. La base — migrations Supabase
 
-`supabase/migrations/`, numérotées et **jamais réécrites** : `001` à `020`.
+`supabase/migrations/`, numérotées et **jamais réécrites** : `001` à `021`.
 
 `020_demi_journee.sql` est la dernière appliquée en production.
+`021_rappels.sql` (lot 32) est **écrite, non appliquée** : elle passe avant la
+fusion du lot 32, à la main, par Adrien.
 
 Elles sont exécutées **à la main** dans l'éditeur SQL de Supabase, jamais par
 un outil. Une nouvelle migration prend le numéro **suivant** — vérifier le
@@ -258,10 +272,14 @@ npm run mesures       # mise en page à 390 px dans un VRAI navigateur (Playwrig
 
 **`npm run mesures` n'est pas dans `test:ui`** : il a besoin de Playwright et
 d'un Chromium (`npm i -D playwright && npx playwright install chromium`, ou
-`PLAYWRIGHT_CHROMIUM=/chemin/chromium`). Il parcourt sept écrans à 390 × 780,
-tactile, sur un décor fictif servi par `test/fixtures/faux-supabase-390.js`, et
-sort en code 1 au premier débordement, contrôle rogné ou zone tactile sous
-44 px. C'est la seule mesure de mise en page du dépôt — jsdom ne met pas en
+`PLAYWRIGHT_CHROMIUM=/chemin/chromium`). Il parcourt les écrans à 390 × 780,
+tactile — dont, depuis le lot 32, la fiche, la fin de contrat, la
+familiarisation, les rappels, la feuille de réouverture, la pose au
+calendrier avec ses deux bornes et la connexion clavier ouvert — sur un
+décor fictif servi par `test/fixtures/faux-supabase-390.js`, et sort en
+code 1 au premier débordement, contrôle rogné, zone tactile sous 44 px,
+feuille invisible ou **contrôle de valeur calculée** en défaut (couleur
+réelle de l'en-tête, des bornes `selb` / `dans`, fond de la connexion). C'est la seule mesure de mise en page du dépôt — jsdom ne met pas en
 page. `CAPTURES=/un/dossier` enregistre une capture par écran.
 
 Les deux tournent en CI (`.github/workflows/ci.yml`) sur chaque push vers
@@ -300,9 +318,9 @@ config.js             URL et clé publishable Supabase — rien d'autre
 css/style.css         feuille unique ; couleurs dans :root, jamais en dur ailleurs
 js/                   18 modules (voir §2)
 test/                 suites + fumée d'interface ; test/fixtures/ = moteurs figés
-supabase/migrations/  001 à 020, jamais réécrites
-supabase/functions/   rappels-cloture (non déployée à ce jour)
-supabase/controles/   requêtes SQL de contrôle, hors migrations
+supabase/migrations/  001 à 021, jamais réécrites (021 : écrite, non appliquée)
+supabase/functions/   rappels-cloture (non déployée à ce jour) + DEPLOIEMENT.md, la marche à suivre
+supabase/controles/   requêtes SQL de contrôle, hors migrations ; rappels-planification.sql (pg_cron, non exécuté)
 scripts/keepalive.js  maintien du projet Supabase
 ```
 

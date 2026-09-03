@@ -64,8 +64,39 @@ const ECRANS = [
   ['accueil', {}], ['conges', {}], ['docs', {}], ['menu', {}],
   ['enfant', { contratId: 'c1', annee: 2026, mois: 8 }],
   ['cloture', {}], ['moisPasse', { annee: 2026, mois: 7 }],
+  /* LOT 32 — les écrans restants passent sous la même mesure. */
+  ['fiche', { contratId: 'c1' }],
+  ['fiche', { contratId: 'c1', section: 'fin' }],
+  ['periode', {}],
+  ['periode', {}, { resultats: true, ouvrir: () => {
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Ce mois-ci');
+    if (b) b.click(); return !!b;
+  } }],
+  ['familiarisation', { contratId: 'c2' }],
+  ['rappels', {}],
   ['conges', {}, { feuille: 'pose', ouvrir: () => {
     const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
+    if (b) b.click(); return !!b;
+  } }],
+  /* LOT 32 §8 — la même feuille, deux bornes posées au calendrier : le
+     décompte, les samedis et « Pour qui » sont alors à l'écran. */
+  ['conges', {}, { feuille: 'pose-bornes', ouvrir: () => {
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
+    if (!b) return false;
+    b.click();
+    const suiv = document.querySelector('#sheet button[aria-label="Mois suivant"]');
+    if (!suiv) return false;
+    suiv.click();
+    const t1 = document.querySelector('#sheet td[data-jour="2026-09-21"]');
+    const t2 = document.querySelector('#sheet td[data-jour="2026-09-24"]');
+    if (!t1 || !t2) return false;
+    t1.click(); t2.click();
+    return true;
+  } }],
+  /* LOT 32 §6 — la réouverture est une feuille : elle s'ouvre depuis le
+     document d'un mois clôturé, et sa visibilité se mesure comme les autres. */
+  ['document', { contratId: 'c1', annee: 2026, mois: 7 }, { feuille: 'rouvrir', ouvrir: () => {
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Rouvrir pour corriger');
     if (b) b.click(); return !!b;
   } }],
   ['enfant', { contratId: 'c1', annee: 2026, mois: 8 }, { feuille: 'journee', ouvrir: () => {
@@ -92,6 +123,11 @@ const ECRANS = [
     await page.evaluate(([e, p]) => window.App && window.App.aller(e, p, true), [ecran, params]);
     await page.waitForTimeout(700);
     let nom = ecran;
+    if (extra && extra.resultats) {
+      nom = ecran + ' → résultats';
+      await page.evaluate(extra.ouvrir);
+      await page.waitForTimeout(1200);
+    }
     if (extra && extra.feuille) {
       nom = ecran + ' → feuille ' + extra.feuille;
       const trouve = await page.evaluate(extra.ouvrir);
@@ -149,7 +185,7 @@ const ECRANS = [
       return out;
     });
     total.deb += r.deb.length; total.rog += r.rog.length; total.pet += r.pet.length;
-    console.log((extra ? '' : '\n=== ' + nom + ' === ') + 'largeur ' + r.largeur + ' px');
+    console.log((extra && extra.feuille ? '' : '\n=== ' + nom + ' === ') + 'largeur ' + r.largeur + ' px');
     console.log('  débordements : ' + (r.deb.length || 'aucun'));
     r.deb.slice(0, 6).forEach(x => console.log('     ' + x));
     console.log('  rognés       : ' + (r.rog.length || 'aucun'));
@@ -157,10 +193,166 @@ const ECRANS = [
     console.log('  < 44 px      : ' + (r.pet.length || 'aucune'));
     r.pet.slice(0, 8).forEach(x => console.log('     ' + x));
     if (process.env.CAPTURES) await page.screenshot({ path: path.join(process.env.CAPTURES,
-      '390-' + ecran + (extra ? '-feuille-' + extra.feuille : '') + '.png') });
+      '390-' + ecran + (params && params.section ? '-' + params.section : '') +
+      (extra && extra.feuille ? '-feuille-' + extra.feuille : '') + (extra && extra.resultats ? '-resultats' : '') + '.png') });
   }
+  /* ------------------------------------------------------------------
+     LOT 32 — LES CONTRÔLES DE VALEUR CALCULÉE.
+
+     Quatre défauts de la même forme en deux jours : « ce que la feuille de
+     style fait vraiment, que personne ne regardait », chaque fois invisibles
+     à jsdom. Chaque contrôle ci-dessous lit la VALEUR CALCULÉE dans le vrai
+     navigateur et compte un défaut par échec. Un contrôle qui ne sait pas
+     échouer ne teste rien : chacun a été vu rouge contre le code d'avant.
+     ------------------------------------------------------------------ */
+  let defauts = 0;
+  const controle = (nom, ok, detail) => {
+    console.log((ok ? 'ok   ' : 'KO   ') + nom + (detail ? ' — ' + detail : ''));
+    if (!ok) defauts++;
+  };
+  const aller = async (ecran, params) => {
+    await page.evaluate(() => { if (window.Kit && window.Kit.fermerFeuille) window.Kit.fermerFeuille(); });
+    await page.evaluate(([e, p]) => window.App.aller(e, p, true), [ecran, params || {}]);
+    await page.waitForTimeout(600);
+  };
+  const fondBarre = () => page.evaluate(() => {
+    const b = document.getElementById('barre') || document.querySelector('#vue-app .bar, #vue-app .top');
+    const c = getComputedStyle(b);
+    return c.backgroundImage + ' | ' + c.backgroundColor;
+  });
+
+  console.log('\n=== §1 — l’en-tête reprend sa couleur en quittant un enfant ===');
+  /* Le vert de référence se lit sur un élément NEUF portant la même classe
+     que l'en-tête de l'accueil, jamais sur l'en-tête lui-même : le parcours
+     précédent a déjà ouvert un enfant, et c'est précisément lui qui pouvait
+     laisser sa teinte. Sans cette précaution, le « vert » relevé serait la
+     couleur de l'enfant, et le contrôle se validerait lui-même. */
+  await aller('accueil');
+  const vert = await page.evaluate(() => {
+    const b = document.getElementById('barre');
+    const t = document.createElement('header'); t.className = b.className;
+    b.parentNode.insertBefore(t, b);
+    const c = getComputedStyle(t); const v = c.backgroundImage + ' | ' + c.backgroundColor;
+    t.remove(); return v;
+  });
+  const accueil = await fondBarre();
+  controle('§1 l’accueil, après un enfant déjà ouvert, porte le vert de la feuille de style', accueil === vert, accueil.slice(0, 60));
+  await aller('enfant', { contratId: 'c1', annee: 2026, mois: 8 });
+  const teinte = await fondBarre();
+  controle('§1 l’espace enfant teinte l’en-tête (valeur calculée ≠ vert)', teinte !== vert, teinte.slice(0, 60));
+  /* retour par la flèche */
+  await page.evaluate(() => { const bk = document.querySelector('#barre .back, #barre .bk'); if (bk) bk.click(); });
+  await page.waitForTimeout(600);
+  const apresFleche = await fondBarre();
+  controle('§1 retour par la flèche : le vert à l’identique', apresFleche === vert, apresFleche.slice(0, 60));
+  /* retour par chaque onglet */
+  for (const onglet of ['conges', 'docs', 'menu', 'accueil']) {
+    await aller('enfant', { contratId: 'c1', annee: 2026, mois: 8 });
+    await page.evaluate((o) => {
+      const b = document.querySelector('#tabbar button[data-onglet="' + o + '"]');
+      if (b) b.click(); else window.App.aller(o, {}, true);
+    }, onglet);
+    await page.waitForTimeout(600);
+    const apres = await fondBarre();
+    controle('§1 retour par l’onglet ' + onglet + ' : le vert à l’identique', apres === vert, apres.slice(0, 60));
+  }
+
+  /* §7 — LA CONNEXION, À 390 PX, CLAVIER FERMÉ PUIS OUVERT. L'écran vit hors
+     de `#vue-app` : on le montre à la main et on le mesure comme les autres,
+     puis on réduit la fenêtre de la hauteur d'un clavier d'iPhone (≈ 336 pt)
+     et on vérifie que le bouton reste atteignable — visible, ou amené dans
+     la fenêtre en faisant défiler le conteneur. */
+  /* §8 — LES COULEURS DE `selb` ET DE `dans`, EN VALEUR CALCULÉE. Leur
+     présence dans le CSS ne prouve rien : c'est précisément ce qui a manqué
+     au redesign. On ouvre la pose, on touche deux jours, et on lit ce que le
+     navigateur peint — contre les jetons `--ac` et `--dansf` lus au même
+     endroit. */
+  console.log('\n=== §8 — la pose au calendrier, en valeur calculée ===');
+  await aller('conges', {});
+  const p8 = await page.evaluate(async () => {
+    const attendre = (ms) => new Promise(r => setTimeout(r, ms));
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
+    b.click(); await attendre(300);
+    document.querySelector('#sheet button[aria-label="Mois suivant"]').click();
+    await attendre(100);
+    const cs = getComputedStyle(document.documentElement);
+    const jeton = (n) => { const d = document.createElement('div'); d.style.background = cs.getPropertyValue(n).trim();
+      document.body.appendChild(d); const v = getComputedStyle(d).backgroundColor; d.remove(); return v; };
+    const out = { ac: jeton('--ac'), dansf: jeton('--dansf'), ln2: jeton('--ln2') };
+    const btn = document.querySelector('#sheet .stick button');
+    out.inactifAvant = btn.disabled;
+    document.querySelector('#sheet td[data-jour="2026-09-21"]').click(); await attendre(100);
+    out.inactifUneBorne = btn.disabled;
+    out.selb1 = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-09-21"]')).backgroundColor;
+    document.querySelector('#sheet td[data-jour="2026-09-24"]').click(); await attendre(900);
+    out.selb2 = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-09-24"]')).backgroundColor;
+    out.dans = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-09-22"]')).backgroundColor;
+    out.horsPlage = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-09-25"]')).backgroundColor;
+    out.actifDeux = !btn.disabled;
+    out.decompte = (document.querySelector('#sheet .res .big2') || {}).textContent || '';
+    document.querySelector('#sheet button[aria-label="Mois suivant"]').click();
+    document.querySelector('#sheet button[aria-label="Mois suivant"]').click(); await attendre(100);
+    out.ferie = getComputedStyle(document.querySelector('#sheet td[data-jour="2026-11-11"]')).backgroundColor;
+    return out;
+  });
+  controle('§8 le bouton est inactif sans borne', p8.inactifAvant);
+  controle('§8 le bouton reste inactif avec une seule borne', p8.inactifUneBorne);
+  controle('§8 la première borne est peinte en `--ac`', p8.selb1 === p8.ac, p8.selb1 + ' / ' + p8.ac);
+  controle('§8 la seconde borne est peinte en `--ac`', p8.selb2 === p8.ac, p8.selb2);
+  controle('§8 un jour entre les bornes est peint en `--dansf`', p8.dans === p8.dansf, p8.dans + ' / ' + p8.dansf);
+  controle('§8 un jour hors plage n’est ni l’un ni l’autre', p8.horsPlage !== p8.ac && p8.horsPlage !== p8.dansf, p8.horsPlage);
+  controle('§8 un férié est peint en `--ln2` (état `fe`)', p8.ferie === p8.ln2, p8.ferie);
+  controle('§8 les deux bornes posées, le bouton s’active', p8.actifDeux);
+  controle('§8 le décompte est affiché (« 4 j ouvrables »)', /4/.test(p8.decompte), p8.decompte);
+  await page.evaluate(() => window.Kit.fermerFeuille());
+
+  console.log('\n=== §7 — la connexion ===');
+  await page.evaluate(() => { if (window.Kit && window.Kit.fermerFeuille) window.Kit.fermerFeuille(); });
+  const mesureLogin = async (etiquette) => page.evaluate((etq) => {
+    const login = document.getElementById('vue-login');
+    document.getElementById('vue-app').hidden = true;
+    login.hidden = false;
+    const out = { deb: [], pet: [], fond: getComputedStyle(login).backgroundColor,
+      onglets: !!document.querySelector('#vue-login .tabs, #vue-login .back, #vue-login .bk') };
+    login.querySelectorAll('*').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      if (b.right > 390.5 || b.left < -0.5) out.deb.push(el.tagName + '.' + el.className);
+    });
+    login.querySelectorAll('button, input').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.height < 44 || b.width < 44) out.pet.push(el.tagName + '#' + el.id + ' ' + Math.round(b.width) + '×' + Math.round(b.height));
+    });
+    const btn = document.getElementById('btn-login');
+    login.scrollTop = login.scrollHeight;
+    const rb = btn.getBoundingClientRect();
+    out.boutonAtteignable = rb.bottom <= window.innerHeight + 0.5 && rb.top >= 0;
+    out.boutonBas = Math.round(rb.bottom); out.fenetre = window.innerHeight;
+    login.scrollTop = 0;
+    return out;
+  }, etiquette);
+  const l1 = await mesureLogin('fermé');
+  controle('§7 fond `--bg` (pas de dégradé vert)', l1.fond === 'rgb(247, 250, 248)', l1.fond);
+  controle('§7 ni barre d’onglets ni flèche de retour', !l1.onglets);
+  controle('§7 aucun débordement horizontal', l1.deb.length === 0, l1.deb.join(', '));
+  controle('§7 aucune zone tactile sous 44 px', l1.pet.length === 0, l1.pet.join(', '));
+  controle('§7 clavier fermé : le bouton est dans l’écran', l1.boutonAtteignable, l1.boutonBas + ' / ' + l1.fenetre);
+  /* Deux hauteurs : un iPhone 14 Pro clavier ouvert (≈ 444 pt), et un petit
+     iPhone clavier ouvert avec les barres de Safari (≈ 360 pt). C'est la
+     seconde qui mordait sur le code d'avant : le bloc centré débordait des
+     deux côtés et le bouton restait sous le clavier. */
+  for (const h of [444, 360]) {
+    await page.setViewportSize({ width: 390, height: h });
+    await page.waitForTimeout(300);
+    const l2 = await mesureLogin('ouvert');
+    controle('§7 clavier ouvert (' + h + ' px) : le bouton reste atteignable', l2.boutonAtteignable, l2.boutonBas + ' / ' + l2.fenetre);
+  }
+  await page.setViewportSize({ width: 390, height: 780 });
+  await page.evaluate(() => { document.getElementById('vue-login').hidden = true; document.getElementById('vue-app').hidden = false; });
+
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
-    ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles);
+    ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles +
+    ', contrôles en défaut ' + defauts);
   await nav.close(); serveur.close();
-  if (total.deb + total.rog + total.pet + total.feuilles > 0) process.exit(1);
+  if (total.deb + total.rog + total.pet + total.feuilles + defauts > 0) process.exit(1);
 })();

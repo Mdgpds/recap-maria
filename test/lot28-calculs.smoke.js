@@ -60,9 +60,12 @@ function parTexte(racineEl, selecteur, morceau) {
     return txt(e).indexOf(morceau) !== -1;
   })[0] || null;
 }
+/* LOT 32 §4 — « Sur une période » est passé sur le socle : ses panneaux
+   sont des cartes `.cd` titrées par un `.ttl`. Les écrans non migrés gardent
+   `.pane` / `.pt` ; on accepte les deux, les assertions ne changent pas. */
 function paneParTitre(racineEl, titre) {
-  return Array.prototype.filter.call(racineEl.querySelectorAll('.pane'), function (p) {
-    var t = p.querySelector('.pt');
+  return Array.prototype.filter.call(racineEl.querySelectorAll('.pane, .cd'), function (p) {
+    var t = p.querySelector('.pt, .ttl');
     return t && txt(t).indexOf(titre) !== -1;
   })[0] || null;
 }

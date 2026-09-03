@@ -52,14 +52,17 @@ function parTexte(racineEl, selecteur, morceau) {
     return e.textContent.indexOf(morceau) !== -1;
   })[0] || null;
 }
+/* LOT 32 §4 — l'écran est passé sur les composants du socle : le panneau
+   `.pane` / `.pt` est devenu la carte `.cd` / `.ttl`, la ligne `.l` la ligne
+   `.ln`. Mêmes assertions, seuls les sélecteurs changent. */
 function paneParTitre(racineEl, titre) {
-  return Array.prototype.filter.call(racineEl.querySelectorAll('.pane'), function (p) {
-    var t = p.querySelector('.pt');
+  return Array.prototype.filter.call(racineEl.querySelectorAll('.cd'), function (p) {
+    var t = p.querySelector('.ttl');
     return t && t.textContent.indexOf(titre) !== -1;
   })[0] || null;
 }
 function valeurLigne(pane, libelle) {
-  var l = Array.prototype.filter.call(pane.querySelectorAll('.l'), function (e) {
+  var l = Array.prototype.filter.call(pane.querySelectorAll('.ln'), function (e) {
     return e.firstChild && e.firstChild.textContent.indexOf(libelle) !== -1;
   })[0];
   return l ? l.lastChild.textContent : null;

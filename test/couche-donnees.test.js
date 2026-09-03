@@ -112,7 +112,7 @@ var COLONNES_ATTENDUES = {
                     'minutes_par_jour_conge', 'entretien_centimes_jour',
                     'sup_dues_si_enfant_absent', 'ordre_imputation'],
   preference_rappel: ['owner', 'actif', 'jour_du_mois', 'heure',              // lot 15
-                      'chaque_jour_ensuite', 'maj_le'],
+                      'chaque_jour_ensuite', 'quoi', 'maj_le'],                // lot 32 : quoi
   abonnement_push: ['id', 'endpoint', 'cree_le']                              // lot 15
 };
 

@@ -514,17 +514,35 @@ var toast = document.getElementById('toast');
   assert(txt(segFormat.querySelector('button.on')) === 'Des journées',
     'LOT 26 : « des journées » est le format par défaut — le cas le plus fréquent');
 
-  assert(!!parTexte(sheet, '.fld', 'Du') && !!parTexte(sheet, '.fld', 'Au'),
-    'LOT 10 : le parcours en journées commence toujours par les DATES');
-
-  /* Le décor ouvre la pose sur AUJOURD'HUI — le dimanche 24 mai — et l'écran
-     dit la vérité : aucun jour ouvrable. On pose une vraie semaine, du lundi
-     18 au vendredi 22 mai, et le décompte apparaît. */
+  /* LOT 32 §8 — le parcours en journées commence toujours par les DATES,
+     et elles se choisissent AU CALENDRIER : on touche le premier jour, puis
+     le dernier. Rien n'est choisi à l'ouverture, et l'écran le dit. */
+  assert(!!sheet.querySelector('.cal-pose table.cal'),
+    'LOT 10 : le parcours en journées commence toujours par les DATES — au calendrier');
+  assert(txt(sheet).indexOf('Aucun jour choisi pour l’instant') !== -1,
+    'LOT 32 : rien n’est choisi à l’ouverture, et l’écran le dit');
+  async function toucherJour(iso) {
+    for (var i = 0; i < 60; i++) {
+      var td = sheet.querySelector('.cal-pose td[data-jour="' + iso + '"]');
+      if (td) { td.click(); await pause(60); return; }
+      var aff = txt(sheet.querySelector('.navl')).trim().toLowerCase().split(' ');
+      var cle = Number(aff[1]) * 12 + window.Kit.MOIS.indexOf(aff[0]);
+      var cible = Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7));
+      sheet.querySelector(cible > cle ? 'button[aria-label="Mois suivant"]' : 'button[aria-label="Mois précédent"]').click();
+      await pause(30);
+    }
+  }
+  /* Le dimanche 24 mai, seul : l'écran dit la vérité, aucun jour ouvrable —
+     il n'invente pas une période. Puis une vraie semaine, du lundi 18 au
+     vendredi 22 mai, et le décompte apparaît. */
+  await toucherJour('2026-05-24');
+  await toucherJour('2026-05-24');
+  await pause(500);
   assert(txt(sheet).indexOf('Aucun jour ouvrable sur ces dates') !== -1,
     'LOT 26 : sur un dimanche, l’écran dit qu’il n’y a rien à décompter — ' +
     'il n’invente pas une période');
-  poserDate(parTexte(sheet, '.fld', 'Du'), 2026, 5, 18);
-  poserDate(parTexte(sheet, '.fld', 'Au'), 2026, 5, 22);
+  await toucherJour('2026-05-18');
+  await toucherJour('2026-05-22');
   await pause(500);
 
   /* CORRECTIF 28 AOÛT — le décor a DÉJÀ un congé le lundi 18 mai sur les trois

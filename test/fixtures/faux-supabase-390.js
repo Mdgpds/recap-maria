@@ -78,6 +78,19 @@
         totalAVerserCentimes: 118650, compteurSortie: { minutesSup: 1200, minutesCp: 5400 } } }
   ];
   var SAMEDIS = [];
+  /* LOT 32 §5 — une période de familiarisation sur Aigrette, pour mesurer
+     l'écran qui la montre : un jour déclaré, un jour avec une ARRIVÉE SEULE
+     (rien n'est payé tant que le départ n'est pas enregistré), un jour passé
+     sans déclaration, deux jours à venir. */
+  var FAMILIARISATIONS = [
+    { id: 'fa1', contrat_id: 'c2', date_debut: '2026-08-19', date_fin: '2026-08-25' }
+  ];
+  JOURNEES.push(
+    { id: 'j15', contrat_id: 'c2', jour: '2026-08-19', type: 'familiarisation',
+      minutes_reelles: 120, entretien_du: true, fam_heure_arrivee: '09:00:00', fam_heure_depart: '11:00:00' },
+    { id: 'j16', contrat_id: 'c2', jour: '2026-08-20', type: 'familiarisation',
+      minutes_reelles: null, entretien_du: true, fam_heure_arrivee: '09:00:00', fam_heure_depart: null }
+  );
 
   function table(nom) {
     if (nom === 'famille') return [FAMILLE];
@@ -87,6 +100,7 @@
     if (nom === 'imputation_conge') return IMPUTATIONS;
     if (nom === 'recap_mensuel') return RECAPS;
     if (nom === 'samedi_compte') return SAMEDIS;
+    if (nom === 'periode_familiarisation') return FAMILIARISATIONS;
     return [];
   }
 

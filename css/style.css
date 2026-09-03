@@ -219,6 +219,7 @@
 .top.slim { padding: 15px 18px; padding-top: calc(15px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 11px; }
 .top.slim h1 { font-size: 17px; margin: 0; flex: 1; letter-spacing: -.2px; }
 .top.slim .av { box-shadow: none; }
+.top.slim .r { font-size: 13px; opacity: .85; flex: none; font-weight: 400; }
 
 .back {
   background: rgba(255, 255, 255, .15); border: 0; color: var(--bg2);
@@ -337,6 +338,16 @@
   font-size: 11px; color: var(--bg2); transition: background .15s, border-color .15s;
 }
 .ch.on .rd { background: var(--ac); border-color: var(--ac); }
+/* LOT 32 §9 — le contenu d'un choix : titre et sous-texte (comme la
+   maquette : `.gro` > `.nm` + `.dt`). */
+.ch .gro { flex: 1; min-width: 0; }
+.ch .nm { display: block; font-weight: 600; font-size: 15px; line-height: 1.3; }
+.ch .dt { display: block; font-size: 13px; color: var(--ink3); margin-top: 2px; line-height: 1.4; }
+/* Les réglages des rappels, INACTIFS tant que rien n'est autorisé : visibles,
+   estompés, et aucun contrôle ne répond (les boutons sont `disabled`). */
+.reglages-rappel.inactifs { opacity: .55; }
+.reglages-rappel .fld .stp { margin-left: auto; }
+.reglages-rappel .seg { margin-bottom: 12px; }
 
 /* `choice` EST le choix cochable du 2A, sous son nom d'origine.
 
@@ -408,6 +419,14 @@ table.cal td .rep { position: absolute; bottom: 3px; right: 5px; font-size: 9px;
   margin-right: 5px; vertical-align: -1px; border: 1px solid var(--ln);
 }
 .navmois { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
+/* LOT 32 §8 — le calendrier de la pose et sa légende : les trois états que
+   ce calendrier peut prendre, dans les mêmes jetons que les cases. */
+.navmois .btn.sm { margin: 0; min-width: 44px; min-height: 44px; flex: none; }
+.cal-pose table.cal { margin-bottom: 2px; }
+.leg i.leg-selb { background: var(--ac); border-color: var(--ac); }
+.leg i.leg-dans { background: var(--dansf); border-color: var(--dansl); }
+.leg i.leg-fe { background: var(--ln2); border-color: var(--ln2); }
+.pose .leg { margin-bottom: 12px; }
 .navl { flex: 1; text-align: center; font-weight: 700; font-size: 16px; }
 .synth { display: flex; flex-wrap: wrap; gap: 7px; margin: 14px 2px 4px; }
 
@@ -589,7 +608,13 @@ table.cal td .rep { position: absolute; bottom: 3px; right: 5px; font-size: 9px;
 .stepper { display: flex; align-items: center; gap: 9px; }
 .stepper .mt { min-width: 22px; text-align: center; }
 .vent { margin-top: 12px; }
-.vl { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(0, 0, 0, .05); }
+/* LOT 32 — DÉFAUT TROUVÉ EN REGARDANT L'ÉCRAN, PAS LE CODE. Cette ligne de
+   ventilation de la maquette s'appelait `.vl`, comme la VALEUR d'un champ
+   `.fld` (`Kit.fld`). Non scopée, elle donnait à toute valeur de champ en
+   lecture 10 px de rembourrage et un filet au-dessus : les « Du » / « Au »
+   de la familiarisation et les champs de la fiche faisaient 85 px de haut
+   avec un trait fantôme. Elle est scopée à son bloc (`.vent`). */
+.vent .vl { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(0, 0, 0, .05); }
 .vn { font-weight: 600; font-size: 14px; }
 .trio { display: flex; gap: 6px; margin-top: 11px; }
 .trio .btn { flex: 1; margin: 0; }
@@ -821,10 +846,13 @@ body {
    rare : il n'y a PAS de « ? » dans les barres d'écran (décision d'Adrien du
    24 août : « incompréhensible »). Un vrai bouton, pour rester atteignable
    au clavier — mais qui a l'air de ce qu'il est, un lien. */
+/* LOT 32 §10.4 — le lien texte garde son dessin, sa zone tactile fait 44 px :
+   le rembourrage vertical est absorbé par des marges négatives, la ligne ne
+   bouge pas d'un pixel. */
 .lien2 {
-  background: none; border: none; padding: 4px 0; font: inherit; font-size: 13px;
+  background: none; border: none; padding: 12px 0; margin: -8px 0 1px; font: inherit; font-size: 13px;
   color: var(--ac); font-weight: 600; text-decoration: underline; cursor: pointer;
-  text-align: left; align-self: flex-start; margin: 0 0 9px;
+  text-align: left; align-self: flex-start; min-height: 44px;
 }
 
 /* Rangée de raccourcis : des petits boutons côte à côte, largeur partagée. */
@@ -910,6 +938,16 @@ body {
   white-space: nowrap; text-align: right; letter-spacing: -.15px;
 }
 .ln .sb2 { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 3px; }
+/* LOT 32 — les nuances de la ligne héritée, reprises par `ln` : le ton
+   effacé (`q`), la valeur en alerte (`wa`), et le petit lien à droite d'un
+   titre de carte (`more`). Aucune couleur en dur : que des jetons. */
+.ln.q span, .ln.q b { color: var(--ink3); font-weight: 400; }
+.ln .wa { color: var(--wa); }
+.cd .ttl { margin: 2px 0 6px; }
+.cd .ttl .more { font-size: 13px; color: var(--ac); font-weight: 600; cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; letter-spacing: 0; text-transform: none; }
+/* Un encart qui annonce un avenant à venir garde son liseré, comme la note
+   héritée qu'il remplace. */
+.enc.a-venir { border-left: 3px solid var(--ac); }
 .ln.tot b { font-weight: 700; font-size: 19px; letter-spacing: -.4px; }
 /* LOT 28 — DÉFAUT TROUVÉ EN VÉRIFIANT AU NAVIGATEUR, ANTÉRIEUR À CE LOT.
 
@@ -926,7 +964,7 @@ body {
    La remise à zéro est celle de `.cd.tap`, à l'identique. La bordure basse
    est redonnée APRÈS `border: 0`, sinon la ligne perdrait son filet. */
 .ln.tap {
-  cursor: pointer; width: 100%; text-align: left;
+  cursor: pointer; width: 100%; text-align: left; min-height: 44px; box-sizing: border-box;
   background: none; border: 0; border-bottom: 1px solid var(--ln2);
   font-family: inherit; font-size: 15px; color: inherit;
   -webkit-appearance: none; appearance: none;
@@ -1468,9 +1506,16 @@ table.cal td.hors-sel:active { transform: none; }
 .fld.col { display: block; }
 .fld.col .lb { display: block; margin-bottom: 6px; }
 .fld .dates { margin-left: auto; display: flex; gap: 6px; }
-.fld .dates select { flex: 0 0 auto; text-align-last: center; font-weight: 600; }
+.fld .dates select { flex: 0 0 auto; text-align-last: center; font-weight: 600;
+  /* LOT 32 §10.4 — 44 px de zone tactile sans grandir le champ : la hauteur
+     vient des marges négatives, la ligne garde ses 50 px. */
+  min-height: 44px; min-width: 44px; margin-top: -9px; margin-bottom: -9px; }
 .fld.a-declarer .vl { color: var(--wa); }
 .fld.futur .vl { color: var(--ink3); font-weight: 400; }
+/* LOT 32 §5 — les mêmes nuances sur les lignes `ln` de la familiarisation. */
+.ln.a-declarer b { color: var(--wa); }
+.ln.futur b { color: var(--ink3); font-weight: 400; }
+.cd.pad0 .sb.q { padding: 10px 0 0; }
 
 .fld.duree .row { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .fld.duree input {
@@ -1581,6 +1626,10 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 }
 
 .msg { font-size: 13px; margin: 0 0 8px; color: var(--ink3); }
+/* LOT 32 §7 — le message de la connexion est un encart discret, et il
+   n'occupe aucune place tant qu'il est vide. */
+.login .msg { margin: 10px 0 0; padding: 11px 13px; border-radius: var(--r); background: var(--ln2); color: var(--ink2); }
+.login .msg:empty { display: none; }
 .msg.ko { color: var(--dg); font-weight: 600; }
 .msg.ok { color: var(--acd); font-weight: 600; }
 .intro { font-size: 15px; color: var(--ink2); line-height: 1.5; margin: 2px 0 12px; }
@@ -1706,21 +1755,32 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 /* 17. CONNEXION, ÉTATS VIDES ET DE PANNE, DIVERS                            */
 /* ------------------------------------------------------------------------ */
 
+/* LOT 32 §7 — LA CONNEXION SUR LE SOCLE. Fond `--bg`, un bloc `.cd` centré,
+   les champs en `.fld.col`, le bouton plein.
+
+   CLAVIER OUVERT : sur iPhone, le clavier réduit la fenêtre visible. Un
+   bloc centré par `align-items: center` dans un conteneur fixe se retrouve
+   coupé par le haut et le bouton passe SOUS le clavier. Ici le conteneur
+   DÉFILE (`overflow-y: auto`) et le bloc se centre par `margin: auto`, ce qui
+   vaut un centrage « sûr » : quand la place manque, le contenu se cale en
+   haut et reste atteignable en faisant défiler — Safari amène de lui-même
+   le champ actif dans la zone visible. */
 .login {
-  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-  padding: 22px; background: linear-gradient(160deg, var(--ac), var(--ac2));
+  position: fixed; inset: 0; display: flex; flex-direction: column;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 22px; padding-top: calc(22px + env(safe-area-inset-top));
+  padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  background: var(--bg);
 }
-.login .carte { background: var(--bg2); border-radius: 12px; padding: 22px 18px; width: 100%; max-width: 360px; }
-.login h1 { font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 4px; }
+.login > * { flex: none; }
+.login .cd { margin: auto; width: 100%; max-width: 360px; padding: 22px 18px; }
+.login h1 { font-size: 25px; font-weight: 700; letter-spacing: -.6px; margin: 0 0 4px; }
 .login p { font-size: 13px; color: var(--ink3); margin: 0 0 16px; }
-.login label { display: block; font-size: 13px; color: var(--ink3); font-weight: 600; margin-bottom: 10px; }
-.login input {
-  display: block; width: 100%; margin-top: 5px; font: inherit; font-size: 15px;
-  padding: 13px 12px; border: 1.5px solid var(--ln); border-radius: 12px; background: var(--bg2); color: var(--ink);
-}
-.login input:focus { outline: none; border-color: var(--acl); }
+.login .fld.col input { font-size: 16px; min-height: 44px; }
+.login .fld.col input:focus { outline: none; }
+.login .fld.col:focus-within { border-color: var(--acl); }
 .lien-login {
-  display: block; width: 100%; margin-top: 10px;
+  display: block; width: 100%; margin-top: 4px; min-height: 44px;
   background: none; border: none; padding: 6px 0;
   font: inherit; font-size: 13px; color: var(--ac); font-weight: 600;
   cursor: pointer; text-align: center;

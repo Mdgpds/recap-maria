@@ -468,7 +468,10 @@ var sheet = document.getElementById('sheet');
   bCalcul.click();
   await pause(600);
 
-  var pane = parTexte(corps, '.pane', 'Soldes au');
+  /* LOT 32 §3 — la fiche est passée sur les composants du socle : le
+     panneau hérité `.pane` est devenu la carte `.cd`. Même contenu, même
+     ordre, mêmes assertions ; seul le sélecteur change. */
+  var pane = parTexte(corps, '.cd', 'Soldes au');
   assert(!!pane, '§17.8 : les soldes s’affichent');
   if (pane) {
     var position = bCalcul.compareDocumentPosition(pane);
@@ -482,11 +485,11 @@ var sheet = document.getElementById('sheet');
     '§17.8 : les congés payés passent avant la récupération');
 
   /* LA LIGNE DE TOTAL — le chiffre que Maria annonce aux parents. */
-  assert(!!parTexte(corps, '.pane', 'À régler en plus du dernier mois'),
+  assert(!!parTexte(corps, '.cd', 'À régler en plus du dernier mois'),
     '§17.8 : la ligne de total existe');
 
   /* L'INDEMNITÉ DE RUPTURE, avec son détail. */
-  var pi = parTexte(corps, '.pane', 'Indemnité de rupture');
+  var pi = parTexte(corps, '.cd', 'Indemnité de rupture');
   assert(!!pi, '§17.8 : l’indemnité de rupture est calculée');
   assert(txt(pi).indexOf('Ancienneté') !== -1, '§17.8 : l’ancienneté est dite');
   assert(txt(pi).indexOf('1/80') !== -1, '§17.8 : la formule est nommée');

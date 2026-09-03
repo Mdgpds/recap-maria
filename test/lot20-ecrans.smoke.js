@@ -588,8 +588,10 @@ function celluleDu(numero) {
     'le compte des jours ouvrés de la période est exact');
 
   /* Toucher un jour passé ouvre sa feuille, dans l'espace de l'enfant. */
+  /* LOT 32 §5 — le jour est une ligne `ln` cliquable du socle, un vrai
+     <button>, là où c'était un `.fld[role=button]`. Même geste, même feuille. */
   var ligneJour = Array.prototype.filter.call(
-    corps.querySelectorAll('.fld[role="button"]'), function (f) {
+    corps.querySelectorAll('button.ln.tap'), function (f) {
       return txt(f).indexOf('à déclarer') !== -1;
     })[0];
   assert(!!ligneJour, 'A9 : le jour « à déclarer » est touchable');

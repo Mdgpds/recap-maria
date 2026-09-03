@@ -573,12 +573,15 @@
   }
 
   /* LIGNE « libellé · valeur » (`ln`). opts : { sous, total, alerte, phrase,
-     onclick }. `sous` est le sous-texte à 3 px du libellé. */
+     discret, onclick }. `sous` est le sous-texte à 3 px du libellé.
+     LOT 32 — `discret` (ton effacé, `q`) vient de la ligne héritée
+     `Kit.ligne` : les cinq écrans du lot 32 l'utilisaient, et ils passent
+     ici un pour un sans perdre une nuance. */
   function ligneLn(parent, libelle, valeur, opts) {
     opts = opts || {};
     var l = opts.onclick
       ? bouton('ln tap', opts.onclick)
-      : ce('div', 'ln' + (opts.total ? ' tot' : ''));
+      : ce('div', 'ln' + (opts.total ? ' tot' : '') + (opts.discret ? ' q' : ''));
     var g = ce('span', null, libelle);
     if (opts.sous) g.appendChild(ce('span', 'sb2', opts.sous));
     l.appendChild(g);
@@ -587,6 +590,34 @@
     l.appendChild(v);
     if (parent) parent.appendChild(l);
     return l;
+  }
+
+  /* LOT 32 (A.0) — LES DEUX BRIQUES QUI REMPLACENT `pane`, `lines` ET `section`
+     sur les cinq écrans restants. Un pour un, et rien de plus :
+
+     - `ttl(titre)` : le titre de section du socle (`.ttl`), à la place du
+       `.sec` hérité ;
+     - `carte(titre, lien)` : une carte du socle (`.cd`) qui porte son titre
+       en `.ttl` et reçoit directement des lignes `ln` — là où `pane` avait
+       son `.pt` et un bloc `.lines` intermédiaire. `lien` garde le petit
+       bouton texte à droite du titre, quand l'écran en avait un. */
+  function ttl(titre) { return ce('div', 'ttl', titre); }
+
+  function carte(titre, lien) {
+    var c = ce('div', 'cd');
+    if (titre != null) {
+      var t = ttl(titre);
+      if (lien) {
+        t.style.display = 'flex';
+        t.style.alignItems = 'baseline';
+        var b = bouton('more', lien.onclick);
+        b.textContent = lien.texte;
+        b.style.marginLeft = 'auto';
+        t.appendChild(b);
+      }
+      c.appendChild(t);
+    }
+    return c;
   }
 
   /* CARTE cliquable (`cd tap`) : avatar facultatif, titre, sous-texte,
@@ -1751,6 +1782,8 @@
     pane: pane, lines: lines, ligne: ligne, note: note, warnbox: warnbox, section: section,
     /* LOT 24 (§24.2) — les composants uniques du socle. */
     enc: enc, encOne: encOne, ligneLn: ligneLn, carteTap: carteTap,
+    /* LOT 32 — titre de section et carte à lignes du socle. */
+    ttl: ttl, carte: carte,
     fold: fold, seg: seg, stepper: stepper, pill: pill, stick: stick,
     fld: fld, fldModifiable: fldModifiable, champ: champ, champSelect: champSelect, selectSimple: selectSimple,
     champDate: champDate, champMois: champMois, nbJoursDansMois: nbJoursDansMois, iso: iso,
