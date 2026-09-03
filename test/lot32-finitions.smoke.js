@@ -347,6 +347,32 @@ function aller(ecran, params) {
     '§6 : l’écran n’écrit AUCUN événement « reouverture » lui-même — c’est la base');
 
   /* ==================================================================== */
+  /* §7 — LA CONNEXION                                                    */
+  /* ==================================================================== */
+  console.log('\n--- §7 : la connexion ---');
+  var login = document.getElementById('vue-login');
+  assert(!!login.querySelector('.cd'), '§7 : un bloc `.cd` centré');
+  assert(!!login.querySelector('h1') && txt(login.querySelector('h1')).trim() === 'Récap', '§7 : le nom de l’application');
+  assert(!!login.querySelector('p'), '§7 : une phrase');
+  egal(login.querySelectorAll('.fld.col').length, 2, '§7 : les deux champs sont des `.fld`');
+  egal(login.querySelectorAll('.fld.col label.lb[for]').length, 2, '§7 : chaque champ garde un libellé relié à son champ');
+  assert(!!login.querySelector('button.btn[type="submit"]'), '§7 : le bouton plein');
+  egal(login.querySelectorAll('.tabs, .back, .bk').length, 0, '§7 : ni barre d’onglets ni flèche');
+  aucunHerite(login, 'la connexion');
+  var champs = login.querySelectorAll('input');
+  assert(Array.prototype.every.call(champs, function (i) { return !i.getAttribute('value') && !i.value; }),
+    '§7 : aucune valeur par défaut dans les champs');
+  var HTML = fs.readFileSync(path.join(racine, 'index.html'), 'utf8');
+  assert(!/value="[^"]+"/.test(HTML.slice(HTML.indexOf('vue-login'), HTML.indexOf('vue-app'))),
+    '§7 : aucun identifiant ni mot de passe en dur dans la page');
+  var APP2 = fs.readFileSync(path.join(racine, 'js', 'app.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ');
+  var cabler = APP2.slice(APP2.indexOf('function cablerLogin'), APP2.indexOf('function messageLogin'));
+  assert(/Kit\.messageErreur\(/.test(cabler) && !/\.message\b/.test(cabler),
+    '§7 : les erreurs de connexion passent par js/messages.js, jamais le message brut');
+  assert(!/[a-z]+@[a-z]+\.[a-z]+/i.test(cabler) && !/password\s*[:=]\s*'[^']+'/i.test(cabler),
+    '§7 : aucune adresse ni mot de passe dans le code de connexion');
+
+  /* ==================================================================== */
   console.log('\n' + (echecs ? echecs + ' échec(s)' : 'lot 32 : tout est vert'));
   process.exit(echecs ? 1 : 0);
 }());

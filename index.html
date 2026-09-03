@@ -19,17 +19,23 @@
 <body>
 
   <!-- Connexion ------------------------------------------------------- -->
+  <!-- LOT 32 §7 — la connexion sur le socle : fond `--bg`, ni barre
+       d'onglets ni flèche, un bloc centré (`.cd`) avec le nom de
+       l'application, une phrase, les champs en `.fld.col` et le bouton plein.
+       Aucune valeur par défaut, aucun identifiant : le dépôt est public. -->
   <section id="vue-login" class="login" hidden>
-    <div class="carte">
+    <div class="cd">
       <h1>Récap</h1>
       <p>Connectez-vous une fois : vous resterez connectée jusqu’à ce que vous vous déconnectiez vous-même.</p>
       <form id="form-login">
-        <label>E-mail
+        <div class="fld col">
+          <label class="lb" for="login-email">E-mail</label>
           <input id="login-email" type="email" autocomplete="username" inputmode="email" required>
-        </label>
-        <label>Mot de passe
+        </div>
+        <div class="fld col">
+          <label class="lb" for="login-mdp">Mot de passe</label>
           <input id="login-mdp" type="password" autocomplete="current-password" required>
-        </label>
+        </div>
         <button id="btn-login" class="btn" type="submit">Se connecter</button>
         <!-- Lot 14 — « Mot de passe oublié ». Le message de retour ne révèle
              JAMAIS si l'adresse existe : ce formulaire serait sinon un outil

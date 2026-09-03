@@ -241,6 +241,55 @@ const ECRANS = [
     controle('§1 retour par l’onglet ' + onglet + ' : le vert à l’identique', apres === vert, apres.slice(0, 60));
   }
 
+  /* §7 — LA CONNEXION, À 390 PX, CLAVIER FERMÉ PUIS OUVERT. L'écran vit hors
+     de `#vue-app` : on le montre à la main et on le mesure comme les autres,
+     puis on réduit la fenêtre de la hauteur d'un clavier d'iPhone (≈ 336 pt)
+     et on vérifie que le bouton reste atteignable — visible, ou amené dans
+     la fenêtre en faisant défiler le conteneur. */
+  console.log('\n=== §7 — la connexion ===');
+  await page.evaluate(() => { if (window.Kit && window.Kit.fermerFeuille) window.Kit.fermerFeuille(); });
+  const mesureLogin = async (etiquette) => page.evaluate((etq) => {
+    const login = document.getElementById('vue-login');
+    document.getElementById('vue-app').hidden = true;
+    login.hidden = false;
+    const out = { deb: [], pet: [], fond: getComputedStyle(login).backgroundColor,
+      onglets: !!document.querySelector('#vue-login .tabs, #vue-login .back, #vue-login .bk') };
+    login.querySelectorAll('*').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      if (b.right > 390.5 || b.left < -0.5) out.deb.push(el.tagName + '.' + el.className);
+    });
+    login.querySelectorAll('button, input').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.height < 44 || b.width < 44) out.pet.push(el.tagName + '#' + el.id + ' ' + Math.round(b.width) + '×' + Math.round(b.height));
+    });
+    const btn = document.getElementById('btn-login');
+    login.scrollTop = login.scrollHeight;
+    const rb = btn.getBoundingClientRect();
+    out.boutonAtteignable = rb.bottom <= window.innerHeight + 0.5 && rb.top >= 0;
+    out.boutonBas = Math.round(rb.bottom); out.fenetre = window.innerHeight;
+    login.scrollTop = 0;
+    return out;
+  }, etiquette);
+  const l1 = await mesureLogin('fermé');
+  controle('§7 fond `--bg` (pas de dégradé vert)', l1.fond === 'rgb(247, 250, 248)', l1.fond);
+  controle('§7 ni barre d’onglets ni flèche de retour', !l1.onglets);
+  controle('§7 aucun débordement horizontal', l1.deb.length === 0, l1.deb.join(', '));
+  controle('§7 aucune zone tactile sous 44 px', l1.pet.length === 0, l1.pet.join(', '));
+  controle('§7 clavier fermé : le bouton est dans l’écran', l1.boutonAtteignable, l1.boutonBas + ' / ' + l1.fenetre);
+  /* Deux hauteurs : un iPhone 14 Pro clavier ouvert (≈ 444 pt), et un petit
+     iPhone clavier ouvert avec les barres de Safari (≈ 360 pt). C'est la
+     seconde qui mordait sur le code d'avant : le bloc centré débordait des
+     deux côtés et le bouton restait sous le clavier. */
+  for (const h of [444, 360]) {
+    await page.setViewportSize({ width: 390, height: h });
+    await page.waitForTimeout(300);
+    const l2 = await mesureLogin('ouvert');
+    controle('§7 clavier ouvert (' + h + ' px) : le bouton reste atteignable', l2.boutonAtteignable, l2.boutonBas + ' / ' + l2.fenetre);
+  }
+  await page.setViewportSize({ width: 390, height: 780 });
+  await page.evaluate(() => { document.getElementById('vue-login').hidden = true; document.getElementById('vue-app').hidden = false; });
+
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
     ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles +
     ', contrôles en défaut ' + defauts);
