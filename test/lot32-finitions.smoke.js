@@ -305,6 +305,48 @@ function aller(ecran, params) {
   window.Kit.fermerFeuille();
 
   /* ==================================================================== */
+  /* §6 — LA RÉOUVERTURE D'UN MOIS                                        */
+  /* ==================================================================== */
+  console.log('\n--- §6 : la réouverture ---');
+  await aller('document', { contratId: 'c1', annee: 2026, mois: 7 });
+  await pause(600);
+  var bRouvrir = boutonExact(corps, 'Rouvrir pour corriger');
+  assert(!!bRouvrir, '§6 : un mois clôturé propose « Rouvrir pour corriger »');
+  bRouvrir.click();
+  await pause(400);
+  var wrap = document.getElementById('sheetwrap');
+  var sheetR = document.getElementById('sheet');
+  egal(wrap.hidden, false, '§6 : la réouverture est une FEUILLE, montrée en retirant `hidden`');
+  contient(sheetR.querySelector('.h'), 'Rouvrir juillet 2026', '§6 : titre « Rouvrir <mois> »');
+  contient(sheetR.querySelector('.s'), 'les journées redeviennent modifiables', '§6 : le sous-titre dit ce que ça implique');
+  contient(sheetR.querySelector('.s'), 'le document devient provisoire', '§6 : … et que le document devient provisoire');
+  aucunHerite(sheetR, 'la feuille de réouverture');
+  var champMotif = sheetR.querySelector('input');
+  assert(!!champMotif, '§6 : le motif se saisit dans un champ');
+  contient(sheetR, 'facultatif', '§6 : il reste facultatif, comme aujourd’hui — rien ne devient obligatoire');
+  var bR = boutonExact(sheetR, 'Rouvrir');
+  assert(!!bR && bR.className === 'btn', '§6 : bouton plein « Rouvrir »');
+  /* Le geste : la base écrit l'événement elle-même, l'écran ne fait que
+     demander la réouverture. On vérifie que l'appel part sans aucun événement
+     écrit par l'écran. */
+  var appels = [];
+  var vraiRouvrir = window.DB.rouvrirRecap;
+  window.DB.rouvrirRecap = function (id, a, m, motif) {
+    appels.push({ id: id, annee: a, mois: m, motif: motif });
+    return Promise.resolve({ id: 'r1', statut: 'brouillon' });
+  };
+  champMotif.value = 'Oubli d’une absence';
+  bR.click();
+  await pause(500);
+  egal(appels.length, 1, '§6 : un seul appel de réouverture');
+  egal(appels[0] && appels[0].motif, 'Oubli d’une absence', '§6 : avec le motif saisi');
+  egal(wrap.hidden, true, '§6 : la feuille se referme');
+  window.DB.rouvrirRecap = vraiRouvrir;
+  var ECR = fs.readFileSync(path.join(racine, 'js', 'ui-reouverture.js'), 'utf8');
+  assert(/rouvrirRecap\(/.test(ECR) && !/type:\s*'reouverture'/.test(ECR),
+    '§6 : l’écran n’écrit AUCUN événement « reouverture » lui-même — c’est la base');
+
+  /* ==================================================================== */
   console.log('\n' + (echecs ? echecs + ' échec(s)' : 'lot 32 : tout est vert'));
   process.exit(echecs ? 1 : 0);
 }());

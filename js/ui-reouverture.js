@@ -74,21 +74,25 @@
     var libelleMois = Kit.libelleMoisAnnee(opts.annee, opts.mois);
     var champMotif = null;
 
-    Kit.ouvrirFeuille('Rouvrir ' + libelleMois + ' ?',
-      contrat.prenom_enfant + (famille ? ' · famille ' + famille : ''),
+    /* LOT 32 §6 — le titre nomme le geste, le sous-titre dit ce qu'il
+       implique : les journées redeviennent modifiables, le document devient
+       provisoire. L'enfant reste nommé, le reste de la feuille est intact. */
+    Kit.ouvrirFeuille('Rouvrir ' + libelleMois,
+      contrat.prenom_enfant + (famille ? ' · famille ' + famille : '') +
+      ' — les journées redeviennent modifiables, le document devient provisoire.',
       function (corps) {
         if (recap && recap.transmis_le) {
           /* Le texte change, l'action reste possible : c'est une décision
              d'Adrien du 10 août 2026, sur demande de Maria. On avertit, on
              n'interdit pas. */
-          corps.appendChild(Kit.warnbox(
+          corps.appendChild(Kit.enc('w', 
             'Vous avez transmis ce récapitulatif' + (famille ? ' à la famille ' + famille : '') +
             ' le ' + Kit.dateLongue(recap.transmis_le),
             'Si vous modifiez ce mois, les chiffres ne correspondront plus au document ' +
             'qu’elle a reçu : il faudra le lui renvoyer. La réouverture sera inscrite ' +
             'dans l’historique du mois.'));
         } else {
-          corps.appendChild(Kit.note('Vous pourrez corriger, puis clôturer à nouveau',
+          corps.appendChild(Kit.enc('i', 'Vous pourrez corriger, puis clôturer à nouveau',
             'Vous pourrez modifier les journées de ce mois, puis le clôturer une seconde fois. ' +
             'La réouverture sera inscrite dans l’historique du mois.'));
         }
@@ -99,7 +103,7 @@
         corps.appendChild(motif.bloc);
 
         var b = Kit.bouton('btn', function (ev) { rouvrir(opts, champMotif, ev.currentTarget); });
-        b.textContent = 'Rouvrir le mois';
+        b.textContent = 'Rouvrir';
         corps.appendChild(b);
       });
   }
@@ -219,7 +223,7 @@
           'La réouverture laisse une trace définitive dans l’historique du mois. ' +
           (n > 1 ? 'Ils seront' : 'Il sera') + ' à clôturer à nouveau ensuite.'));
         if (transmis.length) {
-          corps.appendChild(Kit.warnbox(
+          corps.appendChild(Kit.enc('w', 
             transmis.length > 1
               ? transmis.length + ' récapitulatifs ont déjà été transmis à la famille'
               : 'Ce récapitulatif a déjà été transmis à la famille' +
@@ -300,7 +304,7 @@
      bouton qui reclôture. Rendu par l'appelant là où il veut. */
   function bandeauMoisRouvert(opts) {
     var recap = opts.recap;
-    var bloc = Kit.warnbox(
+    var bloc = Kit.enc('w', 
       'Mois rouvert' + (opts.rouvertLe ? ' le ' + Kit.dateLongue(opts.rouvertLe) : '') +
       ' — à clôturer à nouveau',
       recap && recap.transmis_le
@@ -373,7 +377,7 @@
           .then(function (evenements) {
             Kit.vider(corps);
             corps.appendChild(listeEvenements(evenements));
-            corps.appendChild(Kit.note('Cet historique ne peut pas être effacé',
+            corps.appendChild(Kit.enc('i', 'Cet historique ne peut pas être effacé',
               'Il montre que vos comptes sont tenus à jour.'));
           })
           .catch(function (e) {
@@ -408,7 +412,7 @@
 
     for (var i = evenements.length - 1; i >= 0; i--) {
       var ev = evenements[i];
-      var carte = Kit.ce('div', 'card');
+      var carte = Kit.ce('div', 'cd');
       var ligne = Kit.ce('div', 'row');
       ligne.appendChild(Kit.ce('span', 'nm', libelles[i]));
       carte.appendChild(ligne);
@@ -453,16 +457,16 @@
       (nb > 1 ? nb + ' écarts' : '1 écart') + ' avec le document ' + reference,
       Kit.libelleMoisAnnee(opts.annee, opts.mois) + ' · ' + opts.contrat.prenom_enfant,
       function (corps) {
-        var lignes = Kit.ce('div', 'lines');
+        var lignes = Kit.ce('div', 'cd pad0');
         opts.ecarts.forEach(function (ec) {
-          Kit.ligne(lignes, ec.libelle,
+          Kit.ligneLn(lignes, ec.libelle,
             valeurFormatee(ec.ancien, ec.format, opts.minutesParJourConge) + ' → ' +
             valeurFormatee(ec.nouveau, ec.format, opts.minutesParJourConge));
         });
         corps.appendChild(lignes);
 
         if (opts.recap && opts.recap.transmis_le) {
-          corps.appendChild(Kit.warnbox(
+          corps.appendChild(Kit.enc('w', 
             (famille ? 'La famille ' + famille + ' a reçu' : 'La famille a reçu') +
             ' l’ancienne version le ' + Kit.dateLongue(opts.recap.transmis_le),
             'Pensez à lui renvoyer le récapitulatif corrigé.'));

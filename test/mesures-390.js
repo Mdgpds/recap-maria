@@ -77,6 +77,12 @@ const ECRANS = [
     const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
     if (b) b.click(); return !!b;
   } }],
+  /* LOT 32 §6 — la réouverture est une feuille : elle s'ouvre depuis le
+     document d'un mois clôturé, et sa visibilité se mesure comme les autres. */
+  ['document', { contratId: 'c1', annee: 2026, mois: 7 }, { feuille: 'rouvrir', ouvrir: () => {
+    const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Rouvrir pour corriger');
+    if (b) b.click(); return !!b;
+  } }],
   ['enfant', { contratId: 'c1', annee: 2026, mois: 8 }, { feuille: 'journee', ouvrir: () => {
     const td = [...document.querySelectorAll('table.cal td')].find(t => t.querySelector('.num') &&
       t.querySelector('.num').textContent.trim() === '20' && t.getAttribute('role') === 'button');

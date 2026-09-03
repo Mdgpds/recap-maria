@@ -263,7 +263,8 @@ async function ouvrirDocumentDeMai() {
 
   bRouvrir.click();
   await pause(60);
-  assert(txt(sheet).indexOf('Rouvrir mai 2026 ?') !== -1, 'P1 : la feuille demande confirmation');
+  /* LOT 32 §6 — le titre est « Rouvrir <mois> », le bouton plein « Rouvrir ». */
+  assert(txt(sheet).indexOf('Rouvrir mai 2026') !== -1, 'P1 : la feuille demande confirmation');
   assert(txt(sheet).indexOf('inscrite dans l’historique') !== -1,
     'P1 : la feuille annonce que la réouverture sera inscrite');
   assert(txt(sheet).indexOf('Si vous modifiez ce mois') === -1,
@@ -274,7 +275,7 @@ async function ouvrirDocumentDeMai() {
   var champ = sheet.querySelector('input[type="text"]');
   assert(champ !== null, 'P1 : le champ de motif est bien un champ libre');
   champ.value = 'Oubli d’une absence';
-  boutonExact(sheet, 'Rouvrir le mois').click();
+  boutonExact(sheet, 'Rouvrir').click();
   await pause(150);
 
   assert(appels.rouvrir.length === 1, 'P1 : la réouverture appelle rouvrirRecap une fois');
@@ -304,13 +305,13 @@ async function ouvrirDocumentDeMai() {
     'P2 : l’avertissement de transmission s’affiche');
   assert(txt(sheet).indexOf('famille Papillon') !== -1, 'P2 : la famille est nommée');
   assert(txt(sheet).indexOf('31 mai 2026') !== -1, 'P2 : la date de transmission est donnée');
-  assert(boutonExact(sheet, 'Rouvrir le mois') !== null,
+  assert(boutonExact(sheet, 'Rouvrir') !== null,
     'P2 : la réouverture reste POSSIBLE malgré la transmission');
 
   /* ============ P7 — panne réseau pendant la réouverture ================ */
   etatTest.reouvertureCassee = true;
   var avantRouvrir = appels.rouvrir.length;
-  boutonExact(sheet, 'Rouvrir le mois').click();
+  boutonExact(sheet, 'Rouvrir').click();
   await pause(150);
 
   assert(appels.rouvrir.length === avantRouvrir, 'P7 : rien n’a été écrit');
