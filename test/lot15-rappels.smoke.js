@@ -380,9 +380,15 @@ function extraire(regex, quoi) {
    EXTRAITE entre ses deux repères et exécutée telle quelle. */
 var blocTexte = extraire(
   /\/\* TEXTE-RAPPEL-DEBUT \*\/([\s\S]*?)\/\* TEXTE-RAPPEL-FIN \*\//, 'la fonction du texte de rappel');
-/* Les annotations TypeScript sont retirées par Node lui-même (Node ≥ 22.13),
-   sans réécrire le code : ce qui s'exécute est le bloc du serveur. */
-var sansTypes = require('node:module').stripTypeScriptTypes;
+/* Les annotations TypeScript sont retirées avant exécution. La CI tourne sous
+   Node 20, qui n'a pas `stripTypeScriptTypes` : un petit décapage suffit pour
+   ces blocs — un objet-type de paramètre, puis les types simples et tableaux. */
+function sansTypes(src) {
+  return src
+    .replace(/:\s*\{[^{}]*\}(?=\s*[,)])/g, '')
+    .replace(/:\s*(string|number|boolean)(\[\])?(?=\s*[,)=;])/g, '')
+    .replace(/\)\s*:\s*(string|number|boolean|void)(\[\])?\s*\{/g, ') {');
+}
 var texteServeur = blocTexte
   ? new Function('info', sansTypes(blocTexte) + '\nreturn texteDuRappel(info);')
   : function () { return ''; };

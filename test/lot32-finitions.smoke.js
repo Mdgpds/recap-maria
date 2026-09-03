@@ -514,7 +514,15 @@ function aller(ecran, params) {
     '§9.4 : la fonction ne lit ni prénom ni famille pour construire le rappel');
   /* Les fériés du serveur sont ceux de js/feries.js, sur cinq ans. */
   var blocFeries = FN.slice(FN.indexOf('/* FERIES-DEBUT'), FN.indexOf('/* FERIES-FIN */'));
-  var sansTypes = require('node:module').stripTypeScriptTypes;
+  /* Les annotations TypeScript sont retirées avant exécution. La CI tourne sous
+     Node 20, qui n'a pas `stripTypeScriptTypes` : un petit décapage suffit pour
+     ces blocs — un objet-type de paramètre, puis les types simples et tableaux. */
+  function sansTypes(src) {
+    return src
+      .replace(/:\s*\{[^{}]*\}(?=\s*[,)])/g, '')
+      .replace(/:\s*(string|number|boolean)(\[\])?(?=\s*[,)=;])/g, '')
+      .replace(/\)\s*:\s*(string|number|boolean|void)(\[\])?\s*\{/g, ') {');
+  }
   var feriesServeur = new Function('annee',
     sansTypes(blocFeries.replace(/\/\* FERIES-DEBUT[^\n]*\n/, '')) +
     'function versMs(iso) { var p = iso.split(\'-\'); return Date.UTC(Number(p[0]), Number(p[1]) - 1, Number(p[2])); }' +
