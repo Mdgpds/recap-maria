@@ -264,6 +264,45 @@ function aller(ecran, params) {
   assert(/totaliserAgregats/.test(PER) && !/\d{3,}\s*\*\s*\d/.test(PER),
     '§4 : les montants viennent de la chaîne et du moteur (total affiché « ' + totalAffiche + ' »)');
   aucunHerite(corps, 'les résultats de la période');
+  /* §5 — LA PÉRIODE DE FAMILIARISATION                                   */
+  /* ==================================================================== */
+  console.log('\n--- §5 : la familiarisation ---');
+  await aller('familiarisation', { contratId: 'c2' });
+  await pause(500);
+  barreSlim('La familiarisation');
+  aucunHerite(corps, 'la familiarisation');
+  var encRegle = corps.querySelector('.enc.i');
+  assert(!!encRegle && txt(encRegle).indexOf('Seules les heures déclarées sont payées') !== -1,
+    '§5 : l’encart `.enc.i` rappelle que seules les heures déclarées sont payées');
+  assert(corps.querySelectorAll('.fld').length >= 2, '§5 : les bornes de la période sont des `.fld`');
+  var lignesJours = corps.querySelectorAll('.cd .ln:not(.tot)');
+  egal(lignesJours.length, 5, '§5 : une ligne `ln` par jour de garde de la période (5)');
+  var declare = Array.prototype.filter.call(lignesJours, function (l) { return txt(l).indexOf('2h00') !== -1; })[0];
+  assert(!!declare, '§5 : le jour déclaré montre ses heures');
+  /* L'arrivée seule du 20 août : gardée en base, RIEN n'est payé. */
+  var arriveeSeule = Array.prototype.filter.call(lignesJours, function (l) { return txt(l).indexOf('20 août') !== -1; })[0];
+  assert(!!arriveeSeule && txt(arriveeSeule).indexOf('à déclarer') !== -1,
+    '§5 : une arrivée sans départ reste « à déclarer » — rien n’est payé');
+  var tot = corps.querySelector('.ln.tot');
+  assert(!!tot && txt(tot).indexOf('2h00') !== -1 && txt(tot).indexOf('brut') !== -1,
+    '§5 : le total en `ln.tot` ne compte que le jour déclaré, avec son brut (' + txt(tot) + ')');
+  var cliquables = corps.querySelectorAll('button.ln.tap');
+  assert(cliquables.length >= 2, '§5 : les jours passés sont des lignes cliquables (' + cliquables.length + ')');
+  assert(Array.prototype.every.call(lignesJours, function (l) {
+    return !(txt(l).indexOf('à venir') !== -1 && l.tagName === 'BUTTON');
+  }), '§5 : un jour à venir ne se touche pas');
+  /* Pas de raccourcis de durée, ni ici ni dans la feuille du jour. */
+  absent(corps, 'Raccourci', '§5 : aucun raccourci de durée sur l’écran');
+  egal(corps.querySelectorAll('.raccourcis, .rac').length, 0, '§5 : aucune rangée de raccourcis');
+  cliquables[0].click();
+  await pause(500);
+  var sheetFam = document.getElementById('sheet');
+  contient(sheetFam, 'Familiarisation', '§5 : le jour ouvre la feuille du jour de familiarisation');
+  egal(sheetFam.querySelectorAll('.raccourcis, .rac').length, 0, '§5 : aucun raccourci de durée dans la feuille du jour');
+  absent(sheetFam, '30 min', '§5 : et aucun bouton « 30 min »');
+  var champsHeure = sheetFam.querySelectorAll('input[type="time"]');
+  assert(champsHeure.length >= 1, '§5 : la feuille demande une heure d’arrivée (puis un départ)');
+  window.Kit.fermerFeuille();
 
   /* ==================================================================== */
   console.log('\n' + (echecs ? echecs + ' échec(s)' : 'lot 32 : tout est vert'));

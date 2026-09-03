@@ -46,7 +46,8 @@
   }
 
   function afficherContrat(ctx, contrat) {
-    global.App.barreRetour(ctx.barre, 'Familiarisation', { droite: contrat.prenom_enfant });
+    /* LOT 32 §5 — l'en-tête du socle, et le titre de la spécification. */
+    global.App.barreSlim(ctx.barre, 'La familiarisation', { droite: contrat.prenom_enfant });
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture de la période…'));
 
     /* LA LECTURE DES RÉCAPITULATIFS ÉCHOUE FERMÉ, comme sur la fiche du
@@ -220,7 +221,7 @@
     var c = vue.contrat;
 
     if (!vue.periode) {
-      corps.appendChild(Kit.note('Aucune période de familiarisation',
+      corps.appendChild(Kit.enc('i', 'Aucune période de familiarisation',
         'Avant une garde normale, ' + c.prenom_enfant + ' peut passer par une ' +
         'période d’adaptation : ' + Kit.accordDe(c, 'il') + ' vient un temps ' +
         'réduit, vous déclarez les heures réellement faites, et elles sont ' +
@@ -235,14 +236,14 @@
 
     var verrou = raisonVerrou();
 
-    corps.appendChild(Kit.section('Période'));
+    corps.appendChild(Kit.ttl('Période'));
     corps.appendChild(Kit.fld('Du', Kit.dateLongue(vue.periode.date_debut)));
     corps.appendChild(Kit.fld('Au', Kit.dateLongue(vue.periode.date_fin)));
     var tranches = tranchesParMois();
     corps.appendChild(phraseDeLaRegle(tranches));
 
     if (verrou) {
-      corps.appendChild(Kit.note('Période non modifiable', verrou));
+      corps.appendChild(Kit.enc('i', 'Période non modifiable', verrou));
     } else {
       var avertClos = phraseMoisClos();
       if (avertClos) corps.appendChild(Kit.ce('p', 'sb q', avertClos));
@@ -257,7 +258,7 @@
        ne peuvent simplement pas se chevaucher). L'écran en affiche une ; on ne
        cache pas les autres, on les nomme. */
     if (vue.periodes.length > 1) {
-      corps.appendChild(Kit.section('Autres périodes de ce contrat'));
+      corps.appendChild(Kit.ttl('Autres périodes de ce contrat'));
       vue.periodes.slice(1).forEach(function (p) {
         corps.appendChild(Kit.fld('Du ' + Kit.dateLongue(p.date_debut),
           'au ' + Kit.dateLongue(p.date_fin)));
@@ -292,14 +293,14 @@
     } else {
       phrase = '';
     }
-    return Kit.note('Seules les heures déclarées sont payées',
+    return Kit.enc('i', 'Seules les heures déclarées sont payées',
       phrase + 'Pas de minutes supplémentaires pendant cette période. ' +
       'Vos congés payés s’acquièrent normalement.');
   }
 
   function blocJourParJour(verrou, tranches) {
     var bloc = Kit.ce('div');
-    bloc.appendChild(Kit.section('Jour par jour'));
+    bloc.appendChild(Kit.ttl('Jour par jour'));
 
     var avecJours = tranches.filter(function (t) { return t.jours.length; });
     var nbJours = 0;
@@ -317,6 +318,8 @@
     var declares = 0;
     var aDeclarer = 0;
     var chiffrable = true;
+    var carte = Kit.ce('div', 'cd pad0');
+    bloc.appendChild(carte);
 
     avecJours.forEach(function (t) {
       var minutesDuMois = 0;
@@ -324,7 +327,7 @@
       /* L'intitulé du mois n'apparaît QUE si la période en traverse plusieurs :
          sur une familiarisation de cinq jours, il n'apprendrait rien. */
       if (avecJours.length > 1) {
-        bloc.appendChild(Kit.ce('div', 'sb q', Kit.moisCapitale(t.annee, t.mois)));
+        carte.appendChild(Kit.ce('div', 'sb q', Kit.moisCapitale(t.annee, t.mois)));
       }
 
       t.jours.forEach(function (d) {
@@ -344,22 +347,15 @@
           etat = 'à déclarer';
         }
 
-        var ligne = Kit.ce('div', 'fld' +
-          (minutes === 0 && d <= vue.aujourdhui ? ' a-declarer' : '') +
-          (d > vue.aujourdhui ? ' futur' : ''));
-        ligne.appendChild(Kit.ce('span', 'lb', Kit.jourLong(d)));
-        ligne.appendChild(Kit.ce('span', 'vl', etat));
-        /* Un jour à venir ne se déclare pas : on ne saisit pas l'avenir
-           (V8-05). Sur une période verrouillée, aucun jour ne s'ouvre. */
-        if (!verrou && d <= vue.aujourdhui) {
-          ligne.setAttribute('role', 'button');
-          ligne.setAttribute('tabindex', '0');
-          ligne.addEventListener('click', function () { ouvrirJour(d); });
-          ligne.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrirJour(d); }
-          });
-        }
-        bloc.appendChild(ligne);
+        /* LOT 32 §5 — une ligne `ln` par jour, dans la carte ; cliquable
+           (un vrai bouton) quand le jour peut se déclarer. Un jour à venir
+           ne se déclare pas : on ne saisit pas l'avenir (V8-05). Sur une
+           période verrouillée, aucun jour ne s'ouvre. */
+        var cliquable = !verrou && d <= vue.aujourdhui;
+        var ligne = Kit.ligneLn(carte, Kit.jourLong(d), etat,
+          cliquable ? { onclick: function () { ouvrirJour(d); } } : {});
+        if (minutes === 0 && d <= vue.aujourdhui) ligne.classList.add('a-declarer');
+        if (d > vue.aujourdhui) ligne.classList.add('futur');
       });
 
       /* CORRECTION C4 — LE MONTANT DU MOIS, AU TAUX DE SON AVENANT.
@@ -377,9 +373,11 @@
       }
     });
 
-    bloc.appendChild(Kit.fld('Total déclaré',
+    /* LOT 32 §5 — le total en `ln.tot`, avec son brut. */
+    Kit.ligneLn(carte, 'Total déclaré',
       Kit.heures(totalMinutes) +
-      (totalMinutes > 0 && chiffrable ? ' — ' + Kit.eur(totalCentimes) + ' brut' : '')));
+      (totalMinutes > 0 && chiffrable ? ' — ' + Kit.eur(totalCentimes) + ' brut' : ''),
+      { total: true });
     bloc.appendChild(Kit.ce('p', 'sb q',
       declares + ' jour' + (declares > 1 ? 's' : '') + ' déclaré' + (declares > 1 ? 's' : '') +
       ' sur ' + nbJours +

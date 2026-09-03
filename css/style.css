@@ -590,7 +590,13 @@ table.cal td .rep { position: absolute; bottom: 3px; right: 5px; font-size: 9px;
 .stepper { display: flex; align-items: center; gap: 9px; }
 .stepper .mt { min-width: 22px; text-align: center; }
 .vent { margin-top: 12px; }
-.vl { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(0, 0, 0, .05); }
+/* LOT 32 — DÉFAUT TROUVÉ EN REGARDANT L'ÉCRAN, PAS LE CODE. Cette ligne de
+   ventilation de la maquette s'appelait `.vl`, comme la VALEUR d'un champ
+   `.fld` (`Kit.fld`). Non scopée, elle donnait à toute valeur de champ en
+   lecture 10 px de rembourrage et un filet au-dessus : les « Du » / « Au »
+   de la familiarisation et les champs de la fiche faisaient 85 px de haut
+   avec un trait fantôme. Elle est scopée à son bloc (`.vent`). */
+.vent .vl { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid rgba(0, 0, 0, .05); }
 .vn { font-weight: 600; font-size: 14px; }
 .trio { display: flex; gap: 6px; margin-top: 11px; }
 .trio .btn { flex: 1; margin: 0; }
@@ -940,7 +946,7 @@ body {
    La remise à zéro est celle de `.cd.tap`, à l'identique. La bordure basse
    est redonnée APRÈS `border: 0`, sinon la ligne perdrait son filet. */
 .ln.tap {
-  cursor: pointer; width: 100%; text-align: left;
+  cursor: pointer; width: 100%; text-align: left; min-height: 44px; box-sizing: border-box;
   background: none; border: 0; border-bottom: 1px solid var(--ln2);
   font-family: inherit; font-size: 15px; color: inherit;
   -webkit-appearance: none; appearance: none;
@@ -1488,6 +1494,10 @@ table.cal td.hors-sel:active { transform: none; }
   min-height: 44px; min-width: 44px; margin-top: -9px; margin-bottom: -9px; }
 .fld.a-declarer .vl { color: var(--wa); }
 .fld.futur .vl { color: var(--ink3); font-weight: 400; }
+/* LOT 32 §5 — les mêmes nuances sur les lignes `ln` de la familiarisation. */
+.ln.a-declarer b { color: var(--wa); }
+.ln.futur b { color: var(--ink3); font-weight: 400; }
+.cd.pad0 .sb.q { padding: 10px 0 0; }
 
 .fld.duree .row { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .fld.duree input {
