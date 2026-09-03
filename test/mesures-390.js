@@ -64,6 +64,9 @@ const ECRANS = [
   ['accueil', {}], ['conges', {}], ['docs', {}], ['menu', {}],
   ['enfant', { contratId: 'c1', annee: 2026, mois: 8 }],
   ['cloture', {}], ['moisPasse', { annee: 2026, mois: 7 }],
+  /* LOT 32 — les écrans restants passent sous la même mesure. */
+  ['fiche', { contratId: 'c1' }],
+  ['fiche', { contratId: 'c1', section: 'fin' }],
   ['conges', {}, { feuille: 'pose', ouvrir: () => {
     const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
     if (b) b.click(); return !!b;
@@ -157,7 +160,8 @@ const ECRANS = [
     console.log('  < 44 px      : ' + (r.pet.length || 'aucune'));
     r.pet.slice(0, 8).forEach(x => console.log('     ' + x));
     if (process.env.CAPTURES) await page.screenshot({ path: path.join(process.env.CAPTURES,
-      '390-' + ecran + (extra ? '-feuille-' + extra.feuille : '') + '.png') });
+      '390-' + ecran + (params && params.section ? '-' + params.section : '') +
+      (extra ? '-feuille-' + extra.feuille : '') + '.png') });
   }
   /* ------------------------------------------------------------------
      LOT 32 — LES CONTRÔLES DE VALEUR CALCULÉE.

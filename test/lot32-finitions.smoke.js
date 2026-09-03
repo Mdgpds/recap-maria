@@ -140,10 +140,98 @@ function aller(ecran, params) {
      chacun de ces endroits doit retirer le style en ligne. On compte les
      réinitialisations (`className = 'bar'`) et les retraits : ils sont égaux. */
   var APP = fs.readFileSync(path.join(racine, 'js', 'app.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ');
-  var resets = (APP.match(/\.className = 'bar'/g) || []).length;
+  var resets = (APP.match(/\.className = '(bar|top slim)'/g) || []).length;
   var retraits = (APP.match(/\.removeAttribute\('style'\)/g) || []).length;
   assert(resets >= 3, '§1 : la barre est réinitialisée à au moins trois endroits (' + resets + ')');
   egal(retraits, resets, '§1 : chaque réinitialisation de la barre retire le style en ligne');
+
+  /* ==================================================================== */
+  /* A.0 — PLUS AUCUN COMPOSANT HÉRITÉ SUR LES ÉCRANS DU LOT               */
+  /* ==================================================================== */
+  var HERITES = '.pane, .pt, .lines, .note, .warnbox, .sec, .menu, .card, .todo, .big, .pastille';
+  function aucunHerite(racineEl, nom) {
+    var trouves = racineEl.querySelectorAll(HERITES);
+    egal(trouves.length, 0, 'A.0 : ' + nom + ' n’utilise plus aucun composant hérité' +
+      (trouves.length ? ' (' + Array.prototype.map.call(trouves, function (e) {
+        return e.tagName + '.' + e.className; }).slice(0, 5).join(', ') + ')' : ''));
+  }
+  function barreSlim(titre) {
+    egal(barre.className, 'top slim', 'A.0 : l’en-tête est `.top.slim`');
+    assert(!!barre.querySelector('.back'), 'A.0 : avec sa flèche de retour');
+    egal(txt(barre.querySelector('h1')), titre, 'A.0 : et le titre « ' + titre + ' »');
+  }
+
+  /* La feuille de style : aucune couleur en dur hors des jetons. Hors du
+     bloc `:root`, une valeur hexadécimale n'est tolérée QUE comme définition
+     d'un jeton (`--x: #…`, la palette propre du document) — jamais dans une
+     propriété. Et jamais de `-webkit-appearance:none` sur `input[type=time]`
+     (piège n° 1), la règle de largeur des champs couvrant `input[type=time]`. */
+  var CSS = fs.readFileSync(path.join(racine, 'css', 'style.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  var iRoot = CSS.indexOf(':root'), jRoot = CSS.indexOf('}', iRoot);
+  var horsRoot = CSS.slice(0, iRoot) + CSS.slice(jRoot + 1);
+  var hexEnDur = horsRoot.split('\n').filter(function (l) {
+    return /#[0-9a-fA-F]{3,8}\b/.test(l) && !/^\s*--[\w-]+\s*:/.test(l);
+  });
+  egal(hexEnDur.length, 0, 'A.0 : aucune valeur hexadécimale hors `:root` (' + hexEnDur.slice(0, 3).join(' | ') + ')');
+  var regleTime = CSS.split('\n').filter(function (l) { return /input\[type="?time"?\]/.test(l); });
+  assert(!regleTime.some(function (l) { return /-webkit-appearance\s*:\s*none/.test(l); }) &&
+    !/input\[type="?time"?\][^{]*\{[^}]*-webkit-appearance\s*:\s*none/.test(CSS),
+    'A.0 : aucun `-webkit-appearance:none` sur `input[type=time]`');
+  assert(/\.fld input, \.fld select, \.fld input\[type="time"\]/.test(CSS),
+    'A.0 : la règle de largeur des champs couvre `input[type=time]`');
+
+  /* ==================================================================== */
+  /* §3 — LA FICHE DE CONTRAT                                             */
+  /* ==================================================================== */
+  console.log('\n--- §3 : la fiche de contrat ---');
+  await aller('fiche', { contratId: 'c1' });
+  await pause(400);
+  barreSlim('Contrat, horaires et rémunération');
+  aucunHerite(corps, 'la fiche');
+  var titres = Array.prototype.map.call(corps.querySelectorAll('.ttl'), txt);
+  ['L’enfant', 'Les horaires', 'La rémunération', 'Les avenants'].forEach(function (t) {
+    assert(titres.indexOf(t) !== -1, '§3 : la section « ' + t + ' » est là (' + titres.join(' · ') + ')');
+  });
+  assert(titres.indexOf('Les horaires') < titres.indexOf('La rémunération') &&
+    titres.indexOf('La rémunération') < titres.indexOf('Les avenants'),
+    '§3 : les sections viennent dans l’ordre de la spécification');
+  assert(corps.querySelectorAll('.ln').length >= 6, '§3 : les conditions sont des lignes `ln`');
+  assert(!!boutonExact(corps, 'Ce contrat est terminé'), '§3 : « Ce contrat est terminé » reste');
+  assert(!!corps.querySelector('.cd.tap'), '§3 : la porte de la familiarisation est une carte cliquable');
+  /* Le contrat du décor porte des journées : il n'est PAS vierge. */
+  egal(boutonExact(corps, 'Supprimer ce contrat'), null,
+    '§3 : « Supprimer ce contrat » n’apparaît pas sur un contrat qui a des journées');
+  /* Le même écran sur un contrat vierge : le bouton apparaît. */
+  var vraiVierge = window.DB.contratEstVierge;
+  window.DB.contratEstVierge = function () { return Promise.resolve(true); };
+  await aller('fiche', { contratId: 'c1' });
+  await pause(400);
+  assert(!!boutonExact(corps, 'Supprimer ce contrat'),
+    '§3 : et il apparaît sur un contrat vierge — aucune journée, aucun récapitulatif');
+  window.DB.contratEstVierge = vraiVierge;
+
+  /* La frise : une carte par avenant, triée par date d'effet, le numéro
+     n'étant qu'une identité (§11.7). */
+  await aller('fiche', { contratId: 'c1' });
+  await pause(400);
+  var bFrise = boutonExact(corps, 'Voir l’historique des conditions');
+  assert(!!bFrise, '§3 : la frise s’ouvre depuis « Les avenants »');
+  bFrise.click();
+  await pause(300);
+  var sheet = document.getElementById('sheet');
+  assert(sheet.querySelectorAll('.cd').length >= 1, '§3 : la frise est une liste de cartes du socle');
+  aucunHerite(sheet, 'la frise des avenants');
+  contient(sheet, 'Avenant n°', '§3 : chaque carte porte le numéro de l’avenant');
+  assert(!!sheet.querySelector('.pill'), '§3 : l’état de l’avenant est une pastille du socle');
+  window.Kit.fermerFeuille();
+
+  /* Le parcours de fin de contrat reste, sur le socle lui aussi. */
+  await aller('fiche', { contratId: 'c1', section: 'fin' });
+  await pause(400);
+  egal(barre.className, 'top slim', '§3 : la fin de contrat porte l’en-tête du socle');
+  aucunHerite(corps, 'la fin de contrat');
+  assert(!!boutonExact(corps, 'Calculer les soldes de fin de contrat'), '§3 : le calcul des soldes reste');
+  assert(!!boutonExact(corps, 'Ranger ce contrat'), '§3 : « Ranger ce contrat » reste');
 
   /* ==================================================================== */
   console.log('\n' + (echecs ? echecs + ' échec(s)' : 'lot 32 : tout est vert'));

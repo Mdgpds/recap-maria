@@ -219,6 +219,7 @@
 .top.slim { padding: 15px 18px; padding-top: calc(15px + env(safe-area-inset-top)); display: flex; align-items: center; gap: 11px; }
 .top.slim h1 { font-size: 17px; margin: 0; flex: 1; letter-spacing: -.2px; }
 .top.slim .av { box-shadow: none; }
+.top.slim .r { font-size: 13px; opacity: .85; flex: none; font-weight: 400; }
 
 .back {
   background: rgba(255, 255, 255, .15); border: 0; color: var(--bg2);
@@ -821,10 +822,13 @@ body {
    rare : il n'y a PAS de « ? » dans les barres d'écran (décision d'Adrien du
    24 août : « incompréhensible »). Un vrai bouton, pour rester atteignable
    au clavier — mais qui a l'air de ce qu'il est, un lien. */
+/* LOT 32 §10.4 — le lien texte garde son dessin, sa zone tactile fait 44 px :
+   le rembourrage vertical est absorbé par des marges négatives, la ligne ne
+   bouge pas d'un pixel. */
 .lien2 {
-  background: none; border: none; padding: 4px 0; font: inherit; font-size: 13px;
+  background: none; border: none; padding: 12px 0; margin: -8px 0 1px; font: inherit; font-size: 13px;
   color: var(--ac); font-weight: 600; text-decoration: underline; cursor: pointer;
-  text-align: left; align-self: flex-start; margin: 0 0 9px;
+  text-align: left; align-self: flex-start; min-height: 44px;
 }
 
 /* Rangée de raccourcis : des petits boutons côte à côte, largeur partagée. */
@@ -910,6 +914,16 @@ body {
   white-space: nowrap; text-align: right; letter-spacing: -.15px;
 }
 .ln .sb2 { display: block; font-size: 13px; color: var(--ink3); font-weight: 400; margin-top: 3px; }
+/* LOT 32 — les nuances de la ligne héritée, reprises par `ln` : le ton
+   effacé (`q`), la valeur en alerte (`wa`), et le petit lien à droite d'un
+   titre de carte (`more`). Aucune couleur en dur : que des jetons. */
+.ln.q span, .ln.q b { color: var(--ink3); font-weight: 400; }
+.ln .wa { color: var(--wa); }
+.cd .ttl { margin: 2px 0 6px; }
+.cd .ttl .more { font-size: 13px; color: var(--ac); font-weight: 600; cursor: pointer; background: none; border: none; font-family: inherit; padding: 0; letter-spacing: 0; text-transform: none; }
+/* Un encart qui annonce un avenant à venir garde son liseré, comme la note
+   héritée qu'il remplace. */
+.enc.a-venir { border-left: 3px solid var(--ac); }
 .ln.tot b { font-weight: 700; font-size: 19px; letter-spacing: -.4px; }
 /* LOT 28 — DÉFAUT TROUVÉ EN VÉRIFIANT AU NAVIGATEUR, ANTÉRIEUR À CE LOT.
 
@@ -1468,7 +1482,10 @@ table.cal td.hors-sel:active { transform: none; }
 .fld.col { display: block; }
 .fld.col .lb { display: block; margin-bottom: 6px; }
 .fld .dates { margin-left: auto; display: flex; gap: 6px; }
-.fld .dates select { flex: 0 0 auto; text-align-last: center; font-weight: 600; }
+.fld .dates select { flex: 0 0 auto; text-align-last: center; font-weight: 600;
+  /* LOT 32 §10.4 — 44 px de zone tactile sans grandir le champ : la hauteur
+     vient des marges négatives, la ligne garde ses 50 px. */
+  min-height: 44px; min-width: 44px; margin-top: -9px; margin-bottom: -9px; }
 .fld.a-declarer .vl { color: var(--wa); }
 .fld.futur .vl { color: var(--ink3); font-weight: 400; }
 

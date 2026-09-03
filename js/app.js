@@ -519,6 +519,26 @@
       });
   }
 
+  /* LOT 32 (A.0) — LA BARRE DU SOCLE POUR UN ÉCRAN INTÉRIEUR : `.top.slim`,
+     flèche de retour et titre, comme « Clôturer le mois » et le document
+     mensuel la dessinent déjà. `opts.droite` garde la mention à droite que
+     `barreRetour` offrait (un statut, un prénom) : rien ne se perd.
+     `opts.fermer` remplace la flèche par une croix, pour un écran qu'on
+     quitte plutôt qu'on ne remonte. */
+  function barreSlim(barre, titre, opts) {
+    opts = opts || {};
+    Kit.vider(barre);
+    barre.className = 'top slim';
+    barre.removeAttribute('style'); /* LOT 32 §1 — même retrait qu'en rendre() */
+    var bk = Kit.bouton('back', function () { retour(); });
+    bk.textContent = opts.fermer ? '✕' : '‹';
+    bk.setAttribute('aria-label', opts.fermer ? 'Fermer' : 'Retour');
+    barre.appendChild(bk);
+    barre.appendChild(Kit.ce('h1', null, titre));
+    if (opts.droite) barre.appendChild(Kit.ce('span', 'r', opts.droite));
+    return barre;
+  }
+
   /* Barre haute standard : bouton retour, titre, et zone de droite libre. */
   function barreRetour(barre, titre, opts) {
     opts = opts || {};
@@ -783,6 +803,7 @@
     majPastilleAccueil: majPastilleAccueil,
     ecranCourant: ecranCourant,
     barreRetour: barreRetour,
+    barreSlim: barreSlim,
     moisCourant: moisCourant,
     aujourdhui: aujourdhui,
     contrats: contrats,
