@@ -98,16 +98,25 @@ assert(/VAPID_PUBLIC_KEY:\s*''/.test(CONFIG),
   'rend ce contrôle utile');
 
 var srcMenu = sansCommentaires(MENU);
-assert(/if\s*\(!clePubliqueVapid\(\)\)\s*\{[\s\S]{0,300}Les rappels ne sont pas encore activés/.test(srcMenu),
+/* LOT 32 §9.1 — l'état « non configuré » DÉCOULE de la clé vide, et c'est
+   lui qui porte la phrase, en `.enc.w`. */
+assert(/if\s*\(!clePubliqueVapid\(\)\)\s*return[\s\S]{0,80}non_configure/.test(srcMenu) &&
+       /mode === 'non_configure'\)\s*\{[\s\S]{0,200}Les rappels ne sont pas encore activés/.test(srcMenu),
   '§8 : l’écran DIT que les rappels ne sont pas activés tant que la clé manque');
 
 /* LA CASE À COCHER NE PROMET RIEN. Elle disait « Même application fermée, si
    votre téléphone l'autorise » — vrai le jour où la clé sera posée, faux
    aujourd'hui. Et c'est la phrase que Maria lit au moment où elle coche, pas
    celle du haut de l'écran. */
-assert(/clePubliqueVapid\(\)\s*\?[\s\S]{0,200}Aucun rappel ne partira/.test(srcMenu),
-  '§8 : et AUCUNE case à cocher ne laisse croire qu’un rappel partira — la ' +
-  'phrase de la case dépend de la clé');
+/* LOT 32 §9.1 — plus de case à cocher : la phrase « Même application
+   fermée » n'est dite que dans l'état ACTIF, et l'état non configuré dit
+   qu'aucun rappel ne partira. */
+var iActif = srcMenu.indexOf("Les rappels sont actifs sur cet appareil");
+var iFerme = srcMenu.indexOf("Même application fermée");
+assert(iActif !== -1 && iFerme > iActif && iFerme - iActif < 200 &&
+       /mode === 'non_configure'[\s\S]{0,600}Aucun rappel[\s'+]*ne partira/.test(srcMenu),
+  '§8 : et AUCUN réglage ne laisse croire qu’un rappel partira — la ' +
+  'promesse n’est dite que dans l’état actif');
 
 /* Le sous-titre du Menu ne promet rien non plus. */
 assert(srcMenu.indexOf('Réglages enregistrés — pas encore activés') !== -1,

@@ -436,22 +436,30 @@
       .then(function (r) { return r[0]; });
   }
 
+  /* LOT 32 §9.3 — `quoi` (le mois à clôturer, les journées non déclarées,
+     ou les deux) rejoint les réglages ; la migration 021 l'ajoute. */
+  var CHAMPS_PREFERENCE_RAPPEL = 'owner, actif, jour_du_mois, heure, chaque_jour_ensuite, quoi, maj_le';
+
   function getPreferenceRappel() {
     return client.from('preference_rappel')
-      .select('owner, actif, jour_du_mois, heure, chaque_jour_ensuite, maj_le')
+      .select(CHAMPS_PREFERENCE_RAPPEL)
       .maybeSingle()
       .then(function (r) { if (r.error) throw r.error; return r.data; });
   }
 
+  /* Seuls les champs FOURNIS partent : « actif » seul, posé par l'abonnement,
+     ne doit pas remettre le jour, l'heure ou le choix à une valeur qu'on
+     n'a pas demandée. */
   function enregistrerPreferenceRappel(champs) {
+    var ligne = {};
+    if (champs.actif !== undefined) ligne.actif = !!champs.actif;
+    if (champs.jour_du_mois !== undefined) ligne.jour_du_mois = champs.jour_du_mois;
+    if (champs.heure !== undefined) ligne.heure = champs.heure;
+    if (champs.chaque_jour_ensuite !== undefined) ligne.chaque_jour_ensuite = !!champs.chaque_jour_ensuite;
+    if (champs.quoi !== undefined) ligne.quoi = champs.quoi;
     return client.from('preference_rappel')
-      .upsert({
-        actif: !!champs.actif,
-        jour_du_mois: champs.jour_du_mois,
-        heure: champs.heure,
-        chaque_jour_ensuite: !!champs.chaque_jour_ensuite
-      }, { onConflict: 'owner' })
-      .select('owner, actif, jour_du_mois, heure, chaque_jour_ensuite, maj_le')
+      .upsert(ligne, { onConflict: 'owner' })
+      .select(CHAMPS_PREFERENCE_RAPPEL)
       .then(deballer)
       .then(function (r) { return r[0]; });
   }
@@ -468,6 +476,16 @@
       .select('id, endpoint, cree_le')
       .then(deballer)
       .then(function (r) { return r[0]; });
+  }
+
+  /* LOT 32 §9.1 — « actif » veut dire : un abonnement ENREGISTRÉ. On le lit
+     en base, on ne le suppose pas. */
+  function abonnementPushExiste(endpoint) {
+    return client.from('abonnement_push')
+      .select('id')
+      .eq('endpoint', endpoint)
+      .maybeSingle()
+      .then(function (r) { if (r.error) throw r.error; return !!r.data; });
   }
 
   function supprimerAbonnementPush(endpoint) {
@@ -1636,6 +1654,7 @@
     enregistrerPreferenceRappel: enregistrerPreferenceRappel,
     enregistrerAbonnementPush: enregistrerAbonnementPush,
     supprimerAbonnementPush: supprimerAbonnementPush,
+    abonnementPushExiste: abonnementPushExiste,
     enregistrerCompteurInitial: enregistrerCompteurInitial,
     supprimerContrat: supprimerContrat,
     contratEstVierge: contratEstVierge,

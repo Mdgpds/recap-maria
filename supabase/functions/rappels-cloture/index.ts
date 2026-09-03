@@ -177,13 +177,16 @@ Deno.serve(async (requete: Request) => {
       .eq('owner', pref.owner);
 
     /* A3 — CE TEXTE EST EXACTEMENT CELUI DE L'APERÇU affiché dans les
-       réglages. Les deux sont construits par la même formule, dupliquée ici
+       réglages. Les deux sont construits par la même fonction, dupliquée ici
        et dans js/ui-menu.js faute de pouvoir partager du code entre le
        navigateur et Deno. Toute modification doit être faite AUX DEUX
-       ENDROITS — le test de fumée du lot 15 compare les deux chaînes. */
-    const corps = nb === 1
-      ? 'Il vous reste 1 mois à clôturer.'
-      : `Il vous reste ${nb} mois à clôturer.`;
+       ENDROITS — le test de fumée compare les deux fonctions sur les mêmes
+       entrées. LOT 32 §9.4 : jamais de prénom ni de nom de famille. */
+    const corps = texteDuRappel({
+      quoi: 'cloture',
+      moisNonClotures: nb === 1 ? ['ce mois'] : [String(nb) + ' mois'],
+      journees: 0, moisTermine: ''
+    });
     const charge = JSON.stringify({ titre: 'Récap', corps });
 
     let envoyeesPourCePref = 0;
@@ -229,6 +232,32 @@ Deno.serve(async (requete: Request) => {
     abonnements_retires: abonnementsRetires
   }), { headers: { 'Content-Type': 'application/json' } });
 });
+
+/* LOT 32 §9.4 — LE TEXTE DU RAPPEL. Français simple, jamais de prénom
+   d'enfant ni de nom de famille. Copie EXACTE de `texteDuRappel` dans
+   js/ui-menu.js : le test de fumée extrait ce bloc entre ses deux repères et
+   le compare à l'aperçu de l'application sur les mêmes entrées. */
+/* TEXTE-RAPPEL-DEBUT */
+function texteDuRappel(info: { quoi: string; moisTermine?: string; journees?: number; moisNonClotures?: string[] }): string {
+  var veutJournees = info.quoi === 'journees' || info.quoi === 'les_deux';
+  var veutCloture = info.quoi === 'cloture' || info.quoi === 'les_deux';
+  var phrases: string[] = [];
+  if (veutJournees && (info.journees || 0) > 0 && info.moisTermine) {
+    phrases.push(info.moisTermine.charAt(0).toUpperCase() + info.moisTermine.slice(1) +
+      ' est terminé. Il reste ' + info.journees + ' journée' + ((info.journees || 0) > 1 ? 's' : '') +
+      ' à déclarer avant de clôturer.');
+  }
+  var mois = info.moisNonClotures || [];
+  if (veutCloture && mois.length) {
+    var de = function (m: string) { return (/^[aeiouyàâéèêëîïôûùœ]/i.test(m) ? 'd’' : 'de ') + m; };
+    phrases.push(mois.length === 1
+      ? 'Vous n’avez pas encore clôturé le mois ' + de(mois[0]) + '.'
+      : 'Vous n’avez pas encore clôturé les mois ' + mois.slice(0, -1).map(de).join(', ') +
+        ' et ' + de(mois[mois.length - 1]) + '.');
+  }
+  return phrases.join(' ');
+}
+/* TEXTE-RAPPEL-FIN */
 
 /* Combien de mois cette utilisatrice a-t-elle à clôturer ?
 

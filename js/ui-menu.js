@@ -1740,11 +1740,33 @@
   /* A3 — CE TEXTE EST DUPLIQUÉ dans supabase/functions/rappels-cloture.
      Impossible de le partager : l'un tourne dans un navigateur, l'autre dans
      Deno. Toute modification doit être faite AUX DEUX ENDROITS, et le test de
-     fumée du lot 15 compare les deux chaînes caractère par caractère. */
-  function texteDuRappel(nb) {
-    return nb === 1 ? 'Il vous reste 1 mois à clôturer.'
-                    : 'Il vous reste ' + nb + ' mois à clôturer.';
+     fumée compare les deux fonctions sur les mêmes entrées.
+
+     LOT 32 §9.4 — français simple, JAMAIS de prénom d'enfant ni de nom de
+     famille : la notification s'affiche sur un écran verrouillé, devant
+     n'importe qui. `info` : { quoi, moisTermine, journees, moisNonClotures }
+     — les mois sont des libellés déjà écrits (« juillet », « août 2025 »). */
+  /* TEXTE-RAPPEL-DEBUT */
+  function texteDuRappel(info) {
+    var veutJournees = info.quoi === 'journees' || info.quoi === 'les_deux';
+    var veutCloture = info.quoi === 'cloture' || info.quoi === 'les_deux';
+    var phrases = [];
+    if (veutJournees && info.journees > 0 && info.moisTermine) {
+      phrases.push(info.moisTermine.charAt(0).toUpperCase() + info.moisTermine.slice(1) +
+        ' est terminé. Il reste ' + info.journees + ' journée' + (info.journees > 1 ? 's' : '') +
+        ' à déclarer avant de clôturer.');
+    }
+    var mois = info.moisNonClotures || [];
+    if (veutCloture && mois.length) {
+      var de = function (m) { return (/^[aeiouyàâéèêëîïôûùœ]/i.test(m) ? 'd’' : 'de ') + m; };
+      phrases.push(mois.length === 1
+        ? 'Vous n’avez pas encore clôturé le mois ' + de(mois[0]) + '.'
+        : 'Vous n’avez pas encore clôturé les mois ' + mois.slice(0, -1).map(de).join(', ') +
+          ' et ' + de(mois[mois.length - 1]) + '.');
+    }
+    return phrases.join(' ');
   }
+  /* TEXTE-RAPPEL-FIN */
 
   /* ------------------------------------------------------------------ */
   /* LOT 16 §16.2 — Mon nom sur les documents                            */
@@ -1836,146 +1858,221 @@
     return cfg.VAPID_PUBLIC_KEY || '';
   }
 
+  /* ================================================================== */
+  /* LOT 32 §9 — LES RAPPELS, CÔTÉ APPLICATION                          */
+  /*                                                                     */
+  /* L'ÉCRAN DIT LA VÉRITÉ SUR SON PROPRE ÉTAT. Tant qu'une brique manque */
+  /* il l'annonce et ne promet rien. Trois états, un seul affiché :       */
+  /*                                                                     */
+  /*   non configuré     VAPID_PUBLIC_KEY vide           .enc.w, réglages */
+  /*                                                     visibles, INACTIFS */
+  /*   configuré, non    clé présente, permission ≠      .enc.i + bouton  */
+  /*   autorisé          granted, ou aucun abonnement    « Autoriser »     */
+  /*   actif             clé + permission + abonnement   .enc.o + réglages */
+  /*                                                                     */
+  /* L'inscription se fait AU GESTE de Maria, jamais au chargement.       */
+  /* Aucune clé privée côté navigateur : config.js ne porte que la clé    */
+  /* publique. Un abonnement devenu invalide est retiré, et l'écran       */
+  /* repasse en « configuré, non autorisé ». Un échec se dit, il ne se    */
+  /* consigne pas en console.                                             */
+  /* ================================================================== */
+
+  var QUOI_RAPPELER = [
+    ['cloture', 'Le mois à clôturer', 'Un rappel quand un mois attend d’être clôturé.'],
+    ['journees', 'Les journées non déclarées', 'Un rappel quand des heures de familiarisation restent à déclarer.'],
+    ['les_deux', 'Les deux', 'Le mois à clôturer et les journées à déclarer.']
+  ];
+
   function afficherRappels(ctx) {
-    global.App.barreRetour(ctx.barre, 'Me rappeler de clôturer');
+    global.App.barreSlim(ctx.barre, 'Me rappeler de clôturer');
     ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture de vos réglages…'));
 
-    return global.DB.getPreferenceRappel().catch(function () { return null; })
-      .then(function (pref) {
-        Kit.vider(ctx.corps);
-        rendreRappels(ctx.corps, pref || { actif: false, jour_du_mois: 25,
-          heure: '19:00', chaque_jour_ensuite: true });
-      });
+    return Promise.all([
+      global.DB.getPreferenceRappel().catch(function () { return null; }),
+      etatAbonnement()
+    ]).then(function (r) {
+      var pref = r[0];
+      Kit.vider(ctx.corps);
+      rendreRappels(ctx.corps, pref || { actif: false, jour_du_mois: 25,
+        heure: '19:00', chaque_jour_ensuite: true, quoi: 'les_deux' }, r[1]);
+    });
   }
 
-  function rendreRappels(corps, pref) {
+  /* L'état de CET appareil, lu sans rien demander : la clé, la permission
+     déjà accordée ou non, et l'abonnement que le navigateur détient encore.
+     Aucune demande de permission ici — ce serait s'inviter sur le téléphone
+     sans que Maria l'ait demandé. */
+  function etatAbonnement() {
+    if (!clePubliqueVapid()) return Promise.resolve({ etat: 'non_configure' });
+    var N = global.Notification;
+    var sw = global.navigator && global.navigator.serviceWorker;
+    if (!N || !sw) return Promise.resolve({ etat: 'non_autorise', sansNotification: true });
+    if (N.permission !== 'granted') return Promise.resolve({ etat: 'non_autorise' });
+    return Promise.resolve(sw.ready).then(function (reg) {
+      var pm = reg && reg.pushManager;
+      if (!pm || typeof pm.getSubscription !== 'function') return { etat: 'non_autorise' };
+      return pm.getSubscription().then(function (ab) {
+        if (!ab) return { etat: 'non_autorise' };
+        /* L'abonnement est ACTIF s'il est aussi enregistré en base : un
+           abonnement que le serveur ne connaît pas ne recevra jamais rien. */
+        var endpoint = ab.toJSON().endpoint;
+        if (typeof global.DB.abonnementPushExiste !== 'function') return { etat: 'actif', abonnement: ab };
+        return global.DB.abonnementPushExiste(endpoint).then(function (existe) {
+          return existe ? { etat: 'actif', abonnement: ab } : { etat: 'non_autorise', abonnement: ab };
+        }).catch(function () { return { etat: 'non_autorise', abonnement: ab }; });
+      });
+    }).catch(function () { return { etat: 'non_autorise' }; });
+  }
+
+  function rendreRappels(corps, pref, situation) {
     var etat = {
-      actif: !!pref.actif,
       jour: pref.jour_du_mois || 25,
-      heure: String(pref.heure || '19:00').slice(0, 5),
-      chaque: pref.chaque_jour_ensuite !== false
+      heure: Number(String(pref.heure || '19:00').slice(0, 2)),
+      chaque: pref.chaque_jour_ensuite !== false,
+      quoi: pref.quoi || 'les_deux'
     };
+    var mode = situation.etat;
+    var inactif = mode !== 'actif';
 
-    var p = Kit.pane('Me rappeler de clôturer mes mois');
+    var carte = Kit.carte('Me rappeler de clôturer mes mois');
+    var zoneEtat = Kit.ce('div');
+    carte.appendChild(zoneEtat);
+    var msg = Kit.ce('div', 'msg');
 
-    /* LOT 31 §7 — DIRE LA VÉRITÉ À L'ÉCRAN.
-
-       Le système de rappels n'est pas en service : la clé publique VAPID de
-       `config.js` est vide, la fonction Supabase n'est pas déployée, `pg_cron`
-       n'est pas installé, et aucun appareil n'est abonné. Le CODE est écrit et
-       correct — ce qui manque est entièrement du déploiement, et rien de tout
-       cela ne peut être fait par un agent.
-
-       Tant que la clé est vide, cet écran promettait un rappel qui ne partira
-       pas. Un écran qui promet ce qu'il ne tient pas est pire qu'un écran qui
-       manque : Maria compte dessus pour ne pas oublier une clôture, et
-       découvre l'absence de rappel au moment où il aurait dû arriver.
-
-       Les réglages RESTENT UTILISABLES et ils s'enregistrent : le jour où la
-       clé sera posée, la préférence sera déjà là — c'est la promesse que
-       l'encart fait, et c'est une promesse que le code tient déjà. */
-    if (!clePubliqueVapid()) {
-      p.appendChild(Kit.warnbox('Les rappels ne sont pas encore activés',
-        ' sur cette application. Vous pouvez régler vos préférences dès ' +
-        'maintenant : elles seront utilisées dès que les notifications seront ' +
-        'en service.'));
+    /* --- L'état, dit en tête --------------------------------------- */
+    if (mode === 'non_configure') {
+      zoneEtat.appendChild(Kit.enc('w', 'Les rappels ne sont pas encore activés sur ce compte.',
+        'Vous pouvez régler vos préférences dès maintenant : elles seront ' +
+        'utilisées dès que les notifications seront en service. Aucun rappel ' +
+        'ne partira tant que le système n’est pas en service.'));
+    } else if (mode === 'non_autorise') {
+      zoneEtat.appendChild(Kit.enc('i', 'Les rappels sont prêts, il reste à les autoriser.',
+        situation.sansNotification
+          ? 'Ce téléphone ne sait pas afficher de notifications. La pastille de ' +
+            'l’onglet Accueil prend le relais.'
+          : 'Votre téléphone vous demandera son accord : rien ne part sans lui.'));
+      var bAutoriser = Kit.bouton('btn', function () { autoriser(bAutoriser, msg, corps); });
+      bAutoriser.textContent = 'Autoriser les rappels';
+      if (situation.sansNotification) bAutoriser.disabled = true;
+      zoneEtat.appendChild(bAutoriser);
+    } else {
+      zoneEtat.appendChild(Kit.enc('o', 'Les rappels sont actifs sur cet appareil.',
+        'Même application fermée, si votre téléphone l’autorise.'));
     }
 
-    var ligneActif = Kit.ce('label', 'coche-ligne');
-    var boxActif = document.createElement('input');
-    boxActif.type = 'checkbox';
-    boxActif.checked = etat.actif;
-    ligneActif.appendChild(boxActif);
-    var txA = Kit.ce('span', 'tx');
-    txA.appendChild(Kit.ce('b', null, 'Recevoir un rappel sur mon téléphone'));
-    /* REDESIGN 2A §8 — AUCUNE CASE À COCHER NE DOIT LAISSER CROIRE QU'UN
-       RAPPEL PARTIRA.
+    /* --- Les réglages ------------------------------------------------
+       Visibles dans les trois états, INACTIFS tant que les rappels ne
+       sont pas actifs : aucun réglage ne doit laisser croire qu'un rappel
+       partira alors qu'il ne partira pas. */
+    var reglages = Kit.ce('div', 'reglages-rappel' + (inactif ? ' inactifs' : ''));
+    reglages.appendChild(Kit.ttl('Quel jour'));
+    var stJour = Kit.stepper(etat.jour, { min: 20, max: 31, libelle: 'jour du rappel',
+      onchange: function (v) { etat.jour = v; majApercu(); } });
+    var ligneJour = Kit.ce('div', 'fld');
+    ligneJour.appendChild(Kit.ce('span', 'lb', 'À partir du … du mois'));
+    stJour.bloc.style.marginLeft = 'auto';
+    ligneJour.appendChild(stJour.bloc);
+    reglages.appendChild(ligneJour);
 
-       L'encart du haut disait déjà que le système n'est pas en service, mais
-       cette case, elle, promettait : « Même application fermée, si votre
-       téléphone l'autorise. » Une phrase vraie le jour où la clé sera posée,
-       et fausse aujourd'hui — et c'est la phrase que Maria lit au moment où
-       elle coche, pas celle du haut de l'écran.
+    var stHeure = Kit.stepper(etat.heure, { min: 7, max: 22, libelle: 'heure du rappel',
+      onchange: function (v) { etat.heure = v; majApercu(); } });
+    var ligneHeure = Kit.ce('div', 'fld');
+    ligneHeure.appendChild(Kit.ce('span', 'lb', 'À quelle heure'));
+    stHeure.bloc.style.marginLeft = 'auto';
+    ligneHeure.appendChild(stHeure.bloc);
+    var champHeure = stHeure.bloc.querySelector('span');
+    function peindreHeure() { champHeure.textContent = String(etat.heure).padStart(2, '0') + ' h'; }
+    peindreHeure();
+    stHeure.bloc.querySelectorAll('button').forEach(function (b) { b.addEventListener('click', peindreHeure); });
+    reglages.appendChild(ligneHeure);
 
-       Le réglage reste enregistrable, et il le reste VRAIMENT : la préférence
-       part en base, et elle sera là le jour où le système démarre. C'est ce
-       que la phrase dit maintenant, sans rien promettre de plus. */
-    txA.appendChild(Kit.ce('span', 'd', clePubliqueVapid()
-      ? 'Même application fermée, si votre téléphone l’autorise.'
-      : 'Votre réglage sera enregistré. Aucun rappel ne partira tant que le ' +
-        'système n’est pas en service.'));
-    ligneActif.appendChild(txA);
-    p.appendChild(ligneActif);
+    var segChaque = Kit.seg([['une_fois', 'Une seule fois'], ['chaque', 'Puis chaque jour']],
+      etat.chaque ? 'chaque' : 'une_fois', function (v) { etat.chaque = v === 'chaque'; });
+    reglages.appendChild(Kit.ce('p', 'sb q', 'Tant qu’un mois n’est pas clôturé :'));
+    reglages.appendChild(segChaque.bloc);
 
-    var reglages = Kit.ce('div');
-    var selJour = Kit.champSelect('À partir du … du mois',
-      joursPossibles(), String(etat.jour));
-    reglages.appendChild(selJour.bloc);
-    var selHeure = Kit.champSelect('À', heuresPossibles(), etat.heure);
-    reglages.appendChild(selHeure.bloc);
-
-    var ligneChaque = Kit.ce('label', 'coche-ligne');
-    var boxChaque = document.createElement('input');
-    boxChaque.type = 'checkbox';
-    boxChaque.checked = etat.chaque;
-    ligneChaque.appendChild(boxChaque);
-    var txC = Kit.ce('span', 'tx');
-    txC.appendChild(Kit.ce('b', null, 'Puis chaque jour tant qu’un mois n’est pas clôturé'));
-    ligneChaque.appendChild(txC);
-    reglages.appendChild(ligneChaque);
-    p.appendChild(reglages);
-
-    /* L'APERÇU du message, sous les réglages. Maria voit exactement ce qui
-       arrivera sur son écran. */
-    var apercu = Kit.ce('div', 'apercu-rappel');
-    apercu.appendChild(Kit.ce('b', null, 'Récap'));
-    apercu.appendChild(Kit.ce('span', null, ' — ' + texteDuRappel(2)));
-    p.appendChild(Kit.ce('p', 'sb q', 'Ce que vous verrez :'));
-    p.appendChild(apercu);
-
-    var msg = Kit.ce('div', 'msg');
-    p.appendChild(msg);
-
-    function majVisibilite() { reglages.hidden = !boxActif.checked; }
-    boxActif.addEventListener('change', function () {
-      majVisibilite();
-      if (boxActif.checked) demanderPermission(msg, boxActif);
+    reglages.appendChild(Kit.ttl('Quoi rappeler'));
+    var choixQuoi = {};
+    QUOI_RAPPELER.forEach(function (q) {
+      var ch = Kit.bouton('ch' + (etat.quoi === q[0] ? ' on' : ''), function () {
+        etat.quoi = q[0];
+        Object.keys(choixQuoi).forEach(function (k) {
+          choixQuoi[k].classList.toggle('on', k === q[0]);
+          choixQuoi[k].setAttribute('aria-checked', k === q[0] ? 'true' : 'false');
+          choixQuoi[k].querySelector('.rd').textContent = k === q[0] ? '✓' : '';
+        });
+        majApercu();
+      });
+      ch.setAttribute('role', 'radio');
+      ch.setAttribute('aria-checked', etat.quoi === q[0] ? 'true' : 'false');
+      ch.appendChild(Kit.ce('span', 'rd', etat.quoi === q[0] ? '✓' : ''));
+      var gro = Kit.ce('span', 'gro');
+      gro.appendChild(Kit.ce('span', 'nm', q[1]));
+      gro.appendChild(Kit.ce('span', 'dt', q[2]));
+      ch.appendChild(gro);
+      choixQuoi[q[0]] = ch;
+      reglages.appendChild(ch);
     });
-    majVisibilite();
 
-    var b = Kit.bouton('btn', function () {
-      b.disabled = true;
+    /* L'APERÇU du message, sous les réglages : Maria voit exactement ce qui
+       arrivera sur son écran. Jamais un prénom d'enfant ni un nom de
+       famille : la notification s'affiche sur un écran verrouillé. */
+    var apercu = Kit.ce('div', 'apercu-rappel');
+    reglages.appendChild(Kit.ce('p', 'sb q', 'Ce que vous verrez :'));
+    reglages.appendChild(apercu);
+    function majApercu() {
+      Kit.vider(apercu);
+      apercu.appendChild(Kit.ce('b', null, 'Récap'));
+      apercu.appendChild(Kit.ce('span', null, ' — ' + texteDuRappel({
+        quoi: etat.quoi, moisTermine: 'août', journees: 1, moisNonClotures: ['juillet']
+      })));
+    }
+    majApercu();
+
+    var bEnregistrer = Kit.bouton('btn', function () {
+      bEnregistrer.disabled = true;
       msg.className = 'msg';
       msg.textContent = 'Enregistrement…';
       global.DB.enregistrerPreferenceRappel({
-        actif: boxActif.checked,
-        jour_du_mois: Number(selJour.select.value),
-        heure: selHeure.select.value,
-        chaque_jour_ensuite: boxChaque.checked
+        actif: mode === 'actif',
+        jour_du_mois: etat.jour,
+        heure: String(etat.heure).padStart(2, '0') + ':00',
+        chaque_jour_ensuite: etat.chaque,
+        quoi: etat.quoi
       }).then(function () {
-        b.disabled = false;
+        bEnregistrer.disabled = false;
         msg.className = 'msg ok';
         msg.textContent = 'Réglages enregistrés.';
       }).catch(function (e) {
-        b.disabled = false;
+        bEnregistrer.disabled = false;
         msg.className = 'msg ko';
         msg.textContent = 'Enregistrement impossible : ' + Kit.messageErreur(e) +
           ' Vos réglages sont toujours là.';
       });
     });
-    b.textContent = 'Enregistrer';
-    p.appendChild(b);
-    corps.appendChild(p);
+    bEnregistrer.textContent = 'Enregistrer';
+    reglages.appendChild(bEnregistrer);
 
-    /* A5 — LE FILET, dit explicitement. */
-    /* CORRECTIF A4 (lot 15) DE LA RELECTURE PR9 — CETTE PHRASE ÉTAIT FAUSSE.
+    if (inactif) {
+      /* Inactifs pour de vrai : aucun contrôle ne répond, et l'attribut
+         le dit aux lecteurs d'écran. */
+      reglages.setAttribute('aria-disabled', 'true');
+      reglages.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    }
+    carte.appendChild(reglages);
 
-       « Elle fonctionne partout, sans permission et sans réseau » : la pastille
-       est calculée à partir des mois lus au chargement de l'accueil. Si TOUT
-       échoue, elle est retirée plutôt que laissée à une valeur périmée — un
-       chiffre faux vaut moins que pas de chiffre, et ce choix-là est le bon.
-       Mais il faut alors cesser de promettre le contraire. */
-    corps.appendChild(Kit.note('Dans tous les cas, une pastille',
+    if (mode === 'actif') {
+      var bStop = Kit.bouton('btn nt', function () { desabonner(bStop, msg, corps, situation); });
+      bStop.textContent = 'Ne plus recevoir de rappel sur cet appareil';
+      carte.appendChild(bStop);
+    }
+    carte.appendChild(msg);
+    corps.appendChild(carte);
+
+    /* A5 — LE FILET, dit explicitement. La pastille est calculée à partir
+       des mois lus au chargement de l'accueil : sans réseau au démarrage,
+       elle n'apparaît pas plutôt que d'afficher un nombre périmé. */
+    corps.appendChild(Kit.enc('i', 'Dans tous les cas, une pastille',
       'Que les notifications soient activées ou non, l’onglet Accueil porte une ' +
       'pastille dès qu’un mois est à clôturer. Elle ne demande ni autorisation ' +
       'du téléphone, ni service extérieur : elle vient de vos propres chiffres. ' +
@@ -1983,111 +2080,114 @@
       '— la pastille n’apparaît pas plutôt que d’afficher un nombre périmé.'));
   }
 
-  function joursPossibles() {
-    var out = [];
-    for (var j = 20; j <= 31; j++) out.push([String(j), String(j)]);
-    return out;
-  }
-  /* CORRECTIF A5 DE LA RELECTURE PR9 — LES DEMI-HEURES SONT RETIRÉES.
-
-     L'écran proposait « 20 h 30 » ; la fonction serveur ne lit que les deux
-     premiers caractères de l'heure et la planification est de toute façon
-     HORAIRE. Le rappel arrivait donc à 20 h 00, et rien ne le disait. Plutôt
-     que de faire semblant d'accepter un réglage qu'on ne sait pas tenir, on ne
-     le propose plus : une liste plus courte vaut mieux qu'un choix qui ment. */
-  function heuresPossibles() {
-    var out = [];
-    for (var h = 7; h <= 22; h++) {
-      var hh = String(h).padStart(2, '0');
-      out.push([hh + ':00', hh + ' h']);
-    }
-    return out;
-  }
-
-  /* A2 — LE REFUS DE PERMISSION EST EXPLIQUÉ EN FRANÇAIS, sans terme
-     technique, et la pastille prend le relais. Le pire serait de laisser la
-     case cochée : Maria croirait qu'un rappel viendra, et il ne viendrait
-     jamais. */
-  function demanderPermission(msg, boxActif) {
+  /* LE GESTE : demander la permission, puis abonner CET appareil. Le refus
+     est expliqué en français, sans terme technique, et la pastille prend le
+     relais. Un échec ne se consigne pas en console : il se dit. */
+  function autoriser(bouton, msg, corps) {
+    bouton.disabled = true;
+    msg.className = 'msg';
+    msg.textContent = '';
     if (!global.Notification || !global.navigator || !global.navigator.serviceWorker) {
+      bouton.disabled = false;
       msg.className = 'msg ko';
       msg.textContent = 'Ce téléphone ne sait pas afficher de notifications. ' +
         'La pastille dans l’application prendra le relais.';
-      decocher(boxActif);
-      return;
+      return Promise.resolve();
     }
-    global.Notification.requestPermission().then(function (reponse) {
+    return global.Notification.requestPermission().then(function (reponse) {
       if (reponse === 'granted') {
-        msg.className = 'msg ok';
-        msg.textContent = 'Notifications autorisées.';
-        return abonner().catch(function (e) {
-          /* CORRECTIF B8 DE LA RELECTURE PR9 — LA CASE SE DÉCOCHE ICI AUSSI.
-
-             Les deux autres branches — permission refusée, téléphone incapable
-             — décochaient bien. Celle-ci, « permission accordée mais
-             abonnement raté », laissait la case COCHÉE : Maria appuyait sur
-             Enregistrer, lisait « Réglages enregistrés » en vert, et aucun
-             rappel n'arrivait jamais. Aucun abonnement n'existait côté
-             serveur, la boucle d'envoi ne la voyait pas.
-
-             Et c'était le chemin NOMINAL : `config.js` livre la clé publique
-             VIDE tant qu'Adrien n'a pas généré la paire VAPID, donc
-             `abonner()` rejetait systématiquement. L'écran affirmait donc
-             l'inverse de ce qui allait se passer — le pire des deux mondes. */
-          decocher(boxActif);
+        return abonner().then(function () {
+          msg.className = 'msg ok';
+          msg.textContent = 'Notifications autorisées.';
+          return redessinerRappels(corps);
+        }).catch(function (e) {
+          bouton.disabled = false;
           msg.className = 'msg ko';
           msg.textContent = 'L’abonnement n’a pas abouti : ' + Kit.messageErreur(e) +
             ' Les rappels restent éteints ; la pastille de l’onglet Accueil ' +
             'prend le relais.';
         });
       }
+      bouton.disabled = false;
       msg.className = 'msg ko';
       msg.textContent = 'Les notifications sont bloquées sur ce téléphone. ' +
         'Vous les retrouverez dans les réglages de votre téléphone, à la ligne ' +
         'Récap. En attendant, un rappel s’affichera dans l’application.';
-      decocher(boxActif);
     });
   }
 
-  /* Décocher ET prévenir l'écran : la case pilote la visibilité des réglages
-     fins. La changer en silence laisserait des réglages affichés pour des
-     rappels éteints. Un seul endroit, pour que les trois branches d'échec
-     fassent exactement la même chose (correctif B8). */
-  function decocher(boxActif) {
-    boxActif.checked = false;
-    var ev = document.createEvent('Event');
-    ev.initEvent('change', true, true);
-    boxActif.dispatchEvent(ev);
+  /* Retirer l'abonnement de cet appareil : en base d'abord, puis côté
+     navigateur. La préférence passe à « inactif ». */
+  function desabonner(bouton, msg, corps, situation) {
+    bouton.disabled = true;
+    var ab = situation.abonnement;
+    var endpoint = ab && ab.toJSON ? ab.toJSON().endpoint : null;
+    return Promise.resolve(endpoint ? global.DB.supprimerAbonnementPush(endpoint) : true)
+      .then(function () {
+        if (ab && typeof ab.unsubscribe === 'function') return ab.unsubscribe();
+        return null;
+      })
+      .then(function () {
+        return global.DB.enregistrerPreferenceRappel({ actif: false }).catch(function () { return null; });
+      })
+      .then(function () { return redessinerRappels(corps); })
+      .catch(function (e) {
+        bouton.disabled = false;
+        msg.className = 'msg ko';
+        msg.textContent = 'Impossible de retirer les rappels de cet appareil : ' +
+          Kit.messageErreur(e) + ' Rien n’a changé.';
+      });
+  }
+
+  function redessinerRappels(corps) {
+    return Promise.all([
+      global.DB.getPreferenceRappel().catch(function () { return null; }),
+      etatAbonnement()
+    ]).then(function (r) {
+      Kit.vider(corps);
+      rendreRappels(corps, r[0] || { actif: false, jour_du_mois: 25,
+        heure: '19:00', chaque_jour_ensuite: true, quoi: 'les_deux' }, r[1]);
+    });
   }
 
   /* L'abonnement de CET appareil. La clé publique VAPID vient de config.js —
      elle est publique par nature, contrairement à la privée qui ne quitte
-     jamais les secrets de la fonction serveur (A4). */
+     jamais les secrets de la fonction serveur (A4). L'abonnement est écrit
+     en base ; s'il est refusé par la base, il est retiré du navigateur pour
+     que l'écran ne le prenne jamais pour actif. */
   function abonner() {
     var cfg = global.RECAP_MARIA_CONFIG || {};
     var clePublique = cfg.VAPID_PUBLIC_KEY;
     if (!clePublique) {
       var e = new Error('VAPID_PUBLIC_KEY absente de config.js');
-      /* La phrase est écrite pour Maria et traverse messages.js intacte
-         (correctif B8) : sans ce marquage elle tombait sur « une erreur
-         inattendue s'est produite. Réessayez… », qui invitait à réessayer une
-         action structurellement impossible. */
       e.messageFrancais = 'les notifications ne sont pas encore configurées sur ' +
         'ce compte.';
       return Promise.reject(e);
     }
+    var abonnement = null;
     return global.navigator.serviceWorker.ready.then(function (reg) {
       return reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: base64EnOctets(clePublique)
       });
     }).then(function (ab) {
+      abonnement = ab;
       var brut = ab.toJSON();
       return global.DB.enregistrerAbonnementPush({
         endpoint: brut.endpoint,
         cle_p256dh: brut.keys.p256dh,
         cle_auth: brut.keys.auth
       });
+    }).then(function (ligne) {
+      return global.DB.enregistrerPreferenceRappel({ actif: true })
+        .catch(function () { return null; })
+        .then(function () { return ligne; });
+    }).catch(function (e) {
+      if (abonnement && typeof abonnement.unsubscribe === 'function') {
+        return Promise.resolve(abonnement.unsubscribe()).catch(function () { return null; })
+          .then(function () { throw e; });
+      }
+      throw e;
     });
   }
 

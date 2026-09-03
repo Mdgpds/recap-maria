@@ -338,6 +338,16 @@
   font-size: 11px; color: var(--bg2); transition: background .15s, border-color .15s;
 }
 .ch.on .rd { background: var(--ac); border-color: var(--ac); }
+/* LOT 32 §9 — le contenu d'un choix : titre et sous-texte (comme la
+   maquette : `.gro` > `.nm` + `.dt`). */
+.ch .gro { flex: 1; min-width: 0; }
+.ch .nm { display: block; font-weight: 600; font-size: 15px; line-height: 1.3; }
+.ch .dt { display: block; font-size: 13px; color: var(--ink3); margin-top: 2px; line-height: 1.4; }
+/* Les réglages des rappels, INACTIFS tant que rien n'est autorisé : visibles,
+   estompés, et aucun contrôle ne répond (les boutons sont `disabled`). */
+.reglages-rappel.inactifs { opacity: .55; }
+.reglages-rappel .fld .stp { margin-left: auto; }
+.reglages-rappel .seg { margin-bottom: 12px; }
 
 /* `choice` EST le choix cochable du 2A, sous son nom d'origine.
 

@@ -93,6 +93,8 @@ var telephone = {
   permission: 'granted',        // 'granted' | 'denied'
   supporte: true,
   abonnementCasse: false,
+  etatPermission: 'default',    // ce que Notification.permission rend
+  abonne: false,                // l'abonnement que le navigateur détient
   demandes: 0
 };
 
@@ -103,10 +105,22 @@ function installerTelephone() {
     return;
   }
   dom.window.Notification = {
+    get permission() { return telephone.etatPermission || 'default'; },
     requestPermission: function () {
       telephone.demandes++;
+      if (telephone.permission === 'granted') telephone.etatPermission = 'granted';
+      else telephone.etatPermission = 'denied';
       return Promise.resolve(telephone.permission);
     }
+  };
+  var ABONNEMENT = {
+    toJSON: function () {
+      return {
+        endpoint: 'https://push.exemple.test/abonnement-fictif',
+        keys: { p256dh: 'CLE-P256DH-FICTIVE', auth: 'CLE-AUTH-FICTIVE' }
+      };
+    },
+    unsubscribe: function () { telephone.abonne = false; return Promise.resolve(true); }
   };
   Object.defineProperty(dom.window.navigator, 'serviceWorker', {
     configurable: true,
@@ -118,18 +132,17 @@ function installerTelephone() {
         addEventListener: function () {},
         ready: Promise.resolve({
           pushManager: {
+            /* LOT 32 §9 — l'écran lit l'abonnement que le navigateur détient
+               ENCORE : c'est ce qui distingue « actif » de « à autoriser ». */
+            getSubscription: function () {
+              return Promise.resolve(telephone.abonne ? ABONNEMENT : null);
+            },
             subscribe: function () {
               if (telephone.abonnementCasse) {
                 return Promise.reject(new Error('Failed to fetch'));
               }
-              return Promise.resolve({
-                toJSON: function () {
-                  return {
-                    endpoint: 'https://push.exemple.test/abonnement-fictif',
-                    keys: { p256dh: 'CLE-P256DH-FICTIVE', auth: 'CLE-AUTH-FICTIVE' }
-                  };
-                }
-              });
+              telephone.abonne = true;
+              return Promise.resolve(ABONNEMENT);
             }
           }
         })
@@ -280,18 +293,32 @@ var DB = {
   },
   enregistrerPreferenceRappel: function (champs) {
     appels.preference.push(champs);
+    var avant = scene.preference || { actif: false, jour_du_mois: 25, heure: '19:00',
+      chaque_jour_ensuite: true, quoi: 'les_deux' };
     scene.preference = {
-      owner: 'u1', actif: champs.actif, jour_du_mois: champs.jour_du_mois,
-      heure: champs.heure, chaque_jour_ensuite: champs.chaque_jour_ensuite,
+      owner: 'u1',
+      actif: champs.actif !== undefined ? champs.actif : avant.actif,
+      jour_du_mois: champs.jour_du_mois !== undefined ? champs.jour_du_mois : avant.jour_du_mois,
+      heure: champs.heure !== undefined ? champs.heure : avant.heure,
+      chaque_jour_ensuite: champs.chaque_jour_ensuite !== undefined ? champs.chaque_jour_ensuite : avant.chaque_jour_ensuite,
+      quoi: champs.quoi !== undefined ? champs.quoi : avant.quoi,
       maj_le: '2026-07-28T19:00:00Z'
     };
     return Promise.resolve(scene.preference);
   },
   enregistrerAbonnementPush: function (ab) {
     appels.abonnement.push(ab);
+    scene.abonnements = scene.abonnements || [];
+    if (scene.abonnements.indexOf(ab.endpoint) === -1) scene.abonnements.push(ab.endpoint);
     return Promise.resolve({ id: 'ab1', endpoint: ab.endpoint, cree_le: '2026-07-28T19:00:00Z' });
   },
-  supprimerAbonnementPush: function () { return Promise.resolve(true); }
+  abonnementPushExiste: function (endpoint) {
+    return Promise.resolve((scene.abonnements || []).indexOf(endpoint) !== -1);
+  },
+  supprimerAbonnementPush: function (endpoint) {
+    scene.abonnements = (scene.abonnements || []).filter(function (e) { return e !== endpoint; });
+    return Promise.resolve(true);
+  }
 };
 global.DB = DB; window.DB = DB;
 
@@ -326,19 +353,15 @@ function pastille() {
 function boutonAccueil() {
   return tabbar.querySelector('button[data-onglet="accueil"]');
 }
-function caseActif() {
-  var l = parTexte(corps, '.coche-ligne', 'Recevoir un rappel');
-  return l ? l.querySelector('input[type="checkbox"]') : null;
-}
-function caseChaque() {
-  var l = parTexte(corps, '.coche-ligne', 'chaque jour tant qu’un mois');
-  return l ? l.querySelector('input[type="checkbox"]') : null;
-}
-function cocher(box, valeur) {
-  box.checked = valeur;
-  var ev = document.createEvent('Event');
-  ev.initEvent('change', true, true);
-  box.dispatchEvent(ev);
+function etatW() { return corps.querySelector('.cd .enc.w'); }
+function etatI() { return corps.querySelector('.cd .enc.i'); }
+function etatO() { return corps.querySelector('.cd .enc.o'); }
+function reglagesInactifs() {
+  var r = corps.querySelector('.reglages-rappel');
+  if (!r) return false;
+  var boutons = r.querySelectorAll('button');
+  return r.classList.contains('inactifs') && boutons.length > 0 &&
+    Array.prototype.every.call(boutons, function (b) { return b.disabled; });
 }
 
 /* ==========================================================================
@@ -353,11 +376,15 @@ function extraire(regex, quoi) {
   return m[1];
 }
 
-/* Le texte du rappel, tel que le serveur le construit. */
-var exprTexte = extraire(
-  /const corps = ([\s\S]*?);\n/, 'l’expression du texte de rappel');
-var texteServeur = exprTexte
-  ? new Function('nb', 'return ' + exprTexte + ';')
+/* Le texte du rappel, tel que le serveur le construit : la fonction est
+   EXTRAITE entre ses deux repères et exécutée telle quelle. */
+var blocTexte = extraire(
+  /\/\* TEXTE-RAPPEL-DEBUT \*\/([\s\S]*?)\/\* TEXTE-RAPPEL-FIN \*\//, 'la fonction du texte de rappel');
+/* Les annotations TypeScript sont retirées par Node lui-même (Node ≥ 22.13),
+   sans réécrire le code : ce qui s'exécute est le bloc du serveur. */
+var sansTypes = require('node:module').stripTypeScriptTypes;
+var texteServeur = blocTexte
+  ? new Function('info', sansTypes(blocTexte) + '\nreturn texteDuRappel(info);')
   : function () { return ''; };
 
 /* La règle d'envoi, EXTRAITE du fichier serveur puis exécutée. Elle a changé
@@ -429,28 +456,45 @@ var moisPrecedent = corpsMoisPrecedent
   scene.recaps = {};
 
   /* ==================================================================== */
-  /* P1 — Activation acceptée                                             */
+  /* LOT 32 §9 — TROIS ÉTATS, UN SEUL AFFICHÉ                              */
+  /*                                                                     */
+  /* L'écran des rappels a été refait au lot 32 : plus de case à cocher   */
+  /* « Recevoir un rappel », mais trois états — non configuré (clé vide), */
+  /* configuré non autorisé (bouton « Autoriser les rappels »), actif —   */
+  /* et des réglages en composants du socle (stepper, segmenté, choix).   */
+  /* CHAQUE EXIGENCE DU LOT 15 EST CONSERVÉE, sous sa nouvelle forme : la  */
+  /* permission demandée AU GESTE, l'abonnement écrit avec ses deux clés, */
+  /* le refus dit en français, l'échec d'abonnement qui ne laisse jamais  */
+  /* croire qu'un rappel viendra, la préférence enregistrée, le filet.    */
   /* ==================================================================== */
-  console.log('\n--- P1 : activation acceptée ---');
+
+  /* --- P1 : activation acceptée --------------------------------------- */
+  console.log('\n--- P1 : activation acceptée (au geste, jamais au chargement) ---');
   telephone.permission = 'granted';
+  telephone.etatPermission = 'default';
+  telephone.abonne = false;
   telephone.demandes = 0;
+  scene.abonnements = [];
   await ouvrir('rappels');
 
   assert(txt(corps).indexOf('Me rappeler de clôturer mes mois') !== -1,
     'P1 : l’écran existe et se nomme en français');
-  var box = caseActif();
-  assert(!!box && box.checked === false,
-    'P1 : les rappels sont ÉTEINTS par défaut — on ne s’invite pas sur le ' +
-    'téléphone de quelqu’un sans qu’il le demande');
+  assert(telephone.demandes === 0,
+    'P1 (§9.2) : AUCUNE permission demandée au chargement — on ne s’invite pas ' +
+    'sur le téléphone de quelqu’un sans qu’il le demande');
+  assert(!!etatI() && txt(etatI()).indexOf('il reste à les autoriser') !== -1,
+    '§9.1 : clé présente, permission non donnée — l’écran est en « configuré, ' +
+    'non autorisé », en `.enc.i`');
+  assert(!etatO() && !etatW(), '§9.1 : et dans aucun autre état');
+  var bAut = boutonQuiContient(corps, 'Autoriser les rappels');
+  assert(!!bAut, '§9.1 : avec le bouton « Autoriser les rappels »');
+  assert(reglagesInactifs(), '§9.1 : les réglages sont visibles mais INACTIFS tant que rien n’est autorisé');
 
   /* A5 — le filet est dit AVANT même d'avoir activé quoi que ce soit. */
-  var filet = parTexte(corps, '.note', 'Dans tous les cas, une pastille');
+  var filet = parTexte(corps, '.enc', 'Dans tous les cas, une pastille');
   assert(!!filet, 'A5 : l’écran dit que la pastille existe quoi qu’il arrive');
   assert(txt(filet).indexOf('ni autorisation du téléphone, ni service extérieur') !== -1,
     'A5 : et qu’elle ne dépend d’aucune permission ni d’aucun service');
-  /* CORRECTIF A4 — l'écran promettait « sans réseau », ce que la pastille ne
-     tient pas : elle vient des mois lus au chargement, et disparaît si tout
-     échoue. Le choix est bon ; la promesse était fausse. */
   assert(txt(filet).indexOf('sans réseau au démarrage') === -1 &&
          txt(filet).indexOf('Sans réseau au démarrage') !== -1,
     'A4 : et l’écran DIT ce qui se passe sans réseau, au lieu de promettre ' +
@@ -460,24 +504,46 @@ var moisPrecedent = corpsMoisPrecedent
   var apercu = corps.querySelector('.apercu-rappel');
   assert(!!apercu, 'A1 : un aperçu du message est affiché');
   assert(txt(apercu).indexOf('Récap') !== -1 &&
-         txt(apercu).indexOf('Il vous reste 2 mois à clôturer.') !== -1,
-    'A1 : et c’est le vrai message, pas une description de message');
+         txt(apercu).indexOf('Août est terminé. Il reste 1 journée à déclarer avant de clôturer.') !== -1 &&
+         txt(apercu).indexOf('Vous n’avez pas encore clôturé le mois de juillet.') !== -1,
+    'A1 : et c’est le vrai message (§9.4), pas une description de message');
+  assert(!/Léa|Tom|Foyer/.test(txt(apercu)),
+    '§9.4 : aucun prénom d’enfant ni nom de famille dans le rappel — il s’affiche ' +
+    'sur un écran verrouillé');
 
-  cocher(box, true);
-  await pause(250);
-  assert(telephone.demandes === 1, 'P1 : la permission est demandée à la coche, pas avant');
+  bAut.click();
+  await pause(300);
+  assert(telephone.demandes === 1, 'P1 : la permission est demandée AU GESTE, pas avant');
   assert(appels.abonnement.length === 1, 'P1 : l’appareil s’abonne');
   assert(appels.abonnement[0].endpoint.indexOf('push.exemple.test') !== -1,
     'P1 : avec son adresse d’envoi');
   assert(appels.abonnement[0].cle_p256dh === 'CLE-P256DH-FICTIVE' &&
          appels.abonnement[0].cle_auth === 'CLE-AUTH-FICTIVE',
     'P1 : et ses deux clés');
-  assert(box.checked === true, 'P1 : la case reste cochée');
+  await pause(300);
+  assert(!!etatO() && txt(etatO()).indexOf('Les rappels sont actifs sur cet appareil') !== -1,
+    '§9.1 : clé + permission + abonnement enregistré — l’écran passe en « actif », en `.enc.o`');
+  assert(!boutonQuiContient(corps, 'Autoriser les rappels'), '§9.1 : le bouton d’autorisation a disparu');
+  assert(!reglagesInactifs(), '§9.1 : les réglages deviennent actifs');
+  assert(appels.preference.length >= 1 && appels.preference[appels.preference.length - 1].actif === true,
+    'P1 : l’abonnement enregistre la préférence « actif »');
 
-  var reglages = caseChaque();
-  assert(!!reglages && reglages.offsetParent !== null || !!reglages,
-    'P1 : les réglages fins apparaissent une fois la case cochée');
+  /* Les réglages : jour (stepper, 20-31), heure (stepper), répétition
+     (segmenté), quoi rappeler (choix cochables — jamais une liste déroulante). */
+  assert(corps.querySelectorAll('.reglages-rappel select').length === 0,
+    '§9.3 : aucune liste déroulante dans les réglages');
+  assert(corps.querySelectorAll('.reglages-rappel .ch').length === 3,
+    '§9.3 : trois choix cochables pour « quoi rappeler »');
+  var chJournees = parTexte(corps, '.ch', 'Les journées non déclarées');
+  chJournees.click();
+  await pause(100);
+  assert(chJournees.classList.contains('on') && corps.querySelectorAll('.ch.on').length === 1,
+    '§9.3 : un seul choix coché à la fois');
+  assert(txt(corps.querySelector('.apercu-rappel')).indexOf('Vous n’avez pas encore clôturé') === -1,
+    '§9.4 : l’aperçu suit le choix — « journées » seul ne parle plus de clôture');
+  parTexte(corps, '.ch', 'Les deux').click();
 
+  appels.preference.length = 0;
   boutonQuiContient(corps, 'Enregistrer').click();
   await pause(250);
   assert(appels.preference.length === 1, 'P1 : les réglages partent');
@@ -487,26 +553,34 @@ var moisPrecedent = corpsMoisPrecedent
   assert(appels.preference[0].heure === '19:00', 'P1 : à 19 h par défaut');
   assert(appels.preference[0].chaque_jour_ensuite === true,
     'P1 : puis chaque jour, par défaut');
+  assert(appels.preference[0].quoi === 'les_deux', '§9.3 : et « les deux » par défaut');
   assert(txt(corps).indexOf('Réglages enregistrés') !== -1, 'P1 : et c’est confirmé');
 
-  /* ==================================================================== */
-  /* P2 — Activation REFUSÉE par le téléphone                             */
-  /* A2 — dit en français, sans terme technique, et la case se décoche    */
-  /* ==================================================================== */
+  /* Un abonnement devenu invalide — le navigateur l'a révoqué — n'est plus
+     « actif » : l'écran repasse en « configuré, non autorisé ». */
+  telephone.abonne = false;
+  await ouvrir('rappels');
+  assert(!!etatI() && !!boutonQuiContient(corps, 'Autoriser les rappels'),
+    '§9.2 : l’abonnement révoqué par le navigateur, l’écran repasse en « configuré, non autorisé »');
+  /* Et un abonnement que la base ne connaît pas non plus. */
+  telephone.abonne = true;
+  scene.abonnements = [];
+  await ouvrir('rappels');
+  assert(!!etatI(), '§9.1 : un abonnement absent de la base n’est pas « actif » — le serveur ne l’enverrait à personne');
+
+  /* --- P2 : le téléphone refuse ------------------------------------- */
   console.log('\n--- P2 : le téléphone refuse ---');
   scene.preference = null;
   appels.abonnement.length = 0;
   telephone.permission = 'denied';
+  telephone.etatPermission = 'default';
+  telephone.abonne = false;
   await ouvrir('rappels');
-
-  var box2 = caseActif();
-  cocher(box2, true);
+  boutonQuiContient(corps, 'Autoriser les rappels').click();
   await pause(250);
 
   assert(appels.abonnement.length === 0, 'P2 : aucun abonnement n’est créé');
-  assert(box2.checked === false,
-    'A2 (risque n° 1) : LA CASE SE DÉCOCHE — le pire serait de la laisser ' +
-    'cochée : Maria croirait qu’un rappel viendra, et il ne viendrait jamais');
+  assert(!etatO(), 'A2 (risque n° 1) : l’écran ne passe PAS en « actif » — Maria ne doit pas croire qu’un rappel viendra');
   var ko = corps.querySelector('.msg.ko');
   assert(!!ko, 'A2 : et c’est dit');
   assert(txt(ko).indexOf('bloquées sur ce téléphone') !== -1,
@@ -520,62 +594,44 @@ var moisPrecedent = corpsMoisPrecedent
   var vraieNotif = dom.window.Notification;
   delete dom.window.Notification;
   await ouvrir('rappels');
-  var box3 = caseActif();
-  cocher(box3, true);
-  await pause(200);
-  assert(box3.checked === false, 'P2 : sans notifications du tout, la case se décoche aussi');
-  assert(txt(corps.querySelector('.msg.ko')).indexOf('ne sait pas afficher de notifications') !== -1,
-    'P2 : et l’explication tient en une phrase');
+  assert(!!etatI() && txt(etatI()).indexOf('ne sait pas afficher de notifications') !== -1,
+    'P2 : sans notifications du tout, l’écran le dit en une phrase');
+  var bSans = boutonQuiContient(corps, 'Autoriser les rappels');
+  assert(!!bSans && bSans.disabled, 'P2 : et le bouton ne propose pas une action impossible');
   dom.window.Notification = vraieNotif;
   telephone.permission = 'granted';
 
   /* L'abonnement qui échoue alors que la permission est donnée. */
   telephone.abonnementCasse = true;
+  telephone.etatPermission = 'default';
   await ouvrir('rappels');
-  var boxEchec = caseActif();
-  cocher(boxEchec, true);
-  await pause(250);
+  boutonQuiContient(corps, 'Autoriser les rappels').click();
+  await pause(300);
   assert(txt(corps.querySelector('.msg.ko')).indexOf('la pastille de l’onglet Accueil prend le relais') !== -1,
     'B.0-9 : l’échec d’abonnement est dit, et ce qui reste vrai aussi');
-  /* CORRECTIF B8 — LE CONTRÔLE QUI MANQUAIT ET QUI COMPTE LE PLUS.
-     La permission est ACCORDÉE, l'abonnement échoue : la case restait cochée,
-     l'écran affichait ensuite « Réglages enregistrés » en vert, et aucun rappel
-     n'arrivait jamais. C'était le chemin nominal tant que la clé VAPID n'est
-     pas posée. */
-  assert(boxEchec.checked === false,
-    'B8 : la case se DÉCOCHE aussi quand la permission est accordée mais que ' +
-    'l’abonnement échoue — sinon Maria croit qu’un rappel viendra');
+  assert(!etatO() && !!boutonQuiContient(corps, 'Autoriser les rappels'),
+    'B8 : la permission accordée mais l’abonnement raté, l’écran reste en « non autorisé » — ' +
+    'sinon Maria croit qu’un rappel viendra');
   assert(txt(corps.querySelector('.msg.ko')).indexOf('restent éteints') !== -1,
     'B8 : et l’écran dit que les rappels sont éteints, au lieu de le taire');
   telephone.abonnementCasse = false;
 
-  /* B8 (suite) — la clé VAPID absente est le cas RÉEL d'aujourd'hui. */
+  /* --- LOT 31 §7 / LOT 32 §9.1 : la clé VIDE, le cas RÉEL d'aujourd'hui --- */
+  console.log('\n--- clé vide : ne rien promettre qu’on ne tient pas ---');
   var vraieCle = dom.window.RECAP_MARIA_CONFIG.VAPID_PUBLIC_KEY;
   dom.window.RECAP_MARIA_CONFIG.VAPID_PUBLIC_KEY = '';
+  telephone.demandes = 0;
+  appels.abonnement.length = 0;
   await ouvrir('rappels');
-  var boxSansCle = caseActif();
-  cocher(boxSansCle, true);
-  await pause(250);
-  var koCle = corps.querySelector('.msg.ko');
-  assert(!!koCle && txt(koCle).indexOf('pas encore configurées') !== -1,
-    'B8 : sans clé VAPID, la phrase française atteint enfin l’écran — elle ' +
-    'tombait sur « une erreur inattendue s’est produite. Réessayez… »');
-  assert(!!koCle && txt(koCle).indexOf('Réessayez') === -1,
-    'B8 : et on n’invite plus à réessayer une action qui ne peut pas aboutir');
-  assert(boxSansCle.checked === false, 'B8 : la case reste décochée');
-
-  /* ==================================================================== */
-  /* LOT 31 §7 — L'ÉCRAN DIT LA VÉRITÉ TANT QUE LA CLÉ EST VIDE           */
-  /* ==================================================================== */
-  console.log('\n--- lot 31 §7 : ne rien promettre qu’on ne tient pas ---');
-
-  contient(corps, 'Les rappels ne sont pas encore activés',
-    '§7.1 : l’encart est en tête de l’écran, sans clé');
+  assert(!!etatW() && txt(etatW()).indexOf('Les rappels ne sont pas encore activés sur ce compte') !== -1,
+    '§9.1 : clé vide — « non configuré », en `.enc.w`, en tête de l’écran');
   contient(corps, 'elles seront utilisées dès que les notifications seront en service',
-    '§7.1 : et il dit que la préférence servira le jour venu');
-  assert(!!caseActif() && !caseActif().disabled,
-    '§7.1 : la case et les réglages RESTENT utilisables — la préférence ' +
-    's’enregistre dès maintenant');
+    '§7.1 (lot 31) : et il dit que la préférence servira le jour venu');
+  assert(reglagesInactifs(), '§9.1 : les réglages sont visibles mais INACTIFS — rien n’active rien quand la clé est vide');
+  assert(!boutonQuiContient(corps, 'Autoriser les rappels'),
+    '§9.1 : aucun bouton d’autorisation — on ne demande pas une permission qui ne servirait à rien');
+  assert(telephone.demandes === 0 && appels.abonnement.length === 0,
+    'B8 : ni permission demandée, ni abonnement tenté sans clé');
 
   /* Le sous-titre du Menu ne doit plus annoncer un rappel qui ne part pas. */
   scene.preference = { actif: true, jour_du_mois: 25, heure: '19:00',
@@ -623,7 +679,7 @@ var moisPrecedent = corpsMoisPrecedent
      valeurs par défaut, plutôt que de rester vide. */
   scene.preferenceCassee = true;
   await ouvrir('rappels');
-  assert(!!caseActif(), 'B.0-9 : réglages illisibles, l’écran s’affiche quand même');
+  assert(!!corps.querySelector('.reglages-rappel'), 'B.0-9 : réglages illisibles, l’écran s’affiche quand même');
   scene.preferenceCassee = false;
 
   /* ==================================================================== */
@@ -693,19 +749,35 @@ var moisPrecedent = corpsMoisPrecedent
     'B9 : le serveur connaît désormais la bascule du 25, comme l’accueil');
 
   /* ==================================================================== */
-  /* A3 — LE MÊME TEXTE DES DEUX CÔTÉS, caractère par caractère           */
+  /* A3 — LE MÊME TEXTE DES DEUX CÔTÉS, sur les mêmes entrées             */
   /* ==================================================================== */
   console.log('\n--- A3 : un seul texte, deux exécutions ---');
   assert(typeof window.UiMenu.texteDuRappel === 'function',
     'A3 : le texte de l’aperçu est exposé pour pouvoir être comparé');
-  [0, 1, 2, 3, 12].forEach(function (n) {
-    assert(window.UiMenu.texteDuRappel(n) === texteServeur(n),
-      'A3 : pour ' + n + ' mois, l’aperçu et le serveur disent EXACTEMENT la ' +
-      'même chose — « ' + window.UiMenu.texteDuRappel(n) + ' »');
+  var CAS_TEXTE = [
+    { quoi: 'cloture', moisNonClotures: ['juillet'] },
+    { quoi: 'cloture', moisNonClotures: ['août'] },
+    { quoi: 'cloture', moisNonClotures: ['juin', 'juillet', 'août'] },
+    { quoi: 'journees', moisTermine: 'août', journees: 1 },
+    { quoi: 'journees', moisTermine: 'octobre', journees: 3 },
+    { quoi: 'les_deux', moisTermine: 'août', journees: 2, moisNonClotures: ['juillet'] },
+    { quoi: 'les_deux', moisTermine: 'août', journees: 0, moisNonClotures: ['juillet'] },
+    { quoi: 'cloture', moisNonClotures: [] }
+  ];
+  CAS_TEXTE.forEach(function (cas) {
+    assert(window.UiMenu.texteDuRappel(cas) === texteServeur(cas),
+      'A3 : l’aperçu et le serveur disent EXACTEMENT la même chose — « ' +
+      window.UiMenu.texteDuRappel(cas) + ' »');
   });
-  assert(window.UiMenu.texteDuRappel(1).indexOf('1 mois') !== -1 &&
-         window.UiMenu.texteDuRappel(2).indexOf('2 mois') !== -1,
-    'A3 : le singulier et le pluriel sont traités');
+  assert(window.UiMenu.texteDuRappel(CAS_TEXTE[0]) === 'Vous n’avez pas encore clôturé le mois de juillet.' &&
+         window.UiMenu.texteDuRappel(CAS_TEXTE[3]) === 'Août est terminé. Il reste 1 journée à déclarer avant de clôturer.',
+    '§9.4 : ce sont les phrases de la spécification');
+  assert(window.UiMenu.texteDuRappel(CAS_TEXTE[1]).indexOf('d’août') !== -1 &&
+         window.UiMenu.texteDuRappel(CAS_TEXTE[4]).indexOf('3 journées') !== -1,
+    'A3 : l’élision et le pluriel sont traités');
+  assert(window.UiMenu.texteDuRappel(CAS_TEXTE[7]) === '',
+    'A1 : rien à dire, rien n’est dit — aucune notification vide');
+
 
   /* ==================================================================== */
   /* P6 — Un abonnement périmé est retiré                                 */
@@ -781,11 +853,12 @@ var moisPrecedent = corpsMoisPrecedent
 
   assert(typeof faux.handlers.push === 'function', 'A6 : le service worker écoute « push »');
   await faux.handlers.push({
-    data: { json: function () { return { titre: 'Récap', corps: texteServeur(3) }; } },
+    data: { json: function () { return { titre: 'Récap',
+      corps: texteServeur({ quoi: 'cloture', moisNonClotures: ['juillet'] }) }; } },
     waitUntil: function (p) { return p; }
   });
   assert(faux.affiche && faux.affiche.titre === 'Récap', 'A6 : le titre vient de la charge');
-  assert(faux.affiche.opts.body === 'Il vous reste 3 mois à clôturer.',
+  assert(faux.affiche.opts.body === 'Vous n’avez pas encore clôturé le mois de juillet.',
     'A6 : et le corps AUSSI — le texte n’est ni reconstruit ni traduit dans le ' +
     'service worker : deux formulations pour la même notification finiraient ' +
     'par diverger');

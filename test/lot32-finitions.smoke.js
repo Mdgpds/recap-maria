@@ -451,6 +451,38 @@ function aller(ecran, params) {
   window.Kit.fermerFeuille();
 
   /* ==================================================================== */
+  /* §9 — LES RAPPELS, CÔTÉ APPLICATION                                   */
+  /* ==================================================================== */
+  console.log('\n--- §9 : les rappels ---');
+  /* La configuration RÉELLE du dépôt : la clé publique est vide. */
+  egal(window.RECAP_MARIA_CONFIG.VAPID_PUBLIC_KEY, '', '§9 : config.js livre une clé publique VIDE');
+  var demandes = 0;
+  window.Notification = { permission: 'default', requestPermission: function () { demandes++; return Promise.resolve('granted'); } };
+  await aller('rappels', {});
+  await pause(500);
+  barreSlim('Me rappeler de clôturer');
+  aucunHerite(corps, 'les rappels');
+  var encW = corps.querySelector('.cd .enc.w');
+  assert(!!encW && txt(encW).indexOf('Les rappels ne sont pas encore activés sur ce compte.') !== -1,
+    '§9.1 : clé vide — état « non configuré », `.enc.w` avec la phrase de la spécification');
+  egal(corps.querySelectorAll('.cd .enc.i, .cd .enc.o').length, 0, '§9.1 : aucun autre état affiché en même temps');
+  var reg = corps.querySelector('.reglages-rappel');
+  assert(!!reg && reg.classList.contains('inactifs') &&
+    Array.prototype.every.call(reg.querySelectorAll('button'), function (b) { return b.disabled; }),
+    '§9.1 : les réglages sont visibles mais INACTIFS — rien ne s’active quand la clé est vide');
+  egal(boutonExact(corps, 'Autoriser les rappels'), null, '§9.1 : et aucun bouton d’autorisation');
+  egal(demandes, 0, '§9.2 : aucune permission demandée au chargement');
+  egal(corps.querySelectorAll('.reglages-rappel select').length, 0, '§9.3 : jamais une liste déroulante');
+  egal(corps.querySelectorAll('.reglages-rappel .ch').length, 3, '§9.3 : « quoi rappeler » en trois choix cochables');
+  assert(!!corps.querySelector('.reglages-rappel .seg'), '§9.3 : la répétition en segmenté');
+  var ap = txt(corps.querySelector('.apercu-rappel'));
+  assert(ap.indexOf('Août est terminé') !== -1 && !/Alouette|Aigrette|Aubépine/.test(ap),
+    '§9.4 : l’aperçu ne nomme ni enfant ni famille');
+  var MENU = fs.readFileSync(path.join(racine, 'js', 'ui-menu.js'), 'utf8');
+  assert(!/VAPID_PRIVATE|RAPPELS_SECRET/.test(MENU), '§9.2 : aucune clé privée ni secret côté navigateur');
+  delete window.Notification;
+
+  /* ==================================================================== */
   console.log('\n' + (echecs ? echecs + ' échec(s)' : 'lot 32 : tout est vert'));
   process.exit(echecs ? 1 : 0);
 }());

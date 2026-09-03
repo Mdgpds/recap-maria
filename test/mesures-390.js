@@ -73,6 +73,7 @@ const ECRANS = [
     if (b) b.click(); return !!b;
   } }],
   ['familiarisation', { contratId: 'c2' }],
+  ['rappels', {}],
   ['conges', {}, { feuille: 'pose', ouvrir: () => {
     const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
     if (b) b.click(); return !!b;
