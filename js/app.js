@@ -283,6 +283,7 @@
     el.tabbar.hidden = true;
     Kit.vider(el.barre);
     el.barre.className = 'bar';
+    el.barre.removeAttribute('style'); /* LOT 32 §1 — même retrait qu'en rendre() */
     el.barre.appendChild(Kit.ce('span', 'ti', 'Récap'));
     Kit.vider(el.corps);
     el.corps.appendChild(Kit.ce('div', 'attente', texte));
@@ -476,6 +477,11 @@
     Kit.vider(el.barre);
     Kit.vider(el.corps);
     el.barre.className = 'bar';
+    /* LOT 32 §1 — Un écran peut teindre l'en-tête (l'espace enfant le fait,
+       §4.1 du redesign). Un style EN LIGNE l'emporte sur la feuille de style :
+       sans ce retrait, la couleur du dernier enfant ouvert survit à tous les
+       écrans suivants. `className = 'bar'` ne remet pas les styles à zéro. */
+    el.barre.removeAttribute('style');
     el.barre.hidden = false;
     el.corps.scrollTop = 0;
     var parent = ONGLET_PARENT[ecran] || null;
@@ -518,6 +524,7 @@
     opts = opts || {};
     Kit.vider(barre);
     barre.className = 'bar';
+    barre.removeAttribute('style'); /* LOT 32 §1 — la teinte d'un enfant ne survit pas à la barre suivante */
     var bk = Kit.bouton('bk', function () { retour(); });
     bk.textContent = opts.fermer ? '✕' : '‹';
     bk.setAttribute('aria-label', opts.fermer ? 'Fermer' : 'Retour');

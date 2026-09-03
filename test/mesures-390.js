@@ -159,8 +159,70 @@ const ECRANS = [
     if (process.env.CAPTURES) await page.screenshot({ path: path.join(process.env.CAPTURES,
       '390-' + ecran + (extra ? '-feuille-' + extra.feuille : '') + '.png') });
   }
+  /* ------------------------------------------------------------------
+     LOT 32 — LES CONTRÔLES DE VALEUR CALCULÉE.
+
+     Quatre défauts de la même forme en deux jours : « ce que la feuille de
+     style fait vraiment, que personne ne regardait », chaque fois invisibles
+     à jsdom. Chaque contrôle ci-dessous lit la VALEUR CALCULÉE dans le vrai
+     navigateur et compte un défaut par échec. Un contrôle qui ne sait pas
+     échouer ne teste rien : chacun a été vu rouge contre le code d'avant.
+     ------------------------------------------------------------------ */
+  let defauts = 0;
+  const controle = (nom, ok, detail) => {
+    console.log((ok ? 'ok   ' : 'KO   ') + nom + (detail ? ' — ' + detail : ''));
+    if (!ok) defauts++;
+  };
+  const aller = async (ecran, params) => {
+    await page.evaluate(() => { if (window.Kit && window.Kit.fermerFeuille) window.Kit.fermerFeuille(); });
+    await page.evaluate(([e, p]) => window.App.aller(e, p, true), [ecran, params || {}]);
+    await page.waitForTimeout(600);
+  };
+  const fondBarre = () => page.evaluate(() => {
+    const b = document.getElementById('barre') || document.querySelector('#vue-app .bar, #vue-app .top');
+    const c = getComputedStyle(b);
+    return c.backgroundImage + ' | ' + c.backgroundColor;
+  });
+
+  console.log('\n=== §1 — l’en-tête reprend sa couleur en quittant un enfant ===');
+  /* Le vert de référence se lit sur un élément NEUF portant la même classe
+     que l'en-tête de l'accueil, jamais sur l'en-tête lui-même : le parcours
+     précédent a déjà ouvert un enfant, et c'est précisément lui qui pouvait
+     laisser sa teinte. Sans cette précaution, le « vert » relevé serait la
+     couleur de l'enfant, et le contrôle se validerait lui-même. */
+  await aller('accueil');
+  const vert = await page.evaluate(() => {
+    const b = document.getElementById('barre');
+    const t = document.createElement('header'); t.className = b.className;
+    b.parentNode.insertBefore(t, b);
+    const c = getComputedStyle(t); const v = c.backgroundImage + ' | ' + c.backgroundColor;
+    t.remove(); return v;
+  });
+  const accueil = await fondBarre();
+  controle('§1 l’accueil, après un enfant déjà ouvert, porte le vert de la feuille de style', accueil === vert, accueil.slice(0, 60));
+  await aller('enfant', { contratId: 'c1', annee: 2026, mois: 8 });
+  const teinte = await fondBarre();
+  controle('§1 l’espace enfant teinte l’en-tête (valeur calculée ≠ vert)', teinte !== vert, teinte.slice(0, 60));
+  /* retour par la flèche */
+  await page.evaluate(() => { const bk = document.querySelector('#barre .back, #barre .bk'); if (bk) bk.click(); });
+  await page.waitForTimeout(600);
+  const apresFleche = await fondBarre();
+  controle('§1 retour par la flèche : le vert à l’identique', apresFleche === vert, apresFleche.slice(0, 60));
+  /* retour par chaque onglet */
+  for (const onglet of ['conges', 'docs', 'menu', 'accueil']) {
+    await aller('enfant', { contratId: 'c1', annee: 2026, mois: 8 });
+    await page.evaluate((o) => {
+      const b = document.querySelector('#tabbar button[data-onglet="' + o + '"]');
+      if (b) b.click(); else window.App.aller(o, {}, true);
+    }, onglet);
+    await page.waitForTimeout(600);
+    const apres = await fondBarre();
+    controle('§1 retour par l’onglet ' + onglet + ' : le vert à l’identique', apres === vert, apres.slice(0, 60));
+  }
+
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
-    ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles);
+    ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles +
+    ', contrôles en défaut ' + defauts);
   await nav.close(); serveur.close();
-  if (total.deb + total.rog + total.pet + total.feuilles > 0) process.exit(1);
+  if (total.deb + total.rog + total.pet + total.feuilles + defauts > 0) process.exit(1);
 })();
