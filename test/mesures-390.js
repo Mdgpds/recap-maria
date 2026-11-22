@@ -74,6 +74,8 @@ const ECRANS = [
   } }],
   ['familiarisation', { contratId: 'c2' }],
   ['rappels', {}],
+  /* LOT 33 §1.4 — l'écran de diagnostic de l'affichage. */
+  ['affichage', {}],
   ['conges', {}, { feuille: 'pose', ouvrir: () => {
     const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
     if (b) b.click(); return !!b;
@@ -349,6 +351,133 @@ const ECRANS = [
   }
   await page.setViewportSize({ width: 390, height: 780 });
   await page.evaluate(() => { document.getElementById('vue-login').hidden = true; document.getElementById('vue-app').hidden = false; });
+
+  /* ------------------------------------------------------------------
+     LOT 33 §1.5 — « TOUTES LES TAILLES D'IPHONE ».
+
+     Les écrans racine aux sept tailles d'iPhone en service. À chacune :
+     aucun débordement, aucun contrôle rogné, aucune zone tactile sous
+     44 px, le bas de la barre d'onglets au bas de la fenêtre à 1 px près,
+     l'en-tête qui part de 0. Une ligne par taille et par écran.
+     ------------------------------------------------------------------ */
+  const TAILLES = [
+    ['iPhone SE (1re génération)', 320, 568],
+    ['iPhone SE (2e et 3e)', 375, 667],
+    ['iPhone 12 à 14', 390, 844],
+    ['iPhone 14 Pro, 15, 16', 393, 852],
+    ['iPhone 16 Pro', 402, 874],
+    ['iPhone Pro Max', 430, 932],
+    ['iPhone 16 Pro Max', 440, 956]
+  ];
+  const RACINES = [
+    ['accueil', {}], ['enfant', { contratId: 'c1', annee: 2026, mois: 8 }],
+    ['conges', {}], ['docs', {}], ['menu', {}]
+  ];
+  const mesurerTaille = (L) => page.evaluate((L) => {
+    const out = { deb: [], rog: [], pet: [] };
+    document.querySelectorAll('#vue-app *').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      if (b.right > L + 0.5 || b.left < -0.5) out.deb.push((el.tagName + '.' + (el.className || '')).slice(0, 50));
+      if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX === 'hidden') {
+        out.rog.push((el.tagName + '.' + (el.className || '')).slice(0, 50));
+      }
+    });
+    document.querySelectorAll('#vue-app button, #vue-app a, #vue-app input, #vue-app select').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      let w = b.width, h = b.height;
+      const a = getComputedStyle(el, '::after');
+      if (a && a.content !== 'none' && a.position === 'absolute' && a.minHeight === '44px' && a.minWidth === '44px') {
+        w = Math.max(w, parseFloat(a.width) || 0); h = Math.max(h, parseFloat(a.height) || 0);
+      }
+      if (h < 44 || w < 44) out.pet.push((el.tagName + '.' + (el.className || '')).slice(0, 40) + ' ' + Math.round(w) + '×' + Math.round(h));
+    });
+    const tb = document.getElementById('tabbar');
+    const rb = tb && !tb.hidden ? tb.getBoundingClientRect() : null;
+    out.ongletsBas = rb ? rb.bottom : null;
+    out.fenetre = window.innerHeight;
+    out.enteteHaut = document.getElementById('barre').getBoundingClientRect().top;
+    out.defile = document.scrollingElement.scrollHeight > window.innerHeight + 1;
+    return out;
+  }, L);
+  console.log('\n=== LOT 33 §1.5 — les sept tailles d’iPhone ===');
+  const tableau = [];
+  for (const [nomT, L, H] of TAILLES) {
+    await page.setViewportSize({ width: L, height: H });
+    await page.waitForTimeout(250);
+    let lig = { taille: nomT + ' ' + L + '×' + H, deb: 0, rog: 0, pet: 0, bas: 'ok', entete: 'ok' };
+    for (const [ecran, params] of RACINES) {
+      await aller(ecran, params);
+      const r = await mesurerTaille(L);
+      const basOk = r.ongletsBas != null && Math.abs(r.ongletsBas - r.fenetre) <= 1;
+      const entOk = Math.abs(r.enteteHaut) <= 0.5;
+      controle(nomT + ' ' + L + '×' + H + ' · ' + ecran + ' : rien ne déborde, rien n’est rogné, rien sous 44 px',
+        r.deb.length + r.rog.length + r.pet.length === 0,
+        [].concat(r.deb, r.rog, r.pet).slice(0, 4).join(' ; '));
+      controle(nomT + ' ' + L + '×' + H + ' · ' + ecran + ' : la barre d’onglets touche le bas',
+        basOk, Math.round(r.ongletsBas) + ' / ' + r.fenetre);
+      controle(nomT + ' ' + L + '×' + H + ' · ' + ecran + ' : l’en-tête part de 0, la page ne défile pas',
+        entOk && !r.defile, 'haut ' + r.enteteHaut + (r.defile ? ', la page défile' : ''));
+      lig.deb += r.deb.length; lig.rog += r.rog.length; lig.pet += r.pet.length;
+      if (!basOk) lig.bas = 'KO'; if (!entOk) lig.entete = 'KO';
+    }
+    tableau.push(lig);
+  }
+  console.log('\n  Taille                                 débord. rognés <44px  bas   en-tête');
+  tableau.forEach(l => console.log('  ' + l.taille.padEnd(38) + String(l.deb).padStart(6) +
+    String(l.rog).padStart(7) + String(l.pet).padStart(6) + '  ' + l.bas.padEnd(5) + ' ' + l.entete));
+
+  /* LA MESURE MORD : on remet en place, sur une copie de l'état, le défaut
+     d'iOS — l'application qui s'arrête 59 pt avant le bas — et la mesure du
+     bas de la barre doit tomber. Si elle restait verte, elle ne mesurerait
+     rien. */
+  await page.setViewportSize({ width: 393, height: 852 });
+  await aller('accueil');
+  await page.addStyleTag({ content: '.appli{bottom:59px !important}', }).then(h => page.evaluate(e => e.id = 'mutation-ios', h));
+  const mut = await mesurerTaille(393);
+  controle('§1.5 la mesure mord : avec le défaut d’iOS remis (59 pt), le bas de la barre est vu faux',
+    !(mut.ongletsBas != null && Math.abs(mut.ongletsBas - mut.fenetre) <= 1), Math.round(mut.ongletsBas) + ' / ' + mut.fenetre);
+  /* le diagnostic, lui, doit annoncer « Il manque 59 points » */
+  await aller('affichage');
+  const vMut = await page.evaluate(() => (document.querySelector('[data-verdict]') || {}).textContent || '');
+  controle('§1.4 le diagnostic, défaut remis, dit « Il manque 59 points en bas »', /Il manque 59 points en bas/.test(vMut), vMut.slice(0, 60));
+  await page.evaluate(() => { const m = document.getElementById('mutation-ios'); if (m) m.remove(); });
+  await aller('affichage');
+  const vOk = await page.evaluate(() => (document.querySelector('[data-verdict]') || {}).textContent || '');
+  controle('§1.4 le diagnostic, sans défaut, dit « La barre d’onglets touche le bas de l’écran »', /touche le bas de l’écran/.test(vOk), vOk.slice(0, 60));
+  const lignesDiag = await page.evaluate(() => [...document.querySelectorAll('#corps .ln')].map(l => l.firstChild.textContent));
+  controle('§1.4 le diagnostic affiche ses douze mesures', ['Application installée', 'Hauteur de l’écran', 'Hauteur de la fenêtre',
+    'Hauteur visible', '100lvh', '100dvh', '100vh', 'Marge du haut', 'Marge du bas', 'Hauteur de l’application',
+    'Bas de l’application', 'Bas de la barre d’onglets'].every(x => lignesDiag.includes(x)), lignesDiag.length + ' lignes');
+
+  /* L'APPLICATION « INSTALLÉE » DANS CHROMIUM. On ne reproduit pas le défaut
+     d'iOS — aucun navigateur de bureau ne le fait — mais on vérifie que le
+     correctif ne casse rien là où la marge est nulle : la classe est posée,
+     la règle s'applique, le document ne grandit pas au-delà de la fenêtre et
+     la page ne se met pas à défiler. */
+  const pageI = await nav.newPage({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  await pageI.addInitScript(FAUX);
+  await pageI.addInitScript(() => { Object.defineProperty(navigator, 'standalone', { get: () => true }); });
+  await pageI.goto('http://localhost:8098/', { waitUntil: 'domcontentloaded' });
+  await pageI.waitForTimeout(1500);
+  const inst = await pageI.evaluate(() => {
+    const h = document.documentElement;
+    return { classe: h.classList.contains('installee'), minH: getComputedStyle(h).minHeight,
+      fenetre: window.innerHeight, docH: h.getBoundingClientRect().height,
+      defile: document.scrollingElement.scrollHeight > window.innerHeight + 1,
+      bas: document.getElementById('tabbar').getBoundingClientRect().bottom };
+  });
+  controle('§1.3 installée (navigator.standalone) : la classe `installee` est posée', inst.classe);
+  controle('§1.3 installée : la règle `min-height` s’applique (valeur calculée)', inst.minH !== '0px' && inst.minH !== 'auto', inst.minH);
+  controle('§1.3 installée, marge nulle : le document ne dépasse pas la fenêtre', Math.abs(inst.docH - inst.fenetre) <= 1, inst.docH + ' / ' + inst.fenetre);
+  controle('§1.3 installée : la page elle-même ne défile pas', !inst.defile);
+  controle('§1.3 installée : la barre d’onglets touche le bas', Math.abs(inst.bas - inst.fenetre) <= 1, inst.bas + ' / ' + inst.fenetre);
+  await pageI.close();
+  const nonInst = await page.evaluate(() => ({ classe: document.documentElement.classList.contains('installee'),
+    minH: getComputedStyle(document.documentElement).minHeight }));
+  controle('§1.3 non installée : pas de classe, `min-height` inchangé', !nonInst.classe && (nonInst.minH === '0px' || nonInst.minH === 'auto'), nonInst.minH);
+  await page.setViewportSize({ width: 390, height: 780 });
 
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
     ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles +

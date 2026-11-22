@@ -327,7 +327,7 @@
    fichier `js/` ou `css/`, on change VERSION — et rien d'autre. Le nom du
    cache et les dix-huit URLs en découlent. `test/cache-navigation.smoke.js`
    refuse la livraison si `index.html` et ce fichier ne portent pas la même. */
-var VERSION = 'lot32-finitions';
+var VERSION = 'lot33-1-hauteur-ios';
 
 var CACHE = 'recap-' + VERSION;
 

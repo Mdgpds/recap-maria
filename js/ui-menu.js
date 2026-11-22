@@ -29,6 +29,7 @@
     if (ctx.vue === 'reprise') return afficherReprise(ctx);
     if (ctx.vue === 'rappels') return afficherRappels(ctx);
     if (ctx.vue === 'compte') return afficherCompte(ctx);
+    if (ctx.vue === 'affichage') return afficherAffichage(ctx);
     if (ctx.vue === 'regles') return afficherRegles(ctx);
     return afficherMenu(ctx);
   }
@@ -1845,6 +1846,136 @@
     b.textContent = 'Enregistrer';
     corps.appendChild(b);
     corps.appendChild(msg);
+
+    /* LOT 33 §1.4 — une ligne discrète, en bas, pas une entrée de Menu. */
+    var diag = Kit.bouton('lien2', function () { global.App.aller('affichage', {}); });
+    diag.textContent = 'Affichage de cet appareil';
+    corps.appendChild(diag);
+  }
+
+  /* ================================================================== */
+  /* LOT 33 §1.4 — « AFFICHAGE DE CET APPAREIL »                        */
+  /*                                                                     */
+  /* Aucun navigateur d'ordinateur ne reproduit la bande vide du bas de  */
+  /* l'iPhone installé. Cet écran existe pour qu'UNE CAPTURE suffise à   */
+  /* trancher : il lit ce que le téléphone dit de lui-même et le pose en */
+  /* français simple. Aucune donnée personnelle — que des dimensions.    */
+  /* ================================================================== */
+
+  /* La hauteur réelle d'une unité CSS (100lvh, 100dvh, 100vh), lue sur un
+     élément témoin : c'est la valeur que le navigateur applique, pas celle
+     qu'on croit. Une unité inconnue du navigateur rend `null`. */
+  function hauteurUnite(unite) {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;visibility:hidden;';
+    d.style.height = '100' + unite;
+    if (!d.style.height) return null;
+    document.body.appendChild(d);
+    var h = d.getBoundingClientRect().height;
+    document.body.removeChild(d);
+    return h;
+  }
+
+  function margeSure(cote) {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;';
+    d.style.paddingTop = 'env(safe-area-inset-' + cote + ', 0px)';
+    document.body.appendChild(d);
+    var v = parseFloat(global.getComputedStyle(d).paddingTop) || 0;
+    document.body.removeChild(d);
+    return v;
+  }
+
+  function mesurerAffichage() {
+    var ecran = global.screen || {};
+    var appli = document.getElementById('vue-app');
+    var onglets = document.getElementById('tabbar');
+    var ra = appli ? appli.getBoundingClientRect() : null;
+    var ro = (onglets && !onglets.hidden) ? onglets.getBoundingClientRect() : null;
+    return {
+      installee: !!(global.App && global.App.estInstallee && global.App.estInstallee()),
+      ecranLargeur: ecran.width || 0,
+      ecranHauteur: ecran.height || 0,
+      fenetreLargeur: global.innerWidth || 0,
+      fenetreHauteur: global.innerHeight || 0,
+      visuelle: global.visualViewport ? global.visualViewport.height : null,
+      lvh: hauteurUnite('lvh'),
+      dvh: hauteurUnite('dvh'),
+      vh: hauteurUnite('vh'),
+      margeHaut: margeSure('top'),
+      margeBas: margeSure('bottom'),
+      appliHauteur: ra ? ra.height : null,
+      appliBas: ra ? ra.bottom : null,
+      ongletsBas: ro ? ro.bottom : null
+    };
+  }
+
+  /* LE VERDICT. Dans l'application installée, la référence est l'ÉCRAN (en
+     portrait sa grande dimension, en paysage sa petite) : c'est précisément
+     l'écart avec l'écran que le défaut d'iOS produit. Dans un navigateur, la
+     référence est la fenêtre — l'écran comprend les barres du navigateur, et
+     comparer à lui annoncerait un manque qui n'existe pas. */
+  function verdictAffichage(m) {
+    if (m.ongletsBas == null) return { touche: false, phrase: 'La barre d’onglets n’est pas affichée : mesure impossible.' };
+    var portrait = m.fenetreHauteur >= m.fenetreLargeur;
+    var grand = Math.max(m.ecranLargeur, m.ecranHauteur);
+    var petit = Math.min(m.ecranLargeur, m.ecranHauteur);
+    var reference = m.installee ? (portrait ? grand : petit) : m.fenetreHauteur;
+    var ecart = Math.round(reference - m.ongletsBas);
+    if (Math.abs(reference - m.ongletsBas) <= 1) {
+      return { touche: true, ecart: 0, reference: reference,
+        phrase: 'La barre d’onglets touche le bas de l’écran.' };
+    }
+    if (ecart > 0) {
+      return { touche: false, ecart: ecart, reference: reference,
+        phrase: 'Il manque ' + ecart + (ecart > 1 ? ' points' : ' point') + ' en bas.' };
+    }
+    return { touche: false, ecart: ecart, reference: reference,
+      phrase: 'La barre d’onglets dépasse le bas de l’écran de ' + (-ecart) +
+        (-ecart > 1 ? ' points.' : ' point.') };
+  }
+
+  function pts(v) {
+    if (v == null) return 'inconnu';
+    var r = Math.round(v * 10) / 10;
+    return String(r).replace('.', ',') + ' pt';
+  }
+
+  function afficherAffichage(ctx) {
+    global.App.barreSlim(ctx.barre, 'Affichage de cet appareil');
+    rendreAffichage(ctx.corps);
+  }
+
+  function rendreAffichage(corps) {
+    Kit.vider(corps);
+    var m = mesurerAffichage();
+    var v = verdictAffichage(m);
+    var verdict = Kit.enc(v.touche ? '' : 'w', v.phrase,
+      m.installee ? '' : ' Dans le navigateur, la référence est la fenêtre. Pour la vraie mesure, ' +
+        'ouvrez l’application depuis l’écran d’accueil.');
+    verdict.setAttribute('data-verdict', v.touche ? 'touche' : 'manque');
+    corps.appendChild(verdict);
+
+    var c = Kit.carte('Ce que dit cet appareil');
+    Kit.ligneLn(c, 'Application installée', m.installee ? 'oui' : 'non');
+    Kit.ligneLn(c, 'Hauteur de l’écran', pts(m.ecranHauteur));
+    Kit.ligneLn(c, 'Hauteur de la fenêtre', pts(m.fenetreHauteur));
+    Kit.ligneLn(c, 'Hauteur visible', pts(m.visuelle));
+    Kit.ligneLn(c, '100lvh', pts(m.lvh));
+    Kit.ligneLn(c, '100dvh', pts(m.dvh));
+    Kit.ligneLn(c, '100vh', pts(m.vh));
+    Kit.ligneLn(c, 'Marge du haut', pts(m.margeHaut));
+    Kit.ligneLn(c, 'Marge du bas', pts(m.margeBas));
+    Kit.ligneLn(c, 'Hauteur de l’application', pts(m.appliHauteur));
+    Kit.ligneLn(c, 'Bas de l’application', pts(m.appliBas));
+    Kit.ligneLn(c, 'Bas de la barre d’onglets', pts(m.ongletsBas));
+    corps.appendChild(c);
+
+    corps.appendChild(Kit.ce('p', 'sb q',
+      'Une capture de cet écran suffit pour vérifier l’affichage. Il ne contient aucune donnée personnelle.'));
+    var b = Kit.bouton('btn nt', function () { rendreAffichage(corps); });
+    b.textContent = 'Mesurer à nouveau';
+    corps.appendChild(b);
   }
 
   /* LOT 31 §7 — LA CLÉ PUBLIQUE VAPID, LUE EN UN SEUL ENDROIT.
@@ -2207,6 +2338,10 @@
 
   global.UiMenu = {
     afficher: afficher,
+    /* LOT 33 §1.4 — exposés pour les tests : le verdict se prouve sur des
+       mesures fournies, sans téléphone. */
+    verdictAffichage: verdictAffichage,
+    mesurerAffichage: mesurerAffichage,
     texteDuRappel: texteDuRappel,
     /* CORRECTIF B5 DE LA RELECTURE PR9 — la feuille de création était PRIVÉE.
        L'écran vide proposait « Ajouter mon premier enfant » et envoyait vers

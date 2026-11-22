@@ -1,7 +1,7 @@
 /* Faux client Supabase — décor FICTIF, pour mesurer la mise en page à 390 px
    dans un vrai navigateur. Aucune donnée réelle : deux prénoms de plantes. */
 (function () {
-  var AUJ = '2026-08-21';
+  var AUJ = window.__AUJ_MESURES__ || '2026-08-21';
   var FAMILLE = { id: 'f1', nom: 'Aubépine', canal: null, archive: false };
   var CONTRATS = [
     { id: 'c1', prenom_enfant: 'Alouette', nom: null, famille_id: 'f1', couleur: 'prune',

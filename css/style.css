@@ -649,6 +649,29 @@ html, body {
   touch-action: manipulation;
 }
 
+/* LOT 33 §1 — L'APPLICATION INSTALLÉE VA JUSQU'EN BAS DE L'ÉCRAN.
+
+   Sur iPhone, depuis iOS 26, une application posée sur l'écran d'accueil avec
+   `viewport-fit=cover` et la barre d'état `black-translucent` arrête ses
+   éléments `position: fixed` avant le bas de l'écran, exactement de la
+   hauteur de la barre d'état (59 pt sur un iPhone 14 Pro mesuré deux fois).
+   Défaut référencé chez WebKit sous le numéro 301108, « REGRESSION (iOS 26):
+   <meta name="viewport"> does not work correctly for viewport-fit=cover »,
+   ouvert et non résolu au 22 novembre 2026.
+
+   Le contournement rend le DOCUMENT au moins aussi haut que l'écran, et
+   seulement dans l'application installée (classe posée par js/app.js).
+   - aucune valeur propre à un modèle : la règle repose sur la marge réelle
+     de l'appareil, elle vaut pour tous les iPhone ;
+   - le `min()` borne à `100lvh` : là où la fenêtre est déjà pleine, ou la
+     marge nulle, le document ne grandit pas et la page ne défile pas ;
+   - la barre d'état reste translucide. Passer à `black` ne prend effet
+     qu'après réinstallation, et l'auteur qui l'a essayé l'a annulé.
+   Hors installation (Safari, ordinateur) : rien ne change. */
+html.installee {
+  min-height: min(100lvh, calc(100% + env(safe-area-inset-top, 0px)));
+}
+
 body {
   background: var(--bg);
   color: var(--ink);
@@ -1846,7 +1869,9 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
   .stick { bottom: calc(-20px - env(safe-area-inset-bottom)); margin-bottom: calc(-20px - env(safe-area-inset-bottom)); }
   .cd, .pane, .card { padding: 12px; }
   .cd.pad0 { padding: 2px 12px; }
-  .fold .fh { padding: 12px; }
+  /* LOT 33 §1.5 — mesuré à 320 px : le resserrage faisait tomber l'en-tête
+     d'un repli à 43 px. La zone tactile ne descend jamais sous 44 px. */
+  .fold .fh { padding: 12px; min-height: 44px; }
   .fold .fb { padding: 2px 12px 12px; }
   .bar, .hero { padding-left: 10px; padding-right: 10px; gap: 7px; }
   .bar .bk, .bar .nav button { width: 29px; height: 29px; }

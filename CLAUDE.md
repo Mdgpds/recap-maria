@@ -216,6 +216,23 @@ ouverture l'installe, la seconde le sert.
 
 ---
 
+### L'écran plein dans l'application installée (lot 33)
+
+Sur iPhone, depuis iOS 26, une application posée sur l'écran d'accueil
+(`viewport-fit=cover`, barre d'état `black-translucent`) arrête ses éléments
+`position: fixed` avant le bas de l'écran, de la hauteur de la barre d'état —
+bug WebKit 301108. Le contournement vit dans `css/style.css` sous
+`html.installee` : le document est rendu au moins aussi haut que l'écran,
+`min(100lvh, calc(100% + env(safe-area-inset-top)))`. La classe est posée par
+`js/app.js` au chargement (`navigator.standalone` **ou** le mode d'affichage
+`standalone` — le second seul n'est pas fiable sur iOS). Règles :
+**aucune valeur propre à un modèle** (pas de 59, pas de 47), **pas de passage à
+`black`**, rien ne change hors installation. Ce correctif ne se prouve que sur
+un vrai iPhone : l'écran « Affichage de cet appareil » (bas de « Mon compte »)
+affiche les mesures et un verdict, et une capture suffit à trancher. Si la bande
+persiste, le plan B (sonde comparée à `screen.height`) se décide sur ces
+chiffres, pas d'avance.
+
 ### Les rappels (lot 32)
 
 L'écran des rappels a **trois états** et n'en affiche qu'un : non configuré
@@ -258,7 +275,7 @@ Deux règles de schéma :
 ```bash
 node test/run.js      # moteur, chaîne des mois, messages, couche données
 npm run test:ui       # tests de fumée d'interface (jsdom, index.html réel)
-npm run mesures       # mise en page à 390 px dans un VRAI navigateur (Playwright)
+npm run mesures       # mise en page dans un VRAI navigateur (Playwright) : 390 px, puis sept tailles d'iPhone
 ```
 
 **Décomptes de référence au 2 septembre 2026 (branche `feat/redesign-2a`) :**
@@ -275,7 +292,12 @@ d'un Chromium (`npm i -D playwright && npx playwright install chromium`, ou
 `PLAYWRIGHT_CHROMIUM=/chemin/chromium`). Il parcourt les écrans à 390 × 780,
 tactile — dont, depuis le lot 32, la fiche, la fin de contrat, la
 familiarisation, les rappels, la feuille de réouverture, la pose au
-calendrier avec ses deux bornes et la connexion clavier ouvert — sur un
+calendrier avec ses deux bornes et la connexion clavier ouvert — puis, depuis
+le lot 33, les écrans racine (accueil, espace enfant, Congés, Documents, Menu)
+aux **sept tailles d'iPhone** (320 × 568, 375 × 667, 390 × 844, 393 × 852,
+402 × 874, 430 × 932, 440 × 956 : bas de la barre d'onglets au bas de la
+fenêtre à 1 px près, en-tête à 0, page qui ne défile pas) et l'application
+« installée » simulée (`navigator.standalone`) — sur un
 décor fictif servi par `test/fixtures/faux-supabase-390.js`, et sort en
 code 1 au premier débordement, contrôle rogné, zone tactile sous 44 px,
 feuille invisible ou **contrôle de valeur calculée** en défaut (couleur
