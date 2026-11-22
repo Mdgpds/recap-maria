@@ -142,8 +142,142 @@
               : 'comptées comme d’habitude. Je vous préviens si l’une d’elles change.')
       };
     }
+    if (clos) comparer(m, ctx);
     m.libelleEtat = ETATS[m.etat];
     return m;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 33 §6.3 — DIRE CE QUI A CHANGÉ DEPUIS L'ENVOI                   */
+  /* ------------------------------------------------------------------ */
+
+  /* LA RÉFÉRENCE. L'image définitive se compare au dernier envoi fait AVANT
+     la clôture en vigueur (`recap.fige_le`) : dans le cas courant, c'est le
+     dernier prévisionnel ; après une réouverture et une reclôture (§6.4),
+     c'est le dernier envoi quel qu'il soit — le définitif d'avant compris.
+     Un envoi fait APRÈS la clôture est l'envoi de cette image même : il n'est
+     pas une référence. Aucun envoi avant la clôture : pas de comparaison. */
+  function reference(ctx) {
+    var liste = envoisDuMois(ctx.envois, ctx.annee, ctx.mois);
+    var fige = ctx.entree && ctx.entree.recap && ctx.entree.recap.fige_le;
+    if (fige) {
+      var t = new Date(fige).getTime();
+      liste = liste.filter(function (e) { return new Date(e.envoye_le).getTime() <= t; });
+    }
+    return liste[liste.length - 1] || null;
+  }
+
+  /* Les journées dont l'état diffère de celui GARDÉ à l'envoi, où qu'elles
+     soient dans le mois. */
+  function journeesChangees(ctx, gardees) {
+    var maintenant = etatsDesJours(ctx);
+    var jours = Object.keys(maintenant).concat(Object.keys(gardees || {}))
+      .filter(function (d, i, t) { return t.indexOf(d) === i; }).sort();
+    return jours.filter(function (d) {
+      var a = (gardees || {})[d], b = maintenant[d];
+      return (a ? a.c : '') !== (b ? b.c : '');
+    });
+  }
+
+  /* Ce qu'est devenue une journée, dit pour la famille : « Alouette absente »,
+     « congé », « journée normale »… L'accord vient de `Kit.accordDe`. */
+  function natureJournee(ctx, d) {
+    var c = ctx.contrat, prenom = ctx.entree.resultat.prenomEnfant || c.prenom_enfant;
+    var l = (ctx.journees || {})[d];
+    if (!l) return 'journée normale';
+    if (l.type === 'absence_enfant') return prenom + ' ' + Kit.accordDe(c, 'absent');
+    if (l.type === 'conge_maria') return 'congé de l’assistante maternelle';
+    if (l.type === 'sans_solde') return 'congé sans solde';
+    if (l.type === 'hors_planning') return 'journée non travaillée';
+    if (l.type === 'familiarisation') return 'familiarisation';
+    var heure = heureCourte(l.ecart_heure_reelle);
+    if (l.ecart_evenement === 'liberation_anticipee' && heure) return prenom + ' ' + Kit.accordDe(c, 'parti') + ' à ' + heure;
+    if (l.ecart_evenement === 'retard_parent' && heure) return prenom + ' ' + Kit.accordDe(c, 'parti') + ' à ' + heure + ' (parent en retard)';
+    if (l.ecart_evenement === 'arrivee_decalee' && heure) return prenom + ' ' + Kit.accordDe(c, 'arrivé') + ' à ' + heure;
+    return 'journée modifiée';
+  }
+
+  /* La raison, journée par journée, en plages (règle du lot 31) : deux
+     journées identiques qui se suivent font « le 26 et le 27 novembre »,
+     trois ou plus « du 26 au 30 novembre ». Au-delà de trois raisons :
+     « 4 journées ont changé », et le détail est au récapitulatif détaillé. */
+  function raisons(ctx, changees) {
+    if (!changees.length) return null;
+    var plages = Kit.plagesDeJours(changees, { cle: function (d) { return natureJournee(ctx, d); }, ouvrable: ouvrableDu(ctx) });
+    if (plages.length > 3) {
+      return changees.length + ' journées ont changé — voir le récapitulatif détaillé';
+    }
+    return plages.map(function (pl) {
+      var quand;
+      if (pl.jours.length === 1) {
+        var j = pl.jours[0];
+        quand = 'le ' + Kit.JOURS_SEMAINE[global.Engine.jourSemaine(j)].toLowerCase() + ' ' + Kit.quantieme(j);
+      } else {
+        var t = Kit.libellePlageJours(pl);
+        quand = t.charAt(0).toLowerCase() + t.slice(1);
+      }
+      return pl.cle + ' ' + quand;
+    }).join(' · ');
+  }
+
+  /* Les lignes EN EUROS, nommées dans la phrase de pied. */
+  var NOM_LIGNE = {
+    net: { t: 'le salaire net', f: false }, entretien: { t: 'l’entretien', f: false },
+    famHeures: { t: 'les heures de familiarisation', f: true, pl: true }, famEntretien: { t: 'l’entretien de familiarisation', f: false },
+    retenue: { t: 'la retenue', f: true }, total: { t: 'le total', f: false }
+  };
+  function phraseAReprendre(cles) {
+    if (!cles.length) return 'Les montants à verser n’ont pas changé.';
+    var noms = cles.map(function (k) { return NOM_LIGNE[k] || { t: k, f: false }; });
+    var liste = noms.length === 1 ? noms[0].t
+      : noms.slice(0, -1).map(function (n) { return n.t; }).join(', ') + ' et ' + noms[noms.length - 1].t;
+    var phrase;
+    if (noms.length === 1 && !noms[0].pl) phrase = (noms[0].f ? 'Seule ' : 'Seul ') + liste + ' est à reprendre.';
+    else phrase = (noms.every(function (n) { return n.f; }) ? 'Seules ' : 'Seuls ') + liste + ' sont à reprendre.';
+    return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+  }
+
+  /* Compare l'image définitive aux valeurs GARDÉES de la référence, ligne à
+     ligne. Elle ne recalcule jamais l'ancien mois. */
+  function comparer(m, ctx) {
+    var ref = reference(ctx);
+    if (!ref || !ref.donnees) return;
+    var g = ref.donnees;
+    var parCle = function (liste) { var o = {}; (liste || []).forEach(function (l) { o[l.cle] = l; }); return o; };
+    var anciennes = parCle(g.lignes), anciennesRes = parCle(g.reserves);
+    var euros = [];
+    var differe = false;
+    m.lignes.forEach(function (l) {
+      var a = anciennes[l.cle];
+      if (!a) { if (l.cle !== 'presence') differe = true; return; }
+      if (a.n !== l.n) {
+        differe = true;
+        if (l.unite === 'centimes') euros.push(l.cle);
+        /* « Jours de présence » porte la raison, journée par journée ; les
+           autres lignes portent l'ancienne valeur. */
+        if (l.cle !== 'presence') l.ancien = 'au lieu de ' + a.valeur;
+      }
+    });
+    m.reserves.forEach(function (l) {
+      var a = anciennesRes[l.cle];
+      if (a && a.n !== l.n) { differe = true; l.ancien = 'au lieu de ' + a.valeur; }
+    });
+    var changees = journeesChangees(ctx, g.jours);
+    var raison = raisons(ctx, changees);
+    if (raison) { m.lignes[0].sous = raison; m.lignes[0].raison = true; }
+    var jourRef = jourDEnvoi(ref);
+    var tRef = instantLocal(ref.envoye_le);
+    m.reference = { envoi: ref, changees: changees, euros: euros };
+    if (!differe && !changees.length) {
+      m.etat = 'definitif';
+      m.pied = { gras: 'Identique à l’envoi du ' + jourRef + ' ' + Kit.libelleMois(tRef.mois) + '.', suite: ' Rien n’a changé.' };
+      return;
+    }
+    m.etat = 'definitif_corrige';
+    var tete = changees.length === 1 ? 'Une journée a changé depuis l’envoi du ' + jourRef + '.'
+      : changees.length > 1 ? changees.length + ' journées ont changé depuis l’envoi du ' + jourRef + '.'
+      : 'Le récap a changé depuis l’envoi du ' + jourRef + '.';
+    m.pied = { gras: tete, suite: ' ' + phraseAReprendre(euros) };
   }
 
   /* CE QUE LES TROIS FORMES DOIVENT PORTER, dans l'ordre. C'est la mesure
@@ -692,7 +826,7 @@
   }
 
   /* L'écran où mène chaque bouton de la ligne. */
-  var ECRAN_ACTION = { preparer: 'preparer', voir: 'preparer', confirmer: 'document', envoyer: 'document' };
+  var ECRAN_ACTION = { preparer: 'preparer', voir: 'preparer', confirmer: 'confirmer', envoyer: 'document' };
 
   function etageRecap(contrat, l) {
     var b = Kit.ce('div', 'etg-rc' + (l.ton ? ' ' + l.ton : ''));
@@ -715,6 +849,7 @@
 
   function afficher(ctx) {
     if (ctx.vue === 'preparer') return afficherPreparer(ctx);
+    if (ctx.vue === 'confirmer') return afficherConfirmer(ctx);
     return Promise.resolve();
   }
 
@@ -873,8 +1008,118 @@
     return l;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* 10. LE DERNIER JOUR : « CONFIRMER » (§6.1)                          */
+  /* ------------------------------------------------------------------ */
+
+  /* L'écran CONSTATE, il n'impose pas : Maria peut aussi corriger par le
+     calendrier de l'espace enfant, et cet écran relit le résultat. « Oui »
+     mène à LA CLÔTURE EXISTANTE, avec tous ses garde-fous : on ouvre le
+     document du mois en lui demandant de proposer sa clôture — s'il la
+     refuse (salaire manquant, net manquant, ventilation écartée, imputation
+     orpheline, mois antérieur à la reprise, contrat rangé), c'est lui qui le
+     dit, et rien n'est contourné. Clôturer et envoyer restent deux gestes
+     (D4) : l'image définitive s'envoie ensuite, depuis le document. */
+  function afficherConfirmer(ctx) {
+    var p = ctx.params;
+    global.App.barreSlim(ctx.barre, 'Récap ' + Kit.deMois(p.mois), { droite: '' });
+    ctx.corps.appendChild(Kit.ce('div', 'attente', 'Lecture du mois…'));
+    return chargerMois(p).then(function (rc) {
+      Kit.vider(ctx.corps);
+      global.App.barreSlim(ctx.barre, 'Récap ' + Kit.deMois(p.mois), { droite: rc.contrat.prenom_enfant });
+      rendreConfirmer(ctx.corps, rc, !!p.corriger);
+    });
+  }
+
+  function rendreConfirmer(corps, rc, corriger) {
+    var s = situationEnvois(rc.envois, rc.annee, rc.mois);
+    if (rc.entree.fige) {
+      corps.appendChild(Kit.enc('', 'Ce mois est clôturé.', ' Son image définitive est dans le document du mois.'));
+      corps.appendChild(boutonDocument(rc, 'Voir l’image définitive'));
+      return;
+    }
+    if (!s.dernierPrev) {
+      corps.appendChild(Kit.enc('', 'Aucun récap prévisionnel n’a été envoyé pour ce mois.', ''));
+      corps.appendChild(boutonDocument(rc, 'Voir le document du mois'));
+      return;
+    }
+    var ref = s.dernierPrev;
+    var g = ref.donnees || {};
+    var t = instantLocal(ref.envoye_le);
+    var dateRef = (t.jour === 1 ? '1er' : t.jour) + ' ' + Kit.libelleMois(t.mois);
+    var changees = journeesChangees(rc, g.jours);
+    var totalGarde = (g.lignes || []).filter(function (l) { return l.cle === 'total'; })[0];
+    var totalNow = rc.entree.resultat.totalAVerserCentimes;
+    var totalBouge = totalGarde && totalGarde.n !== totalNow;
+
+    if (changees.length || totalBouge) {
+      corps.appendChild(Kit.enc('w',
+        changees.length > 1 ? changees.length + ' journées ont changé depuis l’envoi du ' + jourDEnvoi(ref) + '.'
+          : 'Une journée a changé depuis l’envoi du ' + jourDEnvoi(ref) + '.',
+        ' Le récap définitif le dira aux parents.'));
+    } else {
+      corps.appendChild(Kit.enc('', 'Récap prévisionnel envoyé le ' + dateRef + '.',
+        ' Le mois est terminé : tout s’est-il passé comme prévu ?'));
+    }
+
+    var prevus = (g.joursAVenir || []).slice();
+    corps.appendChild(Kit.ttl('Ce que vous aviez prévu'));
+    var carteJ = Kit.ce('div', 'cd pad0 rc-jours');
+    if (!prevus.length) carteJ.appendChild(Kit.ce('p', 'sb q', 'Aucune journée n’était à venir au moment de l’envoi.'));
+    prevus.forEach(function (d) {
+      var l = Kit.ce('div', 'ln rc-j' + (changees.indexOf(d) !== -1 ? ' ch' : ''));
+      l.setAttribute('data-jour', d);
+      var gl = Kit.ce('span', null, Kit.jourLong(d));
+      gl.appendChild(Kit.ce('span', 'sb2', etatJourneeTexte(rc, d)));
+      l.appendChild(gl);
+      if (corriger) {
+        /* Une journée PASSÉE : la feuille du jour habituelle, sans exception. */
+        var b = Kit.bouton('rc-mod', function () { global.UiEnfant.modifierJour(rc.contrat, d); });
+        b.textContent = 'Modifier';
+        l.appendChild(b);
+      }
+      carteJ.appendChild(l);
+    });
+    corps.appendChild(carteJ);
+
+    var tot = Kit.ce('div', 'cd pad0');
+    Kit.ligneLn(tot, 'Total du mois', Kit.eur(totalNow), {
+      total: true, sous: totalBouge ? 'au lieu de ' + totalGarde.valeur : null
+    });
+    corps.appendChild(tot);
+
+    var aller = function (corr) {
+      global.App.remplacer('confirmer', { contratId: rc.contrat.id, annee: rc.annee, mois: rc.mois, corriger: corr });
+    };
+    var cloturer = function () {
+      global.App.aller('document', { contratId: rc.contrat.id, annee: rc.annee, mois: rc.mois, cloturer: true });
+    };
+    if (!corriger && !changees.length && !totalBouge) {
+      var oui = Kit.bouton('btn', cloturer);
+      oui.textContent = 'Oui, clôturer le mois';
+      corps.appendChild(oui);
+      var non = Kit.bouton('btn nt', function () { aller(true); });
+      non.textContent = 'Non, une journée a changé';
+      corps.appendChild(non);
+    } else {
+      if (!corriger) {
+        var mod = Kit.bouton('btn nt', function () { aller(true); });
+        mod.textContent = 'Modifier une journée';
+        corps.appendChild(mod);
+      }
+      var clo = Kit.bouton('btn', cloturer);
+      clo.textContent = 'Clôturer le mois';
+      corps.appendChild(clo);
+    }
+    corps.appendChild(Kit.ce('p', 'pfin',
+      'Vous pouvez aussi corriger une journée depuis le calendrier de l’enfant : cet écran en tiendra compte.'));
+  }
+
   global.UiRecap = {
     afficher: afficher,
+    reference: reference,
+    journeesChangees: journeesChangees,
+    phraseAReprendre: phraseAReprendre,
     ligneCarte: ligneCarte,
     etageRecap: etageRecap,
     situationEnvois: situationEnvois,

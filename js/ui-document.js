@@ -102,6 +102,11 @@
         vue.reouvertureLe = q;
         Kit.vider(ctx.corps);
         rendre(ctx.corps);
+        /* LOT 33 §6.1 — arrivée par « Oui, clôturer le mois » : la feuille de
+           clôture existante s'ouvre d'elle-même, avec ses garde-fous — si le
+           document a refusé de proposer la clôture, rien ne s'ouvre et ses
+           encarts disent pourquoi. */
+        if (ctx.params.cloturer && !entree.fige && vue.clotureProposee && !vue.lectureSeule) demanderCloture();
       });
     });
   }
@@ -953,6 +958,11 @@
       var b = Kit.bouton('btn', demanderCloture);
       b.textContent = 'Clôturer le mois';
       corps.appendChild(b);
+      /* LOT 33 §6.1 — la clôture est PROPOSÉE ici, et seulement ici : tous
+         les refus qui précèdent ce point (orpheline, ventilation, salaire,
+         net) ont déjà rendu la main sans bouton. « Oui, clôturer le mois »
+         de l'écran « Confirmer » n'ouvre la feuille que si on arrive ici. */
+      vue.clotureProposee = true;
       /* LOT 16 §16.3 — L'ÉCRAN DISAIT LE CONTRAIRE DE LA FEUILLE DE
          CONFIRMATION, deux clics plus loin, et c'est elle qui avait raison :
          la réouverture existe depuis le lot 13. Une application qui fait

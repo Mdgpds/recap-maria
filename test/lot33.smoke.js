@@ -748,6 +748,145 @@ function classeAuChargement(sourceApp, opts) {
   /* La mesure mord : une policy permissive remise est vue. */
   assert(/using\s*\(\s*true\s*\)/i.test(M22c.replace('using (owner = (select auth.uid()))', 'using (true)')), '§5.5 : la mesure mord — `using (true)` remis est vu');
 
+  /* ==================================================================== */
+  /* §6 — LE DERNIER JOUR : CONFIRMER OU CORRIGER                         */
+  /* ==================================================================== */
+  console.log('\n--- §6.3 : l’image définitive, comparée à ce qui est parti ---');
+  /* Le prévisionnel du 25, tel qu'il part : ses données, gardées. */
+  poserJour('2026-11-25');
+  F.ENVOIS.length = 0;
+  var cx25 = await ctxRecap('c1', 2026, 11);
+  var D25 = JSON.parse(JSON.stringify(R.donneesEnvoi(cx25, R.modele(cx25))));
+  var ENV25 = { id: 'p25', contrat_id: 'c1', annee: 2026, mois: 11, nature: 'previsionnel',
+    envoye_le: '2026-11-25T17:12:00.000Z', donnees: D25 };
+  /* Le 30, le mois « clôturé » : même entrée, `fige` et `fige_le` posés —
+     la comparaison ne lit que l'image et les valeurs gardées. */
+  async function definitif(envois, journeesEnPlus) {
+    poserJour('2026-11-30');
+    (journeesEnPlus || []).forEach(function (j) { F.JOURNEES.push(j); });
+    window.App.invalider();
+    var c = await ctxRecap('c1', 2026, 11);
+    (journeesEnPlus || []).forEach(function () { F.JOURNEES.pop(); });
+    window.App.invalider();
+    c.entree = Object.assign({}, c.entree, { fige: true, recap: { statut: 'fige', fige_le: '2026-11-30T18:00:00.000Z' } });
+    c.envois = envois;
+    return R.modele(c);
+  }
+  var MI = await definitif([ENV25]);
+  egal(MI.libelleEtat, 'Définitif', '§6.3 : rien ne diffère — « Définitif »');
+  egal(MI.pied && MI.pied.gras + MI.pied.suite, 'Identique à l’envoi du 25 novembre. Rien n’a changé.',
+    '§6.3 : « Identique à l’envoi du 25 novembre. Rien n’a changé. »');
+
+  var ABS27 = { id: 'j27b', contrat_id: 'c1', jour: '2026-11-27', type: 'absence_enfant' };
+  var MC = await definitif([ENV25], [ABS27]);
+  egal(MC.libelleEtat, 'Définitif · corrigé', '§6.3 : une absence après l’envoi — « Définitif · corrigé »');
+  var lc = function (cle) { return MC.lignes.filter(function (l) { return l.cle === cle; })[0] || {}; };
+  egal(lc('entretien').ancien, 'au lieu de ' + window.Kit.eur(11000), '§6.3 : l’entretien porte l’ancienne valeur dessous');
+  egal(lc('total').ancien, 'au lieu de ' + window.Kit.eur(D25.lignes.filter(function (l) { return l.cle === 'total'; })[0].n),
+    '§6.3 : le total aussi');
+  assert(!lc('net').ancien, '§6.3 : une ligne qui n’a pas bougé ne porte rien');
+  egal(lc('presence').sous, 'Alouette absente le vendredi 27', '§6.3 : sous « Jours de présence », la journée nommée et accordée');
+  assert(MC.reserves.some(function (l) { return /^au lieu de /.test(l.ancien || ''); }), '§6.3 : les réserves suivent la même règle');
+  egal(MC.pied && MC.pied.gras + MC.pied.suite,
+    'Une journée a changé depuis l’envoi du 25. Seuls l’entretien et le total sont à reprendre.',
+    '§6.3 : le pied dit ce qui est à reprendre — seules les lignes en euros');
+  var morcC = R.contenu(MC);
+  assert(dansLOrdre(morcC, txt(R.apercu(MC))).length === 0 && dansLOrdre(morcC, R.texte(MC)).length === 0,
+    '§6.3 : l’aperçu et le texte portent les anciennes valeurs et la raison');
+  var opsC = R.dessiner(MC).plan.ops.filter(function (o) { return o.t === 'texte'; }).map(function (o) { return o.texte; }).join(' ');
+  assert(dansLOrdre(morcC.map(function (x) { return x.toLowerCase(); }), opsC.toLowerCase()).length === 0, '§6.3 : … et l’image aussi');
+
+  /* La comparaison lit les valeurs GARDÉES, pas un recalcul. */
+  var D25x = JSON.parse(JSON.stringify(D25));
+  D25x.lignes.forEach(function (l) { if (l.cle === 'net') { l.n = 1; l.valeur = 'VALEUR-GARDÉE'; } });
+  var MG = await definitif([Object.assign({}, ENV25, { donnees: D25x })]);
+  egal((MG.lignes.filter(function (l) { return l.cle === 'net'; })[0] || {}).ancien, 'au lieu de VALEUR-GARDÉE',
+    '§6.3 : la comparaison relit la valeur gardée à l’envoi, pas un recalcul de l’ancien mois');
+
+  /* Une correction qui ne touche aucun montant. */
+  var D25y = JSON.parse(JSON.stringify(D25));
+  D25y.jours['2026-11-26'].c = 'presence|retard_parent|19:00:00|||||||||';
+  var MY = await definitif([Object.assign({}, ENV25, { donnees: D25y })]);
+  egal(MY.libelleEtat, 'Définitif · corrigé', '§6.3 : une journée a changé sans toucher aux montants — corrigé');
+  egal(MY.pied && MY.pied.suite, ' Les montants à verser n’ont pas changé.', '§6.3 : « Les montants à verser n’ont pas changé. »');
+
+  /* Sans prévisionnel : pas de comparaison. */
+  var MS = await definitif([]);
+  egal(MS.libelleEtat, 'Définitif', '§6.3 : aucun prévisionnel — « Définitif »');
+  assert(!MS.pied && !MS.lignes.some(function (l) { return l.ancien; }), '§6.3 : … sans comparaison');
+
+  /* Au-delà de trois raisons. */
+  var QUATRE = ['2026-11-02', '2026-11-05', '2026-11-10', '2026-11-17'].map(function (d, i) {
+    return { id: 'q' + i, contrat_id: 'c1', jour: d, type: 'absence_enfant' };
+  });
+  var M4 = await definitif([ENV25], QUATRE);
+  egal((M4.lignes[0] || {}).sous, '4 journées ont changé — voir le récapitulatif détaillé',
+    '§6.3 : au-delà de trois raisons — « 4 journées ont changé », renvoi au détaillé');
+  egal(M4.pied && M4.pied.gras, '4 journées ont changé depuis l’envoi du 25.', '§6.3 : … et le pied le dit');
+  /* Deux journées identiques qui se suivent : la règle des plages. */
+  var M2 = await definitif([ENV25], [ABS27, { id: 'j26b', contrat_id: 'c1', jour: '2026-11-26', type: 'absence_enfant' }]);
+  egal((M2.lignes[0] || {}).sous, 'Alouette absente le 26 et le 27 novembre', '§6.3 : plusieurs journées — la règle des plages');
+
+  /* §6.4 — après une reclôture, la référence est le dernier envoi avant la
+     clôture en vigueur, quel qu'il soit ; un envoi APRÈS la clôture n'en est
+     pas une. */
+  var DEF30 = { id: 'd30', contrat_id: 'c1', annee: 2026, mois: 11, nature: 'definitif', envoye_le: '2026-11-30T18:30:00.000Z', donnees: D25 };
+  var M30 = await definitif([ENV25, DEF30], [ABS27]);
+  egal(M30.reference && M30.reference.envoi.id, 'p25', '§6.4 : un envoi fait après la clôture n’est pas la référence');
+  poserJour('2026-11-30');
+  var cxR = await ctxRecap('c1', 2026, 11);
+  cxR.entree = Object.assign({}, cxR.entree, { fige: true, recap: { statut: 'fige', fige_le: '2026-12-03T10:00:00.000Z' } });
+  cxR.envois = [ENV25, DEF30];
+  egal(R.reference(cxR).id, 'd30', '§6.4 : après une reclôture, la référence est le DERNIER envoi, quel qu’il soit');
+
+  console.log('\n--- §6.1 : l’écran « Confirmer » ---');
+  F.ENVOIS.length = 0; F.ENVOIS.push(ENV25);
+  poserJour('2026-11-30');
+  await aller('accueil'); await pause(300);
+  var lAl = corps.querySelector('.cart3 .etg-rc');
+  contient(lAl, 'Récap envoyé le 25 — à confirmer avant de clôturer', '§6.1 : la carte du 30 demande de confirmer');
+  boutonExact(lAl, 'Confirmer').click(); await pause(400);
+  contient(corps, 'Récap prévisionnel envoyé le 25 novembre. Le mois est terminé : tout s’est-il passé comme prévu ?', '§6.1 : l’encart');
+  contient(corps, 'Ce que vous aviez prévu', '§6.1 : « Ce que vous aviez prévu »');
+  egal(Array.prototype.map.call(corps.querySelectorAll('.rc-j'), function (l) { return l.getAttribute('data-jour'); }).join(','),
+    '2026-11-26,2026-11-27,2026-11-30', '§6.1 : les journées qui étaient à venir à l’envoi, avec leur état d’aujourd’hui');
+  assert(!!boutonExact(corps, 'Oui, clôturer le mois') && !!boutonExact(corps, 'Non, une journée a changé'), '§6.1 : « Oui » et « Non »');
+  egal(corps.querySelectorAll('.rc-mod').length, 0, '§6.1 : pas de « Modifier » tant que Maria n’a pas dit « Non »');
+  boutonExact(corps, 'Non, une journée a changé').click(); await pause(400);
+  egal(corps.querySelectorAll('.rc-mod').length, 3, '§6.1 : « Non » montre la même liste avec « Modifier »');
+  /* « Modifier » : la feuille du jour habituelle, sur une journée passée. */
+  boutonExact(corps.querySelector('.rc-j[data-jour="2026-11-27"]'), 'Modifier').click(); await pause(400);
+  contient(document.getElementById('sheet'), 'Vendredi 27 novembre', '§6.1 : « Modifier » ouvre la feuille du jour, sans exception (journée passée)');
+  window.Kit.fermerFeuille();
+  egal(await window.UiEnfant.modifierJour(window.App.contratParId('c1'), '2026-12-02'), false,
+    '§6.1 : la porte des journées passées refuse une journée à venir');
+  window.Kit.fermerFeuille();
+  /* L'absence déclarée (ici, par le calendrier) : l'écran constate. */
+  F.JOURNEES.push(ABS27); window.App.invalider();
+  await aller('confirmer', { contratId: 'c1', annee: 2026, mois: 11, corriger: true }); await pause(400);
+  contient(corps, 'Une journée a changé depuis l’envoi du 25.', '§6.1 : un encart dit qu’une journée a changé');
+  contient(corps, 'au lieu de ' + window.Kit.eur(D25.lignes.filter(function (l) { return l.cle === 'total'; })[0].n), '§6.1 : le total, « au lieu de <ancien total> »');
+  contient(corps.querySelector('.rc-j[data-jour="2026-11-27"]'), 'Alouette absente', '§6.1 : la journée dit son état d’aujourd’hui');
+  assert(!!boutonExact(corps, 'Clôturer le mois'), '§6.1 : puis « Clôturer le mois »');
+  F.JOURNEES.pop(); window.App.invalider();
+
+  /* « Oui, clôturer » traverse la clôture existante. */
+  await aller('confirmer', { contratId: 'c1', annee: 2026, mois: 11 }); await pause(400);
+  boutonExact(corps, 'Oui, clôturer le mois').click(); await pause(500);
+  contient(document.getElementById('sheet'), 'Clôturer novembre 2026', '§6.1 : « Oui » ouvre la feuille de clôture EXISTANTE');
+  window.Kit.fermerFeuille();
+  av2 = F.AVENANTS.filter(function (a) { return a.contrat_id === 'c1'; })[0];
+  sauveNet = av2.net_mensuel_centimes; sauveBrut = av2.brut_mensuel_centimes;
+  av2.net_mensuel_centimes = null; av2.brut_mensuel_centimes = null;
+  window.App.invalider();
+  window.App.aller('document', { contratId: 'c1', annee: 2026, mois: 11, cloturer: true }, true); await pause(500);
+  assert(!window.Kit.feuilleEstOuverte(), '§6.1 : un salaire manquant BLOQUE toujours — aucune feuille de clôture');
+  contient(corps, 'Aucune rémunération connue pour ce mois', '§6.1 : … et le document dit pourquoi');
+  av2.net_mensuel_centimes = sauveNet; av2.brut_mensuel_centimes = sauveBrut;
+  window.App.invalider();
+  F.ENVOIS.length = 0;
+  poserJour('2026-08-21');
+
   /* §SUITE — les sections des commits suivants s'ajoutent ici. */
 
   console.log('\n' + reussis + ' réussi(s), ' + echecs + ' échec(s)');

@@ -4099,9 +4099,33 @@
     });
   }
 
+  /* LOT 33 §6.1 — l'écran « Confirmer » corrige une journée PASSÉE : la
+     feuille du jour habituelle, SANS exception. Une journée à venir est
+     refusée ici : elle n'a qu'une porte, `modifierJourAVenir`. */
+  function modifierJour(contrat, jour) {
+    var auj = global.App.aujourdhui();
+    if (!auj || jour > auj) {
+      Kit.toast('Cette journée n’est pas encore passée.', true);
+      return Promise.resolve(false);
+    }
+    var m = { annee: Number(jour.slice(0, 4)), mois: Number(jour.slice(5, 7)) };
+    return chargerVue(contrat, m, null).then(function () {
+      if (vue.lectureSeule && !vue.rouvrable) {
+        Kit.toast('Ce mois ne peut plus être modifié.', true);
+        return false;
+      }
+      ouvrirJour(jour);
+      return true;
+    }).catch(function (e) {
+      Kit.toast('Impossible d’ouvrir la journée : ' + Kit.messageErreur(e), true);
+      return false;
+    });
+  }
+
   global.UiEnfant = {
     afficher: afficher,
     modifierJourAVenir: modifierJourAVenir,
+    modifierJour: modifierJour,
     /* §25.1 — l'Accueil ouvre la feuille de déclaration sans passer par cet
        écran. Exportée plutôt que recopiée : deux feuilles de saisie pour un
        même geste divergeraient à la première correction. */

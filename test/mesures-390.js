@@ -621,6 +621,53 @@ const ECRANS = [
   }));
   controle('§5.2 trois journées, chaque « Modifier » dans sa ligne et à 44 px', l52.length === 3 && l52.every(Boolean), l52.join(','));
 
+  console.log('\n=== LOT 33 §6 — le 30 novembre : confirmer, et l’image corrigée ===');
+  /* Le prévisionnel du 25 est noté depuis la page du 25 (données réelles de
+     l'image), puis relu dans une page au 30 où une absence est déclarée le 27. */
+  const env25 = await p25.evaluate(async () => {
+    const c = window.App.contratParId('c1');
+    const ch = await window.App.serie(c, { annee: 2026, mois: 11 });
+    const e = window.App.moisDe(ch, 2026, 11);
+    const j = await window.App.journees('c1', 2026, 11);
+    const ctx = { contrat: c, entree: e, journees: j, annee: 2026, mois: 11, aujourdhui: window.App.aujourdhui(), nomEmettrice: null };
+    return { contrat_id: 'c1', annee: 2026, mois: 11, nature: 'previsionnel', envoye_le: '2026-11-25T17:12:00.000Z',
+      donnees: window.UiRecap.donneesEnvoi(ctx, window.UiRecap.modele(ctx)) };
+  });
+  const p30 = await nouvellePage('2026-11-30');
+  await p30.evaluate((e) => {
+    window.__FAUX__.ENVOIS.push(Object.assign({ id: 'p25' }, e));
+    window.__FAUX__.JOURNEES.push({ id: 'j27', contrat_id: 'c1', jour: '2026-11-27', type: 'absence_enfant' });
+    window.App.invalider();
+  }, env25);
+  await controleEcran(p30, '§6.1 confirmer', 'confirmer', { contratId: 'c1', annee: 2026, mois: 11 });
+  await controleEcran(p30, '§6.1 confirmer (corriger)', 'confirmer', { contratId: 'c1', annee: 2026, mois: 11, corriger: true });
+  const imgC = await p30.evaluate(async () => {
+    const c = window.App.contratParId('c1');
+    const ch = await window.App.serie(c, { annee: 2026, mois: 11 });
+    const e = Object.assign({}, window.App.moisDe(ch, 2026, 11), { fige: true, recap: { statut: 'fige', fige_le: '2026-11-30T18:00:00.000Z' } });
+    const j = await window.App.journees('c1', 2026, 11);
+    const ctx = { contrat: c, entree: e, journees: j, annee: 2026, mois: 11, aujourdhui: window.App.aujourdhui(), nomEmettrice: null,
+      envois: window.__FAUX__.ENVOIS.slice() };
+    const m = window.UiRecap.modele(ctx);
+    const cv = window.UiRecap.dessiner(m);
+    const t = cv.plan.ops.filter(o => o.t === 'texte');
+    const sortis = t.filter(o => { const g = o.align === 'right' ? o.x - o.largeur : o.align === 'center' ? o.x - o.largeur / 2 : o.x;
+      return g < -0.5 || g + o.largeur > cv.largeurPoints + 0.5; }).map(o => o.texte);
+    /* Le fond du pied, lu en pixels : l'ambre `--was` d'un corrigé. */
+    const pied = cv.plan.ops.find(o => o.t === 'rect' && o.w === cv.largeurPoints);
+    const px = cv.getContext('2d').getImageData(4, Math.round((pied.y + 4) * 3), 1, 1).data;
+    const was = (() => { const d = document.createElement('div'); d.style.color = getComputedStyle(document.documentElement).getPropertyValue('--was').trim(); document.body.appendChild(d); const v = getComputedStyle(d).color; d.remove(); return v; })();
+    const anciens = t.filter(o => /^au lieu de /.test(o.texte)).length;
+    return { etat: m.libelleEtat, largeur: cv.width, sortis, min: Math.min(...t.map(o => o.taille)),
+      pied: 'rgb(' + px[0] + ', ' + px[1] + ', ' + px[2] + ')', was, anciens };
+  });
+  controle('§6.3 l’image corrigée : « Définitif · corrigé »', imgC.etat === 'Définitif · corrigé', imgC.etat);
+  controle('§6.3 l’image corrigée : 1080 px, aucun texte hors du cadre, rien sous 11 points',
+    imgC.largeur === 1080 && imgC.sortis.length === 0 && imgC.min >= 11, imgC.sortis.join(' / ') + ' min ' + imgC.min);
+  controle('§6.3 l’image corrigée : les anciennes valeurs sont dessinées (« au lieu de »)', imgC.anciens >= 3, String(imgC.anciens));
+  controle('§6.3 l’image corrigée : le pied est peint en `--was`', imgC.pied === imgC.was, imgC.pied + ' / ' + imgC.was);
+  await p30.close();
+
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
     ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles +
     ', contrôles en défaut ' + defauts);

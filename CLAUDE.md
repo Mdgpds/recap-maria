@@ -256,7 +256,17 @@ l'identité de l'application, ses couleurs sont **lues dans les jetons de
 `:root`** (aucune couleur écrite dans `ui-recap.js`, c'est testé), largeur
 360 points à l'échelle 3, aucun texte sous 11 points. Elle est proposée dans le
 document du mois à partir du 25 (`Kit.JOUR_BASCULE_CLOTURE`) ou sur un mois
-clôturé. États : `Prévisionnel` (mois ouvert), `Définitif` (clôturé). Le
+clôturé. **Trois états** : `Prévisionnel` (mois ouvert), `Définitif`
+(clôturé, identique au dernier envoi ou sans envoi avant), `Définitif ·
+corrigé` (une ligne ou une journée a changé depuis l'envoi). La comparaison
+relit les valeurs **gardées** dans `recap_envoi.donnees` — jamais un recalcul
+de l'ancien mois — et prend pour référence le dernier envoi fait **avant**
+`recap.fige_le` (le dernier prévisionnel, ou après une reclôture le dernier
+envoi quel qu'il soit). Chaque ligne modifiée porte « au lieu de … », « Jours
+de présence » porte la raison journée par journée (règle des plages, au-delà
+de trois : « N journées ont changé »). Clôturer et envoyer restent deux gestes
+(D4) : l'écran « Confirmer » mène à la clôture existante du document, avec
+tous ses garde-fous (`params.cloturer`). Le
 partage passe par `Kit.partagerImage`, qui rend ce qui s'est passé
 (`partage`, `annule`, `telecharge`, `echec`) — le chemin du document détaillé,
 déménagé. L'instantané garde depuis ce lot `joursTravaillesPlanning` (le « sur

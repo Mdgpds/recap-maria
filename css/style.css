@@ -1940,6 +1940,7 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 .rc-mod { flex: none; margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 999px;
   border: 1px solid var(--acl2); background: var(--acs2); color: var(--ac); font: inherit; font-size: 13.5px;
   font-weight: 600; cursor: pointer; }
+.rc-j.ch .sb2 { color: var(--wad); font-weight: 600; }
 .rc-envoye { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ac); }
 .rc-envois:empty { display: none; }
 .rc-confirmer:empty { display: none; }
