@@ -327,7 +327,14 @@ var sheet = document.getElementById('sheet');
     '§3.2 : et le montant du mois, calculé par le moteur (obtenu « ' +
     sansInsecable(txt(etg3)) + ' »)');
 
-  assert(txt(corps).indexOf('entretien') === -1,
+  /* LOT 33 §3 — la carte du total du mois porte la phrase « Salaires nets
+     et indemnités d’entretien compris » (D7, visuel validé) : un seul
+     montant, qui DIT ce qu’il contient. Cette phrase exacte est la seule
+     mention admise ; aucun montant d’entretien isolé, et le mot n’apparaît
+     nulle part ailleurs sur l’accueil. */
+  var horsPhraseTotal = txt(corps).split('Salaires nets et indemnités d’entretien compris.').join('');
+  assert(horsPhraseTotal.indexOf('entretien') === -1 &&
+         txt(corps).split('Salaires nets et indemnités d’entretien compris.').length <= 2,
     '§2.1 : aucun montant d’entretien isolé sur l’accueil');
 
   /* §3.4 — le pied : la phrase, puis les deux boutons. */

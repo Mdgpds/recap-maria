@@ -125,6 +125,8 @@
         rendreAlertes(ctx.corps, fiches, m);
         rendreCartes(ctx.corps, fiches, m);
         rendrePied(ctx.corps, fiches, m);
+        /* LOT 33 §3 — le total du mois, DERNIER élément de la page (D8). */
+        rendreTotalMois(ctx.corps, fiches, m);
 
         /* LOT 15 (A5) — la pastille est posée à partir de ce que l'accueil
            VIENT DE CALCULER : les mois en retard, plus le mois courant s'il
@@ -665,6 +667,86 @@
         'Rien à clôturer pour l’instant : un mois se clôture à partir du 25, ' +
         'ou dès qu’il est terminé.'));
     }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 33 §3 — LE TOTAL DU MOIS, EN BAS DE « MES ENFANTS »             */
+  /*                                                                     */
+  /* « Un atterrissage de combien elle va gagner à la fin du mois. »     */
+  /* Ce qui s'additionne : le montant du mois affiché sur chaque carte — */
+  /* `totalAVerserCentimes` du résultat du mois (l'instantané pour un    */
+  /* mois clôturé), pour les contrats affichés sur l'accueil. Il compte  */
+  /* les journées à venir comme normales, puisque le moteur le fait :    */
+  /* c'est un prévisionnel, et la carte le dit.                          */
+  /*                                                                     */
+  /* AUCUNE ADDITION ICI. Chaque mois passe par `agregerPeriode` (un mois */
+  /* par contrat), puis l'ensemble par `totaliserAgregats` — la règle qui */
+  /* totalise déjà « Sur une période », testée sous Node. Ce fichier ne   */
+  /* fait que choisir quels contrats entrent, et le DIRE.                 */
+  /* ------------------------------------------------------------------ */
+
+  /* La part de chaque contrat : `entre` (et son agrégat) ou la raison pour
+     laquelle il n'entre pas. Un total amputé qui ne dit pas qu'il l'est est un
+     chiffre faux : chaque contrat écarté est nommé. */
+  function partsDuTotal(fiches) {
+    return fiches.map(function (f) {
+      var c = f.contrat;
+      if (f.erreur) return { contrat: c, entre: false, raison: 'montant indisponible' };
+      var e = f.entree;
+      if (!e || !e.resultat || e.salaireManquant || !e.resultat.salaireNetCentimes) {
+        return { contrat: c, entre: false, raison: 'salaire non renseigné' };
+      }
+      return { contrat: c, entre: true, entree: e, agregat: Chaine.agregerPeriode([e]) };
+    });
+  }
+
+  function rendreTotalMois(corps, fiches, m) {
+    if (!fiches.length) return;
+    var parts = partsDuTotal(fiches);
+    var entrants = parts.filter(function (p) { return p.entre; });
+    var exclus = parts.filter(function (p) { return !p.entre; });
+    var total = Chaine.totaliserAgregats(entrants.map(function (p) { return p.agregat; }));
+
+    var carte = Kit.ce('div', 'totmois');
+    carte.setAttribute('data-total-centimes', String(total.totalAVerserCentimes));
+    carte.appendChild(Kit.ce('div', 'tm-eti',
+      Kit.moisCapitale(m.annee, m.mois) + ' · à ce jour'));
+    carte.appendChild(Kit.ce('div', 'tm-big', Kit.eur(total.totalAVerserCentimes)));
+    var sous = 'ce que vous allez gagner ce mois-ci';
+    if (exclus.length) {
+      sous += ', hors ' + liste(exclus.map(function (p) { return p.contrat.prenom_enfant; }));
+    }
+    carte.appendChild(Kit.ce('div', 'tm-sous', sous));
+
+    /* Un seul contrat : la carte sans la liste par enfant (§3.3). */
+    if (parts.length > 1) {
+      var blocListe = Kit.ce('div', 'tm-liste');
+      parts.forEach(function (p) {
+        var l = Kit.ce('div', 'tm-l' + (p.entre ? '' : ' hors'));
+        l.setAttribute('data-contrat', p.contrat.id);
+        l.appendChild(Kit.ce('span', null, p.contrat.prenom_enfant));
+        l.appendChild(Kit.ce('b', null, p.entre ? Kit.eur(p.agregat.totalAVerserCentimes) : p.raison));
+        blocListe.appendChild(l);
+      });
+      carte.appendChild(blocListe);
+    } else if (exclus.length) {
+      carte.appendChild(Kit.ce('div', 'tm-pied', exclus[0].contrat.prenom_enfant + ' : ' + exclus[0].raison + '.'));
+    }
+
+    /* « Si les journées qui restent… » disparaît quand il ne reste aucune
+       journée à venir, pour aucun contrat dont le mois est encore ouvert. */
+    var resteAVenir = entrants.some(function (p) {
+      var f = fiches.filter(function (x) { return x.contrat === p.contrat; })[0];
+      return !p.entree.fige && f && f.restants > 0;
+    });
+    var pied = Kit.ce('div', 'tm-pied');
+    if (resteAVenir) {
+      pied.appendChild(Kit.ce('span', 'tm-avenir', 'Si les journées qui restent se passent comme d’habitude.'));
+      pied.appendChild(document.createTextNode(' '));
+    }
+    pied.appendChild(document.createTextNode('Salaires nets et indemnités d’entretien compris.'));
+    carte.appendChild(pied);
+    corps.appendChild(carte);
   }
 
   /* Les mois que la clôture doit passer en revue : les retards de chaque

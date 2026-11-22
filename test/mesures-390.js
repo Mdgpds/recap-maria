@@ -428,6 +428,39 @@ const ECRANS = [
   tableau.forEach(l => console.log('  ' + l.taille.padEnd(38) + String(l.deb).padStart(6) +
     String(l.rog).padStart(7) + String(l.pet).padStart(6) + '  ' + l.bas.padEnd(5) + ' ' + l.entete));
 
+  /* LOT 33 §3 — LE TOTAL DU MOIS, EN VALEUR CALCULÉE, au plus étroit
+     (320 px) et au plus large (440 px) : dernier élément de la page, entier
+     au-dessus de la barre d'onglets une fois le corps défilé jusqu'en bas,
+     fond tiré des jetons `--ac2` / `--ac`, aucun texte qui sort du cadre. */
+  console.log('\n=== LOT 33 §3 — le total du mois en bas de l’accueil ===');
+  for (const [L, H] of [[320, 568], [440, 956]]) {
+    await page.setViewportSize({ width: L, height: H });
+    await aller('accueil');
+    const t3 = await page.evaluate(() => {
+      const bd = document.getElementById('corps'); bd.scrollTop = bd.scrollHeight;
+      const c = document.querySelector('.totmois');
+      if (!c) return null;
+      const rc = c.getBoundingClientRect(), rt = document.getElementById('tabbar').getBoundingClientRect();
+      const cs = getComputedStyle(document.documentElement);
+      const jeton = (n) => { const d = document.createElement('div'); d.style.color = cs.getPropertyValue(n).trim();
+        document.body.appendChild(d); const v = getComputedStyle(d).color; d.remove(); return v; };
+      const sorti = [...c.querySelectorAll('*')].filter(e => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && (r.right > rc.right + 0.5 || r.left < rc.left - 0.5 || e.scrollWidth > e.clientWidth + 1);
+      }).map(e => e.className);
+      return { dernier: bd.lastElementChild === c, bas: rc.bottom, haut: rc.top, onglets: rt.top,
+        fond: getComputedStyle(c).backgroundImage, ac: jeton('--ac'), ac2: jeton('--ac2'),
+        texte: getComputedStyle(c).color, bg2: jeton('--bg2'), sorti };
+    });
+    controle('§3 ' + L + '×' + H + ' : la carte du total est le dernier élément de l’accueil', t3 && t3.dernier);
+    controle('§3 ' + L + '×' + H + ' : corps défilé en bas, la carte est entière au-dessus de la barre d’onglets',
+      t3 && t3.bas <= t3.onglets + 0.5 && t3.haut >= 0, t3 && (Math.round(t3.bas) + ' / ' + Math.round(t3.onglets)));
+    controle('§3 ' + L + '×' + H + ' : fond d’accent tiré des jetons (--ac2 → --ac)',
+      t3 && t3.fond.indexOf(t3.ac) !== -1 && t3.fond.indexOf(t3.ac2) !== -1, t3 && t3.fond.slice(0, 70));
+    controle('§3 ' + L + '×' + H + ' : texte en `--bg2`', t3 && t3.texte === t3.bg2, t3 && t3.texte);
+    controle('§3 ' + L + '×' + H + ' : aucun texte ne sort de la carte', t3 && t3.sorti.length === 0, t3 && t3.sorti.join(', '));
+  }
+
   /* LA MESURE MORD : on remet en place, sur une copie de l'état, le défaut
      d'iOS — l'application qui s'arrête 59 pt avant le bas — et la mesure du
      bas de la barre doit tomber. Si elle restait verte, elle ne mesurerait

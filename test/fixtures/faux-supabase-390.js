@@ -130,6 +130,11 @@
     return q;
   }
 
+  /* LOT 33 — les tables du décor, exposées aux tests qui doivent le faire
+     varier (une journée déclarée, un salaire retiré, un contrat de moins).
+     Rien ne change pour qui ne s'en sert pas. */
+  window.__FAUX__ = { table: table, CONTRATS: CONTRATS, AVENANTS: AVENANTS, JOURNEES: JOURNEES, RECAPS: RECAPS };
+
   window.supabase = {
     createClient: function () {
       return {

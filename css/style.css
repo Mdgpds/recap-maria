@@ -1857,6 +1857,28 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 /* ------------------------------------------------------------------------ */
+/* LOT 33 §3 — LE TOTAL DU MOIS, EN BAS DE « MES ENFANTS »                   */
+/*     Carte sur fond d'accent, dernier élément de la page. Pas un bouton.   */
+/*     Couleurs lues dans les jetons de `:root`, comme l'en-tête.            */
+/* ------------------------------------------------------------------------ */
+
+.totmois {
+  background: linear-gradient(155deg, var(--ac2), var(--ac));
+  color: var(--bg2); border-radius: var(--r); padding: 14px 15px 13px;
+  margin: 4px 0 6px; box-shadow: var(--sh);
+}
+.totmois .tm-eti { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .78; }
+.totmois .tm-big { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; margin-top: 3px;
+  font-variant-numeric: tabular-nums; }
+.totmois .tm-sous { font-size: 13px; opacity: .85; margin-top: 2px; }
+.totmois .tm-liste { margin-top: 11px; border-top: 1px solid var(--acl); }
+.totmois .tm-l { display: flex; align-items: baseline; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--acd); font-size: 14px; }
+.totmois .tm-l b { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.totmois .tm-l.hors b { font-weight: 600; opacity: .8; font-style: italic; }
+.totmois .tm-pied { font-size: 12px; opacity: .78; margin-top: 9px; line-height: 1.45; }
+
+/* ------------------------------------------------------------------------ */
 /* 18. RESPONSIVE — sous 375 px, tout se resserre d'un cran                  */
 /*     (paddings et espacements seulement : les quatre tailles de police      */
 /*     sont une loi, la media query de la maquette qui descendait à 12 px     */

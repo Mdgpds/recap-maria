@@ -273,6 +273,100 @@ function classeAuChargement(sourceApp, opts) {
   window.Kit.fermerFeuille();
   poserJour('2026-08-21');
 
+  /* ==================================================================== */
+  /* §3 — LE TOTAL DU MOIS, EN BAS DE « MES ENFANTS »                     */
+  /* ==================================================================== */
+  console.log('\n--- §3 : le total du mois ---');
+  var F = window.__FAUX__;
+
+  /* Le montant attendu, rejoué à la source : la série du contrat, le mois,
+     son `totalAVerserCentimes`. Jamais le texte de la carte. */
+  async function montantsSource(m) {
+    var out = {};
+    for (var i = 0; i < window.App.contrats().length; i++) {
+      var c = window.App.contrats()[i];
+      var ch = await window.App.serie(c, m);
+      var e = window.App.moisDe(ch, m.annee, m.mois);
+      out[c.prenom_enfant] = e && e.resultat ? e.resultat.totalAVerserCentimes : null;
+    }
+    return out;
+  }
+  function carteTotal() { return corps.querySelector('.totmois'); }
+  function ligneTotal(prenom) {
+    return Array.prototype.filter.call(corps.querySelectorAll('.totmois .tm-l'), function (l) {
+      return txt(l.firstChild) === prenom;
+    })[0] || null;
+  }
+
+  await aller('accueil'); await pause(300);
+  var src = await montantsSource({ annee: 2026, mois: 8 });
+  var t = carteTotal();
+  assert(!!t, '§3 : la carte du total est affichée');
+  assert(t && t === corps.lastElementChild, '§3 : c’est le DERNIER élément de la page (après les boutons)');
+  assert(t && t.tagName !== 'BUTTON' && !t.querySelector('button') && !t.onclick, '§3 : la carte n’est pas un bouton');
+  egal(t && +t.getAttribute('data-total-centimes'), src.Alouette + src.Aigrette,
+    '§3 : le total égale la somme des montants des cartes, au centime');
+  contient(t, window.Kit.eur(src.Alouette + src.Aigrette), '§3 : … et il est affiché en euros');
+  contient(t, 'Août 2026 · à ce jour', '§3 : l’étiquette dit le mois, « à ce jour »');
+  contient(t, 'ce que vous allez gagner ce mois-ci', '§3 : la phrase sous le montant');
+  contient(t, 'Salaires nets et indemnités d’entretien compris.', '§3 : un seul montant, net et entretien compris (D7)');
+  contient(t, 'Si les journées qui restent se passent comme d’habitude.', '§3 : le 21 août, des journées restent : la phrase est là');
+  contient(ligneTotal('Alouette'), window.Kit.eur(src.Alouette), '§3 : la ligne d’Alouette porte son montant');
+  /* Aigrette est en familiarisation en août : sa carte montre des HEURES. */
+  var carteAig = Array.prototype.filter.call(corps.querySelectorAll('.cart3'), function (c) { return txt(c).indexOf('Aigrette') !== -1; })[0];
+  assert(carteAig && /août \d+h\d\d/.test(txt(carteAig.querySelector('.etg3'))), '§3 : la carte d’Aigrette (familiarisation) affiche des heures');
+  contient(ligneTotal('Aigrette'), window.Kit.eur(src.Aigrette), '§3 : … mais dans le total, c’est son MONTANT qui entre');
+
+  /* Une journée déclarée : le total bouge. */
+  F.JOURNEES.push({ id: 'jt33', contrat_id: 'c1', jour: '2026-08-27', type: 'absence_enfant' });
+  window.App.invalider();
+  await aller('accueil'); await pause(300);
+  var src2 = await montantsSource({ annee: 2026, mois: 8 });
+  assert(src2.Alouette !== src.Alouette, '§3 : (décor) l’absence du 27 change le montant d’Alouette');
+  egal(+carteTotal().getAttribute('data-total-centimes'), src2.Alouette + src2.Aigrette,
+    '§3 : une journée déclarée → le total suit, au centime');
+  F.JOURNEES.pop(); window.App.invalider();
+
+  /* Un contrat sans salaire : NOMMÉ, et exclu. */
+  var av2 = F.AVENANTS.filter(function (a) { return a.contrat_id === 'c2'; })[0];
+  var sauveNet = av2.net_mensuel_centimes, sauveBrut = av2.brut_mensuel_centimes;
+  av2.net_mensuel_centimes = null; av2.brut_mensuel_centimes = null;
+  window.App.invalider();
+  await aller('accueil'); await pause(300);
+  t = carteTotal();
+  contient(t, 'ce que vous allez gagner ce mois-ci, hors Aigrette', '§3 : sans salaire, le libellé du total devient « hors Aigrette »');
+  contient(ligneTotal('Aigrette'), 'salaire non renseigné', '§3 : … et sa ligne dit « salaire non renseigné »');
+  egal(+t.getAttribute('data-total-centimes'), src.Alouette, '§3 : … et le total ne compte qu’Alouette');
+  av2.net_mensuel_centimes = sauveNet; av2.brut_mensuel_centimes = sauveBrut;
+  window.App.invalider();
+
+  /* Un seul contrat : la carte, sans la liste. Aucun contrat : pas de carte. */
+  var c2 = F.CONTRATS.splice(1, 1)[0];
+  await window.App.rechargerContrats();
+  await aller('accueil'); await pause(300);
+  t = carteTotal();
+  assert(!!t, '§3 : un seul contrat — la carte s’affiche quand même');
+  assert(t && !t.querySelector('.tm-liste'), '§3 : … sans la liste par enfant');
+  var c1 = F.CONTRATS.splice(0, 1)[0];
+  await window.App.rechargerContrats();
+  await aller('accueil'); await pause(300);
+  assert(!carteTotal(), '§3 : aucun contrat — pas de carte');
+  F.CONTRATS.push(c1, c2);
+  await window.App.rechargerContrats();
+
+  /* Un mois clôturé entre par son instantané ; plus aucune journée à venir :
+     la phrase « Si les journées qui restent… » disparaît. */
+  poserJour('2026-07-31');
+  await aller('accueil'); await pause(300);
+  t = carteTotal();
+  egal(t && +t.getAttribute('data-total-centimes'), 118650 * 2, '§3 : juillet clôturé — chaque contrat entre avec le montant de son instantané');
+  absent(t, 'Si les journées qui restent', '§3 : aucune journée à venir — la phrase disparaît');
+  poserJour('2026-08-21');
+
+  var blocCss = (SOURCE_CSS.match(/\.totmois[^{]*\{[^}]*\}/g) || []).join('\n');
+  assert(blocCss.length > 0 && !/#[0-9a-f]{3,6}\b|rgba?\(/i.test(blocCss),
+    '§3 : la carte du total n’a aucune couleur écrite en dur (jetons seulement)');
+
   /* §SUITE — les sections des commits suivants s'ajoutent ici. */
 
   console.log('\n' + reussis + ' réussi(s), ' + echecs + ' échec(s)');
