@@ -719,9 +719,12 @@ var sheet = document.getElementById('sheet');
      bouton devient « Clôturer quand même ». Clôturer un mois inachevé en
      croyant ses chiffres définitifs est le seul risque irréversible de
      l'application. */
-  assert(txt(sheet).indexOf('jours travaillés sont encore à venir') !== -1,
+  /* LOT 33 §2 — même sens, nouvelle phrase : le nombre de journées à venir,
+     puis la conséquence VRAIE (elles sont comptées ; les corriger demandera
+     de rouvrir le mois). */
+  assert(txt(sheet).indexOf('journées sont encore à venir') !== -1,
     'V8-04 : la clôture anticipée avertit du nombre de jours restants');
-  assert(txt(sheet).indexOf('ces journées ne seront pas comptées') !== -1,
+  assert(txt(sheet).indexOf('Elles sont comptées comme des journées normales. Si l’une d’elles se passe autrement, il faudra rouvrir le mois pour la corriger.') !== -1,
     'V8-04 : et de la conséquence');
   var bQuandMeme = parTexte(sheet, 'button', 'Clôturer quand même');
   assert(!!bQuandMeme, 'V8-04 : le bouton devient « Clôturer quand même »');

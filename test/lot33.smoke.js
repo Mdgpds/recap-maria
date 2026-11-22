@@ -87,6 +87,11 @@ window.App.aujourdhui = function () { return JOUR.iso; };
 var barre = document.getElementById('barre');
 var corps = document.getElementById('corps');
 
+function poserJour(iso) {
+  JOUR.iso = iso; JOUR.annee = +iso.slice(0, 4); JOUR.mois = +iso.slice(5, 7);
+  window.App.invalider();
+}
+
 function aller(ecran, params) {
   window.Kit.fermerFeuille();
   window.App.aller(ecran, params || {}, true);
@@ -202,6 +207,71 @@ function classeAuChargement(sourceApp, opts) {
   assert(!document.getElementById('tabbar').hidden, '§1.4 : la barre d’onglets reste visible (c’est elle qu’on mesure)');
   absent(corps, 'a@b.test', '§1.4 : aucune donnée personnelle (pas d’adresse e-mail)');
   absent(corps, 'Alouette', '§1.4 : aucune donnée personnelle (pas de prénom)');
+
+  /* ==================================================================== */
+  /* §2 — LA PHRASE DE CLÔTURE QUI CONTREDIT LE MOTEUR                    */
+  /* ==================================================================== */
+  console.log('\n--- §2 : les journées à venir sont comptées, et l’écran le dit ---');
+
+  /* Les phrases cherchées sont assemblées : ce fichier ne doit pas se
+     trouver lui-même. */
+  var ANCIENNES = ['ne seront ' + 'pas comptées', 'ne sera ' + 'pas comptée', 'jours travaillés sont ' + 'encore à venir'];
+  function fichiersServisEtTests() {
+    var out = [];
+    (function parcourir(dir) {
+      fs.readdirSync(dir).forEach(function (n) {
+        if (n === 'node_modules' || n === '.git') return;
+        var f = path.join(dir, n);
+        if (fs.statSync(f).isDirectory()) return parcourir(f);
+        if (/\.(js|html|md|css|sql|ts)$/.test(n)) out.push(f);
+      });
+    }(racine));
+    return out;
+  }
+  function occurrencesAnciennes(lire) {
+    var trouve = [];
+    fichiersServisEtTests().forEach(function (f) {
+      var t = lire(f);
+      ANCIENNES.forEach(function (a) { if (t.indexOf(a) !== -1) trouve.push(path.relative(racine, f) + ' : « ' + a + ' »'); });
+    });
+    return trouve;
+  }
+  var occ = occurrencesAnciennes(function (f) { return fs.readFileSync(f, 'utf8'); });
+  assert(occ.length === 0, '§2 : plus aucune occurrence de l’ancienne phrase dans l’arbre' + (occ.length ? ' — ' + occ.join(', ') : ''));
+  var occMute = occurrencesAnciennes(function (f) {
+    var t = fs.readFileSync(f, 'utf8');
+    return /ui-document\.js$/.test(f) ? t + '\n// ces journées ' + ANCIENNES[0] + '.' : t;
+  });
+  assert(occMute.length === 1, '§2 : la mesure mord — l’ancienne phrase remise dans une copie de ui-document.js est trouvée');
+
+  var e3 = window.Kit.encartJoursAVenir(3, 11);
+  egal(txt(e3).replace(/\s+/g, ' ').trim(),
+    '3 journées sont encore à venir en novembre. Elles sont comptées comme des journées normales. ' +
+    'Si l’une d’elles se passe autrement, il faudra rouvrir le mois pour la corriger.',
+    '§2 : la nouvelle phrase, mot pour mot (pluriel)');
+  egal(e3.querySelector('b') && txt(e3.querySelector('b')), '3 journées sont encore à venir en novembre.',
+    '§2 : le nombre de journées est en gras');
+  egal(txt(window.Kit.encartJoursAVenir(1, 11)).replace(/\s+/g, ' ').trim(),
+    '1 journée est encore à venir en novembre. Elle est comptée comme une journée normale. ' +
+    'Si elle se passe autrement, il faudra rouvrir le mois pour la corriger.',
+    '§2 : la nouvelle phrase, au singulier');
+
+  /* Le 20 novembre, la clôture du document d'Aigrette avertit — par la
+     phrase unique — et garde « Clôturer quand même ». (Alouette, en août, a
+     un congé à répartir : sa clôture est bloquée pour une autre raison.) */
+  poserJour('2026-11-20');
+  await aller('document', { contratId: 'c2', annee: 2026, mois: 11 });
+  await pause(300);
+  var bClot = boutonExact(corps, 'Clôturer le mois');
+  assert(!!bClot, '§2 : le document du mois en cours propose « Clôturer le mois »');
+  if (bClot) { bClot.click(); await pause(250); }
+  var feuille = document.getElementById('sheet');
+  contient(feuille, 'journées sont encore à venir en novembre.', '§2 : la feuille de clôture annonce les journées à venir');
+  contient(feuille, 'Elles sont comptées comme des journées normales.', '§2 : … et dit qu’elles sont comptées');
+  contient(feuille, 'il faudra rouvrir le mois pour la corriger', '§2 : … et ce qui est vrai : la correction demandera de rouvrir');
+  assert(!!boutonExact(feuille, 'Clôturer quand même'), '§2 : le bouton garde « Clôturer quand même »');
+  window.Kit.fermerFeuille();
+  poserJour('2026-08-21');
 
   /* §SUITE — les sections des commits suivants s'ajoutent ici. */
 

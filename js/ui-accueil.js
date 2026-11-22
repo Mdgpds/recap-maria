@@ -884,13 +884,9 @@
     var restants = Kit.joursTravaillesRestants(c, planningDe(entree && entree.entree),
       cible.annee, cible.mois,
       global.App.aujourdhui(), (entree && entree.journees) || null);
-    if (restants > 0) {
-      ctx.corps.appendChild(Kit.warnbox(
-        restants + (restants > 1 ? ' jours travaillés sont encore à venir' : ' jour travaillé est encore à venir') +
-          ' en ' + Kit.libelleMois(cible.mois) + '.',
-        ' Si vous clôturez maintenant, ' +
-        (restants > 1 ? 'ces journées ne seront pas comptées.' : 'cette journée ne sera pas comptée.')));
-    }
+    /* LOT 33 §2 — la phrase dit ce que le moteur fait : les journées à venir
+       sont comptées comme des journées normales. */
+    if (restants > 0) ctx.corps.appendChild(Kit.encartJoursAVenir(restants, cible.mois));
     boutonsEtape(ctx, cible, entree);
   }
 

@@ -1383,25 +1383,17 @@
         /* LOT 7 (V8-04) — CLÔTURE D'UN MOIS NON ÉCHU.
            Elle reste possible : le dernier jour ouvré du mois est un cas
            parfaitement légitime, et l'interdire ferait perdre à Maria le seul
-           moment où elle a le temps. Mais elle ne se fait plus en silence.
-           Le mois d'août clôturé le 20, ce sont sept journées travaillées qui
-           disparaissent d'un document remis à une famille — et le mois ne se
-           recalcule jamais après coup (RG-15). */
+           moment où elle a le temps. Mais elle ne se fait pas en silence.
+           LOT 33 §2 — ce que l'avertissement dit a changé, pas qu'il existe :
+           les journées à venir SONT comptées (le moteur les présume
+           présentes) ; c'est leur correction qui demandera de rouvrir le
+           mois, puisqu'un mois clôturé ne se recalcule jamais (RG-15). */
         /* A3 : les journées, pour que les congés déjà posés ne soient pas
-           comptés comme des jours encore à travailler. C'est ici que le
-           chiffre compte le plus — il mesure ce qu'on s'apprête à perdre. */
+           comptés comme des jours encore à travailler. */
         var restants = Kit.joursTravaillesRestants(
           vue.contrat, planningDuMois(), vue.annee, vue.mois,
           global.App.aujourdhui(), vue.journees);
-        if (restants > 0) {
-          corps.appendChild(Kit.warnbox(
-            restants + (restants > 1 ? ' jours travaillés sont encore à venir'
-                                     : ' jour travaillé est encore à venir') +
-              ' en ' + Kit.libelleMois(vue.mois) + '.',
-            ' Si vous clôturez maintenant, ' +
-            (restants > 1 ? 'ces journées ne seront pas comptées.'
-                          : 'cette journée ne sera pas comptée.')));
-        }
+        if (restants > 0) corps.appendChild(Kit.encartJoursAVenir(restants, vue.mois));
 
         var l = Kit.lines(corps);
         var r = vue.entree.resultat;

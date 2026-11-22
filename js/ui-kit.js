@@ -545,6 +545,27 @@
   }
   function section(titre) { return ce('div', 'sec', titre); }
 
+  /* LOT 33 §2 — L'AVERTISSEMENT DE CLÔTURE ANTICIPÉE, EN UN SEUL EXEMPLAIRE.
+
+     L'ancienne phrase disait « Si vous clôturez maintenant, ces journées ne
+     seront pas comptées ». C'était faux : le moteur compte toute journée du
+     planning sans ligne comme une présence, passée ou à venir — elle est dans
+     le total et dans l'instantané. Ce qui est vrai, c'est qu'une fois le mois
+     clôturé, elle ne se corrige plus sans rouvrir le mois. L'accueil (fin de
+     mois guidée) et le document du mois lisent tous deux cette fonction :
+     deux copies d'une même phrase finissent toujours par diverger. */
+  function encartJoursAVenir(restants, mois) {
+    var plusieurs = restants > 1;
+    return warnbox(
+      restants + (plusieurs ? ' journées sont encore à venir en ' : ' journée est encore à venir en ') +
+        libelleMois(mois) + '.',
+      plusieurs
+        ? ' Elles sont comptées comme des journées normales. Si l’une d’elles se passe autrement, ' +
+          'il faudra rouvrir le mois pour la corriger.'
+        : ' Elle est comptée comme une journée normale. Si elle se passe autrement, ' +
+          'il faudra rouvrir le mois pour la corriger.');
+  }
+
   /* ------------------------------------------------------------------ */
   /* LOT 24 (§24.2) — LES COMPOSANTS UNIQUES DU SOCLE                    */
   /*                                                                     */
@@ -1780,6 +1801,7 @@
     quantieme: quantieme, jourEtMois: jourEtMois,
     MOIS: MOIS, MOIS_COURT: MOIS_COURT, JOURS_SEMAINE: JOURS_SEMAINE, NBSP: NBSP,
     pane: pane, lines: lines, ligne: ligne, note: note, warnbox: warnbox, section: section,
+    encartJoursAVenir: encartJoursAVenir,
     /* LOT 24 (§24.2) — les composants uniques du socle. */
     enc: enc, encOne: encOne, ligneLn: ligneLn, carteTap: carteTap,
     /* LOT 32 — titre de section et carte à lignes du socle. */
