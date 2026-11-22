@@ -23,6 +23,8 @@ var racine = path.join(__dirname, '..');
 var SOURCE_INDEX = fs.readFileSync(path.join(racine, 'index.html'), 'utf8');
 var SOURCE_CSS = fs.readFileSync(path.join(racine, 'css', 'style.css'), 'utf8');
 var SOURCE_APP = fs.readFileSync(path.join(racine, 'js', 'app.js'), 'utf8');
+var SOURCE_RECAP = fs.readFileSync(path.join(racine, 'js', 'ui-recap.js'), 'utf8');
+var SOURCE_ENFANT = fs.readFileSync(path.join(racine, 'js', 'ui-enfant.js'), 'utf8');
 var FAUX = fs.readFileSync(path.join(__dirname, 'fixtures', 'faux-supabase-390.js'), 'utf8');
 var dom = new JSDOM(SOURCE_INDEX, { url: 'https://exemple.test/', runScripts: 'outside-only' });
 
@@ -366,6 +368,153 @@ function classeAuChargement(sourceApp, opts) {
   var blocCss = (SOURCE_CSS.match(/\.totmois[^{]*\{[^}]*\}/g) || []).join('\n');
   assert(blocCss.length > 0 && !/#[0-9a-f]{3,6}\b|rgba?\(/i.test(blocCss),
     '§3 : la carte du total n’a aucune couleur écrite en dur (jetons seulement)');
+
+  /* ==================================================================== */
+  /* §4 — LE RÉCAP COURT : L'IMAGE À ENVOYER AUX PARENTS                  */
+  /* ==================================================================== */
+  console.log('\n--- §4 : le récap court ---');
+
+  /* jsdom ne dessine pas. Un contexte 2D ENREGISTREUR le remplace : il mesure
+     grossièrement (0,55 em par caractère) et garde chaque texte posé. La
+     largeur réelle et le débordement se mesurent dans le vrai navigateur
+     (test/mesures-390.js). */
+  dom.window.HTMLCanvasElement.prototype.getContext = function () {
+    var g = { font: '12px x', fillStyle: '', strokeStyle: '', lineWidth: 1, textAlign: 'left', textes: [] };
+    g.measureText = function (t) { var px = parseFloat((/(\d+(\.\d+)?)px/.exec(g.font) || [0, 12])[1]); return { width: String(t).length * px * 0.55 }; };
+    ['fillRect', 'beginPath', 'rect', 'roundRect', 'fill', 'stroke', 'moveTo', 'lineTo', 'scale'].forEach(function (k) { g[k] = function () {}; });
+    g.fillText = function (t) { g.textes.push(t); };
+    return g;
+  };
+  dom.window.HTMLCanvasElement.prototype.toBlob = function (cb) { cb(new dom.window.Blob(['x'], { type: 'image/png' })); };
+
+  function norm(t) { return String(t).replace(/[\s  ]+/g, ' ').trim(); }
+  /* Chaque morceau de `contenu`, DANS L'ORDRE, dans le texte donné. */
+  function dansLOrdre(morceaux, texteRendu) {
+    var t = norm(texteRendu), pos = 0, manque = [];
+    morceaux.forEach(function (mc) {
+      var i = t.indexOf(norm(mc), pos);
+      if (i === -1) manque.push(mc); else pos = i + norm(mc).length;
+    });
+    return manque;
+  }
+
+  async function ctxRecap(contratId, annee, mois) {
+    var c = window.App.contratParId(contratId);
+    var ch = await window.App.serie(c, { annee: annee, mois: mois });
+    var e = window.App.moisDe(ch, annee, mois);
+    var j = await window.App.journees(contratId, annee, mois);
+    return { contrat: c, entree: e, journees: j, annee: annee, mois: mois,
+      aujourdhui: JOUR.iso, nomEmettrice: null };
+  }
+
+  /* Le décor ne joint pas la famille aux contrats (la vraie base le fait) :
+     on la pose, pour lire « famille Aubépine » comme en production. */
+  F.CONTRATS.forEach(function (c) { c.famille = { id: 'f1', nom: 'Aubépine' }; });
+  await window.App.rechargerContrats();
+  poserJour('2026-11-25');
+  var R = window.UiRecap;
+  var cx = await ctxRecap('c1', 2026, 11);
+  var spy = 0, vraiCalc = window.Engine.calculerMois;
+  window.Engine.calculerMois = function () { spy++; return vraiCalc.apply(this, arguments); };
+  var M = R.modele(cx);
+  var ap = R.apercu(M), tx = R.texte(M), cv = R.dessiner(M);
+  window.Engine.calculerMois = vraiCalc;
+  egal(spy, 0, '§4 : construire le récap (modèle, aperçu, texte, image) n’appelle jamais calculerMois');
+
+  egal(M.libelleEtat, 'Prévisionnel', '§4.2 : le 25, mois ouvert — état « Prévisionnel »');
+  egal(M.titre, 'Alouette · novembre 2026', '§4.2 : en tête, le prénom, le mois et l’année');
+  egal(M.sousTitre, 'famille Aubépine', '§4.2 : … et « famille X »');
+  egal(norm(M.lignes.map(function (l) { return l.libelle; }).join(' | ')),
+    'Jours de présence | Salaire net | Entretien — 20 j × 5,50 € | Heures sup du mois | Total à verser',
+    '§4.1 : les lignes du bloc « Le mois », dans le même ordre, avec les mêmes libellés');
+  egal(M.lignes[0].valeur, '20 j sur 20', '§4.1 : « 20 j sur 20 »');
+  egal(M.lignes[0].sous, '17 faits · 3 à venir', '§4.2 : sous « Jours de présence », « 17 faits · 3 à venir »');
+  egal(M.reserves.map(function (l) { return l.libelle; }).join(' | '), 'Congés payés | Heures de récupération',
+    '§4.2 : sous le total, les réserves à la fin du mois');
+  egal(M.pied && (M.pied.gras + M.pied.suite),
+    '3 journées à venir (du 26 au 30 novembre), comptées comme d’habitude. Je vous préviens si l’une d’elles change.',
+    '§4.4 : la phrase du prévisionnel, dates selon la règle des plages (26, 27, 30 se suivent : « du 26 au 30 »)');
+  egal(M.signature, 'votre assistante maternelle · le mercredi 25 novembre', '§4.2 : en pied, « émettrice · le <date> »');
+
+  /* Une seule source : le bloc « Le mois » de l'espace enfant rend les mêmes
+     lignes que le récap court. */
+  await aller('enfant', { contratId: 'c1', annee: 2026, mois: 11 });
+  await pause(300);
+  var fold = Array.prototype.filter.call(corps.querySelectorAll('.fold'), function (f) { return txt(f.querySelector('.fh')).indexOf('Le mois') === 0; })[0];
+  var lignesBloc = fold ? Array.prototype.map.call(fold.querySelectorAll('.ln'), function (l) {
+    return norm(txt(l.firstChild.firstChild)) + ' = ' + norm(txt(l.lastChild));
+  }) : [];
+  var lignesRecap = M.lignes.map(function (l) { return norm(l.libelle) + ' = ' + norm(l.valeur); });
+  egal(lignesBloc.join(' | '), lignesRecap.join(' | '), '§4.1 : le bloc « Le mois » et le récap court rendent les mêmes lignes, dans le même ordre');
+  assert(/Kit\.lignesPour\(/.test(SOURCE_ENFANT) && /Kit\.lignesPour\(ctx\)/.test(SOURCE_RECAP) &&
+    !/libelleEntretien\(/.test(SOURCE_ENFANT),
+    '§4.1 : … depuis la même fonction (Kit.lignesPour), sans copie dans ui-enfant.js');
+
+  /* Les trois formes, le même contenu. */
+  var morceaux = R.contenu(M);
+  var mAp = dansLOrdre(morceaux, txt(ap));
+  assert(mAp.length === 0, '§4.3 : l’aperçu porte tout le contenu, dans l’ordre' + (mAp.length ? ' — manque : ' + mAp.join(' / ') : ''));
+  var mTx = dansLOrdre(morceaux, tx);
+  assert(mTx.length === 0, '§4.3 : le texte porte tout le contenu, dans l’ordre' + (mTx.length ? ' — manque : ' + mTx.join(' / ') : ''));
+  var textesImage = cv.plan.ops.filter(function (o) { return o.t === 'texte'; }).map(function (o) { return o.texte; }).join(' ');
+  /* L'image écrit l'état et le titre des réserves en capitales. */
+  var mIm = dansLOrdre(morceaux.map(function (x) { return x.toLowerCase(); }), textesImage.toLowerCase());
+  assert(mIm.length === 0, '§4.3 : l’image porte tout le contenu, dans l’ordre' + (mIm.length ? ' — manque : ' + mIm.join(' / ') : ''));
+  /* La mesure mord : une ligne retirée de l'aperçu seul est vue. */
+  var apMute = R.apercu(M); apMute.querySelector('[data-cle="entretien"]').remove();
+  assert(dansLOrdre(morceaux, txt(apMute)).length > 0, '§4.3 : la mesure mord — une ligne manquante dans une seule forme est vue');
+  assert(tx.split('\n').length <= 14, '§4.3 : le texte tient en une dizaine de lignes (' + tx.split('\n').length + ')');
+  egal(cv.width, 1080, '§4.3 : l’image fait 360 points à l’échelle 3 (1080 px)');
+  var minTaille = Math.min.apply(null, cv.plan.ops.filter(function (o) { return o.t === 'texte'; }).map(function (o) { return o.taille; }));
+  assert(minTaille >= 11, '§4.3 : aucun texte sous 11 points (plus petit : ' + minTaille + ')');
+
+  /* Aucune couleur écrite en dur dans le module de l'image. */
+  var codeRecap = SOURCE_RECAP.replace(/\/\*[\s\S]*?\*\//g, '');
+  var COULEUR = /#[0-9a-fA-F]{3,8}\b|rgba?\s*\(|hsla?\s*\(|['"](white|black)['"]/;
+  assert(!COULEUR.test(codeRecap), '§4.3 : aucune couleur écrite en dur dans js/ui-recap.js (jetons de :root)');
+  assert(COULEUR.test(codeRecap.replace("fond: j('--bg2')", "fond: '#ffffff'")), '§4.3 : la mesure mord — une couleur en dur remise est vue');
+
+  /* Récupération négative : le signe reste. */
+  var resNeg = window.Kit.reservesFinDeMois({ resultat: { compteurSortie: { minutesSup: -270, minutesCpAcquis: 0, minutesCpPris: 0 } }, parJourConge: 540 });
+  assert(/^[-−]\s?4h30$/.test(norm(resNeg[1].valeur)), '§4.2 : une récupération négative garde son signe (obtenu « ' + resNeg[1].valeur + ' »)');
+  egal(window.Kit.reservesFinDeMois({ resultat: {} }).length, 0, '§4.5 : un instantané sans compteur de sortie ne rend aucune réserve — rien d’inventé');
+
+  /* « faits · à venir » : seulement s'il reste des journées ET que le mois est ouvert. */
+  poserJour('2026-11-30');
+  var M30 = R.modele(await ctxRecap('c1', 2026, 11));
+  assert(!M30.lignes[0].sous && !M30.avancement, '§4.2 : le 30, plus aucune journée à venir — pas de « faits · à venir »');
+  assert(!M30.pied, '§4.4 : … et pas de phrase de journées à venir');
+  poserJour('2026-08-21');
+  var MJ = R.modele(await ctxRecap('c1', 2026, 7));
+  egal(MJ.libelleEtat, 'Définitif', '§4.2 : juillet clôturé — état « Définitif »');
+  assert(!MJ.lignes[0].sous, '§4.2 : mois clôturé — pas de « faits · à venir »');
+  assert(!MJ.pied, '§4.4 : définitif sans envoi avant — pas de phrase');
+  egal(MJ.lignes[MJ.lignes.length - 1].valeur, window.Kit.eur(118650), '§4.5 : mois clôturé — le récap lit l’instantané');
+
+  /* L'instantané garde le dénominateur. */
+  var cxN = await ctxRecap('c1', 2026, 11);
+  var snap = window.UiDocument.construireInstantane(cxN);
+  egal(snap.joursTravaillesPlanning, 20, '§4.5 : l’instantané garde le nombre de jours travaillés du planning (« sur 20 »)');
+
+  /* Où il vit : le document du mois, à partir du 25 (D2). */
+  poserJour('2026-11-24');
+  await aller('document', { contratId: 'c1', annee: 2026, mois: 11 }); await pause(300);
+  absent(corps, 'L’image à envoyer', '§4.5 / D2 : le 24, le récap court n’est pas proposé');
+  assert(!!boutonExact(corps, 'Enregistrer en image'), 'D1 : le document détaillé reste consultable avant le 25');
+  poserJour('2026-11-25');
+  await aller('document', { contratId: 'c1', annee: 2026, mois: 11 }); await pause(300);
+  var blocRc = corps.querySelector('.rc-bloc');
+  assert(!!blocRc, '§4.5 : le 25, le bloc « L’image à envoyer » est là');
+  contient(blocRc, 'L’image à envoyer', '§4.5 : … avec son titre');
+  assert(blocRc && !!boutonExact(blocRc, 'Envoyer aux parents') && !!boutonExact(blocRc, 'Copier le texte'),
+    '§4.5 : … « Envoyer aux parents » et « Copier le texte »');
+  assert(blocRc && !!boutonExact(blocRc, 'Voir le récapitulatif détaillé'), 'D1 : … et le lien « Voir le récapitulatif détaillé »');
+  var titreDet = Array.prototype.filter.call(corps.querySelectorAll('.ttl'), function (t) { return txt(t) === 'Le récapitulatif détaillé'; })[0];
+  assert(!!titreDet && (blocRc.compareDocumentPosition(titreDet) & 4), '§4.5 : « Le récapitulatif détaillé » vient en dessous');
+  assert(!!boutonExact(corps, 'Enregistrer en image') && corps.querySelectorAll('button').length > 3,
+    'D1 : le document détaillé et ses deux boutons restent, inchangés');
+  contient(blocRc, '17 faits · 3 à venir', '§4.5 : l’aperçu à l’écran est celui du modèle');
+  poserJour('2026-08-21');
 
   /* §SUITE — les sections des commits suivants s'ajoutent ici. */
 

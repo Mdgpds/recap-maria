@@ -74,7 +74,8 @@ Chaque module est une IIFE qui expose une seule globale :
 ```
 
 Globales exposées : `Messages`, `Feries`, `Format`, `Engine`, `DB`,
-`ChaineMois`, `Kit`, `App`.
+`ChaineMois`, `Kit`, `App` — plus un module par écran (`UiAccueil`,
+`UiEnfant`, … et, depuis le lot 33, `UiRecap`).
 
 L'ordre de chargement des `<script>` dans `index.html` **est** l'ordre des
 dépendances. Un nouveau fichier `js/` ou `css/` doit entrer dans **trois**
@@ -233,6 +234,24 @@ affiche les mesures et un verdict, et une capture suffit à trancher. Si la band
 persiste, le plan B (sonde comparée à `screen.height`) se décide sur ces
 chiffres, pas d'avance.
 
+### Le récap court — l'image envoyée aux parents (lot 33)
+
+`js/ui-recap.js` dessine l'image courte, son aperçu et son texte à copier, à
+partir d'**un seul modèle** (`UiRecap.modele`) ; `UiRecap.contenu` dit, dans
+l'ordre, chaque morceau que les trois formes doivent porter, et les tests
+vérifient l'égalité. Les **lignes** viennent de `Kit.lignesDuMois` /
+`Kit.lignesPour` (`js/ui-kit.js`) — la même fonction que le bloc « Le mois »
+de l'espace enfant : ne jamais en écrire une seconde copie. L'image prend
+l'identité de l'application, ses couleurs sont **lues dans les jetons de
+`:root`** (aucune couleur écrite dans `ui-recap.js`, c'est testé), largeur
+360 points à l'échelle 3, aucun texte sous 11 points. Elle est proposée dans le
+document du mois à partir du 25 (`Kit.JOUR_BASCULE_CLOTURE`) ou sur un mois
+clôturé. États : `Prévisionnel` (mois ouvert), `Définitif` (clôturé). Le
+partage passe par `Kit.partagerImage`, qui rend ce qui s'est passé
+(`partage`, `annule`, `telecharge`, `echec`) — le chemin du document détaillé,
+déménagé. L'instantané garde depuis ce lot `joursTravaillesPlanning` (le « sur
+20 » d'un mois clôturé).
+
 ### Les rappels (lot 32)
 
 L'écran des rappels a **trois états** et n'en affiche qu'un : non configuré
@@ -338,7 +357,7 @@ index.html            l'unique page ; l'ordre des <script> est l'ordre des dépe
 sw.js                 service worker : VERSION, pré-cache, stratégies
 config.js             URL et clé publishable Supabase — rien d'autre
 css/style.css         feuille unique ; couleurs dans :root, jamais en dur ailleurs
-js/                   18 modules (voir §2)
+js/                   19 modules (voir §2) ; ui-recap.js (lot 33) = le récap court envoyé aux parents
 test/                 suites + fumée d'interface ; test/fixtures/ = moteurs figés
 supabase/migrations/  001 à 021, jamais réécrites (021 : écrite, non appliquée)
 supabase/functions/   rappels-cloture (non déployée à ce jour) + DEPLOIEMENT.md, la marche à suivre

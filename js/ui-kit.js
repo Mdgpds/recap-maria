@@ -545,6 +545,144 @@
   }
   function section(titre) { return ce('div', 'sec', titre); }
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 33 §4.1 — LES LIGNES DU BLOC « LE MOIS » — LA SOURCE UNIQUE     */
+  /*                                                                     */
+  /* Lues par le bloc de l'espace enfant (js/ui-enfant.js) ET par le     */
+  /* récap court envoyé aux parents (js/ui-recap.js). Elles vivent ici   */
+  /* parce que tous les écrans chargent Kit.                              */
+  /* ------------------------------------------------------------------ */
+
+  /* Le libellé de la ligne d'entretien : « Entretien — 20 j × 5,00 € » quand
+     le montant est exactement jours × indemnité du jour (les conditions du
+     mois), « Indemnité d’entretien » sinon. Déménagé de js/ui-enfant.js à
+     l'identique. */
+  function libelleEntretien(r, parJour) {
+    var attendu = r.joursPresence * (parJour || 0);
+    if (parJour && attendu === r.entretienCentimes) {
+      return 'Entretien — ' + r.joursPresence + ' j × ' + eur(parJour);
+    }
+    return 'Indemnité d’entretien';
+  }
+
+  /* `p` : { resultat, travailles (nombre ou null), entretienParJour }.
+     Rend la liste ordonnée des lignes : { cle, libelle, valeur, sous, alerte,
+     total, n, unite }. `n` est la valeur ENTIÈRE comparable (centimes,
+     minutes ou jours) ; `unite` dit laquelle — c'est ce que l'envoi garde et
+     ce que la comparaison du dernier jour relit. */
+  function lignesDuMois(p) {
+    var r = p.resultat;
+    var out = [];
+
+    /* Correction A6, conservée : sur un mois clôturé, le dénominateur ne se
+       recompte pas sur les bornes courantes du contrat. Il vient de
+       l'instantané quand celui-ci le porte (`joursTravaillesPlanning`, gardé
+       depuis le lot 33), sinon il n'est pas dit. */
+    out.push({ cle: 'presence', libelle: 'Jours de présence',
+      valeur: p.travailles != null ? r.joursPresence + ' j sur ' + p.travailles : jours(r.joursPresence),
+      n: r.joursPresence, unite: 'jours' });
+
+    /* Le net DÛ, jamais le net contractuel (correction B4 du lot 17). */
+    var partiel = global.ChaineMois.proratOuNull(r);
+    out.push({ cle: 'net', libelle: 'Salaire net', valeur: eur(global.ChaineMois.netDuMois(r)),
+      sous: partiel
+        ? 'mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
+          partiel.joursDuMois + ' au contrat'
+        : null,
+      n: global.ChaineMois.netDuMois(r), unite: 'centimes' });
+
+    out.push({ cle: 'entretien', libelle: libelleEntretien(r, p.entretienParJour),
+      valeur: eur(r.entretienCentimes), n: r.entretienCentimes, unite: 'centimes' });
+
+    /* LOT 28 (§28.4) — la part de familiarisation, en deux lignes. */
+    var fam = global.ChaineMois.partFamiliarisation(r);
+    if (fam.actif) {
+      out.push({ cle: 'famHeures', libelle: 'Familiarisation — heures déclarées',
+        valeur: eur(fam.netCentimes),
+        sous: heures(r.familiarisation.minutesDeclarees || 0) + ' déclarées, au taux du contrat',
+        n: fam.netCentimes, unite: 'centimes' });
+      var nj = r.familiarisation.joursAvecEntretien || 0;
+      out.push({ cle: 'famEntretien', libelle: 'Familiarisation — entretien',
+        valeur: eur(fam.entretienCentimes),
+        sous: nj + ' jour' + (nj > 1 ? 's' : '') + ' avec indemnité',
+        n: fam.entretienCentimes, unite: 'centimes' });
+    }
+
+    if (r.joursCongesDecomptes > 0) {
+      var imp = r.imputation || {};
+      var bouts = [];
+      if (imp.joursSurCp) bouts.push(imp.joursSurCp + ' j payés');
+      if (imp.joursSurSup) bouts.push(imp.joursSurSup + ' j récup');
+      if (imp.joursSansSolde) bouts.push(imp.joursSansSolde + ' j sans solde');
+      out.push({ cle: 'conges', libelle: 'Congés posés', valeur: r.joursCongesDecomptes + ' j ouvrables',
+        sous: bouts.join(' · ') || null, alerte: (imp.joursSansSolde || 0) > 0,
+        n: r.joursCongesDecomptes, unite: 'jours' });
+    }
+    if (r.retenueSansSoldeCentimes > 0) {
+      out.push({ cle: 'retenue', libelle: 'Retenue pour jour(s) sans solde',
+        valeur: '− ' + eur(r.retenueSansSoldeCentimes), alerte: true,
+        n: r.retenueSansSoldeCentimes, unite: 'centimes' });
+    }
+
+    var sousSup = [];
+    if (r.minutesSupAjoutees > 0) sousSup.push('dont ' + heures(r.minutesSupAjoutees) + ' ajoutées');
+    if (r.minutesSupRenoncees > 0) {
+      sousSup.push('dont ' + heures(r.minutesSupRenoncees) + ' non réclamées, votre choix');
+    }
+    out.push({ cle: 'sup', libelle: 'Heures sup du mois', valeur: heures(r.minutesSupAcquises),
+      sous: sousSup.join(' · ') || null, n: r.minutesSupAcquises || 0, unite: 'minutes' });
+
+    out.push({ cle: 'total', libelle: 'Total à verser', valeur: eur(r.totalAVerserCentimes),
+      total: true, n: r.totalAVerserCentimes, unite: 'centimes' });
+    return out;
+  }
+
+  /* Les réserves à la fin du mois — celles que le document détaillé affiche
+     sous « Compteurs de ce contrat à la fin du mois » : mêmes fonctions, mêmes
+     formats. La récupération s'affiche TELLE QUELLE, avec son signe : jamais
+     bornée à zéro (décision du 28 août). Un instantané ancien sans compteur de
+     sortie ne rend rien : l'image dit ce qu'elle sait et n'invente rien. */
+  function reservesFinDeMois(p) {
+    var cs = p.resultat && p.resultat.compteurSortie;
+    if (!cs) return [];
+    return [
+      { cle: 'cp', libelle: 'Congés payés',
+        valeur: joursCp(cpDisponible(cs), p.parJourConge || 0),
+        n: cpDisponible(cs), unite: 'minutes' },
+      { cle: 'recup', libelle: 'Heures de récupération',
+        valeur: heures(cs.minutesSup || 0),
+        n: cs.minutesSup || 0, unite: 'minutes' }
+    ];
+  }
+
+  /* Le nombre de jours travaillés du planning, pour « 20 j sur 20 ». Mois
+     ouvert : compté sur les journées (comme le bloc l'a toujours fait). Mois
+     clôturé : lu dans l'instantané, ou rien. */
+  function travaillesDu(ctx) {
+    var r = ctx.entree.resultat;
+    if (ctx.entree.fige) return r.joursTravaillesPlanning != null ? r.joursTravaillesPlanning : null;
+    var cond = ctx.entree.conditions || {};
+    return joursTravailles(ctx.contrat, cond.jours_planning || null, ctx.annee, ctx.mois,
+      ctx.journees || {}).length;
+  }
+
+  function conditionDu(ctx, champ) {
+    var c = ctx.entree && ctx.entree.conditions;
+    if (c && c[champ] != null) return c[champ];
+    return ctx.contrat ? ctx.contrat[champ] : null;
+  }
+
+  /* Les lignes du bloc « Le mois » pour un contexte d'écran — ce qu'appelle
+     js/ui-enfant.js. */
+  function lignesPour(ctx) {
+    return lignesDuMois({
+      resultat: ctx.entree.resultat,
+      travailles: travaillesDu(ctx),
+      entretienParJour: (ctx.entree.conditions && ctx.entree.conditions.entretien_centimes_jour) || 0
+    });
+  }
+
+
   /* LOT 33 §2 — L'AVERTISSEMENT DE CLÔTURE ANTICIPÉE, EN UN SEUL EXEMPLAIRE.
 
      L'ancienne phrase disait « Si vous clôturez maintenant, ces journées ne
@@ -1485,6 +1623,63 @@
   /* LOT 7 — rend désormais une PROMESSE, pour que l'appelant puisse réagir à
      l'échec (ramener l'aperçu du texte sous les yeux, par exemple). Les
      messages restent posés ici : ils doivent être les mêmes partout. */
+  /* LOT 33 — LE PARTAGE D'UNE IMAGE, EN UN SEUL EXEMPLAIRE.
+
+     Le chemin est celui du document mensuel depuis le lot 6 : le partage du
+     téléphone (`navigator.share({ files })`) quand il sait partager un
+     fichier, un téléchargement sinon. Il vivait dans `js/ui-document.js` ; le
+     récap court le réutilise, il ne le réinvente pas.
+
+     Ce qui change : le chemin DIT ce qui s'est passé. La promesse rend
+       'partage'   — le partage du téléphone a abouti ;
+       'annule'    — Maria a refermé le partage (AbortError) : rien n'est parti ;
+       'telecharge'— repli par téléchargement (pas de partage de fichier, ou
+                     partage en échec) : on ne sait pas si l'image est partie ;
+       'echec'     — l'image n'a pas pu être produite.
+     C'est ce qui permet de ne JAMAIS affirmer qu'un récap est parti sans le
+     savoir (§5.4). `opts.telechargerSiAnnule` garde le comportement d'origine
+     du document détaillé, qui téléchargeait aussi quand on annulait. */
+  function partagerImage(canvas, nomFichier, opts) {
+    opts = opts || {};
+    return new Promise(function (resoudre) {
+      if (!canvas || !canvas.toBlob) { resoudre('echec'); return; }
+      canvas.toBlob(function (blob) {
+        if (!blob) { toast('Image impossible à produire.', true); resoudre('echec'); return; }
+        var fichier = null;
+        try { fichier = new File([blob], nomFichier, { type: 'image/png' }); } catch (e) { fichier = null; }
+        var nav = global.navigator;
+        if (fichier && nav && nav.canShare && nav.canShare({ files: [fichier] }) && nav.share) {
+          nav.share({ files: [fichier] })
+            .then(function () { toast('Image partagée'); resoudre('partage'); })
+            .catch(function (e) {
+              if (e && e.name === 'AbortError' && !opts.telechargerSiAnnule) { resoudre('annule'); return; }
+              resoudre(telechargerBlob(blob, nomFichier) ? 'telecharge' : 'echec');
+            });
+          return;
+        }
+        resoudre(telechargerBlob(blob, nomFichier) ? 'telecharge' : 'echec');
+      }, 'image/png');
+    });
+  }
+
+  function telechargerBlob(blob, nomFichier) {
+    try {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = nomFichier;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      toast('Image enregistrée');
+      return true;
+    } catch (e) {
+      toast('Enregistrement de l’image impossible. Utilisez « Copier le texte ».', true);
+      return false;
+    }
+  }
+
   function copierTexte(txt) {
     return new Promise(function (resoudre, rejeter) {
       var ok = function () {
@@ -1653,7 +1848,15 @@
      `journees` est FACULTATIF : les appelants qui ne l'ont pas obtiennent le
      décompte d'avant, jamais une exception. */
   function joursTravaillesRestants(contrat, planning, annee, mois, aujourdhuiIso, journees) {
-    if (!contrat || !aujourdhuiIso) return 0;
+    return joursRestantsListe(contrat, planning, annee, mois, aujourdhuiIso, journees).length;
+  }
+
+  /* LOT 33 §4.4 — LES MÊMES JOURNÉES, NOMMÉES. Le récap prévisionnel dit
+     « 3 journées à venir (du 26 au 30 novembre) » : il lui faut les dates, pas
+     seulement leur nombre. `joursTravaillesRestants` en est la longueur — un
+     seul filtre, deux usages, et ils ne peuvent pas diverger. */
+  function joursRestantsListe(contrat, planning, annee, mois, aujourdhuiIso, journees) {
+    if (!contrat || !aujourdhuiIso) return [];
     return joursPlanning(contrat, planning, annee, mois).filter(function (d) {
       if (d <= aujourdhuiIso) return false;
       if (Feries.estJourFerie(d)) return false;
@@ -1662,7 +1865,7 @@
       var ligne = journees && journees[d];
       if (ligne && ligne.type && ligne.type !== 'presence') return false;
       return true;
-    }).length;
+    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -1802,6 +2005,9 @@
     MOIS: MOIS, MOIS_COURT: MOIS_COURT, JOURS_SEMAINE: JOURS_SEMAINE, NBSP: NBSP,
     pane: pane, lines: lines, ligne: ligne, note: note, warnbox: warnbox, section: section,
     encartJoursAVenir: encartJoursAVenir,
+    /* LOT 33 §4.1 — la source unique des lignes du bloc « Le mois ». */
+    lignesDuMois: lignesDuMois, lignesPour: lignesPour, reservesFinDeMois: reservesFinDeMois,
+    travaillesDu: travaillesDu, conditionDu: conditionDu,
     /* LOT 24 (§24.2) — les composants uniques du socle. */
     enc: enc, encOne: encOne, ligneLn: ligneLn, carteTap: carteTap,
     /* LOT 32 — titre de section et carte à lignes du socle. */
@@ -1812,10 +2018,12 @@
     ouvrirFeuille: ouvrirFeuille, fermerFeuille: fermerFeuille, feuilleEstOuverte: feuilleEstOuverte,
     choix: choix,
     toast: toast, messageErreur: messageErreur, copierTexte: copierTexte,
+    partagerImage: partagerImage,
     joursPlanning: joursPlanning, joursTravailles: joursTravailles, typeDuJour: typeDuJour,
     etatDuMois: etatDuMois,
     /* LOT 30 — le prédicat d'un mois rouvert, à un seul endroit. */
     moisRouvert: moisRouvert, joursTravaillesRestants: joursTravaillesRestants,
+    joursRestantsListe: joursRestantsListe,
     pastilleEtat: pastilleEtat, LIBELLE_ETAT: LIBELLE_ETAT,
     JOUR_BASCULE_CLOTURE: JOUR_BASCULE_CLOTURE,
     /* LOT 17 §17.4 — le formulaire des onze conditions, partagé par la

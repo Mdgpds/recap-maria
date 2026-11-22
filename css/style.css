@@ -1879,6 +1879,43 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 .totmois .tm-pied { font-size: 12px; opacity: .78; margin-top: 9px; line-height: 1.45; }
 
 /* ------------------------------------------------------------------------ */
+/* LOT 33 §4 — LE RÉCAP COURT : L'APERÇU DE L'IMAGE À ENVOYER                */
+/*     L'identité de l'application (fond blanc, accent vert), pas le papier. */
+/*     L'image canvas lit les MÊMES jetons (js/ui-recap.js).                 */
+/* ------------------------------------------------------------------------ */
+
+.rc-bloc { display: flex; flex-direction: column; margin-bottom: 14px; }
+.rc-bloc > .btn { margin-top: 10px; }
+.rcc { background: var(--bg2); border: 1px solid var(--ln); border-radius: var(--r); box-shadow: var(--sh);
+  overflow: hidden; }
+.rcc-tete { display: flex; align-items: flex-start; gap: 10px; padding: 14px 15px 11px; border-bottom: 1px solid var(--ln); }
+.rcc-id { flex: 1; min-width: 0; }
+.rcc-ti { font-size: 15px; font-weight: 700; color: var(--ink); line-height: 1.3; }
+.rcc-fa { font-size: 12px; color: var(--ink3); margin-top: 1px; }
+.rcc-et { flex: none; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 999px; background: var(--acs); color: var(--ac); border: 1px solid var(--acl2); }
+.rcc.prev .rcc-et { background: var(--was); color: var(--wa); border-color: var(--wal); }
+.rcc-lignes, .rcc-res { padding: 0 15px; }
+.rcc-res { border-top: 1px solid var(--ln); padding-top: 9px; }
+.rcc-st { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); }
+.rcc-l { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--ln);
+  font-size: 14px; color: var(--ink); }
+.rcc-l:last-child { border-bottom: 0; }
+.rcc-l b { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rcc-l b.wa { color: var(--wa); }
+.rcc-lg { min-width: 0; }
+.rcc-sous { display: block; font-size: 12px; color: var(--ink3); margin-top: 2px; }
+.rcc-sous.ch { color: var(--wad); font-weight: 600; }
+.rcc-l.tot { border-top: 1.5px solid var(--ink); border-bottom: 0; margin-top: 4px; font-weight: 600; align-items: center; }
+.rcc-l.tot b { font-size: 19px; }
+.rcc-pied { border-top: 1px solid var(--ln); padding: 10px 15px 12px; }
+.rcc.prev .rcc-pied, .rcc.cor .rcc-pied { background: var(--was); }
+.rcc.def .rcc-pied { background: var(--acs); }
+.rcc-ph { margin: 0 0 4px; font-size: 13px; color: var(--ink2); line-height: 1.45; }
+.rcc-ph b { color: var(--ink); }
+.rcc-sig { font-size: 12px; color: var(--ink3); }
+
+/* ------------------------------------------------------------------------ */
 /* 18. RESPONSIVE — sous 375 px, tout se resserre d'un cran                  */
 /*     (paddings et espacements seulement : les quatre tailles de police      */
 /*     sont une loi, la media query de la maquette qui descendait à 12 px     */

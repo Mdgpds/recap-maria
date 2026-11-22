@@ -999,75 +999,21 @@
      Ce sont EXACTEMENT les lignes du panneau d'hier : aucune n'est retirée,
      elles changent seulement de contenant. */
   function replisLeMois() {
-    var c = vue.contrat;
     var r = vue.entree.resultat;
     var f = Kit.fold('Le mois', Kit.eur(r.totalAVerserCentimes), { ouvert: true });
-    var l = f.corps;
-
-    /* Correction A6 : sur un mois clôturé, le dénominateur d'hier venait d'un
-       comptage fait en direct sur les bornes COURANTES du contrat — un
-       archivage postérieur faisait passer « 20 j sur 20 » à « 20 j sur 14 »
-       sur un document censé ne plus bouger. */
-    if (vue.clos) {
-      Kit.ligneLn(l, 'Jours de présence', Kit.jours(r.joursPresence));
-    } else {
-      var travailles = Kit.joursTravailles(c, planningDuMois(), vue.annee, vue.mois,
-        vue.journees).length;
-      Kit.ligneLn(l, 'Jours de présence', r.joursPresence + ' j sur ' + travailles);
-    }
-
-    /* Le net DÛ, jamais le net contractuel (correction B4 du lot 17). */
-    var partiel = Chaine.proratOuNull(r);
-    Kit.ligneLn(l, 'Salaire net', Kit.eur(Chaine.netDuMois(r)), {
-      sous: partiel
-        ? 'mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
-          partiel.joursDuMois + ' au contrat'
-        : null
+    /* LOT 33 §4.1 — UNE SEULE SOURCE. Les lignes de ce bloc sont rendues par
+       `Kit.lignesPour` — la fonction que lit aussi le récap court envoyé
+       aux parents. Mêmes lignes, même ordre, mêmes libellés : deux copies
+       d'une même liste finissent toujours par diverger, et ici l'une des deux
+       part chez une famille. Les corrections A6 (dénominateur d'un mois
+       clôturé), B4 (le net DÛ), §28.4 (familiarisation) y ont déménagé telles
+       quelles. */
+    Kit.lignesPour({
+      contrat: vue.contrat, entree: vue.entree, journees: vue.journees,
+      annee: vue.annee, mois: vue.mois
+    }).forEach(function (l) {
+      Kit.ligneLn(f.corps, l.libelle, l.valeur, { sous: l.sous || null, alerte: !!l.alerte, total: !!l.total });
     });
-
-    Kit.ligneLn(l, libelleEntretien(r), Kit.eur(r.entretienCentimes));
-
-    /* LOT 28 (§28.4) — LA PART DE FAMILIARISATION, EN DEUX LIGNES, comme sur
-       le document. Le net et l'entretien ci-dessus sont ceux de la garde
-       mensualisée ; le total du repli ajoute la familiarisation. Un total est
-       toujours la somme des lignes affichées au-dessus. */
-    var fam = Chaine.partFamiliarisation(r);
-    if (fam.actif) {
-      Kit.ligneLn(l, 'Familiarisation — heures déclarées', Kit.eur(fam.netCentimes), {
-        sous: Kit.heures(r.familiarisation.minutesDeclarees || 0) + ' déclarées, au taux du contrat'
-      });
-      Kit.ligneLn(l, 'Familiarisation — entretien', Kit.eur(fam.entretienCentimes), {
-        sous: (r.familiarisation.joursAvecEntretien || 0) + ' jour' +
-          ((r.familiarisation.joursAvecEntretien || 0) > 1 ? 's' : '') + ' avec indemnité'
-      });
-    }
-
-    if (r.joursCongesDecomptes > 0) {
-      var imp = r.imputation || {};
-      var bouts = [];
-      if (imp.joursSurCp) bouts.push(imp.joursSurCp + ' j payés');
-      if (imp.joursSurSup) bouts.push(imp.joursSurSup + ' j récup');
-      if (imp.joursSansSolde) bouts.push(imp.joursSansSolde + ' j sans solde');
-      Kit.ligneLn(l, 'Congés posés', r.joursCongesDecomptes + ' j ouvrables', {
-        sous: bouts.join(' · ') || null,
-        alerte: (imp.joursSansSolde || 0) > 0
-      });
-    }
-    if (r.retenueSansSoldeCentimes > 0) {
-      Kit.ligneLn(l, 'Retenue pour jour(s) sans solde',
-        '− ' + Kit.eur(r.retenueSansSoldeCentimes), { alerte: true });
-    }
-
-    var sousSup = [];
-    if (r.minutesSupAjoutees > 0) sousSup.push('dont ' + Kit.heures(r.minutesSupAjoutees) + ' ajoutées');
-    if (r.minutesSupRenoncees > 0) {
-      sousSup.push('dont ' + Kit.heures(r.minutesSupRenoncees) + ' non réclamées, votre choix');
-    }
-    Kit.ligneLn(l, 'Heures sup du mois', Kit.heures(r.minutesSupAcquises), {
-      sous: sousSup.join(' · ') || null
-    });
-
-    Kit.ligneLn(l, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
     return f;
   }
 
@@ -2123,14 +2069,8 @@
     return td;
   }
 
-  function libelleEntretien(r) {
-    var parJour = reg('entretien_centimes_jour', 0);
-    var attendu = r.joursPresence * parJour;
-    if (attendu === r.entretienCentimes) {
-      return 'Entretien — ' + r.joursPresence + ' j × ' + Kit.eur(parJour);
-    }
-    return 'Indemnité d’entretien';
-  }
+  /* LOT 33 — `libelleEntretien` a déménagé dans js/ui-kit.js, avec les
+     lignes du bloc « Le mois » qui étaient son seul lecteur. */
 
   /* §18.6 — DEVANT DEUX RÉSERVES, LAQUELLE SERA CONSOMMÉE ? La question se
      pose à chaque congé posé, et la réponse était introuvable sans ouvrir la

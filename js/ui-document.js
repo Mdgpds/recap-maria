@@ -105,6 +105,14 @@
   /* l'image. Trois rendus différents ne doivent jamais pouvoir diverger. */
   /* ------------------------------------------------------------------ */
 
+  /* LOT 33 — le contexte que lit le récap court : le même mois, les mêmes
+     journées, la même date du jour que ce document. */
+  function contexteRecap() {
+    return { contrat: vue.contrat, entree: vue.entree, journees: vue.journees,
+      annee: vue.annee, mois: vue.mois, aujourdhui: global.App.aujourdhui(),
+      nomEmettrice: (global.App.nomEmettrice && global.App.nomEmettrice()) || null };
+  }
+
   function identite() {
     var r = vue.entree.resultat;
     /* Sur un mois clôturé, le nom vient de l'instantané : renommer un enfant
@@ -787,7 +795,23 @@
       corps.appendChild(enc);
     }
 
-    corps.appendChild(documentHtml(id));
+    /* LOT 33 §4.5 — « L'IMAGE À ENVOYER », AU-DESSUS DU DOCUMENT DÉTAILLÉ.
+       Proposée à partir du 25 pour le mois en cours, toujours pour un mois
+       clôturé (D2) ; jamais quand un salaire manque — l'image partirait avec
+       un total amputé. Le document détaillé et ses deux boutons restent
+       dessous, inchangés, sous « Le récapitulatif détaillé » (D1). */
+    var docHtml = documentHtml(id);
+    if (!e.salaireManquant && !netManquant && global.UiRecap &&
+        global.UiRecap.estPropose(vue.annee, vue.mois, e, global.App.aujourdhui())) {
+      var titreDetaille = Kit.ttl('Le récapitulatif détaillé');
+      corps.appendChild(global.UiRecap.blocImageAEnvoyer(contexteRecap(), {
+        versDetaille: function () {
+          if (titreDetaille.scrollIntoView) titreDetaille.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        }
+      }));
+      corps.appendChild(titreDetaille);
+    }
+    corps.appendChild(docHtml);
 
     if (e.fige) {
       corps.appendChild(Kit.note('Mois clôturé' + (e.recap && e.recap.fige_le ? ' le ' + Kit.dateLongue(e.recap.fige_le) : ''),
@@ -1318,6 +1342,9 @@
                                      : String(s).toLowerCase();
   }
 
+  /* LOT 33 — le partage passe par `Kit.partagerImage`, qui est CE chemin,
+     déménagé pour que le récap court le réutilise. Le document détaillé garde
+     son comportement d'origine : un partage refermé télécharge l'image. */
   function enregistrerImage(bouton) {
     var canvas;
     try { canvas = dessiner(); }
@@ -1327,41 +1354,7 @@
     }
     bouton.disabled = true;
     var fini = function () { bouton.disabled = false; };
-
-    canvas.toBlob(function (blob) {
-      if (!blob) { Kit.toast('Image impossible à produire.', true); fini(); return; }
-      var fichier = null;
-      try { fichier = new File([blob], nomFichier(), { type: 'image/png' }); } catch (e) { fichier = null; }
-
-      /* Sur téléphone, le partage natif enregistre dans les photos ou envoie
-         directement — sans aucune intégration WhatsApp de notre côté. */
-      if (fichier && global.navigator && global.navigator.canShare &&
-          global.navigator.canShare({ files: [fichier] }) && global.navigator.share) {
-        global.navigator.share({ files: [fichier] })
-          .then(function () { Kit.toast('Image partagée'); })
-          .catch(function () { telecharger(blob); })
-          .then(fini, fini);
-        return;
-      }
-      telecharger(blob);
-      fini();
-    }, 'image/png');
-  }
-
-  function telecharger(blob) {
-    try {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = nomFichier();
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-      Kit.toast('Image enregistrée');
-    } catch (e) {
-      Kit.toast('Enregistrement de l’image impossible. Utilisez « Copier le texte ».', true);
-    }
+    Kit.partagerImage(canvas, nomFichier(), { telechargerSiAnnule: true }).then(fini, fini);
   }
 
   /* ------------------------------------------------------------------ */
@@ -1494,6 +1487,15 @@
        pouvoir le dire des années plus tard, quand l'avenant aura été suivi de
        trois autres. */
     snap.avenantNumero = ctx.entree.conditions ? ctx.entree.conditions.numero : null;
+    /* LOT 33 §4.5 — le nombre de jours travaillés du planning, figé. C'est le
+       « sur 20 » de « 20 j sur 20 » : le récap court et le bloc « Le mois » le
+       lisent ici sur un mois clôturé, plutôt que de le recompter sur les
+       bornes courantes du contrat (correction A6). Aucun montant n'en dépend.
+       Un instantané plus ancien ne le porte pas : le dénominateur n'est alors
+       pas dit, comme avant. */
+    snap.joursTravaillesPlanning = Kit.joursTravailles(ctx.contrat,
+      (ctx.entree.conditions && ctx.entree.conditions.jours_planning) || null,
+      ctx.annee, ctx.mois, ctx.journees || {}).length;
     return snap;
   }
 

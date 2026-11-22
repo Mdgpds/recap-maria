@@ -512,9 +512,98 @@ const ECRANS = [
   controle('§1.3 non installée : pas de classe, `min-height` inchangé', !nonInst.classe && (nonInst.minH === '0px' || nonInst.minH === 'auto'), nonInst.minH);
   await page.setViewportSize({ width: 390, height: 780 });
 
+  /* ------------------------------------------------------------------
+     LOT 33 §4 à §6 — LES ÉCRANS DU RÉCAP, DANS UNE PAGE AU 25 NOVEMBRE.
+
+     Même décor, horloge posée au 25 novembre 2026 : le récap court est
+     proposé, des journées restent à venir. Chaque écran est mesuré aux
+     tailles extrêmes et à 390 px — débordement, rognage, zones tactiles —
+     et l'image est relue dans le vrai navigateur : sa largeur, ses textes
+     dans le cadre, son fond tiré du jeton.
+     ------------------------------------------------------------------ */
+  const nouvellePage = async (aujIso, L, H) => {
+    const p = await nav.newPage({ viewport: { width: L || 390, height: H || 780 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+    await p.addInitScript((a) => { window.__AUJ_MESURES__ = a; }, aujIso);
+    await p.addInitScript(FAUX);
+    await p.goto('http://localhost:8098/', { waitUntil: 'domcontentloaded' });
+    await p.waitForTimeout(1500);
+    return p;
+  };
+  const mesurerEcran = (p, L) => p.evaluate((L) => {
+    const out = { deb: [], rog: [], pet: [] };
+    document.querySelectorAll('#vue-app *').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      if (b.right > L + 0.5 || b.left < -0.5) out.deb.push((el.tagName + '.' + (el.className || '')).slice(0, 50));
+      if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX === 'hidden') out.rog.push((el.tagName + '.' + (el.className || '')).slice(0, 50));
+    });
+    document.querySelectorAll('#vue-app button, #vue-app a, #vue-app input, #vue-app select').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      let w = b.width, h = b.height;
+      const a = getComputedStyle(el, '::after');
+      if (a && a.content !== 'none' && a.position === 'absolute' && a.minHeight === '44px' && a.minWidth === '44px') {
+        w = Math.max(w, parseFloat(a.width) || 0); h = Math.max(h, parseFloat(a.height) || 0);
+      }
+      if (h < 44 || w < 44) out.pet.push((el.tagName + '.' + (el.className || '')).slice(0, 40) + ' ' + Math.round(w) + '×' + Math.round(h));
+    });
+    return out;
+  }, L);
+  const allerP = async (p, ecran, params) => {
+    await p.evaluate(() => { if (window.Kit && window.Kit.fermerFeuille) window.Kit.fermerFeuille(); });
+    await p.evaluate(([e, q]) => window.App.aller(e, q, true), [ecran, params || {}]);
+    await p.waitForTimeout(700);
+  };
+  const controleEcran = async (p, nom, ecran, params, avant) => {
+    for (const [L, H] of [[320, 568], [390, 844], [440, 956]]) {
+      await p.setViewportSize({ width: L, height: H });
+      await allerP(p, ecran, params);
+      if (avant) { await p.evaluate(avant); await p.waitForTimeout(500); }
+      const r = await mesurerEcran(p, L);
+      controle(nom + ' ' + L + '×' + H + ' : rien ne déborde, rien n’est rogné, rien sous 44 px',
+        r.deb.length + r.rog.length + r.pet.length === 0, [].concat(r.deb, r.rog, r.pet).slice(0, 4).join(' ; '));
+      if (process.env.CAPTURES) await p.screenshot({ path: path.join(process.env.CAPTURES, 'lot33-' + nom.replace(/[^a-z0-9]+/gi, '-') + '-' + L + '.png'), fullPage: false });
+    }
+  };
+
+  console.log('\n=== LOT 33 §4 — le récap court, en vrai navigateur ===');
+  const p25 = await nouvellePage('2026-11-25');
+  await controleEcran(p25, '§4 document du mois (image à envoyer)', 'document', { contratId: 'c1', annee: 2026, mois: 11 });
+  const img = await p25.evaluate(async () => {
+    const c = window.App.contratParId('c1');
+    const ch = await window.App.serie(c, { annee: 2026, mois: 11 });
+    const e = window.App.moisDe(ch, 2026, 11);
+    const j = await window.App.journees('c1', 2026, 11);
+    const ctx = { contrat: c, entree: e, journees: j, annee: 2026, mois: 11, aujourdhui: window.App.aujourdhui(), nomEmettrice: null };
+    const m = window.UiRecap.modele(ctx);
+    const cv = window.UiRecap.dessiner(m);
+    const g = cv.getContext('2d');
+    const px = g.getImageData(4, 4, 1, 1).data;
+    const fond = (() => { const d = document.createElement('div'); d.style.color = getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim(); document.body.appendChild(d); const v = getComputedStyle(d).color; d.remove(); return v; })();
+    const textes = cv.plan.ops.filter(o => o.t === 'texte');
+    const sortis = textes.filter(o => {
+      const gauche = o.align === 'right' ? o.x - o.largeur : o.align === 'center' ? o.x - o.largeur / 2 : o.x;
+      return gauche < -0.5 || gauche + o.largeur > cv.largeurPoints + 0.5 || o.y > cv.plan.hauteur;
+    }).map(o => o.texte);
+    /* La mesure mord : le même plan, avec un texte poussé hors du cadre. */
+    const mute = textes.map(o => Object.assign({}, o)); mute[0].x = cv.largeurPoints - 2;
+    const sortisMute = mute.filter(o => o.x + o.largeur > cv.largeurPoints + 0.5).length;
+    return { largeur: cv.width, hauteur: cv.height, pixel: 'rgb(' + px[0] + ', ' + px[1] + ', ' + px[2] + ')', fond,
+      sortis, sortisMute, min: Math.min(...textes.map(o => o.taille)), n: textes.length,
+      apercuSorti: [...document.querySelectorAll('.rcc *')].filter(el => el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflow !== 'visible').length };
+  });
+  controle('§4.3 l’image fait 360 points à l’échelle 3 — 1080 px de large', img.largeur === 1080, img.largeur + ' × ' + img.hauteur);
+  controle('§4.3 hauteur : celle du contenu (ni vide, ni tronquée)', img.hauteur > 600 && img.hauteur < 2400, String(img.hauteur));
+  controle('§4.3 aucun texte ne sort du cadre (' + img.n + ' textes)', img.sortis.length === 0, img.sortis.join(' / '));
+  controle('§4.3 la mesure mord : un texte poussé hors du cadre est vu', img.sortisMute > 0);
+  controle('§4.3 aucun texte sous 11 points', img.min >= 11, String(img.min));
+  controle('§4.3 le fond de l’image est le jeton `--bg2` (valeur peinte)', img.pixel === img.fond, img.pixel + ' / ' + img.fond);
+  controle('§4.3 l’aperçu à l’écran : aucun texte rogné', img.apercuSorti === 0, String(img.apercuSorti));
+
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
     ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles +
     ', contrôles en défaut ' + defauts);
+  await p25.close();
   await nav.close(); serveur.close();
   if (total.deb + total.rog + total.pet + total.feuilles + defauts > 0) process.exit(1);
 })();
