@@ -78,6 +78,11 @@
       (typeof global.DB.listSamedisConge === 'function'
         ? global.DB.listSamedisConge(contrat.id, fenetreSamedis(m).debut,
             fenetreSamedis(m).fin).catch(function () { return []; })
+        : Promise.resolve([])),
+      /* LOT 33 §5.4 — les envois du récap déjà notés pour ce mois. Une
+         lecture en échec rend `null` : le bloc le dit, rien d'autre. */
+      (typeof global.DB.listEnvois === 'function'
+        ? global.DB.listEnvois([contrat.id], [m]).catch(function () { return null; })
         : Promise.resolve([]))
     ]).then(function (r) {
       var entree = global.App.moisDe(r[0], m.annee, m.mois);
@@ -85,6 +90,7 @@
       vue = {
         contrat: contrat, annee: m.annee, mois: m.mois,
         entree: entree, journees: r[1], samedis: r[2] || [],
+        envois: r[3],
         lectureSeule: !!contrat.archive,
         reouvertureLe: null
       };
@@ -110,7 +116,8 @@
   function contexteRecap() {
     return { contrat: vue.contrat, entree: vue.entree, journees: vue.journees,
       annee: vue.annee, mois: vue.mois, aujourdhui: global.App.aujourdhui(),
-      nomEmettrice: (global.App.nomEmettrice && global.App.nomEmettrice()) || null };
+      nomEmettrice: (global.App.nomEmettrice && global.App.nomEmettrice()) || null,
+      envois: vue.envois === undefined ? [] : vue.envois };
   }
 
   function identite() {

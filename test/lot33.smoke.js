@@ -42,12 +42,17 @@ function egal(obtenu, attendu, msg) {
     ', obtenu ' + JSON.stringify(obtenu) + ')');
 }
 function pause(ms) { return new Promise(function (r) { setTimeout(r, ms || 80); }); }
-function txt(el) { return el ? String(el.textContent).replace(/[  ]/g, ' ') : ''; }
+/* Les espaces insécables (fines ou non) deviennent des espaces : on compare
+   des mots, pas des typographies. */
+function txt(el) { return el ? String(el.textContent).replace(/[\u00a0\u202f\u2009]/g, ' ') : ''; }
+function blanc(t) { return String(t).replace(/[\u00a0\u202f\u2009]/g, ' '); }
 function contient(el, morceau, msg) {
+  morceau = blanc(morceau);
   if (txt(el).indexOf(morceau) !== -1) { assert(true, msg); return; }
   assert(false, msg + ' — « ' + morceau + ' » introuvable dans : ' + txt(el).slice(0, 400));
 }
 function absent(el, morceau, msg) {
+  morceau = blanc(morceau);
   assert(txt(el).indexOf(morceau) === -1, msg + ' — « ' + morceau + ' » ne devrait pas y être');
 }
 function boutonExact(racineEl, libelle) {
@@ -515,6 +520,233 @@ function classeAuChargement(sourceApp, opts) {
     'D1 : le document détaillé et ses deux boutons restent, inchangés');
   contient(blocRc, '17 faits · 3 à venir', '§4.5 : l’aperçu à l’écran est celui du modèle');
   poserJour('2026-08-21');
+
+  /* ==================================================================== */
+  /* §5 — L'ENVOI DÈS LE 25, AVEC LES JOURNÉES À VENIR                    */
+  /* ==================================================================== */
+  console.log('\n--- §5.1 : la ligne de la carte, état par état ---');
+  var LC = R.ligneCarte;
+  var ouvert = { resultat: { salaireNetCentimes: 107100 }, fige: false };
+  var clos = { resultat: { salaireNetCentimes: 107100 }, fige: true };
+  var NOV = { annee: 2026, mois: 11 };
+  function env(nature, ts, a, m) { return { contrat_id: 'c1', annee: a || 2026, mois: m || 11, nature: nature, envoye_le: ts, donnees: {} }; }
+  var P25 = env('previsionnel', '2026-11-25T17:12:00');
+  function etat(l) { return l ? [l.titre + ' — ' + l.sous, l.bouton, l.ton].join(' | ') : null; }
+
+  egal(LC({ m: NOV, aujourdhui: '2026-11-24', entree: ouvert, restants: 4, envois: [] }), null,
+    '§5.1 : le 24, rien d’envoyé — aucune ligne');
+  egal(etat(LC({ m: NOV, aujourdhui: '2026-11-25', entree: ouvert, restants: 3, envois: [] })),
+    'Récap de novembre — prêt à envoyer aux parents | Préparer | ac', '§5.1 : le 25, rien d’envoyé — « prêt à envoyer », Préparer, accent');
+  egal(etat(LC({ m: NOV, aujourdhui: '2026-11-25', entree: ouvert, restants: 3, envois: [P25] })),
+    'Récap envoyé le 25 — le mois reste ouvert | Voir | ', '§5.1 : prévisionnel envoyé, des journées restent — Voir, neutre');
+  egal(etat(LC({ m: NOV, aujourdhui: '2026-11-30', entree: ouvert, restants: 0, envois: [P25] })),
+    'Récap envoyé le 25 — à confirmer avant de clôturer | Confirmer | w', '§5.1 : prévisionnel envoyé, plus aucune journée — Confirmer, ambre');
+  egal(etat(LC({ m: NOV, aujourdhui: '2026-11-30', entree: clos, restants: 0, envois: [P25] })),
+    'Novembre est clôturé — récap définitif à envoyer | Envoyer | ac', '§5.1 : clôturé, définitif pas encore envoyé — Envoyer, accent');
+  egal(LC({ m: NOV, aujourdhui: '2026-11-30', entree: clos, restants: 0, envois: [P25, env('definitif', '2026-11-30T18:07:00')] }), null,
+    '§5.1 : clôturé et définitif envoyé — aucune ligne');
+  egal(LC({ m: NOV, aujourdhui: '2026-11-30', entree: clos, restants: 0, envois: [] }), null,
+    '§5.1 : clôturé sans prévisionnel — aucune ligne (rien à confirmer)');
+  egal(etat(LC({ m: { annee: 2026, mois: 12 }, aujourdhui: '2026-12-01', entree: ouvert, restants: 20, precedent: ouvert, envois: [P25] })),
+    'Récap envoyé le 25 — à confirmer avant de clôturer | Confirmer | w', '§5.1 : novembre passé, non clôturé, avec un prévisionnel — « à confirmer »');
+  egal(LC({ m: { annee: 2026, mois: 12 }, aujourdhui: '2026-12-01', entree: ouvert, restants: 20, precedent: ouvert, envois: [] }), null,
+    '§5.1 : mois passé non clôturé sans prévisionnel — le traitement d’aujourd’hui (aucune ligne ici)');
+  egal(etat(LC({ m: { annee: 2026, mois: 12 }, aujourdhui: '2026-12-02', entree: ouvert, restants: 19, precedent: clos, envois: [P25] })),
+    'Novembre est clôturé — récap définitif à envoyer | Envoyer | ac', '§5.1 : clôturé le 30, pas encore envoyé le 2 — la carte le rappelle (D4)');
+  egal(LC({ m: NOV, aujourdhui: '2026-11-25', entree: ouvert, restants: 3, envois: null }), null,
+    '§5.1 : envois illisibles — la carte se tait plutôt que de dire faux');
+  egal(etat(LC({ m: NOV, aujourdhui: '2026-11-30', entree: ouvert, restants: 0,
+      envois: [P25, env('previsionnel', '2026-11-27T08:00:00')] })),
+    'Récap envoyé le 27 — à confirmer avant de clôturer | Confirmer | w', '§5.5 : plusieurs prévisionnels — la référence est le DERNIER');
+
+  console.log('\n--- §5.1 : la carte de l’accueil, une requête pour tous les contrats ---');
+  F.ENVOIS.length = 0;
+  var appelsEnvois = [], vraiList = window.DB.listEnvois;
+  window.DB.listEnvois = function (ids, ms) { appelsEnvois.push({ ids: ids, ms: ms }); return vraiList.apply(this, arguments); };
+  poserJour('2026-11-24');
+  await aller('accueil'); await pause(300);
+  egal(corps.querySelectorAll('.etg-rc').length, 0, '§5.1 : le 24 novembre, aucune carte ne porte la ligne');
+  appelsEnvois.length = 0;
+  poserJour('2026-11-25');
+  await aller('accueil'); await pause(300);
+  egal(appelsEnvois.length, 1, '§5.1 : l’accueil lit les envois en UNE requête');
+  egal(appelsEnvois[0] && appelsEnvois[0].ids.length, 2, '§5.1 : … pour les deux contrats à la fois');
+  window.DB.listEnvois = vraiList;
+  var cartesN = corps.querySelectorAll('.cart3');
+  var ligneAl = cartesN[0] && cartesN[0].querySelector('.etg-rc');
+  assert(!!ligneAl, '§5.1 : le 25 novembre, la carte porte la ligne');
+  contient(ligneAl, 'Récap de novembre — prêt à envoyer aux parents', '§5.1 : « Récap de novembre — prêt à envoyer aux parents »');
+  assert(ligneAl && ligneAl.previousElementSibling.classList.contains('etg2') && ligneAl.nextElementSibling.classList.contains('etg3'),
+    '§5.1 : entre l’étage de la journée et celui des compteurs');
+  assert(ligneAl && !!boutonExact(ligneAl, 'Préparer'), '§5.1 : bouton « Préparer »');
+
+  console.log('\n--- §5.2 : l’écran « Préparer le récap » ---');
+  boutonExact(ligneAl, 'Préparer').click(); await pause(400);
+  contient(barre, 'Récap de novembre', '§5.2 : en-tête « Récap de novembre »');
+  contient(barre, 'Alouette', '§5.2 : … le prénom à droite');
+  assert(barre.classList.contains('slim'), '§5.2 : en-tête `.top.slim`');
+  contient(corps, 'Vous pouvez envoyer le récap dès aujourd’hui. Les journées qui restent sont comptées comme d’habitude.', '§5.2 : l’encart');
+  contient(corps, 'Les 3 journées qui restent', '§5.2 : « Les 3 journées qui restent »');
+  var lignesJ = corps.querySelectorAll('.rc-j');
+  egal(Array.prototype.map.call(lignesJ, function (l) { return l.getAttribute('data-jour'); }).join(','),
+    '2026-11-26,2026-11-27,2026-11-30', '§5.2 : une ligne par journée du planning à venir, hors férié');
+  contient(lignesJ[0], 'Jeudi 26 novembre', '§5.2 : la journée, en clair');
+  contient(lignesJ[0], 'Comme d’habitude · 8 h 30 – 17 h 30 · entretien dû', '§5.2 : son état, avec les heures de l’avenant');
+  egal(Array.prototype.filter.call(lignesJ, function (l) { return !!boutonExact(l, 'Modifier'); }).length, 3, '§5.2 : chacune porte « Modifier »');
+  contient(corps, 'Total prévu du mois', '§5.2 : « Total prévu du mois »');
+  assert(!!boutonExact(corps, 'Voir l’image à envoyer'), '§5.2 : « Voir l’image à envoyer »');
+  contient(corps, 'Le mois reste ouvert : vous confirmerez le lundi 30 novembre.', '§5.2 : « Le mois reste ouvert : vous confirmerez le … »');
+  var sansHeures = R.etatJourneeTexte({ contrat: { prenom_enfant: 'A' }, entree: { conditions: {} }, journees: {} }, '2026-11-26');
+  egal(sansHeures, 'Comme d’habitude', '§5.2 : heures inconnues — seulement « Comme d’habitude »');
+
+  console.log('\n--- §5.3 : déclarer une journée à venir, une exception étroite ---');
+  var ecrites = [], supprimees = [];
+  var vraiEcrire = window.DB.enregistrerJournee, vraiSuppr = window.DB.supprimerJournee;
+  window.DB.enregistrerJournee = function (l) { ecrites.push(l); return Promise.resolve(Object.assign({ id: 'jx' }, l)); };
+  window.DB.supprimerJournee = function (c, j) { supprimees.push(c + '|' + j); return Promise.resolve(null); };
+  boutonExact(corps.querySelector('.rc-j[data-jour="2026-11-27"]'), 'Modifier').click(); await pause(400);
+  var sh = document.getElementById('sheet');
+  contient(sh, 'Vendredi 27 novembre', '§5.3 : « Modifier » ouvre la feuille du jour habituelle, sur le 27');
+  var optAbs = Array.prototype.filter.call(sh.querySelectorAll('button'), function (b) { return txt(b).indexOf('Absence de Alouette') !== -1; })[0];
+  assert(!!optAbs, '§5.3 : … avec ses choix ordinaires (« Absence de Alouette »)');
+  if (optAbs) { optAbs.click(); await pause(100); }
+  var bEnr = boutonExact(sh, 'Enregistrer'); if (bEnr) { bEnr.click(); await pause(400); }
+  egal(ecrites.length, 1, '§5.3 : une écriture');
+  egal(ecrites[0] && [ecrites[0].contrat_id, ecrites[0].jour, ecrites[0].type].join('|'), 'c1|2026-11-27|absence_enfant',
+    '§5.3 : … une ligne `journee` ordinaire, sur la journée à venir');
+  /* Revenir à « comme d'habitude » SUPPRIME la ligne. */
+  F.JOURNEES.push({ id: 'j27', contrat_id: 'c1', jour: '2026-11-27', type: 'absence_enfant' });
+  window.App.invalider();
+  await aller('preparer', { contratId: 'c1', annee: 2026, mois: 11 }); await pause(300);
+  contient(corps.querySelector('.rc-j[data-jour="2026-11-27"]'), 'Alouette absente · pas d’entretien', '§5.2 : la journée déclarée dit son état');
+  boutonExact(corps.querySelector('.rc-j[data-jour="2026-11-27"]'), 'Modifier').click(); await pause(400);
+  var optRet = Array.prototype.filter.call(sh.querySelectorAll('button'), function (b) { return txt(b).indexOf('Finalement, rien de particulier') !== -1; })[0];
+  if (optRet) { optRet.click(); await pause(100); }
+  bEnr = boutonExact(sh, 'Enregistrer'); if (bEnr) { bEnr.click(); await pause(400); }
+  egal(supprimees.join(','), 'c1|2026-11-27', '§5.3 : revenir à « comme d’habitude » SUPPRIME la ligne');
+  egal(ecrites.filter(function (l) { return l.type === 'presence'; }).length, 0, '§5.3 : … jamais une ligne qui dit « présence »');
+  window.DB.enregistrerJournee = vraiEcrire; window.DB.supprimerJournee = vraiSuppr;
+  window.Kit.fermerFeuille();
+
+  /* Le décompte des jours restants écarte la journée saisie (motif du gel). */
+  var jx = await window.App.journees('c1', 2026, 11);
+  egal(window.Kit.joursTravaillesRestants(window.App.contratParId('c1'), [1, 2, 3, 4, 5], 2026, 11, '2026-11-25', jx), 2,
+    '§5.3 : avec une absence le 27, il reste 2 journées (le décompte n’est pas faussé)');
+
+  /* Le calendrier de l'espace enfant GARDE son gel. */
+  F.JOURNEES.pop(); window.App.invalider();
+  await aller('enfant', { contratId: 'c1', annee: 2026, mois: 11 }); await pause(300);
+  var td27 = Array.prototype.filter.call(corps.querySelectorAll('table.cal td'), function (t) {
+    return t.querySelector('.num') && txt(t.querySelector('.num')).trim() === '27';
+  })[0];
+  assert(td27 && td27.getAttribute('role') !== 'button', '§5.3 : le calendrier refuse toujours la même journée à venir');
+  /* … et le point d'entrée lui-même refuse hors de son périmètre. */
+  poserJour('2026-11-24');
+  egal(await window.UiEnfant.modifierJourAVenir(window.App.contratParId('c1'), '2026-11-27'), false,
+    '§5.3 : le 24, la journée à venir ne s’ouvre pas');
+  poserJour('2026-11-25');
+  egal(await window.UiEnfant.modifierJourAVenir(window.App.contratParId('c1'), '2026-12-02'), false,
+    '§5.3 : une journée du mois suivant ne s’ouvre pas');
+  egal(await window.UiEnfant.modifierJourAVenir(window.App.contratParId('c1'), '2026-11-28'), false,
+    '§5.3 : un samedi hors planning ne s’ouvre pas');
+  window.Kit.fermerFeuille();
+
+  console.log('\n--- §5.4 : envoyer, et le noter ---');
+  var ecrituresRecap = 0;
+  Object.keys(window.DB).forEach(function (k) {
+    if (/recloturer|figer|Recap|Transmis|cloturer/i.test(k) && typeof window.DB[k] === 'function' && !/^(list|get|est)/.test(k)) {
+      var f0 = window.DB[k];
+      window.DB[k] = function () { ecrituresRecap++; return f0.apply(this, arguments); };
+      window.DB[k].__vrai = f0;
+    }
+  });
+  function partage(mode) {
+    dom.window.navigator.canShare = mode === 'aucun' ? undefined : function () { return true; };
+    dom.window.navigator.share = mode === 'aucun' ? undefined : function () {
+      if (mode === 'annule') { var e = new Error('annulé'); e.name = 'AbortError'; return Promise.reject(e); }
+      return Promise.resolve();
+    };
+  }
+  dom.window.URL.createObjectURL = function () { return 'blob:x'; };
+  dom.window.URL.revokeObjectURL = function () {};
+  global.URL = dom.window.URL;
+  async function ouvrirDocNov() {
+    await aller('document', { contratId: 'c1', annee: 2026, mois: 11 }); await pause(300);
+    return corps.querySelector('.rc-bloc');
+  }
+  F.ENVOIS.length = 0;
+  partage('annule');
+  var bl = await ouvrirDocNov();
+  boutonExact(bl, 'Envoyer aux parents').click(); await pause(300);
+  egal(F.ENVOIS.length, 0, '§5.4 : partage refermé — rien n’est noté');
+  assert(!boutonExact(bl, 'J’ai envoyé le récap'), '§5.4 : … et rien n’est reproché (pas de bouton, pas d’alerte)');
+  partage('ok');
+  boutonExact(bl, 'Envoyer aux parents').click(); await pause(300);
+  egal(F.ENVOIS.length, 1, '§5.4 : partage abouti — l’envoi est noté');
+  var E1 = F.ENVOIS[0] || {};
+  egal(E1.nature, 'previsionnel', '§5.5 : nature « previsionnel » (mois ouvert)');
+  assert(E1.donnees && E1.donnees.lignes.every(function (l) { return Number.isInteger(l.n); }),
+    '§5.5 : chaque ligne gardée en centimes / minutes ENTIERS');
+  egal(E1.donnees && E1.donnees.lignes.map(function (l) { return l.cle; }).join(','), 'presence,net,entretien,sup,total',
+    '§5.5 : les lignes affichées, telles qu’elles sont parties');
+  egal(E1.donnees && Object.keys(E1.donnees.jours).length, 21, '§5.5 : l’état de CHAQUE journée du planning du mois (21, férié compris)');
+  egal(E1.donnees && E1.donnees.jours['2026-11-11'].t, 'ferie', '§5.5 : … le férié est dit tel');
+  contient(bl, 'Envoyé à la famille Aubépine le', '§5.4 : « Envoyé à la famille X le … à … » s’affiche');
+  assert(/Envoyé à la famille Aubépine le \d+(er)? [a-zéû]+ à \d+ h \d\d/.test(txt(bl).replace(/ /g, ' ')), '§5.4 : … avec la date et l’heure');
+  egal(ecrituresRecap, 0, '§5.4 : envoyer ne clôture pas et n’écrit RIEN dans recap_mensuel');
+  var serieApres = await window.App.serie(window.App.contratParId('c1'), NOV);
+  assert(!window.App.moisDe(serieApres, 2026, 11).fige, '§5.4 : le mois reste ouvert');
+
+  partage('aucun');
+  bl = await ouvrirDocNov();
+  boutonExact(bl, 'Envoyer aux parents').click(); await pause(300);
+  egal(F.ENVOIS.length, 1, '§5.4 : repli par téléchargement — rien n’est noté d’office');
+  var bJai = boutonExact(bl, 'J’ai envoyé le récap');
+  assert(!!bJai, '§5.4 : … un bouton « J’ai envoyé le récap » le propose');
+  if (bJai) { bJai.click(); await pause(300); }
+  egal(F.ENVOIS.length, 2, '§5.4 : « J’ai envoyé le récap » note l’envoi');
+  bl = await ouvrirDocNov();
+  var vraiCopier = window.Kit.copierTexte;
+  window.Kit.copierTexte = function () { return Promise.resolve(); };
+  boutonExact(bl, 'Copier le texte').click(); await pause(200);
+  assert(!!boutonExact(bl, 'J’ai envoyé le récap'), '§5.4 : après « Copier le texte », le bouton est proposé aussi');
+  window.Kit.copierTexte = vraiCopier;
+
+  /* Un définitif, sur un mois clôturé, coche aussi « Transmis » — par la
+     fonction existante. */
+  var transmis = 0, vraiT = window.DB.marquerTransmis.__vrai || window.DB.marquerTransmis;
+  window.DB.marquerTransmis = function () { transmis++; return Promise.resolve(null); };
+  partage('ok');
+  poserJour('2026-08-21');
+  await aller('document', { contratId: 'c1', annee: 2026, mois: 7 }); await pause(300);
+  var blJ = corps.querySelector('.rc-bloc');
+  assert(!!blJ, '§4.5 : un mois clôturé propose son image (définitive)');
+  boutonExact(blJ, 'Envoyer aux parents').click(); await pause(300);
+  egal(F.ENVOIS[F.ENVOIS.length - 1].nature, 'definitif', '§5.5 : nature « definitif » sur un mois clôturé');
+  egal(transmis, 1, '§5.5 : l’envoi d’un définitif coche aussi « Transmis à la famille » (fonction existante)');
+  window.DB.marquerTransmis = vraiT;
+  Object.keys(window.DB).forEach(function (k) { if (window.DB[k] && window.DB[k].__vrai) window.DB[k] = window.DB[k].__vrai; });
+
+  console.log('\n--- §5.5 : la migration 022 ---');
+  var DOSSIER_M = path.join(racine, 'supabase', 'migrations');
+  var mig = fs.readdirSync(DOSSIER_M).filter(function (f) { return /\.sql$/.test(f); }).sort();
+  var nums = mig.map(function (f) { return Number(f.slice(0, 3)); });
+  egal(mig[mig.length - 1], '022_recap_envoi.sql', '§5.5 : 022 est la dernière migration');
+  assert(nums.every(function (n, i) { return n === i + 1; }), '§5.5 : elle suit 021 sans trou ni doublon');
+  var M22 = fs.readFileSync(path.join(DOSSIER_M, '022_recap_envoi.sql'), 'utf8');
+  var M22c = M22.replace(/--[^\n]*/g, '');
+  assert(/alter table public\.recap_envoi enable row level security/.test(M22c), '§5.5 : RLS activée');
+  assert(/revoke all on public\.recap_envoi from anon, authenticated, public/.test(M22c), '§5.5 : `revoke all`');
+  assert(/create policy recap_envoi_select[\s\S]*for select[\s\S]*owner = \(select auth\.uid\(\)\)/.test(M22c) &&
+    /create policy recap_envoi_insert[\s\S]*for insert[\s\S]*with check/.test(M22c), '§5.5 : une policy explicite par opération (select, insert)');
+  assert(!/using\s*\(\s*true\s*\)/i.test(M22c), '§5.5 : jamais `using (true)`');
+  assert(!/for (update|delete)/i.test(M22c) && !/grant[^;]*(update|delete)/i.test(M22c), '§5.5 : ni policy ni droit de modification ou de suppression');
+  assert(/owner\s+uuid not null default auth\.uid\(\)/.test(M22c), '§5.5 : `owner` par défaut `auth.uid()`');
+  assert(!/recap_mensuel|preference_rappel|abonnement_push/.test(M22c), '§5.5 : elle ne dépend ni de recap_mensuel ni de 021');
+  assert(/nature\s+text not null check \(nature in \('previsionnel', 'definitif'\)\)/.test(M22c), '§5.5 : la nature, previsionnel ou definitif');
+  assert(/donnees\s+jsonb not null/.test(M22c), '§5.5 : les données de l’image, en jsonb');
+  /* La mesure mord : une policy permissive remise est vue. */
+  assert(/using\s*\(\s*true\s*\)/i.test(M22c.replace('using (owner = (select auth.uid()))', 'using (true)')), '§5.5 : la mesure mord — `using (true)` remis est vu');
 
   /* §SUITE — les sections des commits suivants s'ajoutent ici. */
 

@@ -92,7 +92,14 @@
       minutes_reelles: null, entretien_du: true, fam_heure_arrivee: '09:00:00', fam_heure_depart: null }
   );
 
+  /* LOT 33 — les envois du récap. Seule table que le décor ENREGISTRE : une
+     insertion y ajoute la ligne (horodatée par l'horloge figée), pour qu'un
+     envoi noté se relise comme en base. */
+  var ENVOIS = [];
+  var nEnvoi = 0;
+
   function table(nom) {
+    if (nom === 'recap_envoi') return ENVOIS;
     if (nom === 'famille') return [FAMILLE];
     if (nom === 'contrat') return CONTRATS;
     if (nom === 'avenant_contrat') return AVENANTS;
@@ -121,7 +128,14 @@
       limit: function () { return q; },
       maybeSingle: function () { return Promise.resolve({ data: lignes[0] || null, error: null }); },
       single: function () { return Promise.resolve({ data: lignes[0] || null, error: null }); },
-      insert: function () { return q; },
+      insert: function (o) {
+        if (nom === 'recap_envoi') {
+          var l = {}; Object.keys(o).forEach(function (k) { l[k] = o[k]; });
+          l.id = 'e' + (++nEnvoi); l.envoye_le = new Date().toISOString();
+          ENVOIS.push(l); lignes = [l];
+        }
+        return q;
+      },
       update: function () { return q; },
       upsert: function () { return q; },
       delete: function () { return q; },
@@ -133,7 +147,7 @@
   /* LOT 33 — les tables du décor, exposées aux tests qui doivent le faire
      varier (une journée déclarée, un salaire retiré, un contrat de moins).
      Rien ne change pour qui ne s'en sert pas. */
-  window.__FAUX__ = { table: table, CONTRATS: CONTRATS, AVENANTS: AVENANTS, JOURNEES: JOURNEES, RECAPS: RECAPS };
+  window.__FAUX__ = { table: table, CONTRATS: CONTRATS, AVENANTS: AVENANTS, JOURNEES: JOURNEES, RECAPS: RECAPS, ENVOIS: ENVOIS };
 
   window.supabase = {
     createClient: function () {

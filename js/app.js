@@ -65,6 +65,8 @@
     accueil: 'accueil', enfant: 'accueil', compteurs: 'accueil',
     fiche: 'accueil', familiarisation: 'accueil', fin: 'accueil',
     finDeMois: 'accueil',
+    /* LOT 33 §5.2 — « Préparer le récap », ouvert depuis la carte de l'enfant. */
+    preparer: 'accueil',
 
     /* Conges. */
     conges: 'conges',
@@ -131,6 +133,7 @@
     rappels: 'UiMenu',          // lot 15 — rappels par notification
     compte: 'UiMenu',           // lot 16 §16.2 — mon nom sur les documents
     affichage: 'UiMenu',        // lot 33 §1.4 — affichage de cet appareil (diagnostic)
+    preparer: 'UiRecap',        // lot 33 §5.2 — préparer le récap dès le 25
     /* LOT 27 §27.1 — L'ENDROIT UNIQUE DES RÈGLES.
 
        ÉCART ASSUMÉ AU PÉRIMÈTRE : le §27.1 propose « un nouveau module léger

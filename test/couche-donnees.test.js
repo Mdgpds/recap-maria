@@ -113,7 +113,10 @@ var COLONNES_ATTENDUES = {
                     'sup_dues_si_enfant_absent', 'ordre_imputation'],
   preference_rappel: ['owner', 'actif', 'jour_du_mois', 'heure',              // lot 15
                       'chaque_jour_ensuite', 'quoi', 'maj_le'],                // lot 32 : quoi
-  abonnement_push: ['id', 'endpoint', 'cree_le']                              // lot 15
+  abonnement_push: ['id', 'endpoint', 'cree_le'],                             // lot 15
+  /* Lot 33 — les envois du récap (migration 022). La comparaison du dernier
+     jour relit `donnees` et `nature` ; l'accueil lit `envoye_le`. */
+  recap_envoi: ['id', 'contrat_id', 'annee', 'mois', 'envoye_le', 'nature', 'donnees']
 };
 
 /* Toutes les lectures ne ramènent pas une ligne entière : `estMoisCloture` ne
@@ -142,7 +145,8 @@ var COLONNE_PIVOT = {
   /* `abonnement_push` ne se relit jamais en entier côté client : l'appareil
      n'a rien à faire de ses propres clés, seul le serveur les utilise. Le
      pivot est donc `endpoint`, la seule colonne que l'application consulte. */
-  abonnement_push: 'endpoint'
+  abonnement_push: 'endpoint',
+  recap_envoi: 'nature'
 };
 
 /* Une constante de la forme `var CHAMPS_X = 'a, b, ' + 'c';` — on récupère le

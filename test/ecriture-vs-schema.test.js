@@ -196,6 +196,13 @@ var ECRITURES = [
     table: 'periode_familiarisation',
     geste: 'DB.enregistrerPeriodeFamiliarisation',
     fournies: function () { return ['contrat_id', 'date_debut', 'date_fin']; }
+  },
+  /* LOT 33 — un envoi du récap aux parents (migration 022). `owner`, `id`
+     et `envoye_le` ont une valeur par défaut ; tout le reste est fourni. */
+  {
+    table: 'recap_envoi',
+    geste: 'DB.enregistrerEnvoi',
+    fournies: function () { return listeDe('CHAMPS_ENVOI_ECRITS'); }
   }
 ];
 

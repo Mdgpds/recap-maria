@@ -102,6 +102,23 @@
 
     return Promise.all(contrats.map(function (c) { return charger(c, m); }))
       .then(function (fiches) {
+        /* LOT 33 §5.1 — LES ENVOIS DU RÉCAP, EN UNE REQUÊTE POUR TOUS LES
+           CONTRATS (pas une par carte) : le mois courant et le précédent. Une
+           lecture qui échoue — la migration 022 pas encore passée, le réseau
+           — rend `null` : aucune carte ne dit alors rien d'un envoi, plutôt
+           que d'en dire de faux. */
+        var lireEnvois = (global.DB.listEnvois && global.UiRecap)
+          ? global.DB.listEnvois(contrats.map(function (c) { return c.id; }), [moisPrecedent(m), m])
+              .catch(function () { return null; })
+          : Promise.resolve(null);
+        return lireEnvois.then(function (envois) {
+          fiches.forEach(function (f) {
+            f.envois = envois === null ? null : envois.filter(function (e) { return e.contrat_id === f.contrat.id; });
+          });
+          return fiches;
+        });
+      })
+      .then(function (fiches) {
         Kit.vider(ctx.corps);
 
         /* V8-29 : UN SEUL message de panne, jamais un par contrat. Si tout a
@@ -148,9 +165,13 @@
       var chaine = r[0];
       var journees = r[1];
       var entree = global.App.moisDe(chaine, m.annee, m.mois);
+      var mp = moisPrecedent(m);
       return {
         contrat: contrat,
         entree: entree,
+        /* LOT 33 §5.1 — le mois d'avant, pour la ligne « à confirmer » ou
+           « définitif à envoyer » d'un mois passé qui porte un prévisionnel. */
+        precedent: global.App.moisDe(chaine, mp.annee, mp.mois),
         journees: journees,
         travailles: Kit.joursTravailles(contrat, planningDe(entree), m.annee, m.mois, journees),
         etat: entree ? Kit.etatDuMois(m.annee, m.mois, entree.recap, auj) : null,
@@ -474,8 +495,22 @@
     var carte = Kit.ce('div', 'card cart3');
     carte.appendChild(etageIdentite(c, m));
     carte.appendChild(etageJournee(f));
+    /* LOT 33 §5.1 — entre la journée et les compteurs, une ligne QUAND IL Y A
+       QUELQUE CHOSE À FAIRE avec le récap, et rien sinon. Le tableau des états
+       vit dans `UiRecap.ligneCarte`, testé avec une date du jour fournie. */
+    if (global.UiRecap && !f.erreur) {
+      var l = global.UiRecap.ligneCarte({
+        m: m, aujourdhui: global.App.aujourdhui(), entree: f.entree,
+        restants: f.restants, precedent: f.precedent, envois: f.envois
+      });
+      if (l) carte.appendChild(global.UiRecap.etageRecap(c, l));
+    }
     carte.appendChild(etageCompteurs(f, m));
     return carte;
+  }
+
+  function moisPrecedent(m) {
+    return m.mois === 1 ? { annee: m.annee - 1, mois: 12 } : { annee: m.annee, mois: m.mois - 1 };
   }
 
   /* ÉTAGE 1 — l'identité. Pastille, prénom, « famille X », chevron. */

@@ -1916,6 +1916,36 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 .rcc-sig { font-size: 12px; color: var(--ink3); }
 
 /* ------------------------------------------------------------------------ */
+/* LOT 33 §5 — LE RÉCAP DÈS LE 25 : la ligne de la carte, la préparation     */
+/* ------------------------------------------------------------------------ */
+
+/* La ligne entre l'étage de la journée et celui des compteurs. Trois tons :
+   accent (à faire), neutre (envoyé, rien à faire), ambre (à confirmer). */
+.etg-rc { padding: 9px 15px; border-top: 1px solid var(--ln2); display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--ink2); }
+.etg-rc .gro { flex: 1; min-width: 0; line-height: 1.35; }
+.etg-rc .gro b { color: var(--ink); font-weight: 600; }
+.etg-rc.ac { background: var(--acs2); }
+.etg-rc.ac .gro b { color: var(--ac); }
+.etg-rc.w { background: var(--was); }
+.etg-rc.w .gro b { color: var(--wad); }
+.etg-rc-b { flex: none; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--ln);
+  background: var(--bg2); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.etg-rc.ac .etg-rc-b { background: var(--ac); border-color: var(--ac); color: var(--bg2); }
+.etg-rc.w .etg-rc-b { border-color: var(--wal); color: var(--wad); }
+
+/* Les journées qui restent, chacune avec « Modifier ». */
+.rc-j { align-items: center; }
+.rc-j > span { min-width: 0; }
+.rc-mod { flex: none; margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--acl2); background: var(--acs2); color: var(--ac); font: inherit; font-size: 13.5px;
+  font-weight: 600; cursor: pointer; }
+.rc-envoye { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ac); }
+.rc-envois:empty { display: none; }
+.rc-confirmer:empty { display: none; }
+.rc-confirmer { margin-top: 10px; }
+
+/* ------------------------------------------------------------------------ */
 /* 18. RESPONSIVE — sous 375 px, tout se resserre d'un cran                  */
 /*     (paddings et espacements seulement : les quatre tailles de police      */
 /*     sont une loi, la media query de la maquette qui descendait à 12 px     */

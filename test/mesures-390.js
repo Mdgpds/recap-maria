@@ -600,6 +600,27 @@ const ECRANS = [
   controle('§4.3 le fond de l’image est le jeton `--bg2` (valeur peinte)', img.pixel === img.fond, img.pixel + ' / ' + img.fond);
   controle('§4.3 l’aperçu à l’écran : aucun texte rogné', img.apercuSorti === 0, String(img.apercuSorti));
 
+  console.log('\n=== LOT 33 §5 — l’accueil du 25 et « Préparer le récap » ===');
+  await controleEcran(p25, '§5.1 accueil (ligne « Récap de novembre »)', 'accueil', {});
+  const l51 = await p25.evaluate(() => {
+    const l = document.querySelector('.cart3 .etg-rc');
+    if (!l) return null;
+    const b = l.querySelector('button').getBoundingClientRect(), r = l.getBoundingClientRect();
+    const cs = getComputedStyle(document.documentElement);
+    const jeton = (n) => { const d = document.createElement('div'); d.style.background = cs.getPropertyValue(n).trim(); document.body.appendChild(d); const v = getComputedStyle(d).backgroundColor; d.remove(); return v; };
+    return { fond: getComputedStyle(l).backgroundColor, acs2: jeton('--acs2'), bouton: getComputedStyle(l.querySelector('button')).backgroundColor,
+      ac: jeton('--ac'), dedans: b.right <= r.right + 0.5 && b.left >= r.left - 0.5, h: b.height };
+  });
+  controle('§5.1 la ligne porte le ton d’accent (fond `--acs2`, bouton `--ac`)', l51 && l51.fond === l51.acs2 && l51.bouton === l51.ac,
+    l51 && (l51.fond + ' / ' + l51.bouton));
+  controle('§5.1 le bouton « Préparer » tient dans la carte, 44 px au moins', l51 && l51.dedans && l51.h >= 44, l51 && String(l51.h));
+  await controleEcran(p25, '§5.2 préparer le récap', 'preparer', { contratId: 'c1', annee: 2026, mois: 11 });
+  const l52 = await p25.evaluate(() => [...document.querySelectorAll('.rc-j')].map(l => {
+    const b = l.querySelector('button').getBoundingClientRect(), r = l.getBoundingClientRect();
+    return b.right <= r.right + 0.5 && b.height >= 44;
+  }));
+  controle('§5.2 trois journées, chaque « Modifier » dans sa ligne et à 44 px', l52.length === 3 && l52.every(Boolean), l52.join(','));
+
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
     ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles +
     ', contrôles en défaut ' + defauts);

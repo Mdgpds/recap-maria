@@ -446,20 +446,74 @@
   /* 6. LE BLOC « L'IMAGE À ENVOYER » DU DOCUMENT DU MOIS                */
   /* ------------------------------------------------------------------ */
 
-  /* `opts.versDetaille()` : mène au récapitulatif détaillé, juste dessous. */
+  /* `ctx.envois` : les envois déjà notés pour ce contrat et ce mois (ou
+     `null` s'ils n'ont pas pu être lus). `opts.versDetaille()` : mène au
+     récapitulatif détaillé, juste dessous. */
   function blocImageAEnvoyer(ctx, opts) {
     opts = opts || {};
     var m = modele(ctx);
     var bloc = Kit.ce('div', 'rc-bloc');
     bloc.appendChild(Kit.ttl('L’image à envoyer'));
+
+    /* Les envois déjà notés, dits en clair. */
+    var etatEnvois = Kit.ce('div', 'rc-envois');
+    bloc.appendChild(etatEnvois);
+    var redireEnvois = function () {
+      Kit.vider(etatEnvois);
+      envoisDuMois(ctx.envois, ctx.annee, ctx.mois).forEach(function (e) {
+        etatEnvois.appendChild(Kit.ce('p', 'rc-envoye', '✓ ' + phraseEnvoi(e, m)));
+      });
+      if (ctx.envois === null) {
+        etatEnvois.appendChild(Kit.ce('p', 'sb q', 'Les envois déjà faits n’ont pas pu être lus.'));
+      }
+    };
+    redireEnvois();
+
     bloc.appendChild(apercu(m));
 
-    var bEnvoyer = Kit.bouton('btn', function () { envoyer(m, bEnvoyer); });
+    /* « J'ai envoyé le récap » — seulement après un geste dont l'issue est
+       inconnue de l'application : le repli par téléchargement, ou la copie
+       du texte. Le partage abouti, lui, note tout seul. */
+    var zoneConfirmer = Kit.ce('div', 'rc-confirmer');
+    var proposerJaiEnvoye = function () {
+      Kit.vider(zoneConfirmer);
+      zoneConfirmer.appendChild(Kit.ce('p', 'sb q',
+        'L’application ne sait pas si le récap est parti. S’il l’est, dites-le-lui :'));
+      var b = Kit.bouton('btn gh', function () { noter(b); });
+      b.textContent = 'J’ai envoyé le récap';
+      zoneConfirmer.appendChild(b);
+    };
+    var noter = function (bouton) {
+      if (bouton) bouton.disabled = true;
+      return noterEnvoi(ctx, m).then(function (ligne) {
+        Kit.vider(zoneConfirmer);
+        if (ctx.envois) ctx.envois.push(ligne); else ctx.envois = [ligne];
+        redireEnvois();
+        if (opts.apresEnvoi) opts.apresEnvoi(ligne);
+      }).catch(function (e) {
+        if (bouton) bouton.disabled = false;
+        Kit.toast('L’envoi n’a pas pu être noté : ' + Kit.messageErreur(e) +
+          ' Le récap, lui, est peut-être parti.', true);
+      });
+    };
+
+    var bEnvoyer = Kit.bouton('btn', function () {
+      envoyer(m, bEnvoyer).then(function (issue) {
+        /* L'application n'affirme jamais qu'un récap est parti si elle ne le
+           sait pas. Partage abouti → noté. Partage refermé → rien, et rien
+           n'est reproché. Repli par téléchargement → c'est Maria qui dit. */
+        if (issue === 'partage') return noter(null);
+        if (issue === 'telecharge') proposerJaiEnvoye();
+      });
+    });
     bEnvoyer.textContent = 'Envoyer aux parents';
     bloc.appendChild(bEnvoyer);
-    var bCopier = Kit.bouton('btn nt', function () { Kit.copierTexte(texte(m)).catch(function () {}); });
+    var bCopier = Kit.bouton('btn nt', function () {
+      Kit.copierTexte(texte(m)).then(proposerJaiEnvoye, function () {});
+    });
     bCopier.textContent = 'Copier le texte';
     bloc.appendChild(bCopier);
+    bloc.appendChild(zoneConfirmer);
     if (opts.versDetaille) {
       var lien = Kit.bouton('lien2', opts.versDetaille);
       lien.textContent = 'Voir le récapitulatif détaillé';
@@ -483,7 +537,353 @@
     });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* 7. LES ENVOIS — CE QU'ON GARDE, CE QU'ON EN DIT (§5.4, §5.5)        */
+  /* ------------------------------------------------------------------ */
+
+  /* L'état d'une journée, sous une forme comparable : la ligne saisie réduite
+     à ce qui la distingue, ou '' pour une journée sans ligne (« comme
+     d'habitude »). Deux états égaux décrivent la même journée. */
+  var CHAMPS_ETAT_JOUR = ['type', 'ecart_evenement', 'ecart_heure_reelle', 'ecart_minutes',
+    'ecart_impute_sur', 'entretien_du', 'minutes_reelles', 'demi_journee',
+    'minutes_sup_exceptionnelles', 'minutes_sup_renoncees', 'sup_dues_override', 'entretien_centimes'];
+  function cleJournee(ligne) {
+    if (!ligne) return '';
+    return CHAMPS_ETAT_JOUR.map(function (k) {
+      var v = ligne[k];
+      return v === undefined || v === null ? '' : String(v);
+    }).join('|');
+  }
+
+  /* L'état de chaque journée du planning du mois, à cet instant. Un mois
+     clôturé n'a plus ses journées sous la main de l'écran : on garde alors ce
+     que l'écran a reçu. */
+  function etatsDesJours(ctx) {
+    var cond = ctx.entree.conditions || {};
+    var out = {};
+    Kit.joursPlanning(ctx.contrat, cond.jours_planning || null, ctx.annee, ctx.mois).forEach(function (d) {
+      var l = (ctx.journees || {})[d];
+      out[d] = { c: cleJournee(l), t: l ? l.type : (global.Feries.estJourFerie(d) ? 'ferie' : 'presence') };
+    });
+    return out;
+  }
+
+  /* Les données de l'image telle qu'elle part : chaque ligne affichée, en
+     centimes et en minutes ENTIERS (`n`), avec son libellé et sa valeur
+     formatée ; les réserves ; l'état de chaque journée du mois. C'est ce que
+     la comparaison du dernier jour relit — elle ne recalcule jamais l'ancien
+     mois. */
+  function donneesEnvoi(ctx, m) {
+    var garde = function (l) { return { cle: l.cle, libelle: l.libelle, valeur: l.valeur, n: l.n, unite: l.unite }; };
+    return {
+      version: 1,
+      etat: m.etat,
+      lignes: m.lignes.map(garde),
+      reserves: m.reserves.map(garde),
+      joursAVenir: m.joursAVenir.slice(),
+      jours: etatsDesJours(ctx)
+    };
+  }
+
+  function noterEnvoi(ctx, m) {
+    return global.DB.enregistrerEnvoi({
+      contrat_id: ctx.contrat.id, annee: ctx.annee, mois: ctx.mois,
+      nature: m.clos ? 'definitif' : 'previsionnel',
+      donnees: donneesEnvoi(ctx, m)
+    }).then(function (ligne) {
+      global.App.invalider();
+      /* Un définitif envoyé sur un mois clôturé coche aussi « Transmis à la
+         famille » — par la fonction existante, idempotente, sans la
+         réécrire. Un échec ici n'annule pas l'envoi noté : on le dit. */
+      if (m.clos && global.DB.marquerTransmis) {
+        return global.DB.marquerTransmis(ctx.contrat.id, ctx.annee, ctx.mois)
+          .catch(function (e) {
+            Kit.toast('Envoi noté, mais « Transmis à la famille » n’a pas pu être coché : ' +
+              Kit.messageErreur(e), true);
+          })
+          .then(function () { return ligne; });
+      }
+      return ligne;
+    });
+  }
+
+  function envoisDuMois(envois, annee, mois) {
+    return (envois || []).filter(function (e) { return e && e.annee === annee && e.mois === mois; })
+      .sort(function (a, b) { return String(a.envoye_le).localeCompare(String(b.envoye_le)); });
+  }
+
+  /* Le dernier prévisionnel, et y a-t-il un définitif APRÈS lui ? */
+  function situationEnvois(envois, annee, mois) {
+    var liste = envoisDuMois(envois, annee, mois);
+    var dernierPrev = null, definitifApres = false, dernier = liste[liste.length - 1] || null;
+    liste.forEach(function (e) {
+      if (e.nature === 'previsionnel') { dernierPrev = e; definitifApres = false; }
+      else if (e.nature === 'definitif' && dernierPrev) definitifApres = true;
+    });
+    return { liste: liste, dernierPrev: dernierPrev, definitifApres: definitifApres, dernier: dernier };
+  }
+
+  /* Un instant (horodatage du serveur) lu en heure LOCALE du téléphone :
+     c'est un instant, pas une date de calendrier — on le décompose avec les
+     accesseurs locaux, jamais avec `toISOString()`. */
+  function instantLocal(ts) {
+    var d = new Date(ts);
+    return { jour: d.getDate(), mois: d.getMonth() + 1, h: d.getHours(), mn: d.getMinutes() };
+  }
+  function phraseEnvoi(e, m) {
+    var t = instantLocal(e.envoye_le);
+    var qui = m && m.famille ? 'la famille ' + m.famille : 'la famille';
+    var nature = e.nature === 'definitif' ? 'Définitif envoyé à ' : 'Envoyé à ';
+    return nature + qui + ' le ' + (t.jour === 1 ? '1er' : t.jour) + ' ' + Kit.libelleMois(t.mois) +
+      ' à ' + t.h + '\u202fh\u202f' + String(t.mn).padStart(2, '0');
+  }
+  function jourDEnvoi(e) {
+    var t = instantLocal(e.envoye_le);
+    return t.jour === 1 ? '1er' : String(t.jour);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 8. LA LIGNE DE LA CARTE DE L'ENFANT, SUR L'ACCUEIL (§5.1)           */
+  /* ------------------------------------------------------------------ */
+
+  /* `p` : { m (mois courant), aujourdhui, entree (mois courant), restants,
+     precedent (l'entrée du mois d'avant, ou null), envois (de ce contrat) }.
+     Rend `null` quand il n'y a rien à faire, sinon
+     { annee, mois, titre, sous, bouton, ton, action }. Le tableau du §5.1,
+     état par état — et rien d'autre. */
+  function ligneCarte(p) {
+    if (p.envois === null || p.envois === undefined) return null;   // envois illisibles : on se tait
+    var cur = ligneDuMois(p.m.annee, p.m.mois, p.entree, p.restants, p.envois, p.aujourdhui, true);
+    if (cur) return cur;
+    /* Un mois PASSÉ garde le traitement d'aujourd'hui (retards, fin de mois
+       guidée), sauf s'il porte un prévisionnel envoyé. */
+    var prev = moisAvant(p.m);
+    if (p.precedent) return ligneDuMois(prev.annee, prev.mois, p.precedent, 0, p.envois, p.aujourdhui, false);
+    return null;
+  }
+
+  function moisAvant(m) { return m.mois === 1 ? { annee: m.annee - 1, mois: 12 } : { annee: m.annee, mois: m.mois - 1 }; }
+
+  function ligneDuMois(annee, mois, entree, restants, envois, auj, courant) {
+    if (!entree || !entree.resultat) return null;
+    var s = situationEnvois(envois, annee, mois);
+    var nomMois = Kit.libelleMois(mois);
+    var base = { annee: annee, mois: mois };
+    if (entree.fige) {
+      if (s.dernierPrev && !s.definitifApres) {
+        return Object.assign(base, { titre: nomMois.charAt(0).toUpperCase() + nomMois.slice(1) + ' est clôturé',
+          sous: 'récap définitif à envoyer', bouton: 'Envoyer', ton: 'ac', action: 'envoyer' });
+      }
+      return null;
+    }
+    if (s.dernierPrev) {
+      if (courant && restants > 0) {
+        return Object.assign(base, { titre: 'Récap envoyé le ' + jourDEnvoi(s.dernierPrev),
+          sous: 'le mois reste ouvert', bouton: 'Voir', ton: '', action: 'voir' });
+      }
+      return Object.assign(base, { titre: 'Récap envoyé le ' + jourDEnvoi(s.dernierPrev),
+        sous: 'à confirmer avant de clôturer', bouton: 'Confirmer', ton: 'w', action: 'confirmer' });
+    }
+    if (!courant) return null;
+    if (!entree.resultat.salaireNetCentimes || entree.salaireManquant) return null;
+    if (!estPropose(annee, mois, entree, auj)) return null;
+    return Object.assign(base, { titre: 'Récap ' + Kit.deMois(mois),
+      sous: 'prêt à envoyer aux parents', bouton: 'Préparer', ton: 'ac', action: 'preparer' });
+  }
+
+  /* L'écran où mène chaque bouton de la ligne. */
+  var ECRAN_ACTION = { preparer: 'preparer', voir: 'preparer', confirmer: 'document', envoyer: 'document' };
+
+  function etageRecap(contrat, l) {
+    var b = Kit.ce('div', 'etg-rc' + (l.ton ? ' ' + l.ton : ''));
+    b.setAttribute('data-action', l.action);
+    var g = Kit.ce('span', 'gro');
+    g.appendChild(Kit.ce('b', null, l.titre));
+    g.appendChild(document.createTextNode(' — ' + l.sous));
+    b.appendChild(g);
+    var bt = Kit.bouton('etg-rc-b', function () {
+      global.App.aller(ECRAN_ACTION[l.action], { contratId: contrat.id, annee: l.annee, mois: l.mois });
+    });
+    bt.textContent = l.bouton;
+    b.appendChild(bt);
+    return b;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 9. L'ÉCRAN « PRÉPARER LE RÉCAP » (§5.2)                             */
+  /* ------------------------------------------------------------------ */
+
+  function afficher(ctx) {
+    if (ctx.vue === 'preparer') return afficherPreparer(ctx);
+    return Promise.resolve();
+  }
+
+  function chargerMois(params) {
+    var contrat = global.App.contratParId(params.contratId);
+    var avoir = contrat ? Promise.resolve(contrat)
+      : global.App.tousLesContrats().then(function () { return global.App.contratParId(params.contratId); });
+    return avoir.then(function (c) {
+      if (!c) throw new Error('contrat introuvable');
+      var m = { annee: params.annee, mois: params.mois };
+      return Promise.all([
+        global.App.serie(c, m),
+        global.App.journees(c.id, m.annee, m.mois),
+        global.DB.listEnvois([c.id], [m]).catch(function () { return null; })
+      ]).then(function (r) {
+        var entree = global.App.moisDe(r[0], m.annee, m.mois);
+        if (!entree) throw new Error('mois hors du contrat');
+        return { contrat: c, entree: entree, journees: r[1], envois: r[2], annee: m.annee, mois: m.mois,
+          aujourdhui: global.App.aujourdhui(),
+          nomEmettrice: (global.App.nomEmettrice && global.App.nomEmettrice()) || null };
+      });
+    });
+  }
+
+  /* « 8 h 30 – 18 h » — les heures de l'avenant en vigueur, ou rien. */
+  function heureCourte(v) {
+    var s = String(v || '').slice(0, 5);
+    if (!/^\d{2}:\d{2}$/.test(s)) return '';
+    var h = Number(s.slice(0, 2)), mn = s.slice(3, 5);
+    return h + '\u202fh' + (mn === '00' ? '' : '\u202f' + mn);
+  }
+  function horaireDu(ctx) {
+    var a = heureCourte(conditionDu(ctx, 'heure_arrivee')), d = heureCourte(conditionDu(ctx, 'heure_depart'));
+    return a && d ? a + ' – ' + d : '';
+  }
+
+  /* L'état d'une journée, dit en clair pour Maria. */
+  function etatJourneeTexte(ctx, d) {
+    var c = ctx.contrat;
+    var l = (ctx.journees || {})[d];
+    if (!l || (l.type === 'presence' && !l.ecart_evenement)) {
+      var h = horaireDu(ctx);
+      var entretien = l && l.entretien_du === false ? 'pas d’entretien' : 'entretien dû';
+      return h ? 'Comme d’habitude · ' + h + ' · ' + entretien : 'Comme d’habitude';
+    }
+    var heure = heureCourte(l.ecart_heure_reelle);
+    var ent = l.entretien_du === false ? ' · pas d’entretien' : ' · entretien dû';
+    if (l.type === 'absence_enfant') return c.prenom_enfant + ' ' + Kit.accordDe(c, 'absent') + ' · pas d’entretien';
+    if (l.type === 'conge_maria') return 'Congé de l’assistante maternelle';
+    if (l.type === 'sans_solde') return 'Congé sans solde';
+    if (l.type === 'hors_planning') return 'Journée non travaillée';
+    if (l.type === 'familiarisation') return 'Familiarisation';
+    if (l.ecart_evenement === 'liberation_anticipee' && heure) return Kit.accordDe(c, 'parti') + ' à ' + heure + ent;
+    if (l.ecart_evenement === 'retard_parent' && heure) return Kit.accordDe(c, 'parti') + ' à ' + heure + ' — parent en retard' + ent;
+    if (l.ecart_evenement === 'arrivee_decalee' && heure) return Kit.accordDe(c, 'arrivé') + ' à ' + heure + ent;
+    if (l.ecart_evenement === 'conge_horaire') return 'Congé posé à l’heure';
+    return 'Journée modifiée' + ent;
+  }
+
+  /* Les journées du planning à venir dans le mois, hors férié — y compris
+     celles qui portent déjà une déclaration : chacune dit son état. */
+  function journeesQuiRestent(ctx) {
+    var cond = ctx.entree.conditions || {};
+    return Kit.joursPlanning(ctx.contrat, cond.jours_planning || null, ctx.annee, ctx.mois)
+      .filter(function (d) { return d > ctx.aujourdhui && !global.Feries.estJourFerie(d); });
+  }
+
+  /* Le dernier jour travaillé du mois — « vous confirmerez le lundi 30
+     novembre ». */
+  function dernierJourTravaille(ctx) {
+    var cond = ctx.entree.conditions || {};
+    var j = Kit.joursPlanning(ctx.contrat, cond.jours_planning || null, ctx.annee, ctx.mois)
+      .filter(function (d) { return !global.Feries.estJourFerie(d); });
+    return j[j.length - 1] || Kit.iso(ctx.annee, ctx.mois, Kit.nbJoursDansMois(ctx.annee, ctx.mois));
+  }
+
+  function afficherPreparer(ctx) {
+    var p = ctx.params;
+    global.App.barreSlim(ctx.barre, 'Récap ' + Kit.deMois(p.mois), { droite: '' });
+    ctx.corps.appendChild(Kit.ce('div', 'attente', 'Préparation du récap…'));
+    return chargerMois(p).then(function (rc) {
+      Kit.vider(ctx.corps);
+      global.App.barreSlim(ctx.barre, 'Récap ' + Kit.deMois(p.mois), { droite: rc.contrat.prenom_enfant });
+      rendrePreparer(ctx.corps, rc);
+    });
+  }
+
+  function rendrePreparer(corps, rc) {
+    var e = rc.entree;
+    if (e.fige) {
+      corps.appendChild(Kit.enc('', 'Ce mois est clôturé.', ' Son récap définitif se trouve dans le document du mois.'));
+      corps.appendChild(boutonDocument(rc, 'Voir le document du mois'));
+      return;
+    }
+    if (!estPropose(rc.annee, rc.mois, e, rc.aujourdhui)) {
+      corps.appendChild(Kit.enc('', 'Le récap se prépare à partir du 25.', ''));
+      return;
+    }
+    var s = situationEnvois(rc.envois, rc.annee, rc.mois);
+    var restent = journeesQuiRestent(rc);
+    var dernier = dernierJourTravaille(rc);
+
+    if (s.dernierPrev) {
+      corps.appendChild(Kit.enc('', 'Récap prévisionnel envoyé.',
+        ' Le mois reste ouvert : vous confirmerez le ' + Kit.quantieme(dernier) + ' que tout s’est passé comme prévu.'));
+      s.liste.forEach(function (x) { corps.appendChild(Kit.ce('p', 'rc-envoye', '✓ ' + phraseEnvoi(x, modele(rc)))); });
+    } else if (restent.length) {
+      corps.appendChild(Kit.enc('', 'Vous pouvez envoyer le récap dès aujourd’hui.',
+        ' Les journées qui restent sont comptées comme d’habitude.'));
+    } else {
+      corps.appendChild(Kit.enc('', 'Le mois est entièrement saisi.',
+        ' Vous pouvez envoyer le récap dès aujourd’hui.'));
+    }
+
+    if (restent.length) {
+      corps.appendChild(Kit.ttl(restent.length > 1
+        ? 'Les ' + restent.length + ' journées qui restent'
+        : 'La journée qui reste'));
+      var carteJ = Kit.ce('div', 'cd pad0 rc-jours');
+      restent.forEach(function (d) { carteJ.appendChild(ligneJourneeModifiable(rc, d)); });
+      corps.appendChild(carteJ);
+    }
+
+    var tot = Kit.ce('div', 'cd pad0');
+    Kit.ligneLn(tot, 'Total prévu du mois', Kit.eur(e.resultat.totalAVerserCentimes), { total: true });
+    corps.appendChild(tot);
+
+    var voir = boutonDocument(rc, 'Voir l’image à envoyer');
+    voir.className = 'btn';
+    corps.appendChild(voir);
+    corps.appendChild(Kit.ce('p', 'pfin', 'Le mois reste ouvert : vous confirmerez le ' +
+      Kit.jourLong(dernier).toLowerCase() + '.'));
+  }
+
+  function boutonDocument(rc, libelle) {
+    var b = Kit.bouton('btn nt', function () {
+      global.App.aller('document', { contratId: rc.contrat.id, annee: rc.annee, mois: rc.mois });
+    });
+    b.textContent = libelle;
+    return b;
+  }
+
+  /* Une journée qui reste, avec « Modifier » : la feuille du jour habituelle
+     (§5.3), ouverte par l'espace enfant sur cette journée à venir. */
+  function ligneJourneeModifiable(rc, d) {
+    var l = Kit.ce('div', 'ln rc-j');
+    l.setAttribute('data-jour', d);
+    var g = Kit.ce('span', null, Kit.jourLong(d));
+    g.appendChild(Kit.ce('span', 'sb2', etatJourneeTexte(rc, d)));
+    l.appendChild(g);
+    var b = Kit.bouton('rc-mod', function () {
+      global.UiEnfant.modifierJourAVenir(rc.contrat, d);
+    });
+    b.textContent = 'Modifier';
+    l.appendChild(b);
+    return l;
+  }
+
   global.UiRecap = {
+    afficher: afficher,
+    ligneCarte: ligneCarte,
+    etageRecap: etageRecap,
+    situationEnvois: situationEnvois,
+    donneesEnvoi: donneesEnvoi,
+    etatsDesJours: etatsDesJours,
+    cleJournee: cleJournee,
+    etatJourneeTexte: etatJourneeTexte,
+    journeesQuiRestent: journeesQuiRestent,
+    phraseEnvoi: phraseEnvoi,
     lignesDuMois: lignesDuMois,
     lignesPour: lignesPour,
     reservesFinDeMois: reservesFinDeMois,

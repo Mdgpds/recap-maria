@@ -4052,8 +4052,56 @@
     });
   }
 
+  /* LOT 33 §5.3 — DÉCLARER UNE JOURNÉE À VENIR : UNE EXCEPTION, ET UNE SEULE.
+
+     On ne saisit pas l'avenir (lot 7, V8-05, piège n° 7) : le calendrier de
+     cet écran GARDE son gel des journées à venir, rien n'y change. Ce point
+     d'entrée est le seul qui ouvre la feuille du jour sur une journée future,
+     et il est étroit :
+       - il n'est appelé QUE depuis l'écran « Préparer le récap » ;
+       - pour une journée RESTANTE du mois EN COURS, à partir du 25 ;
+       - une journée du planning, dans les bornes du contrat, hors férié.
+     Ce qui s'écrit est une ligne `journee` ordinaire, par la feuille
+     habituelle : pas de régime spécial. Revenir à « comme d'habitude »
+     SUPPRIME la ligne (`poserPresence`), comme pour une journée passée.
+
+     Le motif d'origine du gel — un décompte des jours restants faussé — ne
+     tient plus : `Kit.joursTravaillesRestants` écarte déjà une journée saisie
+     qui n'est pas une présence (correctif A3 du lot 7). C'est testé. */
+  function modifierJourAVenir(contrat, jour) {
+    var auj = global.App.aujourdhui();
+    var m = { annee: Number(jour.slice(0, 4)), mois: Number(jour.slice(5, 7)) };
+    var ok = !!auj && jour > auj && jour.slice(0, 7) === auj.slice(0, 7) &&
+      Number(auj.slice(8, 10)) >= Kit.JOUR_BASCULE_CLOTURE;
+    if (!ok) {
+      Kit.toast('Cette journée ne peut pas être modifiée d’avance.', true);
+      return Promise.resolve(false);
+    }
+    return chargerVue(contrat, m, null).then(function () {
+      if (vue.lectureSeule) {
+        Kit.toast('Ce mois est clôturé : il ne peut plus être modifié.', true);
+        return false;
+      }
+      var planning = planningDuMois();
+      var c = vue.contrat;
+      var dansLePlanning = planning.indexOf(Engine.jourSemaine(jour)) !== -1 &&
+        !(c.date_debut && jour < c.date_debut) && !(c.date_fin && jour > c.date_fin) &&
+        !Feries.estJourFerie(jour);
+      if (!dansLePlanning) {
+        Kit.toast('Ce jour n’est pas une journée de garde.', true);
+        return false;
+      }
+      ouvrirJour(jour);
+      return true;
+    }).catch(function (e) {
+      Kit.toast('Impossible d’ouvrir la journée : ' + Kit.messageErreur(e), true);
+      return false;
+    });
+  }
+
   global.UiEnfant = {
     afficher: afficher,
+    modifierJourAVenir: modifierJourAVenir,
     /* §25.1 — l'Accueil ouvre la feuille de déclaration sans passer par cet
        écran. Exportée plutôt que recopiée : deux feuilles de saisie pour un
        même geste divergeraient à la première correction. */

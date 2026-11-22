@@ -164,6 +164,16 @@ casse le modèle et fait payer une journée deux fois.
 
 ---
 
+### L'exception du lot 33 : une journée à venir, depuis « Préparer le récap »
+
+On ne saisit pas l'avenir (lot 7, V8-05) : le calendrier de l'espace enfant
+gèle la journée ordinaire à venir. **Une seule exception**, étroite :
+`UiEnfant.modifierJourAVenir`, appelée **uniquement** depuis l'écran
+« Préparer le récap », ouvre la feuille du jour habituelle sur une journée
+**restante du mois en cours, à partir du 25**, du planning, hors férié. Ce qui
+s'écrit est une ligne `journee` ordinaire ; revenir à « comme d'habitude »
+supprime la ligne. Le calendrier, lui, ne change pas. Ne pas élargir.
+
 ## 6. L'immuabilité d'un mois clôturé
 
 Un récap passe de `brouillon` à `fige`. **Un récap figé ne change plus.**
@@ -266,11 +276,14 @@ notification.
 
 ## 8. La base — migrations Supabase
 
-`supabase/migrations/`, numérotées et **jamais réécrites** : `001` à `021`.
+`supabase/migrations/`, numérotées et **jamais réécrites** : `001` à `022`.
 
-`020_demi_journee.sql` est la dernière appliquée en production.
-`021_rappels.sql` (lot 32) est **écrite, non appliquée** : elle passe avant la
-fusion du lot 32, à la main, par Adrien.
+`020_demi_journee.sql` est la dernière dont l'application en production est
+confirmée. `021_rappels.sql` (lot 32) est écrite ; son application n'était pas
+confirmée au 22 novembre 2026. `022_recap_envoi.sql` (lot 33) crée
+`recap_envoi` — une ligne par envoi du récap aux parents, jamais modifiée (ni
+droit ni policy `update`/`delete`) — et **ne dépend pas de 021**. Elle passe
+avant la fusion du lot 33, à la main, par Adrien.
 
 Elles sont exécutées **à la main** dans l'éditeur SQL de Supabase, jamais par
 un outil. Une nouvelle migration prend le numéro **suivant** — vérifier le
@@ -359,7 +372,7 @@ config.js             URL et clé publishable Supabase — rien d'autre
 css/style.css         feuille unique ; couleurs dans :root, jamais en dur ailleurs
 js/                   19 modules (voir §2) ; ui-recap.js (lot 33) = le récap court envoyé aux parents
 test/                 suites + fumée d'interface ; test/fixtures/ = moteurs figés
-supabase/migrations/  001 à 021, jamais réécrites (021 : écrite, non appliquée)
+supabase/migrations/  001 à 022, jamais réécrites (021 et 022 : à confirmer en production)
 supabase/functions/   rappels-cloture (non déployée à ce jour) + DEPLOIEMENT.md, la marche à suivre
 supabase/controles/   requêtes SQL de contrôle, hors migrations ; rappels-planification.sql (pg_cron, non exécuté)
 scripts/keepalive.js  maintien du projet Supabase
