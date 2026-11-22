@@ -1535,6 +1535,50 @@
     }).then(deballerUn);
   }
 
+  /* ------------------------------------------------------------------ */
+  /* LOT 33 §5.5 — LES ENVOIS DU RÉCAP AUX PARENTS (migration 022)       */
+  /*                                                                     */
+  /* Une ligne par envoi, jamais modifiée : un envoi corrigé est une     */
+  /* ligne de plus. db.js ne décide de rien — il lit, il ajoute.         */
+  /* ------------------------------------------------------------------ */
+
+  var CHAMPS_ENVOI = 'id, contrat_id, annee, mois, envoye_le, nature, donnees';
+  /* Ce que le navigateur transmet à l'insertion. `owner`, `id` et
+     `envoye_le` sont posés par la base (valeurs par défaut) : l'instant de
+     l'envoi est celui du serveur, pas celui du téléphone. */
+  var CHAMPS_ENVOI_ECRITS = ['contrat_id', 'annee', 'mois', 'nature', 'donnees'];
+
+  /* Les envois de PLUSIEURS contrats, sur une liste de mois, EN UNE SEULE
+     REQUÊTE (l'accueil, §5.1 : pas une requête par carte). `mois` :
+     [{ annee, mois }, …]. Le tri est chronologique : le dernier est le
+     dernier de la liste. */
+  function listEnvois(contratIds, moisListe) {
+    if (!contratIds || !contratIds.length || !moisListe || !moisListe.length) return Promise.resolve([]);
+    var annees = moisListe.map(function (m) { return m.annee; })
+      .filter(function (a, i, t) { return t.indexOf(a) === i; });
+    var cles = moisListe.map(function (m) { return m.annee * 12 + m.mois; });
+    return client.from('recap_envoi')
+      .select(CHAMPS_ENVOI)
+      .in('contrat_id', contratIds)
+      .in('annee', annees)
+      .order('envoye_le', { ascending: true })
+      .then(deballer)
+      .then(function (lignes) {
+        return (lignes || []).filter(function (l) { return cles.indexOf(l.annee * 12 + l.mois) !== -1; });
+      });
+  }
+
+  /* Note un envoi. `e` : { contrat_id, annee, mois, nature, donnees }. */
+  function enregistrerEnvoi(e) {
+    var ligne = {};
+    CHAMPS_ENVOI_ECRITS.forEach(function (k) { ligne[k] = e[k]; });
+    return client.from('recap_envoi')
+      .insert(ligne)
+      .select(CHAMPS_ENVOI)
+      .then(deballer)
+      .then(function (r) { return r[0]; });
+  }
+
   /* Le mois est-il clôturé ? Utilitaire destiné au lot 10, qui doit le savoir
      avant de poser un congé sur une période. */
   function estMoisCloture(contratId, annee, mois) {
@@ -1681,6 +1725,8 @@
     recloturerRecap: recloturerRecap,
     listEvenementsRecap: listEvenementsRecap,
     marquerTransmis: marquerTransmis,
+    listEnvois: listEnvois,
+    enregistrerEnvoi: enregistrerEnvoi,
     estMoisCloture: estMoisCloture
   };
 })(window);

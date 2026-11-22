@@ -65,6 +65,10 @@
     accueil: 'accueil', enfant: 'accueil', compteurs: 'accueil',
     fiche: 'accueil', familiarisation: 'accueil', fin: 'accueil',
     finDeMois: 'accueil',
+    /* LOT 33 §5.2 — « Préparer le récap », ouvert depuis la carte de l'enfant. */
+    preparer: 'accueil',
+    /* LOT 33 §6.1 — « Confirmer », le dernier jour. */
+    confirmer: 'accueil',
 
     /* Conges. */
     conges: 'conges',
@@ -76,7 +80,10 @@
 
     /* Menu — les reglages. */
     menu: 'menu', enfants: 'menu', familles: 'menu', regles: 'menu',
-    rappels: 'menu', compte: 'menu', reprise: 'menu'
+    rappels: 'menu', compte: 'menu', reprise: 'menu',
+    /* LOT 33 §1.4 — l'écran de diagnostic, atteint depuis « Mon compte ». La
+       barre d'onglets y reste visible : c'est elle qu'il mesure. */
+    affichage: 'menu'
   };
 
   var ECRANS = {
@@ -127,6 +134,9 @@
     reprise: 'UiMenu',          // lot 14 — reprendre mes comptes
     rappels: 'UiMenu',          // lot 15 — rappels par notification
     compte: 'UiMenu',           // lot 16 §16.2 — mon nom sur les documents
+    affichage: 'UiMenu',        // lot 33 §1.4 — affichage de cet appareil (diagnostic)
+    preparer: 'UiRecap',        // lot 33 §5.2 — préparer le récap dès le 25
+    confirmer: 'UiRecap',       // lot 33 §6.1 — confirmer ou corriger, le dernier jour
     /* LOT 27 §27.1 — L'ENDROIT UNIQUE DES RÈGLES.
 
        ÉCART ASSUMÉ AU PÉRIMÈTRE : le §27.1 propose « un nouveau module léger
@@ -783,6 +793,32 @@
   /* Application installable                                             */
   /* ------------------------------------------------------------------ */
 
+  /* LOT 33 §1 — L'APPLICATION EST-ELLE INSTALLÉE ?
+
+     Deux lectures, et l'une suffit : `navigator.standalone` (propre à iOS) OU
+     le mode d'affichage `standalone`. Le second, seul, n'est pas fiable sur
+     iPhone — il a déjà répondu « non » dans une application posée sur l'écran
+     d'accueil. La classe `installee` sur `<html>` porte le correctif de
+     hauteur de css/style.css ; rien d'autre n'en dépend. */
+  function estInstallee() {
+    var nav = global.navigator || {};
+    if (nav.standalone === true) return true;
+    try {
+      return !!(global.matchMedia && global.matchMedia('(display-mode: standalone)').matches);
+    } catch (e) { return false; }
+  }
+
+  function poserClasseInstallee() {
+    var html = global.document && global.document.documentElement;
+    if (!html) return;
+    if (estInstallee()) html.classList.add('installee');
+    else html.classList.remove('installee');
+  }
+
+  /* Au plus tôt : avant la première peinture de l'application, pour que la
+     hauteur soit juste dès l'ouverture. */
+  poserClasseInstallee();
+
   function enregistrerServiceWorker() {
     if (!global.navigator || !global.navigator.serviceWorker) return;
     if (global.location && global.location.protocol === 'file:') return;
@@ -822,6 +858,7 @@
     estClos: estClos,
     invalider: invalider,
     rechargerContrats: rechargerContrats,
-    deconnecter: deconnecter
+    deconnecter: deconnecter,
+    estInstallee: estInstallee
   };
 })(window);

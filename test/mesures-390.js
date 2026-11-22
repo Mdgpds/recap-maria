@@ -74,6 +74,8 @@ const ECRANS = [
   } }],
   ['familiarisation', { contratId: 'c2' }],
   ['rappels', {}],
+  /* LOT 33 §1.4 — l'écran de diagnostic de l'affichage. */
+  ['affichage', {}],
   ['conges', {}, { feuille: 'pose', ouvrir: () => {
     const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Poser des congés');
     if (b) b.click(); return !!b;
@@ -350,9 +352,326 @@ const ECRANS = [
   await page.setViewportSize({ width: 390, height: 780 });
   await page.evaluate(() => { document.getElementById('vue-login').hidden = true; document.getElementById('vue-app').hidden = false; });
 
+  /* ------------------------------------------------------------------
+     LOT 33 §1.5 — « TOUTES LES TAILLES D'IPHONE ».
+
+     Les écrans racine aux sept tailles d'iPhone en service. À chacune :
+     aucun débordement, aucun contrôle rogné, aucune zone tactile sous
+     44 px, le bas de la barre d'onglets au bas de la fenêtre à 1 px près,
+     l'en-tête qui part de 0. Une ligne par taille et par écran.
+     ------------------------------------------------------------------ */
+  const TAILLES = [
+    ['iPhone SE (1re génération)', 320, 568],
+    ['iPhone SE (2e et 3e)', 375, 667],
+    ['iPhone 12 à 14', 390, 844],
+    ['iPhone 14 Pro, 15, 16', 393, 852],
+    ['iPhone 16 Pro', 402, 874],
+    ['iPhone Pro Max', 430, 932],
+    ['iPhone 16 Pro Max', 440, 956]
+  ];
+  const RACINES = [
+    ['accueil', {}], ['enfant', { contratId: 'c1', annee: 2026, mois: 8 }],
+    ['conges', {}], ['docs', {}], ['menu', {}]
+  ];
+  const mesurerTaille = (L) => page.evaluate((L) => {
+    const out = { deb: [], rog: [], pet: [] };
+    document.querySelectorAll('#vue-app *').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      if (b.right > L + 0.5 || b.left < -0.5) out.deb.push((el.tagName + '.' + (el.className || '')).slice(0, 50));
+      if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX === 'hidden') {
+        out.rog.push((el.tagName + '.' + (el.className || '')).slice(0, 50));
+      }
+    });
+    document.querySelectorAll('#vue-app button, #vue-app a, #vue-app input, #vue-app select').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      let w = b.width, h = b.height;
+      const a = getComputedStyle(el, '::after');
+      if (a && a.content !== 'none' && a.position === 'absolute' && a.minHeight === '44px' && a.minWidth === '44px') {
+        w = Math.max(w, parseFloat(a.width) || 0); h = Math.max(h, parseFloat(a.height) || 0);
+      }
+      if (h < 44 || w < 44) out.pet.push((el.tagName + '.' + (el.className || '')).slice(0, 40) + ' ' + Math.round(w) + '×' + Math.round(h));
+    });
+    const tb = document.getElementById('tabbar');
+    const rb = tb && !tb.hidden ? tb.getBoundingClientRect() : null;
+    out.ongletsBas = rb ? rb.bottom : null;
+    out.fenetre = window.innerHeight;
+    out.enteteHaut = document.getElementById('barre').getBoundingClientRect().top;
+    out.defile = document.scrollingElement.scrollHeight > window.innerHeight + 1;
+    return out;
+  }, L);
+  console.log('\n=== LOT 33 §1.5 — les sept tailles d’iPhone ===');
+  const tableau = [];
+  for (const [nomT, L, H] of TAILLES) {
+    await page.setViewportSize({ width: L, height: H });
+    await page.waitForTimeout(250);
+    let lig = { taille: nomT + ' ' + L + '×' + H, deb: 0, rog: 0, pet: 0, bas: 'ok', entete: 'ok' };
+    for (const [ecran, params] of RACINES) {
+      await aller(ecran, params);
+      const r = await mesurerTaille(L);
+      const basOk = r.ongletsBas != null && Math.abs(r.ongletsBas - r.fenetre) <= 1;
+      const entOk = Math.abs(r.enteteHaut) <= 0.5;
+      controle(nomT + ' ' + L + '×' + H + ' · ' + ecran + ' : rien ne déborde, rien n’est rogné, rien sous 44 px',
+        r.deb.length + r.rog.length + r.pet.length === 0,
+        [].concat(r.deb, r.rog, r.pet).slice(0, 4).join(' ; '));
+      controle(nomT + ' ' + L + '×' + H + ' · ' + ecran + ' : la barre d’onglets touche le bas',
+        basOk, Math.round(r.ongletsBas) + ' / ' + r.fenetre);
+      controle(nomT + ' ' + L + '×' + H + ' · ' + ecran + ' : l’en-tête part de 0, la page ne défile pas',
+        entOk && !r.defile, 'haut ' + r.enteteHaut + (r.defile ? ', la page défile' : ''));
+      lig.deb += r.deb.length; lig.rog += r.rog.length; lig.pet += r.pet.length;
+      if (!basOk) lig.bas = 'KO'; if (!entOk) lig.entete = 'KO';
+    }
+    tableau.push(lig);
+  }
+  console.log('\n  Taille                                 débord. rognés <44px  bas   en-tête');
+  tableau.forEach(l => console.log('  ' + l.taille.padEnd(38) + String(l.deb).padStart(6) +
+    String(l.rog).padStart(7) + String(l.pet).padStart(6) + '  ' + l.bas.padEnd(5) + ' ' + l.entete));
+
+  /* LOT 33 §3 — LE TOTAL DU MOIS, EN VALEUR CALCULÉE, au plus étroit
+     (320 px) et au plus large (440 px) : dernier élément de la page, entier
+     au-dessus de la barre d'onglets une fois le corps défilé jusqu'en bas,
+     fond tiré des jetons `--ac2` / `--ac`, aucun texte qui sort du cadre. */
+  console.log('\n=== LOT 33 §3 — le total du mois en bas de l’accueil ===');
+  for (const [L, H] of [[320, 568], [440, 956]]) {
+    await page.setViewportSize({ width: L, height: H });
+    await aller('accueil');
+    const t3 = await page.evaluate(() => {
+      const bd = document.getElementById('corps'); bd.scrollTop = bd.scrollHeight;
+      const c = document.querySelector('.totmois');
+      if (!c) return null;
+      const rc = c.getBoundingClientRect(), rt = document.getElementById('tabbar').getBoundingClientRect();
+      const cs = getComputedStyle(document.documentElement);
+      const jeton = (n) => { const d = document.createElement('div'); d.style.color = cs.getPropertyValue(n).trim();
+        document.body.appendChild(d); const v = getComputedStyle(d).color; d.remove(); return v; };
+      const sorti = [...c.querySelectorAll('*')].filter(e => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && (r.right > rc.right + 0.5 || r.left < rc.left - 0.5 || e.scrollWidth > e.clientWidth + 1);
+      }).map(e => e.className);
+      return { dernier: bd.lastElementChild === c, bas: rc.bottom, haut: rc.top, onglets: rt.top,
+        fond: getComputedStyle(c).backgroundImage, ac: jeton('--ac'), ac2: jeton('--ac2'),
+        texte: getComputedStyle(c).color, bg2: jeton('--bg2'), sorti };
+    });
+    controle('§3 ' + L + '×' + H + ' : la carte du total est le dernier élément de l’accueil', t3 && t3.dernier);
+    controle('§3 ' + L + '×' + H + ' : corps défilé en bas, la carte est entière au-dessus de la barre d’onglets',
+      t3 && t3.bas <= t3.onglets + 0.5 && t3.haut >= 0, t3 && (Math.round(t3.bas) + ' / ' + Math.round(t3.onglets)));
+    controle('§3 ' + L + '×' + H + ' : fond d’accent tiré des jetons (--ac2 → --ac)',
+      t3 && t3.fond.indexOf(t3.ac) !== -1 && t3.fond.indexOf(t3.ac2) !== -1, t3 && t3.fond.slice(0, 70));
+    controle('§3 ' + L + '×' + H + ' : texte en `--bg2`', t3 && t3.texte === t3.bg2, t3 && t3.texte);
+    controle('§3 ' + L + '×' + H + ' : aucun texte ne sort de la carte', t3 && t3.sorti.length === 0, t3 && t3.sorti.join(', '));
+  }
+
+  /* LA MESURE MORD : on remet en place, sur une copie de l'état, le défaut
+     d'iOS — l'application qui s'arrête 59 pt avant le bas — et la mesure du
+     bas de la barre doit tomber. Si elle restait verte, elle ne mesurerait
+     rien. */
+  await page.setViewportSize({ width: 393, height: 852 });
+  await aller('accueil');
+  await page.addStyleTag({ content: '.appli{bottom:59px !important}', }).then(h => page.evaluate(e => e.id = 'mutation-ios', h));
+  const mut = await mesurerTaille(393);
+  controle('§1.5 la mesure mord : avec le défaut d’iOS remis (59 pt), le bas de la barre est vu faux',
+    !(mut.ongletsBas != null && Math.abs(mut.ongletsBas - mut.fenetre) <= 1), Math.round(mut.ongletsBas) + ' / ' + mut.fenetre);
+  /* le diagnostic, lui, doit annoncer « Il manque 59 points » */
+  await aller('affichage');
+  const vMut = await page.evaluate(() => (document.querySelector('[data-verdict]') || {}).textContent || '');
+  controle('§1.4 le diagnostic, défaut remis, dit « Il manque 59 points en bas »', /Il manque 59 points en bas/.test(vMut), vMut.slice(0, 60));
+  await page.evaluate(() => { const m = document.getElementById('mutation-ios'); if (m) m.remove(); });
+  await aller('affichage');
+  const vOk = await page.evaluate(() => (document.querySelector('[data-verdict]') || {}).textContent || '');
+  controle('§1.4 le diagnostic, sans défaut, dit « La barre d’onglets touche le bas de l’écran »', /touche le bas de l’écran/.test(vOk), vOk.slice(0, 60));
+  const lignesDiag = await page.evaluate(() => [...document.querySelectorAll('#corps .ln')].map(l => l.firstChild.textContent));
+  controle('§1.4 le diagnostic affiche ses douze mesures', ['Application installée', 'Hauteur de l’écran', 'Hauteur de la fenêtre',
+    'Hauteur visible', '100lvh', '100dvh', '100vh', 'Marge du haut', 'Marge du bas', 'Hauteur de l’application',
+    'Bas de l’application', 'Bas de la barre d’onglets'].every(x => lignesDiag.includes(x)), lignesDiag.length + ' lignes');
+
+  /* L'APPLICATION « INSTALLÉE » DANS CHROMIUM. On ne reproduit pas le défaut
+     d'iOS — aucun navigateur de bureau ne le fait — mais on vérifie que le
+     correctif ne casse rien là où la marge est nulle : la classe est posée,
+     la règle s'applique, le document ne grandit pas au-delà de la fenêtre et
+     la page ne se met pas à défiler. */
+  const pageI = await nav.newPage({ viewport: { width: 393, height: 852 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  await pageI.addInitScript(FAUX);
+  await pageI.addInitScript(() => { Object.defineProperty(navigator, 'standalone', { get: () => true }); });
+  await pageI.goto('http://localhost:8098/', { waitUntil: 'domcontentloaded' });
+  await pageI.waitForTimeout(1500);
+  const inst = await pageI.evaluate(() => {
+    const h = document.documentElement;
+    return { classe: h.classList.contains('installee'), minH: getComputedStyle(h).minHeight,
+      fenetre: window.innerHeight, docH: h.getBoundingClientRect().height,
+      defile: document.scrollingElement.scrollHeight > window.innerHeight + 1,
+      bas: document.getElementById('tabbar').getBoundingClientRect().bottom };
+  });
+  controle('§1.3 installée (navigator.standalone) : la classe `installee` est posée', inst.classe);
+  controle('§1.3 installée : la règle `min-height` s’applique (valeur calculée)', inst.minH !== '0px' && inst.minH !== 'auto', inst.minH);
+  controle('§1.3 installée, marge nulle : le document ne dépasse pas la fenêtre', Math.abs(inst.docH - inst.fenetre) <= 1, inst.docH + ' / ' + inst.fenetre);
+  controle('§1.3 installée : la page elle-même ne défile pas', !inst.defile);
+  controle('§1.3 installée : la barre d’onglets touche le bas', Math.abs(inst.bas - inst.fenetre) <= 1, inst.bas + ' / ' + inst.fenetre);
+  await pageI.close();
+  const nonInst = await page.evaluate(() => ({ classe: document.documentElement.classList.contains('installee'),
+    minH: getComputedStyle(document.documentElement).minHeight }));
+  controle('§1.3 non installée : pas de classe, `min-height` inchangé', !nonInst.classe && (nonInst.minH === '0px' || nonInst.minH === 'auto'), nonInst.minH);
+  await page.setViewportSize({ width: 390, height: 780 });
+
+  /* ------------------------------------------------------------------
+     LOT 33 §4 à §6 — LES ÉCRANS DU RÉCAP, DANS UNE PAGE AU 25 NOVEMBRE.
+
+     Même décor, horloge posée au 25 novembre 2026 : le récap court est
+     proposé, des journées restent à venir. Chaque écran est mesuré aux
+     tailles extrêmes et à 390 px — débordement, rognage, zones tactiles —
+     et l'image est relue dans le vrai navigateur : sa largeur, ses textes
+     dans le cadre, son fond tiré du jeton.
+     ------------------------------------------------------------------ */
+  const nouvellePage = async (aujIso, L, H) => {
+    const p = await nav.newPage({ viewport: { width: L || 390, height: H || 780 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+    await p.addInitScript((a) => { window.__AUJ_MESURES__ = a; }, aujIso);
+    await p.addInitScript(FAUX);
+    await p.goto('http://localhost:8098/', { waitUntil: 'domcontentloaded' });
+    await p.waitForTimeout(1500);
+    return p;
+  };
+  const mesurerEcran = (p, L) => p.evaluate((L) => {
+    const out = { deb: [], rog: [], pet: [] };
+    document.querySelectorAll('#vue-app *').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      if (b.right > L + 0.5 || b.left < -0.5) out.deb.push((el.tagName + '.' + (el.className || '')).slice(0, 50));
+      if (el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX === 'hidden') out.rog.push((el.tagName + '.' + (el.className || '')).slice(0, 50));
+    });
+    document.querySelectorAll('#vue-app button, #vue-app a, #vue-app input, #vue-app select').forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 && b.height === 0) return;
+      let w = b.width, h = b.height;
+      const a = getComputedStyle(el, '::after');
+      if (a && a.content !== 'none' && a.position === 'absolute' && a.minHeight === '44px' && a.minWidth === '44px') {
+        w = Math.max(w, parseFloat(a.width) || 0); h = Math.max(h, parseFloat(a.height) || 0);
+      }
+      if (h < 44 || w < 44) out.pet.push((el.tagName + '.' + (el.className || '')).slice(0, 40) + ' ' + Math.round(w) + '×' + Math.round(h));
+    });
+    return out;
+  }, L);
+  const allerP = async (p, ecran, params) => {
+    await p.evaluate(() => { if (window.Kit && window.Kit.fermerFeuille) window.Kit.fermerFeuille(); });
+    await p.evaluate(([e, q]) => window.App.aller(e, q, true), [ecran, params || {}]);
+    await p.waitForTimeout(700);
+  };
+  const controleEcran = async (p, nom, ecran, params, avant) => {
+    for (const [L, H] of [[320, 568], [390, 844], [440, 956]]) {
+      await p.setViewportSize({ width: L, height: H });
+      await allerP(p, ecran, params);
+      if (avant) { await p.evaluate(avant); await p.waitForTimeout(500); }
+      const r = await mesurerEcran(p, L);
+      controle(nom + ' ' + L + '×' + H + ' : rien ne déborde, rien n’est rogné, rien sous 44 px',
+        r.deb.length + r.rog.length + r.pet.length === 0, [].concat(r.deb, r.rog, r.pet).slice(0, 4).join(' ; '));
+      if (process.env.CAPTURES) await p.screenshot({ path: path.join(process.env.CAPTURES, 'lot33-' + nom.replace(/[^a-z0-9]+/gi, '-') + '-' + L + '.png'), fullPage: false });
+    }
+  };
+
+  console.log('\n=== LOT 33 §4 — le récap court, en vrai navigateur ===');
+  const p25 = await nouvellePage('2026-11-25');
+  await controleEcran(p25, '§4 document du mois (image à envoyer)', 'document', { contratId: 'c1', annee: 2026, mois: 11 });
+  const img = await p25.evaluate(async () => {
+    const c = window.App.contratParId('c1');
+    const ch = await window.App.serie(c, { annee: 2026, mois: 11 });
+    const e = window.App.moisDe(ch, 2026, 11);
+    const j = await window.App.journees('c1', 2026, 11);
+    const ctx = { contrat: c, entree: e, journees: j, annee: 2026, mois: 11, aujourdhui: window.App.aujourdhui(), nomEmettrice: null };
+    const m = window.UiRecap.modele(ctx);
+    const cv = window.UiRecap.dessiner(m);
+    const g = cv.getContext('2d');
+    const px = g.getImageData(4, 4, 1, 1).data;
+    const fond = (() => { const d = document.createElement('div'); d.style.color = getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim(); document.body.appendChild(d); const v = getComputedStyle(d).color; d.remove(); return v; })();
+    const textes = cv.plan.ops.filter(o => o.t === 'texte');
+    const sortis = textes.filter(o => {
+      const gauche = o.align === 'right' ? o.x - o.largeur : o.align === 'center' ? o.x - o.largeur / 2 : o.x;
+      return gauche < -0.5 || gauche + o.largeur > cv.largeurPoints + 0.5 || o.y > cv.plan.hauteur;
+    }).map(o => o.texte);
+    /* La mesure mord : le même plan, avec un texte poussé hors du cadre. */
+    const mute = textes.map(o => Object.assign({}, o)); mute[0].x = cv.largeurPoints - 2;
+    const sortisMute = mute.filter(o => o.x + o.largeur > cv.largeurPoints + 0.5).length;
+    return { largeur: cv.width, hauteur: cv.height, pixel: 'rgb(' + px[0] + ', ' + px[1] + ', ' + px[2] + ')', fond,
+      sortis, sortisMute, min: Math.min(...textes.map(o => o.taille)), n: textes.length,
+      apercuSorti: [...document.querySelectorAll('.rcc *')].filter(el => el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflow !== 'visible').length };
+  });
+  controle('§4.3 l’image fait 360 points à l’échelle 3 — 1080 px de large', img.largeur === 1080, img.largeur + ' × ' + img.hauteur);
+  controle('§4.3 hauteur : celle du contenu (ni vide, ni tronquée)', img.hauteur > 600 && img.hauteur < 2400, String(img.hauteur));
+  controle('§4.3 aucun texte ne sort du cadre (' + img.n + ' textes)', img.sortis.length === 0, img.sortis.join(' / '));
+  controle('§4.3 la mesure mord : un texte poussé hors du cadre est vu', img.sortisMute > 0);
+  controle('§4.3 aucun texte sous 11 points', img.min >= 11, String(img.min));
+  controle('§4.3 le fond de l’image est le jeton `--bg2` (valeur peinte)', img.pixel === img.fond, img.pixel + ' / ' + img.fond);
+  controle('§4.3 l’aperçu à l’écran : aucun texte rogné', img.apercuSorti === 0, String(img.apercuSorti));
+
+  console.log('\n=== LOT 33 §5 — l’accueil du 25 et « Préparer le récap » ===');
+  await controleEcran(p25, '§5.1 accueil (ligne « Récap de novembre »)', 'accueil', {});
+  const l51 = await p25.evaluate(() => {
+    const l = document.querySelector('.cart3 .etg-rc');
+    if (!l) return null;
+    const b = l.querySelector('button').getBoundingClientRect(), r = l.getBoundingClientRect();
+    const cs = getComputedStyle(document.documentElement);
+    const jeton = (n) => { const d = document.createElement('div'); d.style.background = cs.getPropertyValue(n).trim(); document.body.appendChild(d); const v = getComputedStyle(d).backgroundColor; d.remove(); return v; };
+    return { fond: getComputedStyle(l).backgroundColor, acs2: jeton('--acs2'), bouton: getComputedStyle(l.querySelector('button')).backgroundColor,
+      ac: jeton('--ac'), dedans: b.right <= r.right + 0.5 && b.left >= r.left - 0.5, h: b.height };
+  });
+  controle('§5.1 la ligne porte le ton d’accent (fond `--acs2`, bouton `--ac`)', l51 && l51.fond === l51.acs2 && l51.bouton === l51.ac,
+    l51 && (l51.fond + ' / ' + l51.bouton));
+  controle('§5.1 le bouton « Préparer » tient dans la carte, 44 px au moins', l51 && l51.dedans && l51.h >= 44, l51 && String(l51.h));
+  await controleEcran(p25, '§5.2 préparer le récap', 'preparer', { contratId: 'c1', annee: 2026, mois: 11 });
+  const l52 = await p25.evaluate(() => [...document.querySelectorAll('.rc-j')].map(l => {
+    const b = l.querySelector('button').getBoundingClientRect(), r = l.getBoundingClientRect();
+    return b.right <= r.right + 0.5 && b.height >= 44;
+  }));
+  controle('§5.2 trois journées, chaque « Modifier » dans sa ligne et à 44 px', l52.length === 3 && l52.every(Boolean), l52.join(','));
+
+  console.log('\n=== LOT 33 §6 — le 30 novembre : confirmer, et l’image corrigée ===');
+  /* Le prévisionnel du 25 est noté depuis la page du 25 (données réelles de
+     l'image), puis relu dans une page au 30 où une absence est déclarée le 27. */
+  const env25 = await p25.evaluate(async () => {
+    const c = window.App.contratParId('c1');
+    const ch = await window.App.serie(c, { annee: 2026, mois: 11 });
+    const e = window.App.moisDe(ch, 2026, 11);
+    const j = await window.App.journees('c1', 2026, 11);
+    const ctx = { contrat: c, entree: e, journees: j, annee: 2026, mois: 11, aujourdhui: window.App.aujourdhui(), nomEmettrice: null };
+    return { contrat_id: 'c1', annee: 2026, mois: 11, nature: 'previsionnel', envoye_le: '2026-11-25T17:12:00.000Z',
+      donnees: window.UiRecap.donneesEnvoi(ctx, window.UiRecap.modele(ctx)) };
+  });
+  const p30 = await nouvellePage('2026-11-30');
+  await p30.evaluate((e) => {
+    window.__FAUX__.ENVOIS.push(Object.assign({ id: 'p25' }, e));
+    window.__FAUX__.JOURNEES.push({ id: 'j27', contrat_id: 'c1', jour: '2026-11-27', type: 'absence_enfant' });
+    window.App.invalider();
+  }, env25);
+  await controleEcran(p30, '§6.1 confirmer', 'confirmer', { contratId: 'c1', annee: 2026, mois: 11 });
+  await controleEcran(p30, '§6.1 confirmer (corriger)', 'confirmer', { contratId: 'c1', annee: 2026, mois: 11, corriger: true });
+  const imgC = await p30.evaluate(async () => {
+    const c = window.App.contratParId('c1');
+    const ch = await window.App.serie(c, { annee: 2026, mois: 11 });
+    const e = Object.assign({}, window.App.moisDe(ch, 2026, 11), { fige: true, recap: { statut: 'fige', fige_le: '2026-11-30T18:00:00.000Z' } });
+    const j = await window.App.journees('c1', 2026, 11);
+    const ctx = { contrat: c, entree: e, journees: j, annee: 2026, mois: 11, aujourdhui: window.App.aujourdhui(), nomEmettrice: null,
+      envois: window.__FAUX__.ENVOIS.slice() };
+    const m = window.UiRecap.modele(ctx);
+    const cv = window.UiRecap.dessiner(m);
+    const t = cv.plan.ops.filter(o => o.t === 'texte');
+    const sortis = t.filter(o => { const g = o.align === 'right' ? o.x - o.largeur : o.align === 'center' ? o.x - o.largeur / 2 : o.x;
+      return g < -0.5 || g + o.largeur > cv.largeurPoints + 0.5; }).map(o => o.texte);
+    /* Le fond du pied, lu en pixels : l'ambre `--was` d'un corrigé. */
+    const pied = cv.plan.ops.find(o => o.t === 'rect' && o.w === cv.largeurPoints);
+    const px = cv.getContext('2d').getImageData(4, Math.round((pied.y + 4) * 3), 1, 1).data;
+    const was = (() => { const d = document.createElement('div'); d.style.color = getComputedStyle(document.documentElement).getPropertyValue('--was').trim(); document.body.appendChild(d); const v = getComputedStyle(d).color; d.remove(); return v; })();
+    const anciens = t.filter(o => /^au lieu de /.test(o.texte)).length;
+    return { etat: m.libelleEtat, largeur: cv.width, sortis, min: Math.min(...t.map(o => o.taille)),
+      pied: 'rgb(' + px[0] + ', ' + px[1] + ', ' + px[2] + ')', was, anciens };
+  });
+  controle('§6.3 l’image corrigée : « Définitif · corrigé »', imgC.etat === 'Définitif · corrigé', imgC.etat);
+  controle('§6.3 l’image corrigée : 1080 px, aucun texte hors du cadre, rien sous 11 points',
+    imgC.largeur === 1080 && imgC.sortis.length === 0 && imgC.min >= 11, imgC.sortis.join(' / ') + ' min ' + imgC.min);
+  controle('§6.3 l’image corrigée : les anciennes valeurs sont dessinées (« au lieu de »)', imgC.anciens >= 3, String(imgC.anciens));
+  controle('§6.3 l’image corrigée : le pied est peint en `--was`', imgC.pied === imgC.was, imgC.pied + ' / ' + imgC.was);
+  await p30.close();
+
   console.log('\nTOTAL — débordements ' + total.deb + ', rognés ' + total.rog +
     ', zones < 44 px ' + total.pet + ', feuilles invisibles ' + total.feuilles +
     ', contrôles en défaut ' + defauts);
+  await p25.close();
   await nav.close(); serveur.close();
   if (total.deb + total.rog + total.pet + total.feuilles + defauts > 0) process.exit(1);
 })();

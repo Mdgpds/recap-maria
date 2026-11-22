@@ -327,7 +327,14 @@ var sheet = document.getElementById('sheet');
     '§3.2 : et le montant du mois, calculé par le moteur (obtenu « ' +
     sansInsecable(txt(etg3)) + ' »)');
 
-  assert(txt(corps).indexOf('entretien') === -1,
+  /* LOT 33 §3 — la carte du total du mois porte la phrase « Salaires nets
+     et indemnités d’entretien compris » (D7, visuel validé) : un seul
+     montant, qui DIT ce qu’il contient. Cette phrase exacte est la seule
+     mention admise ; aucun montant d’entretien isolé, et le mot n’apparaît
+     nulle part ailleurs sur l’accueil. */
+  var horsPhraseTotal = txt(corps).split('Salaires nets et indemnités d’entretien compris.').join('');
+  assert(horsPhraseTotal.indexOf('entretien') === -1 &&
+         txt(corps).split('Salaires nets et indemnités d’entretien compris.').length <= 2,
     '§2.1 : aucun montant d’entretien isolé sur l’accueil');
 
   /* §3.4 — le pied : la phrase, puis les deux boutons. */
@@ -719,9 +726,12 @@ var sheet = document.getElementById('sheet');
      bouton devient « Clôturer quand même ». Clôturer un mois inachevé en
      croyant ses chiffres définitifs est le seul risque irréversible de
      l'application. */
-  assert(txt(sheet).indexOf('jours travaillés sont encore à venir') !== -1,
+  /* LOT 33 §2 — même sens, nouvelle phrase : le nombre de journées à venir,
+     puis la conséquence VRAIE (elles sont comptées ; les corriger demandera
+     de rouvrir le mois). */
+  assert(txt(sheet).indexOf('journées sont encore à venir') !== -1,
     'V8-04 : la clôture anticipée avertit du nombre de jours restants');
-  assert(txt(sheet).indexOf('ces journées ne seront pas comptées') !== -1,
+  assert(txt(sheet).indexOf('Elles sont comptées comme des journées normales. Si l’une d’elles se passe autrement, il faudra rouvrir le mois pour la corriger.') !== -1,
     'V8-04 : et de la conséquence');
   var bQuandMeme = parTexte(sheet, 'button', 'Clôturer quand même');
   assert(!!bQuandMeme, 'V8-04 : le bouton devient « Clôturer quand même »');

@@ -489,9 +489,13 @@ function aller(ecran, params) {
   var FN = fs.readFileSync(path.join(racine, 'supabase', 'functions', 'rappels-cloture', 'index.ts'), 'utf8');
   var migrations = fs.readdirSync(path.join(racine, 'supabase', 'migrations')).filter(function (f) { return /\.sql$/.test(f); }).sort();
   var numeros = migrations.map(function (f) { return Number(f.slice(0, 3)); });
-  egal(numeros[numeros.length - 1], 21, '§10 : la migration 021 est la dernière');
+  /* LOT 33 — « 021 est la dernière » était vrai au lot 32 ; la migration 022
+     (lot 33) la suit. Ce que le contrôle garde ne change pas : 021 existe, à
+     son numéro, sous son nom, dans une suite continue. « La dernière » est
+     désormais vérifié par test/lot33.smoke.js, pour 022. */
+  assert(numeros.indexOf(21) !== -1 && numeros.indexOf(21) === 20, '§10 : la migration 021 est à sa place, la 21ᵉ');
   assert(numeros.every(function (n, i) { return n === i + 1; }), '§10 : la suite 001 → 021 est continue, sans trou ni doublon');
-  assert(migrations[migrations.length - 1] === '021_rappels.sql', '§10 : elle s’appelle 021_rappels.sql');
+  assert(migrations[20] === '021_rappels.sql', '§10 : elle s’appelle 021_rappels.sql');
   var M021 = fs.readFileSync(path.join(racine, 'supabase', 'migrations', '021_rappels.sql'), 'utf8');
   assert(/add column if not exists quoi/.test(M021), '§10 : elle ajoute `quoi` à preference_rappel');
   assert(!/using \(true\)/.test(M021.replace(/--[^\n]*/g, '')), '§10 : jamais de `using (true)`');

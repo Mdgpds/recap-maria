@@ -78,6 +78,11 @@
       (typeof global.DB.listSamedisConge === 'function'
         ? global.DB.listSamedisConge(contrat.id, fenetreSamedis(m).debut,
             fenetreSamedis(m).fin).catch(function () { return []; })
+        : Promise.resolve([])),
+      /* LOT 33 §5.4 — les envois du récap déjà notés pour ce mois. Une
+         lecture en échec rend `null` : le bloc le dit, rien d'autre. */
+      (typeof global.DB.listEnvois === 'function'
+        ? global.DB.listEnvois([contrat.id], [m]).catch(function () { return null; })
         : Promise.resolve([]))
     ]).then(function (r) {
       var entree = global.App.moisDe(r[0], m.annee, m.mois);
@@ -85,6 +90,7 @@
       vue = {
         contrat: contrat, annee: m.annee, mois: m.mois,
         entree: entree, journees: r[1], samedis: r[2] || [],
+        envois: r[3],
         lectureSeule: !!contrat.archive,
         reouvertureLe: null
       };
@@ -96,6 +102,11 @@
         vue.reouvertureLe = q;
         Kit.vider(ctx.corps);
         rendre(ctx.corps);
+        /* LOT 33 §6.1 — arrivée par « Oui, clôturer le mois » : la feuille de
+           clôture existante s'ouvre d'elle-même, avec ses garde-fous — si le
+           document a refusé de proposer la clôture, rien ne s'ouvre et ses
+           encarts disent pourquoi. */
+        if (ctx.params.cloturer && !entree.fige && vue.clotureProposee && !vue.lectureSeule) demanderCloture();
       });
     });
   }
@@ -104,6 +115,15 @@
   /* Contenu du document — une seule source pour l'écran, le texte et    */
   /* l'image. Trois rendus différents ne doivent jamais pouvoir diverger. */
   /* ------------------------------------------------------------------ */
+
+  /* LOT 33 — le contexte que lit le récap court : le même mois, les mêmes
+     journées, la même date du jour que ce document. */
+  function contexteRecap() {
+    return { contrat: vue.contrat, entree: vue.entree, journees: vue.journees,
+      annee: vue.annee, mois: vue.mois, aujourdhui: global.App.aujourdhui(),
+      nomEmettrice: (global.App.nomEmettrice && global.App.nomEmettrice()) || null,
+      envois: vue.envois === undefined ? [] : vue.envois };
+  }
 
   function identite() {
     var r = vue.entree.resultat;
@@ -787,7 +807,23 @@
       corps.appendChild(enc);
     }
 
-    corps.appendChild(documentHtml(id));
+    /* LOT 33 §4.5 — « L'IMAGE À ENVOYER », AU-DESSUS DU DOCUMENT DÉTAILLÉ.
+       Proposée à partir du 25 pour le mois en cours, toujours pour un mois
+       clôturé (D2) ; jamais quand un salaire manque — l'image partirait avec
+       un total amputé. Le document détaillé et ses deux boutons restent
+       dessous, inchangés, sous « Le récapitulatif détaillé » (D1). */
+    var docHtml = documentHtml(id);
+    if (!e.salaireManquant && !netManquant && global.UiRecap &&
+        global.UiRecap.estPropose(vue.annee, vue.mois, e, global.App.aujourdhui())) {
+      var titreDetaille = Kit.ttl('Le récapitulatif détaillé');
+      corps.appendChild(global.UiRecap.blocImageAEnvoyer(contexteRecap(), {
+        versDetaille: function () {
+          if (titreDetaille.scrollIntoView) titreDetaille.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        }
+      }));
+      corps.appendChild(titreDetaille);
+    }
+    corps.appendChild(docHtml);
 
     if (e.fige) {
       corps.appendChild(Kit.note('Mois clôturé' + (e.recap && e.recap.fige_le ? ' le ' + Kit.dateLongue(e.recap.fige_le) : ''),
@@ -922,6 +958,11 @@
       var b = Kit.bouton('btn', demanderCloture);
       b.textContent = 'Clôturer le mois';
       corps.appendChild(b);
+      /* LOT 33 §6.1 — la clôture est PROPOSÉE ici, et seulement ici : tous
+         les refus qui précèdent ce point (orpheline, ventilation, salaire,
+         net) ont déjà rendu la main sans bouton. « Oui, clôturer le mois »
+         de l'écran « Confirmer » n'ouvre la feuille que si on arrive ici. */
+      vue.clotureProposee = true;
       /* LOT 16 §16.3 — L'ÉCRAN DISAIT LE CONTRAIRE DE LA FEUILLE DE
          CONFIRMATION, deux clics plus loin, et c'est elle qui avait raison :
          la réouverture existe depuis le lot 13. Une application qui fait
@@ -1318,6 +1359,9 @@
                                      : String(s).toLowerCase();
   }
 
+  /* LOT 33 — le partage passe par `Kit.partagerImage`, qui est CE chemin,
+     déménagé pour que le récap court le réutilise. Le document détaillé garde
+     son comportement d'origine : un partage refermé télécharge l'image. */
   function enregistrerImage(bouton) {
     var canvas;
     try { canvas = dessiner(); }
@@ -1327,41 +1371,7 @@
     }
     bouton.disabled = true;
     var fini = function () { bouton.disabled = false; };
-
-    canvas.toBlob(function (blob) {
-      if (!blob) { Kit.toast('Image impossible à produire.', true); fini(); return; }
-      var fichier = null;
-      try { fichier = new File([blob], nomFichier(), { type: 'image/png' }); } catch (e) { fichier = null; }
-
-      /* Sur téléphone, le partage natif enregistre dans les photos ou envoie
-         directement — sans aucune intégration WhatsApp de notre côté. */
-      if (fichier && global.navigator && global.navigator.canShare &&
-          global.navigator.canShare({ files: [fichier] }) && global.navigator.share) {
-        global.navigator.share({ files: [fichier] })
-          .then(function () { Kit.toast('Image partagée'); })
-          .catch(function () { telecharger(blob); })
-          .then(fini, fini);
-        return;
-      }
-      telecharger(blob);
-      fini();
-    }, 'image/png');
-  }
-
-  function telecharger(blob) {
-    try {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = nomFichier();
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-      Kit.toast('Image enregistrée');
-    } catch (e) {
-      Kit.toast('Enregistrement de l’image impossible. Utilisez « Copier le texte ».', true);
-    }
+    Kit.partagerImage(canvas, nomFichier(), { telechargerSiAnnule: true }).then(fini, fini);
   }
 
   /* ------------------------------------------------------------------ */
@@ -1383,25 +1393,17 @@
         /* LOT 7 (V8-04) — CLÔTURE D'UN MOIS NON ÉCHU.
            Elle reste possible : le dernier jour ouvré du mois est un cas
            parfaitement légitime, et l'interdire ferait perdre à Maria le seul
-           moment où elle a le temps. Mais elle ne se fait plus en silence.
-           Le mois d'août clôturé le 20, ce sont sept journées travaillées qui
-           disparaissent d'un document remis à une famille — et le mois ne se
-           recalcule jamais après coup (RG-15). */
+           moment où elle a le temps. Mais elle ne se fait pas en silence.
+           LOT 33 §2 — ce que l'avertissement dit a changé, pas qu'il existe :
+           les journées à venir SONT comptées (le moteur les présume
+           présentes) ; c'est leur correction qui demandera de rouvrir le
+           mois, puisqu'un mois clôturé ne se recalcule jamais (RG-15). */
         /* A3 : les journées, pour que les congés déjà posés ne soient pas
-           comptés comme des jours encore à travailler. C'est ici que le
-           chiffre compte le plus — il mesure ce qu'on s'apprête à perdre. */
+           comptés comme des jours encore à travailler. */
         var restants = Kit.joursTravaillesRestants(
           vue.contrat, planningDuMois(), vue.annee, vue.mois,
           global.App.aujourdhui(), vue.journees);
-        if (restants > 0) {
-          corps.appendChild(Kit.warnbox(
-            restants + (restants > 1 ? ' jours travaillés sont encore à venir'
-                                     : ' jour travaillé est encore à venir') +
-              ' en ' + Kit.libelleMois(vue.mois) + '.',
-            ' Si vous clôturez maintenant, ' +
-            (restants > 1 ? 'ces journées ne seront pas comptées.'
-                          : 'cette journée ne sera pas comptée.')));
-        }
+        if (restants > 0) corps.appendChild(Kit.encartJoursAVenir(restants, vue.mois));
 
         var l = Kit.lines(corps);
         var r = vue.entree.resultat;
@@ -1502,6 +1504,15 @@
        pouvoir le dire des années plus tard, quand l'avenant aura été suivi de
        trois autres. */
     snap.avenantNumero = ctx.entree.conditions ? ctx.entree.conditions.numero : null;
+    /* LOT 33 §4.5 — le nombre de jours travaillés du planning, figé. C'est le
+       « sur 20 » de « 20 j sur 20 » : le récap court et le bloc « Le mois » le
+       lisent ici sur un mois clôturé, plutôt que de le recompter sur les
+       bornes courantes du contrat (correction A6). Aucun montant n'en dépend.
+       Un instantané plus ancien ne le porte pas : le dénominateur n'est alors
+       pas dit, comme avant. */
+    snap.joursTravaillesPlanning = Kit.joursTravailles(ctx.contrat,
+      (ctx.entree.conditions && ctx.entree.conditions.jours_planning) || null,
+      ctx.annee, ctx.mois, ctx.journees || {}).length;
     return snap;
   }
 

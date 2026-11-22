@@ -649,6 +649,29 @@ html, body {
   touch-action: manipulation;
 }
 
+/* LOT 33 §1 — L'APPLICATION INSTALLÉE VA JUSQU'EN BAS DE L'ÉCRAN.
+
+   Sur iPhone, depuis iOS 26, une application posée sur l'écran d'accueil avec
+   `viewport-fit=cover` et la barre d'état `black-translucent` arrête ses
+   éléments `position: fixed` avant le bas de l'écran, exactement de la
+   hauteur de la barre d'état (59 pt sur un iPhone 14 Pro mesuré deux fois).
+   Défaut référencé chez WebKit sous le numéro 301108, « REGRESSION (iOS 26):
+   <meta name="viewport"> does not work correctly for viewport-fit=cover »,
+   ouvert et non résolu au 22 novembre 2026.
+
+   Le contournement rend le DOCUMENT au moins aussi haut que l'écran, et
+   seulement dans l'application installée (classe posée par js/app.js).
+   - aucune valeur propre à un modèle : la règle repose sur la marge réelle
+     de l'appareil, elle vaut pour tous les iPhone ;
+   - le `min()` borne à `100lvh` : là où la fenêtre est déjà pleine, ou la
+     marge nulle, le document ne grandit pas et la page ne défile pas ;
+   - la barre d'état reste translucide. Passer à `black` ne prend effet
+     qu'après réinstallation, et l'auteur qui l'a essayé l'a annulé.
+   Hors installation (Safari, ordinateur) : rien ne change. */
+html.installee {
+  min-height: min(100lvh, calc(100% + env(safe-area-inset-top, 0px)));
+}
+
 body {
   background: var(--bg);
   color: var(--ink);
@@ -1834,6 +1857,96 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 /* ------------------------------------------------------------------------ */
+/* LOT 33 §3 — LE TOTAL DU MOIS, EN BAS DE « MES ENFANTS »                   */
+/*     Carte sur fond d'accent, dernier élément de la page. Pas un bouton.   */
+/*     Couleurs lues dans les jetons de `:root`, comme l'en-tête.            */
+/* ------------------------------------------------------------------------ */
+
+.totmois {
+  background: linear-gradient(155deg, var(--ac2), var(--ac));
+  color: var(--bg2); border-radius: var(--r); padding: 14px 15px 13px;
+  margin: 4px 0 6px; box-shadow: var(--sh);
+}
+.totmois .tm-eti { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .78; }
+.totmois .tm-big { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; margin-top: 3px;
+  font-variant-numeric: tabular-nums; }
+.totmois .tm-sous { font-size: 13px; opacity: .85; margin-top: 2px; }
+.totmois .tm-liste { margin-top: 11px; border-top: 1px solid var(--acl); }
+.totmois .tm-l { display: flex; align-items: baseline; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--acd); font-size: 14px; }
+.totmois .tm-l b { margin-left: auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.totmois .tm-l.hors b { font-weight: 600; opacity: .8; font-style: italic; }
+.totmois .tm-pied { font-size: 12px; opacity: .78; margin-top: 9px; line-height: 1.45; }
+
+/* ------------------------------------------------------------------------ */
+/* LOT 33 §4 — LE RÉCAP COURT : L'APERÇU DE L'IMAGE À ENVOYER                */
+/*     L'identité de l'application (fond blanc, accent vert), pas le papier. */
+/*     L'image canvas lit les MÊMES jetons (js/ui-recap.js).                 */
+/* ------------------------------------------------------------------------ */
+
+.rc-bloc { display: flex; flex-direction: column; margin-bottom: 14px; }
+.rc-bloc > .btn { margin-top: 10px; }
+.rcc { background: var(--bg2); border: 1px solid var(--ln); border-radius: var(--r); box-shadow: var(--sh);
+  overflow: hidden; }
+.rcc-tete { display: flex; align-items: flex-start; gap: 10px; padding: 14px 15px 11px; border-bottom: 1px solid var(--ln); }
+.rcc-id { flex: 1; min-width: 0; }
+.rcc-ti { font-size: 15px; font-weight: 700; color: var(--ink); line-height: 1.3; }
+.rcc-fa { font-size: 12px; color: var(--ink3); margin-top: 1px; }
+.rcc-et { flex: none; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 999px; background: var(--acs); color: var(--ac); border: 1px solid var(--acl2); }
+.rcc.prev .rcc-et { background: var(--was); color: var(--wa); border-color: var(--wal); }
+.rcc-lignes, .rcc-res { padding: 0 15px; }
+.rcc-res { border-top: 1px solid var(--ln); padding-top: 9px; }
+.rcc-st { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); }
+.rcc-l { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--ln);
+  font-size: 14px; color: var(--ink); }
+.rcc-l:last-child { border-bottom: 0; }
+.rcc-l b { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rcc-l b.wa { color: var(--wa); }
+.rcc-lg { min-width: 0; }
+.rcc-sous { display: block; font-size: 12px; color: var(--ink3); margin-top: 2px; }
+.rcc-sous.ch { color: var(--wad); font-weight: 600; }
+.rcc-l.tot { border-top: 1.5px solid var(--ink); border-bottom: 0; margin-top: 4px; font-weight: 600; align-items: center; }
+.rcc-l.tot b { font-size: 19px; }
+.rcc-pied { border-top: 1px solid var(--ln); padding: 10px 15px 12px; }
+.rcc.prev .rcc-pied, .rcc.cor .rcc-pied { background: var(--was); }
+.rcc.def .rcc-pied { background: var(--acs); }
+.rcc-ph { margin: 0 0 4px; font-size: 13px; color: var(--ink2); line-height: 1.45; }
+.rcc-ph b { color: var(--ink); }
+.rcc-sig { font-size: 12px; color: var(--ink3); }
+
+/* ------------------------------------------------------------------------ */
+/* LOT 33 §5 — LE RÉCAP DÈS LE 25 : la ligne de la carte, la préparation     */
+/* ------------------------------------------------------------------------ */
+
+/* La ligne entre l'étage de la journée et celui des compteurs. Trois tons :
+   accent (à faire), neutre (envoyé, rien à faire), ambre (à confirmer). */
+.etg-rc { padding: 9px 15px; border-top: 1px solid var(--ln2); display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--ink2); }
+.etg-rc .gro { flex: 1; min-width: 0; line-height: 1.35; }
+.etg-rc .gro b { color: var(--ink); font-weight: 600; }
+.etg-rc.ac { background: var(--acs2); }
+.etg-rc.ac .gro b { color: var(--ac); }
+.etg-rc.w { background: var(--was); }
+.etg-rc.w .gro b { color: var(--wad); }
+.etg-rc-b { flex: none; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--ln);
+  background: var(--bg2); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.etg-rc.ac .etg-rc-b { background: var(--ac); border-color: var(--ac); color: var(--bg2); }
+.etg-rc.w .etg-rc-b { border-color: var(--wal); color: var(--wad); }
+
+/* Les journées qui restent, chacune avec « Modifier ». */
+.rc-j { align-items: center; }
+.rc-j > span { min-width: 0; }
+.rc-mod { flex: none; margin-left: auto; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--acl2); background: var(--acs2); color: var(--ac); font: inherit; font-size: 13.5px;
+  font-weight: 600; cursor: pointer; }
+.rc-j.ch .sb2 { color: var(--wad); font-weight: 600; }
+.rc-envoye { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ac); }
+.rc-envois:empty { display: none; }
+.rc-confirmer:empty { display: none; }
+.rc-confirmer { margin-top: 10px; }
+
+/* ------------------------------------------------------------------------ */
 /* 18. RESPONSIVE — sous 375 px, tout se resserre d'un cran                  */
 /*     (paddings et espacements seulement : les quatre tailles de police      */
 /*     sont une loi, la media query de la maquette qui descendait à 12 px     */
@@ -1846,7 +1959,9 @@ textarea.inp:focus, .note-mois:focus { outline: 2px solid var(--ac); outline-off
   .stick { bottom: calc(-20px - env(safe-area-inset-bottom)); margin-bottom: calc(-20px - env(safe-area-inset-bottom)); }
   .cd, .pane, .card { padding: 12px; }
   .cd.pad0 { padding: 2px 12px; }
-  .fold .fh { padding: 12px; }
+  /* LOT 33 §1.5 — mesuré à 320 px : le resserrage faisait tomber l'en-tête
+     d'un repli à 43 px. La zone tactile ne descend jamais sous 44 px. */
+  .fold .fh { padding: 12px; min-height: 44px; }
   .fold .fb { padding: 2px 12px 12px; }
   .bar, .hero { padding-left: 10px; padding-right: 10px; gap: 7px; }
   .bar .bk, .bar .nav button { width: 29px; height: 29px; }

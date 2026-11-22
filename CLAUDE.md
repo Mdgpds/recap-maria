@@ -74,7 +74,8 @@ Chaque module est une IIFE qui expose une seule globale :
 ```
 
 Globales exposées : `Messages`, `Feries`, `Format`, `Engine`, `DB`,
-`ChaineMois`, `Kit`, `App`.
+`ChaineMois`, `Kit`, `App` — plus un module par écran (`UiAccueil`,
+`UiEnfant`, … et, depuis le lot 33, `UiRecap`).
 
 L'ordre de chargement des `<script>` dans `index.html` **est** l'ordre des
 dépendances. Un nouveau fichier `js/` ou `css/` doit entrer dans **trois**
@@ -163,6 +164,16 @@ casse le modèle et fait payer une journée deux fois.
 
 ---
 
+### L'exception du lot 33 : une journée à venir, depuis « Préparer le récap »
+
+On ne saisit pas l'avenir (lot 7, V8-05) : le calendrier de l'espace enfant
+gèle la journée ordinaire à venir. **Une seule exception**, étroite :
+`UiEnfant.modifierJourAVenir`, appelée **uniquement** depuis l'écran
+« Préparer le récap », ouvre la feuille du jour habituelle sur une journée
+**restante du mois en cours, à partir du 25**, du planning, hors férié. Ce qui
+s'écrit est une ligne `journee` ordinaire ; revenir à « comme d'habitude »
+supprime la ligne. Le calendrier, lui, ne change pas. Ne pas élargir.
+
 ## 6. L'immuabilité d'un mois clôturé
 
 Un récap passe de `brouillon` à `fige`. **Un récap figé ne change plus.**
@@ -216,6 +227,51 @@ ouverture l'installe, la seconde le sert.
 
 ---
 
+### L'écran plein dans l'application installée (lot 33)
+
+Sur iPhone, depuis iOS 26, une application posée sur l'écran d'accueil
+(`viewport-fit=cover`, barre d'état `black-translucent`) arrête ses éléments
+`position: fixed` avant le bas de l'écran, de la hauteur de la barre d'état —
+bug WebKit 301108. Le contournement vit dans `css/style.css` sous
+`html.installee` : le document est rendu au moins aussi haut que l'écran,
+`min(100lvh, calc(100% + env(safe-area-inset-top)))`. La classe est posée par
+`js/app.js` au chargement (`navigator.standalone` **ou** le mode d'affichage
+`standalone` — le second seul n'est pas fiable sur iOS). Règles :
+**aucune valeur propre à un modèle** (pas de 59, pas de 47), **pas de passage à
+`black`**, rien ne change hors installation. Ce correctif ne se prouve que sur
+un vrai iPhone : l'écran « Affichage de cet appareil » (bas de « Mon compte »)
+affiche les mesures et un verdict, et une capture suffit à trancher. Si la bande
+persiste, le plan B (sonde comparée à `screen.height`) se décide sur ces
+chiffres, pas d'avance.
+
+### Le récap court — l'image envoyée aux parents (lot 33)
+
+`js/ui-recap.js` dessine l'image courte, son aperçu et son texte à copier, à
+partir d'**un seul modèle** (`UiRecap.modele`) ; `UiRecap.contenu` dit, dans
+l'ordre, chaque morceau que les trois formes doivent porter, et les tests
+vérifient l'égalité. Les **lignes** viennent de `Kit.lignesDuMois` /
+`Kit.lignesPour` (`js/ui-kit.js`) — la même fonction que le bloc « Le mois »
+de l'espace enfant : ne jamais en écrire une seconde copie. L'image prend
+l'identité de l'application, ses couleurs sont **lues dans les jetons de
+`:root`** (aucune couleur écrite dans `ui-recap.js`, c'est testé), largeur
+360 points à l'échelle 3, aucun texte sous 11 points. Elle est proposée dans le
+document du mois à partir du 25 (`Kit.JOUR_BASCULE_CLOTURE`) ou sur un mois
+clôturé. **Trois états** : `Prévisionnel` (mois ouvert), `Définitif`
+(clôturé, identique au dernier envoi ou sans envoi avant), `Définitif ·
+corrigé` (une ligne ou une journée a changé depuis l'envoi). La comparaison
+relit les valeurs **gardées** dans `recap_envoi.donnees` — jamais un recalcul
+de l'ancien mois — et prend pour référence le dernier envoi fait **avant**
+`recap.fige_le` (le dernier prévisionnel, ou après une reclôture le dernier
+envoi quel qu'il soit). Chaque ligne modifiée porte « au lieu de … », « Jours
+de présence » porte la raison journée par journée (règle des plages, au-delà
+de trois : « N journées ont changé »). Clôturer et envoyer restent deux gestes
+(D4) : l'écran « Confirmer » mène à la clôture existante du document, avec
+tous ses garde-fous (`params.cloturer`). Le
+partage passe par `Kit.partagerImage`, qui rend ce qui s'est passé
+(`partage`, `annule`, `telecharge`, `echec`) — le chemin du document détaillé,
+déménagé. L'instantané garde depuis ce lot `joursTravaillesPlanning` (le « sur
+20 » d'un mois clôturé).
+
 ### Les rappels (lot 32)
 
 L'écran des rappels a **trois états** et n'en affiche qu'un : non configuré
@@ -230,11 +286,14 @@ notification.
 
 ## 8. La base — migrations Supabase
 
-`supabase/migrations/`, numérotées et **jamais réécrites** : `001` à `021`.
+`supabase/migrations/`, numérotées et **jamais réécrites** : `001` à `022`.
 
-`020_demi_journee.sql` est la dernière appliquée en production.
-`021_rappels.sql` (lot 32) est **écrite, non appliquée** : elle passe avant la
-fusion du lot 32, à la main, par Adrien.
+`020_demi_journee.sql` est la dernière dont l'application en production est
+confirmée. `021_rappels.sql` (lot 32) est écrite ; son application n'était pas
+confirmée au 22 novembre 2026. `022_recap_envoi.sql` (lot 33) crée
+`recap_envoi` — une ligne par envoi du récap aux parents, jamais modifiée (ni
+droit ni policy `update`/`delete`) — et **ne dépend pas de 021**. Elle passe
+avant la fusion du lot 33, à la main, par Adrien.
 
 Elles sont exécutées **à la main** dans l'éditeur SQL de Supabase, jamais par
 un outil. Une nouvelle migration prend le numéro **suivant** — vérifier le
@@ -258,7 +317,7 @@ Deux règles de schéma :
 ```bash
 node test/run.js      # moteur, chaîne des mois, messages, couche données
 npm run test:ui       # tests de fumée d'interface (jsdom, index.html réel)
-npm run mesures       # mise en page à 390 px dans un VRAI navigateur (Playwright)
+npm run mesures       # mise en page dans un VRAI navigateur (Playwright) : 390 px, puis sept tailles d'iPhone
 ```
 
 **Décomptes de référence au 2 septembre 2026 (branche `feat/redesign-2a`) :**
@@ -275,7 +334,12 @@ d'un Chromium (`npm i -D playwright && npx playwright install chromium`, ou
 `PLAYWRIGHT_CHROMIUM=/chemin/chromium`). Il parcourt les écrans à 390 × 780,
 tactile — dont, depuis le lot 32, la fiche, la fin de contrat, la
 familiarisation, les rappels, la feuille de réouverture, la pose au
-calendrier avec ses deux bornes et la connexion clavier ouvert — sur un
+calendrier avec ses deux bornes et la connexion clavier ouvert — puis, depuis
+le lot 33, les écrans racine (accueil, espace enfant, Congés, Documents, Menu)
+aux **sept tailles d'iPhone** (320 × 568, 375 × 667, 390 × 844, 393 × 852,
+402 × 874, 430 × 932, 440 × 956 : bas de la barre d'onglets au bas de la
+fenêtre à 1 px près, en-tête à 0, page qui ne défile pas) et l'application
+« installée » simulée (`navigator.standalone`) — sur un
 décor fictif servi par `test/fixtures/faux-supabase-390.js`, et sort en
 code 1 au premier débordement, contrôle rogné, zone tactile sous 44 px,
 feuille invisible ou **contrôle de valeur calculée** en défaut (couleur
@@ -316,9 +380,9 @@ index.html            l'unique page ; l'ordre des <script> est l'ordre des dépe
 sw.js                 service worker : VERSION, pré-cache, stratégies
 config.js             URL et clé publishable Supabase — rien d'autre
 css/style.css         feuille unique ; couleurs dans :root, jamais en dur ailleurs
-js/                   18 modules (voir §2)
+js/                   19 modules (voir §2) ; ui-recap.js (lot 33) = le récap court envoyé aux parents
 test/                 suites + fumée d'interface ; test/fixtures/ = moteurs figés
-supabase/migrations/  001 à 021, jamais réécrites (021 : écrite, non appliquée)
+supabase/migrations/  001 à 022, jamais réécrites (021 et 022 : à confirmer en production)
 supabase/functions/   rappels-cloture (non déployée à ce jour) + DEPLOIEMENT.md, la marche à suivre
 supabase/controles/   requêtes SQL de contrôle, hors migrations ; rappels-planification.sql (pg_cron, non exécuté)
 scripts/keepalive.js  maintien du projet Supabase

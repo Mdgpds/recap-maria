@@ -102,6 +102,23 @@
 
     return Promise.all(contrats.map(function (c) { return charger(c, m); }))
       .then(function (fiches) {
+        /* LOT 33 §5.1 — LES ENVOIS DU RÉCAP, EN UNE REQUÊTE POUR TOUS LES
+           CONTRATS (pas une par carte) : le mois courant et le précédent. Une
+           lecture qui échoue — la migration 022 pas encore passée, le réseau
+           — rend `null` : aucune carte ne dit alors rien d'un envoi, plutôt
+           que d'en dire de faux. */
+        var lireEnvois = (global.DB.listEnvois && global.UiRecap)
+          ? global.DB.listEnvois(contrats.map(function (c) { return c.id; }), [moisPrecedent(m), m])
+              .catch(function () { return null; })
+          : Promise.resolve(null);
+        return lireEnvois.then(function (envois) {
+          fiches.forEach(function (f) {
+            f.envois = envois === null ? null : envois.filter(function (e) { return e.contrat_id === f.contrat.id; });
+          });
+          return fiches;
+        });
+      })
+      .then(function (fiches) {
         Kit.vider(ctx.corps);
 
         /* V8-29 : UN SEUL message de panne, jamais un par contrat. Si tout a
@@ -125,6 +142,8 @@
         rendreAlertes(ctx.corps, fiches, m);
         rendreCartes(ctx.corps, fiches, m);
         rendrePied(ctx.corps, fiches, m);
+        /* LOT 33 §3 — le total du mois, DERNIER élément de la page (D8). */
+        rendreTotalMois(ctx.corps, fiches, m);
 
         /* LOT 15 (A5) — la pastille est posée à partir de ce que l'accueil
            VIENT DE CALCULER : les mois en retard, plus le mois courant s'il
@@ -146,9 +165,13 @@
       var chaine = r[0];
       var journees = r[1];
       var entree = global.App.moisDe(chaine, m.annee, m.mois);
+      var mp = moisPrecedent(m);
       return {
         contrat: contrat,
         entree: entree,
+        /* LOT 33 §5.1 — le mois d'avant, pour la ligne « à confirmer » ou
+           « définitif à envoyer » d'un mois passé qui porte un prévisionnel. */
+        precedent: global.App.moisDe(chaine, mp.annee, mp.mois),
         journees: journees,
         travailles: Kit.joursTravailles(contrat, planningDe(entree), m.annee, m.mois, journees),
         etat: entree ? Kit.etatDuMois(m.annee, m.mois, entree.recap, auj) : null,
@@ -472,8 +495,22 @@
     var carte = Kit.ce('div', 'card cart3');
     carte.appendChild(etageIdentite(c, m));
     carte.appendChild(etageJournee(f));
+    /* LOT 33 §5.1 — entre la journée et les compteurs, une ligne QUAND IL Y A
+       QUELQUE CHOSE À FAIRE avec le récap, et rien sinon. Le tableau des états
+       vit dans `UiRecap.ligneCarte`, testé avec une date du jour fournie. */
+    if (global.UiRecap && !f.erreur) {
+      var l = global.UiRecap.ligneCarte({
+        m: m, aujourdhui: global.App.aujourdhui(), entree: f.entree,
+        restants: f.restants, precedent: f.precedent, envois: f.envois
+      });
+      if (l) carte.appendChild(global.UiRecap.etageRecap(c, l));
+    }
     carte.appendChild(etageCompteurs(f, m));
     return carte;
+  }
+
+  function moisPrecedent(m) {
+    return m.mois === 1 ? { annee: m.annee - 1, mois: 12 } : { annee: m.annee, mois: m.mois - 1 };
   }
 
   /* ÉTAGE 1 — l'identité. Pastille, prénom, « famille X », chevron. */
@@ -665,6 +702,86 @@
         'Rien à clôturer pour l’instant : un mois se clôture à partir du 25, ' +
         'ou dès qu’il est terminé.'));
     }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* LOT 33 §3 — LE TOTAL DU MOIS, EN BAS DE « MES ENFANTS »             */
+  /*                                                                     */
+  /* « Un atterrissage de combien elle va gagner à la fin du mois. »     */
+  /* Ce qui s'additionne : le montant du mois affiché sur chaque carte — */
+  /* `totalAVerserCentimes` du résultat du mois (l'instantané pour un    */
+  /* mois clôturé), pour les contrats affichés sur l'accueil. Il compte  */
+  /* les journées à venir comme normales, puisque le moteur le fait :    */
+  /* c'est un prévisionnel, et la carte le dit.                          */
+  /*                                                                     */
+  /* AUCUNE ADDITION ICI. Chaque mois passe par `agregerPeriode` (un mois */
+  /* par contrat), puis l'ensemble par `totaliserAgregats` — la règle qui */
+  /* totalise déjà « Sur une période », testée sous Node. Ce fichier ne   */
+  /* fait que choisir quels contrats entrent, et le DIRE.                 */
+  /* ------------------------------------------------------------------ */
+
+  /* La part de chaque contrat : `entre` (et son agrégat) ou la raison pour
+     laquelle il n'entre pas. Un total amputé qui ne dit pas qu'il l'est est un
+     chiffre faux : chaque contrat écarté est nommé. */
+  function partsDuTotal(fiches) {
+    return fiches.map(function (f) {
+      var c = f.contrat;
+      if (f.erreur) return { contrat: c, entre: false, raison: 'montant indisponible' };
+      var e = f.entree;
+      if (!e || !e.resultat || e.salaireManquant || !e.resultat.salaireNetCentimes) {
+        return { contrat: c, entre: false, raison: 'salaire non renseigné' };
+      }
+      return { contrat: c, entre: true, entree: e, agregat: Chaine.agregerPeriode([e]) };
+    });
+  }
+
+  function rendreTotalMois(corps, fiches, m) {
+    if (!fiches.length) return;
+    var parts = partsDuTotal(fiches);
+    var entrants = parts.filter(function (p) { return p.entre; });
+    var exclus = parts.filter(function (p) { return !p.entre; });
+    var total = Chaine.totaliserAgregats(entrants.map(function (p) { return p.agregat; }));
+
+    var carte = Kit.ce('div', 'totmois');
+    carte.setAttribute('data-total-centimes', String(total.totalAVerserCentimes));
+    carte.appendChild(Kit.ce('div', 'tm-eti',
+      Kit.moisCapitale(m.annee, m.mois) + ' · à ce jour'));
+    carte.appendChild(Kit.ce('div', 'tm-big', Kit.eur(total.totalAVerserCentimes)));
+    var sous = 'ce que vous allez gagner ce mois-ci';
+    if (exclus.length) {
+      sous += ', hors ' + liste(exclus.map(function (p) { return p.contrat.prenom_enfant; }));
+    }
+    carte.appendChild(Kit.ce('div', 'tm-sous', sous));
+
+    /* Un seul contrat : la carte sans la liste par enfant (§3.3). */
+    if (parts.length > 1) {
+      var blocListe = Kit.ce('div', 'tm-liste');
+      parts.forEach(function (p) {
+        var l = Kit.ce('div', 'tm-l' + (p.entre ? '' : ' hors'));
+        l.setAttribute('data-contrat', p.contrat.id);
+        l.appendChild(Kit.ce('span', null, p.contrat.prenom_enfant));
+        l.appendChild(Kit.ce('b', null, p.entre ? Kit.eur(p.agregat.totalAVerserCentimes) : p.raison));
+        blocListe.appendChild(l);
+      });
+      carte.appendChild(blocListe);
+    } else if (exclus.length) {
+      carte.appendChild(Kit.ce('div', 'tm-pied', exclus[0].contrat.prenom_enfant + ' : ' + exclus[0].raison + '.'));
+    }
+
+    /* « Si les journées qui restent… » disparaît quand il ne reste aucune
+       journée à venir, pour aucun contrat dont le mois est encore ouvert. */
+    var resteAVenir = entrants.some(function (p) {
+      var f = fiches.filter(function (x) { return x.contrat === p.contrat; })[0];
+      return !p.entree.fige && f && f.restants > 0;
+    });
+    var pied = Kit.ce('div', 'tm-pied');
+    if (resteAVenir) {
+      pied.appendChild(Kit.ce('span', 'tm-avenir', 'Si les journées qui restent se passent comme d’habitude.'));
+      pied.appendChild(document.createTextNode(' '));
+    }
+    pied.appendChild(document.createTextNode('Salaires nets et indemnités d’entretien compris.'));
+    carte.appendChild(pied);
+    corps.appendChild(carte);
   }
 
   /* Les mois que la clôture doit passer en revue : les retards de chaque
@@ -884,13 +1001,9 @@
     var restants = Kit.joursTravaillesRestants(c, planningDe(entree && entree.entree),
       cible.annee, cible.mois,
       global.App.aujourdhui(), (entree && entree.journees) || null);
-    if (restants > 0) {
-      ctx.corps.appendChild(Kit.warnbox(
-        restants + (restants > 1 ? ' jours travaillés sont encore à venir' : ' jour travaillé est encore à venir') +
-          ' en ' + Kit.libelleMois(cible.mois) + '.',
-        ' Si vous clôturez maintenant, ' +
-        (restants > 1 ? 'ces journées ne seront pas comptées.' : 'cette journée ne sera pas comptée.')));
-    }
+    /* LOT 33 §2 — la phrase dit ce que le moteur fait : les journées à venir
+       sont comptées comme des journées normales. */
+    if (restants > 0) ctx.corps.appendChild(Kit.encartJoursAVenir(restants, cible.mois));
     boutonsEtape(ctx, cible, entree);
   }
 

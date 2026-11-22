@@ -999,75 +999,21 @@
      Ce sont EXACTEMENT les lignes du panneau d'hier : aucune n'est retirée,
      elles changent seulement de contenant. */
   function replisLeMois() {
-    var c = vue.contrat;
     var r = vue.entree.resultat;
     var f = Kit.fold('Le mois', Kit.eur(r.totalAVerserCentimes), { ouvert: true });
-    var l = f.corps;
-
-    /* Correction A6 : sur un mois clôturé, le dénominateur d'hier venait d'un
-       comptage fait en direct sur les bornes COURANTES du contrat — un
-       archivage postérieur faisait passer « 20 j sur 20 » à « 20 j sur 14 »
-       sur un document censé ne plus bouger. */
-    if (vue.clos) {
-      Kit.ligneLn(l, 'Jours de présence', Kit.jours(r.joursPresence));
-    } else {
-      var travailles = Kit.joursTravailles(c, planningDuMois(), vue.annee, vue.mois,
-        vue.journees).length;
-      Kit.ligneLn(l, 'Jours de présence', r.joursPresence + ' j sur ' + travailles);
-    }
-
-    /* Le net DÛ, jamais le net contractuel (correction B4 du lot 17). */
-    var partiel = Chaine.proratOuNull(r);
-    Kit.ligneLn(l, 'Salaire net', Kit.eur(Chaine.netDuMois(r)), {
-      sous: partiel
-        ? 'mois partiel — ' + partiel.joursCouverts + ' jours de garde sur ' +
-          partiel.joursDuMois + ' au contrat'
-        : null
+    /* LOT 33 §4.1 — UNE SEULE SOURCE. Les lignes de ce bloc sont rendues par
+       `Kit.lignesPour` — la fonction que lit aussi le récap court envoyé
+       aux parents. Mêmes lignes, même ordre, mêmes libellés : deux copies
+       d'une même liste finissent toujours par diverger, et ici l'une des deux
+       part chez une famille. Les corrections A6 (dénominateur d'un mois
+       clôturé), B4 (le net DÛ), §28.4 (familiarisation) y ont déménagé telles
+       quelles. */
+    Kit.lignesPour({
+      contrat: vue.contrat, entree: vue.entree, journees: vue.journees,
+      annee: vue.annee, mois: vue.mois
+    }).forEach(function (l) {
+      Kit.ligneLn(f.corps, l.libelle, l.valeur, { sous: l.sous || null, alerte: !!l.alerte, total: !!l.total });
     });
-
-    Kit.ligneLn(l, libelleEntretien(r), Kit.eur(r.entretienCentimes));
-
-    /* LOT 28 (§28.4) — LA PART DE FAMILIARISATION, EN DEUX LIGNES, comme sur
-       le document. Le net et l'entretien ci-dessus sont ceux de la garde
-       mensualisée ; le total du repli ajoute la familiarisation. Un total est
-       toujours la somme des lignes affichées au-dessus. */
-    var fam = Chaine.partFamiliarisation(r);
-    if (fam.actif) {
-      Kit.ligneLn(l, 'Familiarisation — heures déclarées', Kit.eur(fam.netCentimes), {
-        sous: Kit.heures(r.familiarisation.minutesDeclarees || 0) + ' déclarées, au taux du contrat'
-      });
-      Kit.ligneLn(l, 'Familiarisation — entretien', Kit.eur(fam.entretienCentimes), {
-        sous: (r.familiarisation.joursAvecEntretien || 0) + ' jour' +
-          ((r.familiarisation.joursAvecEntretien || 0) > 1 ? 's' : '') + ' avec indemnité'
-      });
-    }
-
-    if (r.joursCongesDecomptes > 0) {
-      var imp = r.imputation || {};
-      var bouts = [];
-      if (imp.joursSurCp) bouts.push(imp.joursSurCp + ' j payés');
-      if (imp.joursSurSup) bouts.push(imp.joursSurSup + ' j récup');
-      if (imp.joursSansSolde) bouts.push(imp.joursSansSolde + ' j sans solde');
-      Kit.ligneLn(l, 'Congés posés', r.joursCongesDecomptes + ' j ouvrables', {
-        sous: bouts.join(' · ') || null,
-        alerte: (imp.joursSansSolde || 0) > 0
-      });
-    }
-    if (r.retenueSansSoldeCentimes > 0) {
-      Kit.ligneLn(l, 'Retenue pour jour(s) sans solde',
-        '− ' + Kit.eur(r.retenueSansSoldeCentimes), { alerte: true });
-    }
-
-    var sousSup = [];
-    if (r.minutesSupAjoutees > 0) sousSup.push('dont ' + Kit.heures(r.minutesSupAjoutees) + ' ajoutées');
-    if (r.minutesSupRenoncees > 0) {
-      sousSup.push('dont ' + Kit.heures(r.minutesSupRenoncees) + ' non réclamées, votre choix');
-    }
-    Kit.ligneLn(l, 'Heures sup du mois', Kit.heures(r.minutesSupAcquises), {
-      sous: sousSup.join(' · ') || null
-    });
-
-    Kit.ligneLn(l, 'Total à verser', Kit.eur(r.totalAVerserCentimes), { total: true });
     return f;
   }
 
@@ -2123,14 +2069,8 @@
     return td;
   }
 
-  function libelleEntretien(r) {
-    var parJour = reg('entretien_centimes_jour', 0);
-    var attendu = r.joursPresence * parJour;
-    if (attendu === r.entretienCentimes) {
-      return 'Entretien — ' + r.joursPresence + ' j × ' + Kit.eur(parJour);
-    }
-    return 'Indemnité d’entretien';
-  }
+  /* LOT 33 — `libelleEntretien` a déménagé dans js/ui-kit.js, avec les
+     lignes du bloc « Le mois » qui étaient son seul lecteur. */
 
   /* §18.6 — DEVANT DEUX RÉSERVES, LAQUELLE SERA CONSOMMÉE ? La question se
      pose à chaque congé posé, et la réponse était introuvable sans ouvrir la
@@ -4112,8 +4052,80 @@
     });
   }
 
+  /* LOT 33 §5.3 — DÉCLARER UNE JOURNÉE À VENIR : UNE EXCEPTION, ET UNE SEULE.
+
+     On ne saisit pas l'avenir (lot 7, V8-05, piège n° 7) : le calendrier de
+     cet écran GARDE son gel des journées à venir, rien n'y change. Ce point
+     d'entrée est le seul qui ouvre la feuille du jour sur une journée future,
+     et il est étroit :
+       - il n'est appelé QUE depuis l'écran « Préparer le récap » ;
+       - pour une journée RESTANTE du mois EN COURS, à partir du 25 ;
+       - une journée du planning, dans les bornes du contrat, hors férié.
+     Ce qui s'écrit est une ligne `journee` ordinaire, par la feuille
+     habituelle : pas de régime spécial. Revenir à « comme d'habitude »
+     SUPPRIME la ligne (`poserPresence`), comme pour une journée passée.
+
+     Le motif d'origine du gel — un décompte des jours restants faussé — ne
+     tient plus : `Kit.joursTravaillesRestants` écarte déjà une journée saisie
+     qui n'est pas une présence (correctif A3 du lot 7). C'est testé. */
+  function modifierJourAVenir(contrat, jour) {
+    var auj = global.App.aujourdhui();
+    var m = { annee: Number(jour.slice(0, 4)), mois: Number(jour.slice(5, 7)) };
+    var ok = !!auj && jour > auj && jour.slice(0, 7) === auj.slice(0, 7) &&
+      Number(auj.slice(8, 10)) >= Kit.JOUR_BASCULE_CLOTURE;
+    if (!ok) {
+      Kit.toast('Cette journée ne peut pas être modifiée d’avance.', true);
+      return Promise.resolve(false);
+    }
+    return chargerVue(contrat, m, null).then(function () {
+      if (vue.lectureSeule) {
+        Kit.toast('Ce mois est clôturé : il ne peut plus être modifié.', true);
+        return false;
+      }
+      var planning = planningDuMois();
+      var c = vue.contrat;
+      var dansLePlanning = planning.indexOf(Engine.jourSemaine(jour)) !== -1 &&
+        !(c.date_debut && jour < c.date_debut) && !(c.date_fin && jour > c.date_fin) &&
+        !Feries.estJourFerie(jour);
+      if (!dansLePlanning) {
+        Kit.toast('Ce jour n’est pas une journée de garde.', true);
+        return false;
+      }
+      ouvrirJour(jour);
+      return true;
+    }).catch(function (e) {
+      Kit.toast('Impossible d’ouvrir la journée : ' + Kit.messageErreur(e), true);
+      return false;
+    });
+  }
+
+  /* LOT 33 §6.1 — l'écran « Confirmer » corrige une journée PASSÉE : la
+     feuille du jour habituelle, SANS exception. Une journée à venir est
+     refusée ici : elle n'a qu'une porte, `modifierJourAVenir`. */
+  function modifierJour(contrat, jour) {
+    var auj = global.App.aujourdhui();
+    if (!auj || jour > auj) {
+      Kit.toast('Cette journée n’est pas encore passée.', true);
+      return Promise.resolve(false);
+    }
+    var m = { annee: Number(jour.slice(0, 4)), mois: Number(jour.slice(5, 7)) };
+    return chargerVue(contrat, m, null).then(function () {
+      if (vue.lectureSeule && !vue.rouvrable) {
+        Kit.toast('Ce mois ne peut plus être modifié.', true);
+        return false;
+      }
+      ouvrirJour(jour);
+      return true;
+    }).catch(function (e) {
+      Kit.toast('Impossible d’ouvrir la journée : ' + Kit.messageErreur(e), true);
+      return false;
+    });
+  }
+
   global.UiEnfant = {
     afficher: afficher,
+    modifierJourAVenir: modifierJourAVenir,
+    modifierJour: modifierJour,
     /* §25.1 — l'Accueil ouvre la feuille de déclaration sans passer par cet
        écran. Exportée plutôt que recopiée : deux feuilles de saisie pour un
        même geste divergeraient à la première correction. */

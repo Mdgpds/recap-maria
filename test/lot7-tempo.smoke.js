@@ -460,11 +460,12 @@ async function ouvrirAccueil() {
   await pause(120);
 
   var t = txt(sheet);
-  assert(t.indexOf('jours travaillés sont encore à venir') !== -1,
+  /* LOT 33 §2 — même sens, nouvelle phrase. */
+  assert(t.indexOf('journées sont encore à venir') !== -1,
     'P4 : l’avertissement annonce des jours restants (obtenu « ' + t.slice(0, 120) + ' »)');
-  assert(/7 jours travaillés sont encore à venir en août/.test(t),
+  assert(/7 journées sont encore à venir en août/.test(t),
     'P4 : le NOMBRE est exact — 21, 24, 25, 26, 27, 28, 31 = 7 jours');
-  assert(t.indexOf('ces journées ne seront pas comptées') !== -1,
+  assert(t.indexOf('Elles sont comptées comme des journées normales. Si l’une d’elles se passe autrement, il faudra rouvrir le mois pour la corriger.') !== -1,
     'P4 : la conséquence est dite');
   assert(!!boutonExact(sheet, 'Clôturer quand même'), 'P4 : bouton « Clôturer quand même »');
   assert(!!boutonExact(sheet, 'Annuler'), 'P4 : bouton « Annuler »');
@@ -779,9 +780,9 @@ async function ouvrirAccueil() {
   await pause(300);
   boutonExact(corps, 'Clôturer le mois').click();
   await pause(200);
-  assert(/14 jours travaillés sont encore à venir/.test(txt(sheet)),
+  assert(/14 journées sont encore à venir/.test(txt(sheet)),
     'A1 : le NOMBRE exact de jours restants est dit avant de figer (obtenu « ' +
-    (txt(sheet).match(/\d+ jours travaillés[^.]{0,40}/) || [''])[0] + ' »)');
+    (txt(sheet).match(/\d+ journées[^.]{0,40}/) || [''])[0] + ' »)');
   boutonExact(sheet, 'Annuler').click();
   await pause(150);
   window.App.aller('enfant', { contratId: A.id, annee: 2026, mois: 8 });
